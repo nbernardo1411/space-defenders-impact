@@ -1,15 +1,10 @@
 import './App.css'
-import { CryptoTowerDefense } from './components/games/CryptoTowerDefense'
+import { SpaceImpactDefense } from './components/games/CryptoTowerDefense'
 import { useState } from 'react'
 
-// Sample coins for the game
+// Placeholder coins (not displayed — kept for prop compatibility)
 const DEFAULT_COINS = [
-  { id: '1', name: 'Bitcoin', symbol: 'BTC', image: '₿' },
-  { id: '2', name: 'Ethereum', symbol: 'ETH', image: '◆' },
-  { id: '3', name: 'Cardano', symbol: 'ADA', image: '◇' },
-  { id: '4', name: 'Ripple', symbol: 'XRP', image: '✧' },
-  { id: '5', name: 'Solana', symbol: 'SOL', image: '◈' },
-  { id: '6', name: 'Polkadot', symbol: 'DOT', image: '●' },
+  { id: '1', name: 'Alpha', symbol: 'A', image: '' },
 ]
 
 function App() {
@@ -18,7 +13,7 @@ function App() {
   if (!showGame) {
     return (
       <div className="start-screen">
-        <h1>Crypto Tower Defense</h1>
+        <h1>Space Impact Defense</h1>
         <button onClick={() => setShowGame(true)} style={{
           padding: '12px 32px',
           fontSize: '16px',
@@ -37,7 +32,7 @@ function App() {
 
   return (
     <div className="app">
-      <CryptoTowerDefense 
+      <SpaceImpactDefense 
         availableCoins={DEFAULT_COINS}
         onClose={() => setShowGame(false)}
       />

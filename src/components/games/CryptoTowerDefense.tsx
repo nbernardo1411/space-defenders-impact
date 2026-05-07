@@ -7,8 +7,8 @@ const COLS = 14
 const ROWS = 10
 const MAX_STAGES = 10
 const WAVES_PER_STAGE = 5
-const STORAGE_KEY = 'cryptoTowerDefenseHighScore'
-const ENDLESS_KEY = 'cryptoTowerDefenseEndlessUnlocked'
+const STORAGE_KEY = 'spaceImpactDefenseHighScore'
+const ENDLESS_KEY = 'spaceImpactDefenseEndlessUnlocked'
 
 // ─── Spawn point count per stage ──────────────────────────────────────────────
 function spawnCountForStage(stage: number): number {
@@ -125,17 +125,17 @@ function generatePaths(stage: number): [number, number][][] {
 //   return generatePaths(stage)[0]
 // }
 
-// Tower definitions: each coin type maps to a tower role
+// Tower definitions: each type maps to a ship role
 const TOWER_TYPES = [
-  { key: 'fast',   label: 'Fast',   color: '#18e6c4', range: 2.0, dmg: 8,  rate: 0.5,  cost: 60,  desc: 'High fire rate, low range' },
-  { key: 'sniper', label: 'Sniper', color: '#7c5dff', range: 10, dmg: 45, rate: 3.5,  cost: 120, desc: 'Long range, heavy damage' },
-  { key: 'aoe',    label: 'AoE',    color: '#ffd666', range: 2.5, dmg: 20, rate: 1.8,  cost: 100, desc: 'Splash damage nearby enemies' },
-  { key: 'slow',   label: 'Slow',   color: '#fb7185', range: 2.8, dmg: 6,  rate: 1.2,  cost: 80,  desc: 'Slows enemies by 50%' },
-  { key: 'burst',  label: 'Burst',  color: '#f99b45', range: 4.0, dmg: 170, rate: 5.0,  cost: 200, desc: 'High burst, slow reload' },
-  { key: 'gatling',  label: 'Gatling',  color: '#00ff0d', range: 4, dmg: 4, rate: 0.1,  cost: 400, desc: 'Fast Fire rate' },
-  { key: 'rocket',    label: 'Rocket',    color: '#ff0000', range: 6,   dmg: 250, rate: 12.0, cost: 600,  desc: 'Huge AOE blast, 12s reload' },
-  { key: 'laser',     label: 'Laser',     color: '#dbecff', range: 4.5,   dmg: 3,  rate: 0.01, cost: 2000, desc: 'Beam 10s · exhaust 5s · 300 DPS pierce (1.5/tick to others)' },
-  { key: 'artillery', label: 'Artillery', color: '#ff8800', range: 999, dmg: 140, rate: 7.0,  cost: 3500,  desc: 'Global range · fires 3 rockets · small AOE' },
+  { key: 'fast',      label: 'Scout',    color: '#18e6c4', range: 2.0, dmg: 8,   rate: 0.5,  cost: 60,   desc: 'High fire rate, short range' },
+  { key: 'sniper',    label: 'Rail Gun', color: '#7c5dff', range: 10,  dmg: 45,  rate: 3.5,  cost: 120,  desc: 'Long range, heavy piercing shot' },
+  { key: 'aoe',       label: 'Bomber',   color: '#ffd666', range: 2.5, dmg: 20,  rate: 1.8,  cost: 100,  desc: 'Plasma splash, hits nearby aliens' },
+  { key: 'slow',      label: 'Cryo',     color: '#fb7185', range: 2.8, dmg: 6,   rate: 1.2,  cost: 80,   desc: 'Freeze beam, slows aliens 50%' },
+  { key: 'burst',     label: 'Cannon',   color: '#f99b45', range: 4.0, dmg: 170, rate: 5.0,  cost: 200,  desc: 'High burst, slow reload' },
+  { key: 'gatling',   label: 'Gatling',  color: '#00ff0d', range: 4,   dmg: 4,   rate: 0.1,  cost: 400,  desc: 'Rapid-fire chain guns' },
+  { key: 'rocket',    label: 'Rocket',   color: '#ff0000', range: 6,   dmg: 250, rate: 12.0, cost: 600,  desc: 'Massive AOE blast, 12s reload' },
+  { key: 'laser',     label: 'Laser',    color: '#dbecff', range: 4.5, dmg: 3,   rate: 0.01, cost: 2000, desc: 'Beam 10s · exhaust 5s · 300 DPS pierce' },
+  { key: 'artillery', label: 'Orbital',  color: '#ff8800', range: 999, dmg: 140, rate: 7.0,  cost: 3500, desc: 'Global range · 3 orbital strikes' },
 ] as const
 type TowerKey = typeof TOWER_TYPES[number]['key']
 
@@ -312,8 +312,159 @@ function triggerEnemyDeath(
   })
 }
 
+// ─── Tower Ship SVG ────────────────────────────────────────────────────────────
+function TowerShip({ tType, color, size }: { tType: string; color: string; size: number }) {
+  const s = size
+  const c = color
+  switch (tType) {
+    case 'fast': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 30,18 22,22 16,28 10,22 2,18" fill={c} opacity="0.85"/>
+        <rect x="14" y="2" width="4" height="11" rx="2" fill={c}/>
+        <circle cx="16" cy="17" r="5" fill={c} opacity="0.45"/>
+        <circle cx="16" cy="17" r="2.5" fill="white" opacity="0.35"/>
+      </svg>
+    )
+    case 'sniper': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,4 24,16 16,28 8,16" fill={c} opacity="0.8"/>
+        <rect x="14" y="0" width="4" height="22" rx="1.5" fill={c}/>
+        <rect x="13" y="0" width="6" height="4" rx="1" fill={c}/>
+        <circle cx="16" cy="20" r="4" fill={c} opacity="0.45"/>
+        <circle cx="16" cy="20" r="2" fill="white" opacity="0.4"/>
+      </svg>
+    )
+    case 'aoe': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 28,9 28,23 16,30 4,23 4,9" fill={c} opacity="0.85"/>
+        <rect x="14" y="2" width="4" height="7" rx="1" fill="white" opacity="0.4"/>
+        <rect x="14" y="23" width="4" height="7" rx="1" fill="white" opacity="0.4"/>
+        <circle cx="16" cy="16" r="6" fill={c} opacity="0.45"/>
+        <circle cx="16" cy="16" r="3" fill="white" opacity="0.35"/>
+      </svg>
+    )
+    case 'slow': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 19,13 30,10 21,18 28,28 16,22 4,28 11,18 2,10 13,13" fill={c} opacity="0.85"/>
+        <circle cx="16" cy="16" r="5" fill={c}/>
+        <circle cx="16" cy="16" r="2.5" fill="white" opacity="0.5"/>
+      </svg>
+    )
+    case 'burst': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <rect x="4" y="4" width="24" height="24" rx="4" fill={c} opacity="0.85"/>
+        <rect x="14" y="0" width="4" height="14" rx="2" fill={c}/>
+        <circle cx="16" cy="18" r="5" fill={c} opacity="0.45"/>
+        <circle cx="16" cy="18" r="2.5" fill="white" opacity="0.4"/>
+      </svg>
+    )
+    case 'gatling': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <circle cx="16" cy="18" r="11" fill={c} opacity="0.8"/>
+        <rect x="14" y="0" width="4" height="12" rx="1" fill={c}/>
+        <rect x="9"  y="2" width="4" height="9"  rx="1" fill={c} opacity="0.85"/>
+        <rect x="19" y="2" width="4" height="9"  rx="1" fill={c} opacity="0.85"/>
+        <circle cx="16" cy="18" r="4" fill="white" opacity="0.28"/>
+      </svg>
+    )
+    case 'rocket': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 24,14 20,30 16,28 12,30 8,14" fill={c} opacity="0.9"/>
+        <polygon points="8,14 1,20 5,22 8,18"  fill={c} opacity="0.7"/>
+        <polygon points="24,14 31,20 27,22 24,18" fill={c} opacity="0.7"/>
+        <rect x="14" y="2" width="4" height="16" rx="2" fill={c}/>
+        <circle cx="16" cy="12" r="3" fill="white" opacity="0.35"/>
+      </svg>
+    )
+    case 'laser': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 28,12 28,20 16,30 4,20 4,12" fill={c} opacity="0.85"/>
+        <rect x="13" y="0" width="6" height="16" rx="3" fill={c}/>
+        <ellipse cx="16" cy="14" rx="5" ry="3" fill="white" opacity="0.5"/>
+        <circle cx="16" cy="16" r="2.5" fill="white" opacity="0.6"/>
+      </svg>
+    )
+    case 'artillery': return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 30,10 30,22 16,30 2,22 2,10" fill={c} opacity="0.9"/>
+        <rect x="14" y="0" width="4" height="12" rx="2" fill={c}/>
+        <rect x="0" y="14" width="12" height="4" rx="2" fill={c} opacity="0.7"/>
+        <rect x="20" y="14" width="12" height="4" rx="2" fill={c} opacity="0.7"/>
+        <circle cx="16" cy="16" r="5" fill={c} opacity="0.45"/>
+        <circle cx="16" cy="16" r="2.5" fill="white" opacity="0.4"/>
+      </svg>
+    )
+    default: return (
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 30,16 16,30 2,16" fill={c} opacity="0.9"/>
+        <circle cx="16" cy="16" r="5" fill="white" opacity="0.3"/>
+      </svg>
+    )
+  }
+}
+
+// ─── Alien Ship SVG ────────────────────────────────────────────────────────────
+function AlienShip({ variant, isBoss, isFinalBoss, color, size }: { variant: number; isBoss: boolean; isFinalBoss: boolean; color: string; size: number }) {
+  const s = Math.max(8, size)
+  const c = color
+  if (isFinalBoss) return (
+    <svg width={s} height={s} viewBox="0 0 32 32">
+      <polygon points="16,1 31,10 31,22 16,31 1,22 1,10" fill={c} opacity="0.95"/>
+      <ellipse cx="16" cy="16" rx="9" ry="9" fill={c} opacity="0.5"/>
+      <circle cx="16" cy="16" r="5" fill="white" opacity="0.25"/>
+      <circle cx="16" cy="16" r="2.5" fill="white" opacity="0.5"/>
+      <rect x="29" y="8"  width="3" height="4" rx="1" fill={c}/>
+      <rect x="29" y="20" width="3" height="4" rx="1" fill={c}/>
+      <rect x="0"  y="8"  width="3" height="4" rx="1" fill={c}/>
+      <rect x="0"  y="20" width="3" height="4" rx="1" fill={c}/>
+    </svg>
+  )
+  if (isBoss) return (
+    <svg width={s} height={s} viewBox="0 0 32 32">
+      <ellipse cx="16" cy="19" rx="14" ry="9" fill={c} opacity="0.9"/>
+      <ellipse cx="16" cy="14" rx="9" ry="7" fill={c}/>
+      <circle cx="16" cy="13" r="4" fill="white" opacity="0.28"/>
+      <rect x="3"  y="24" width="6" height="3" rx="1" fill="white" opacity="0.3"/>
+      <rect x="13" y="26" width="6" height="3" rx="1" fill="white" opacity="0.3"/>
+      <rect x="23" y="24" width="6" height="3" rx="1" fill="white" opacity="0.3"/>
+    </svg>
+  )
+  switch (variant % 4) {
+    case 0: return (   // Saucer
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <ellipse cx="16" cy="21" rx="13" ry="7" fill={c} opacity="0.85"/>
+        <ellipse cx="16" cy="16" rx="8"  ry="6" fill={c}/>
+        <circle  cx="16" cy="15" r="3" fill="white" opacity="0.35"/>
+      </svg>
+    )
+    case 1: return (   // Bug fighter
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,4 22,14 30,12 26,22 28,30 16,26 4,30 6,22 2,12 10,14" fill={c} opacity="0.85"/>
+        <circle cx="16" cy="17" r="4" fill="white" opacity="0.28"/>
+      </svg>
+    )
+    case 2: return (   // Angular interceptor
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <polygon points="16,2 30,28 22,22 16,28 10,22 2,28" fill={c} opacity="0.9"/>
+        <polygon points="16,8 24,22 16,18 8,22" fill={c} opacity="0.45"/>
+        <circle cx="16" cy="14" r="3" fill="white" opacity="0.3"/>
+      </svg>
+    )
+    default: return (  // Crab
+      <svg width={s} height={s} viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="9" fill={c} opacity="0.9"/>
+        <rect x="1"  y="7"  width="9" height="4" rx="2" fill={c} opacity="0.8"/>
+        <rect x="22" y="7"  width="9" height="4" rx="2" fill={c} opacity="0.8"/>
+        <rect x="1"  y="21" width="9" height="4" rx="2" fill={c} opacity="0.8"/>
+        <rect x="22" y="21" width="9" height="4" rx="2" fill={c} opacity="0.8"/>
+        <circle cx="16" cy="16" r="4" fill="white" opacity="0.28"/>
+      </svg>
+    )
+  }
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins: CoinOption[]; onClose: () => void }) {
+export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins: CoinOption[]; onClose: () => void }) {
   const [cell, setCell] = useState(calcCell)
   const [soundOn, setSoundOn] = useState(getGameSoundEnabled)
 
@@ -1282,7 +1433,7 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, width: '100%', maxWidth: boardW + 8 }}>
         <button onClick={onClose} style={btnStyle('#333', '#fff')} aria-label="Close">✕</button>
         <div style={{ flex: 1, textAlign: 'center', fontWeight: 800, fontSize: '1.15rem', color: '#18e6c4', letterSpacing: 1, whiteSpace: 'nowrap' }}>
-          CRYPTO TOWER DEFENSE
+          SPACE IMPACT DEFENSE
         </div>
         <button onClick={toggleSound} style={btnStyle('#222','#fff')}>{soundOn ? '🔊' : '🔇'}</button>
       </div>
@@ -1308,7 +1459,7 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
         {canStartWave && !isOver && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={startWave} style={btnStyle(isBossNextWave ? '#cc2222' : '#18e6c4', isBossNextWave ? '#fff' : '#000', true)}>
-              {isBossNextWave ? `💀 Boss Wave ${nextWaveNum}` : uiState === 'idle' ? '▶ Start Wave 1' : `▶ Wave ${nextWaveNum}`}
+              {isBossNextWave ? `� Boss Wave ${nextWaveNum}` : uiState === 'idle' ? '▶ Start Wave 1' : `▶ Wave ${nextWaveNum}`}
             </button>
             <button onClick={() => setAutoPlayWave(!autoPlayWave)} title={autoPlayWave ? 'Disable auto-play' : 'Enable auto-play (auto-start waves)'} style={btnStyle(autoPlayWave ? '#7c5dff' : '#444', '#fff', true)}>
               {autoPlayWave ? '⚡ Auto' : '⏸ Manual'}
@@ -1372,8 +1523,8 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
                     fontSize: isStart || isEnd ? cell * 0.45 : 0,
                   }}
                 >
-                  {isStart && '🐻'}
-                  {isEnd && '💼'}
+                  {isStart && '�'}
+                  {isEnd && '🌍'}
                 </div>
               )
             })
@@ -1454,7 +1605,7 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
                 }}
                 title={tower.towerDef.label}
               >
-                <img src={tower.coin.image} alt="" width={cell > 38 ? 20 : 14} height={cell > 38 ? 20 : 14} style={{ borderRadius: '50%', objectFit: 'cover' }} />
+                <TowerShip tType={tower.type} color={tower.towerDef.color} size={cell > 38 ? 26 : 20} />
                 {tower.level > 1 && (
                   <div style={{ fontSize: cell * 0.22, color: '#ffd666', fontWeight: 700, lineHeight: 1 }}>★{tower.level}</div>
                 )}
@@ -1564,7 +1715,7 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
               transform: `translate(${e.isBoss ? -cell*(bossScale-1)/2 : -2}px,${e.isBoss ? -cell*(bossScale-1)/2 : -2}px)`,
             }}>
               {isFinalBoss && <div style={{ fontSize: cell * 0.42, lineHeight: 1, marginBottom: 1 }}>💀</div>}
-              {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.35, lineHeight: 1, marginBottom: 1 }}>👑</div>}
+              {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.35, lineHeight: 1, marginBottom: 1 }}>�</div>}
               <div style={{ width: cell * bossScale - 6, height: e.isBoss ? 5 : 3, background: '#333', borderRadius: 2, marginBottom: 2 }}>
                 <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? '#34d399' : e.hp / e.maxHp > 0.25 ? '#ffd666' : '#fb7185', borderRadius: 2 }} />
               </div>
@@ -1578,7 +1729,7 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
                 boxShadow: shadow,
                 filter: hitFlashOpacity > 0 ? `brightness(1.5) saturate(2) hue-rotate(-10deg)` : 'none',
               }}>
-                {e.coinImg ? <img src={e.coinImg} alt="" width={sz - 4} height={sz - 4} style={{ objectFit: 'cover', filter: (isFinalBoss ? 'hue-rotate(270deg) saturate(2)' : 'none') + (hitFlashOpacity > 0 ? ' invert(0.3) brightness(1.8)' : ''), opacity: 1 - hitFlashOpacity * 0.4 }} /> : '🐻'}
+                <AlienShip variant={e.id % 4} isBoss={e.isBoss} isFinalBoss={isFinalBoss} color={borderColor} size={Math.max(8, Math.round(sz - 4))} />
                 {freezeOpacity > 0 && (
                   <>
                     <div style={{
@@ -1611,7 +1762,7 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
                 )}
               </div>
               {isFinalBoss && (
-                <div style={{ fontSize: cell * 0.2, color: '#cc00ff', fontWeight: 900, lineHeight: 1, marginTop: 1, textShadow: '0 0 6px #cc00ff' }}>SMASH</div>
+                <div style={{ fontSize: cell * 0.2, color: '#cc00ff', fontWeight: 900, lineHeight: 1, marginTop: 1, textShadow: '0 0 6px #cc00ff' }}>SIEGE</div>
               )}
             </div>
             )
@@ -2160,7 +2311,7 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
 
         {/* Sidebar */}
         <div style={{ flex: 1, minWidth: 130, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ color: '#aaa', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Place Tower</div>
+          <div style={{ color: '#aaa', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Deploy Ship</div>
           {TOWER_TYPES.map(t => (
             <button
               key={t.key}
@@ -2192,17 +2343,17 @@ export function CryptoTowerDefense({ availableCoins, onClose }: { availableCoins
 
           <div style={{ marginTop: 'auto', color: '#555', fontSize: '0.7rem', lineHeight: 1.5 }}>
             <div>• Click empty cell to place</div>
-            <div>• Click tower to inspect/sell</div>
+            <div>• Click ship to inspect/sell</div>
             <div>• Start each wave manually</div>
-            <div>• Bears reach 💼 → lose life</div>
-            <div>• 💀 Wave 5 = Boss wave</div>
+            <div>• Aliens reach 🌍 → lose life</div>
+            <div>• 👾 Wave 5 = Boss wave</div>
             <div>• Boss leak = −3 lives!</div>
-            <div>• Gold carries to next stage</div>
-            <div>• Stage 10 = all boss waves</div>
-            <div style={{ color: '#cc00ff', marginTop: 4 }}>• 💀💥 Stage 10 boss SMASHES</div>
-            <div style={{ color: '#cc00ff' }}>&nbsp;&nbsp;nearby towers every 4.5s!</div>
+            <div>• Credits carry to next stage</div>
+            <div>• Stage 10 = all mothership waves</div>
+            <div style={{ color: '#cc00ff', marginTop: 4 }}>• 💀💥 Mothership SMASHES</div>
+            <div style={{ color: '#cc00ff' }}>&nbsp;&nbsp;nearby ships every 4.5s!</div>
             <div style={{ color: '#ff8800', marginTop: 4 }}>• 🔥 Beat stage 10 → Endless!</div>
-            <div style={{ color: '#555' }}>• ⚡ Some enemies run faster</div>
+            <div style={{ color: '#555' }}>• ⚡ Some aliens run faster</div>
           </div>
         </div>
       </div>
