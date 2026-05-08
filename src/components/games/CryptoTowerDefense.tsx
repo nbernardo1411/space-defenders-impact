@@ -10,6 +10,9 @@ const MAX_STAGES = 10
 const WAVES_PER_STAGE = 5
 const STORAGE_KEY = 'spaceImpactDefenseHighScore'
 const ENDLESS_KEY = 'spaceImpactDefenseEndlessUnlocked'
+const MOBILE_LAYOUT_STORAGE_KEY = 'spaceImpactDefenseLayoutMode'
+
+type MobileLayoutMode = 'auto' | 'portrait' | 'landscape'
 
 // ─── Spawn point count per stage ──────────────────────────────────────────────
 function spawnCountForStage(stage: number): number {
@@ -247,18 +250,33 @@ function xpNeededForNextLevel(level: number) {
 }
 
 // ─── Cell size calculation ─────────────────────────────────────────────────────
-function calcCell() {
+function calcCell(layoutMode: MobileLayoutMode = 'auto') {
   if (typeof window === 'undefined') return 44
   const isDesktop = window.innerWidth > 900
-  // Reserve room for HUD + side shop on desktop, and for vertical chrome on smaller screens.
-  const reservedWidth = isDesktop ? 240 : 24
-  const reservedHeight = isDesktop ? 140 : 260
+  const isMobile = !isDesktop
+  const isNaturalLandscape = window.innerWidth > window.innerHeight
+  const useMobileLandscape = isMobile && (
+    layoutMode === 'landscape' ||
+    (layoutMode === 'auto' && isNaturalLandscape)
+  )
+
+  // Reserve room for HUD + shop; mobile landscape keeps shop on the right.
+  const reservedWidth = isDesktop ? 240 : (useMobileLandscape ? 180 : 24)
+  const reservedHeight = isDesktop ? 140 : (useMobileLandscape ? 140 : 260)
   const byWidth = (window.innerWidth - reservedWidth) / COLS
   const byHeight = (window.innerHeight - reservedHeight) / ROWS
   const target = Math.min(byWidth, byHeight)
-  const minCell = isDesktop ? 32 : 28
-  const maxCell = isDesktop ? 72 : 48
+  const minCell = isDesktop ? 32 : (useMobileLandscape ? 30 : 28)
+  const maxCell = isDesktop ? 72 : (useMobileLandscape ? 58 : 48)
   return Math.floor(Math.max(minCell, Math.min(maxCell, target)))
+}
+
+function getIsCompactLayout(layoutMode: MobileLayoutMode) {
+  if (typeof window === 'undefined') return false
+  if (window.innerWidth > 900) return false
+  if (layoutMode === 'portrait') return true
+  if (layoutMode === 'landscape') return false
+  return window.innerHeight >= window.innerWidth
 }
 
 // ─── Lerp helper ──────────────────────────────────────────────────────────────
@@ -920,11 +938,16 @@ function MothershipSpawnIcon({ size }: { size: number }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins: CoinOption[]; onClose: () => void }) {
-  const [cell, setCell] = useState(calcCell)
+  const [mobileLayoutMode, setMobileLayoutMode] = useState<MobileLayoutMode>(() => {
+    if (typeof window === 'undefined') return 'auto'
+    const raw = localStorage.getItem(MOBILE_LAYOUT_STORAGE_KEY)
+    return raw === 'portrait' || raw === 'landscape' || raw === 'auto' ? raw : 'auto'
+  })
+  const [cell, setCell] = useState(() => calcCell(mobileLayoutMode))
   const [soundOn, setSoundOn] = useState(getGameSoundEnabled)
   const [audioMix, setAudioMix] = useState<AudioMixSettings>(getGameAudioMixSettings)
-  const [showAudioMix, setShowAudioMix] = useState(false)
-  const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 900 : false)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [isCompact, setIsCompact] = useState(() => getIsCompactLayout(mobileLayoutMode))
 
   // Game data refs (avoid re-render on every frame)
   const enemiesRef = useRef<Enemy[]>([])
@@ -1027,12 +1050,20 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   // ── Resize ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = () => {
-      setCell(calcCell())
-      setIsCompact(window.innerWidth <= 900)
+      setCell(calcCell(mobileLayoutMode))
+      setIsCompact(getIsCompactLayout(mobileLayoutMode))
     }
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
-  }, [])
+  }, [mobileLayoutMode])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(MOBILE_LAYOUT_STORAGE_KEY, mobileLayoutMode)
+      setCell(calcCell(mobileLayoutMode))
+      setIsCompact(getIsCompactLayout(mobileLayoutMode))
+    }
+  }, [mobileLayoutMode])
 
   // ── Global drag release handlers (mouse + touch) ──────────────────────────
   useEffect(() => {
@@ -2199,6 +2230,17 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const isBossNextWave = nextWaveCfg.isBoss
   const canStartWave = uiState === 'idle' || uiState === 'playing'
   const isOver = uiState === 'gameover' || uiState === 'victory'
+  const isMobileViewport = typeof window !== 'undefined' ? window.innerWidth <= 900 : false
+  const sidebarWidth = !isCompact && isMobileViewport ? 188 : undefined
+  const activeOverlay = isOver || uiState === 'stage_complete'
+  const renderedLaserBeams = isMobileViewport ? uiLaserBeams.slice(0, 3) : uiLaserBeams
+  const renderedParticles = isMobileViewport ? uiParticles.slice(-80) : uiParticles
+  const renderedExplosions = isMobileViewport ? uiExplosions.slice(-8) : uiExplosions
+  const renderedShockwaves = isMobileViewport ? uiShockwaves.slice(-6) : uiShockwaves
+  const renderedPortals = isMobileViewport ? spawnPortals.slice(-6) : spawnPortals
+  const renderedActionBursts = isMobileViewport ? towerActionBursts.slice(-5) : towerActionBursts
+  const renderedCoinFlows = isMobileViewport ? coinFlows.slice(-10) : coinFlows
+  const victoryConfettiCount = isMobileViewport ? 8 : 20
   const uiPathSet = new Set(uiPaths.flatMap(p => p.map(([c, r]) => `${c},${r}`)))
   // Collect all spawn starts and single finish
   const uiSpawnCells = new Set(uiPaths.map(p => p.length > 0 ? `${p[0][0]},${p[0][1]}` : ''))
@@ -2247,45 +2289,9 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         <div style={{ flex: 1, textAlign: 'center', fontWeight: 900, fontSize: isCompact ? '0.9rem' : '1.05rem', color: '#ffcf86', letterSpacing: 1.6, whiteSpace: 'nowrap', textTransform: 'uppercase', textShadow: '0 0 12px #ff7b2f66' }}>
           SPACE IMPACT DEFENSE
         </div>
-        <button onClick={() => setShowAudioMix(v => !v)} style={btnStyle('#2d2148', '#d3c6ff')} aria-label="Audio Mixer">{showAudioMix ? 'MIX ON' : 'AUDIO'}</button>
+        <button onClick={() => setShowSettingsModal(true)} style={btnStyle('#2d2148', '#d3c6ff')} aria-label="Settings">SETTINGS</button>
         <button onClick={toggleSound} style={btnStyle('#102b20','#9ef2cc')}>{soundOn ? 'SFX ON' : 'SFX OFF'}</button>
       </div>
-
-      {showAudioMix && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isCompact ? '1fr' : 'repeat(4, minmax(0, 1fr))',
-          gap: 8,
-          marginBottom: 8,
-          width: '100%',
-          maxWidth: chromeMaxW,
-          position: 'relative',
-          zIndex: 1,
-          background: '#111827cc',
-          border: '1px solid #334155',
-          borderRadius: 8,
-          padding: '8px 10px'
-        }}>
-          {([
-            { key: 'bgm', label: 'BGM', color: '#7dd3fc' },
-            { key: 'explosion', label: 'EXPLOSIONS', color: '#fb923c' },
-            { key: 'beam', label: 'BEAMS', color: '#22d3ee' },
-            { key: 'ui', label: 'UI', color: '#c4b5fd' },
-          ] as const).map(control => (
-            <label key={control.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#d1d5db', fontSize: '0.72rem', letterSpacing: 0.8 }}>
-              <span style={{ color: control.color, fontWeight: 700 }}>{control.label}: {Math.round(audioMix[control.key] * 100)}%</span>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={audioMix[control.key]}
-                onChange={(e) => updateAudioMixSetting(control.key, Number(e.currentTarget.value))}
-              />
-            </label>
-          ))}
-        </div>
-      )}
 
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: 8, alignItems: 'stretch', width: '100%', maxWidth: chromeMaxW, marginBottom: 8, position: 'relative', zIndex: 1 }}>
@@ -2336,6 +2342,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             position: 'relative', width: boardW, height: boardH, flexShrink: 0, border: '2px solid #4c6f5c', borderRadius: 4, overflow: 'hidden', userSelect: 'none',
             boxShadow: '0 0 0 1px #0b0f0d inset, 0 0 0 3px #1a241f inset, 0 10px 30px #00000088',
             touchAction: draggedTower ? 'none' : 'pan-y',
+            pointerEvents: activeOverlay ? 'none' : 'auto',
             transition: 'none'
           }}
           onMouseMove={handleBoardMouseMove}
@@ -2394,7 +2401,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           )}
 
           {/* Laser beams */}
-          {uiLaserBeams.length > 0 && (
+          {renderedLaserBeams.length > 0 && (
             <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 4 }}>
               <defs>
                 <filter id="laserGlow">
@@ -2402,10 +2409,10 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                   <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
                 </filter>
               </defs>
-              {uiLaserBeams.map(b => (
+              {renderedLaserBeams.map(b => (
                 <g key={b.towerId}>
-                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#dbecff" strokeWidth={4} strokeOpacity={0.25} filter="url(#laserGlow)" />
-                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#ffffff" strokeWidth={1.5} strokeOpacity={0.9} filter="url(#laserGlow)" />
+                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#dbecff" strokeWidth={isMobileViewport ? 2.8 : 4} strokeOpacity={isMobileViewport ? 0.2 : 0.25} filter={isMobileViewport ? undefined : 'url(#laserGlow)'} />
+                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#ffffff" strokeWidth={isMobileViewport ? 1.1 : 1.5} strokeOpacity={0.9} filter={isMobileViewport ? undefined : 'url(#laserGlow)'} />
                 </g>
               ))}
             </svg>
@@ -2829,7 +2836,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           })}
 
           {/* Particles */}
-          {uiParticles.map((p, idx) => {
+          {renderedParticles.map((p, idx) => {
             const styles: Record<ParticleType, { color: string; glow: string; size: number }> = {
               death: { color: '#ff6b6b', glow: '#ff6b6bcc', size: 6 },
               build: { color: '#18e6c4', glow: '#18e6c4cc', size: 6 },
@@ -2869,7 +2876,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                 width: style.size, height: style.size,
                 borderRadius: '50%',
                 background: style.color,
-                boxShadow: `0 0 ${6 + (1 - progress) * 4}px ${style.glow}`,
+                boxShadow: isMobileViewport ? `0 0 ${3 + (1 - progress) * 2}px ${style.glow}` : `0 0 ${6 + (1 - progress) * 4}px ${style.glow}`,
                 opacity: Math.min(1, opacity),
                 transform: `translate(-50%, -50%) scale(${scale})`,
                 pointerEvents: 'none',
@@ -2897,7 +2904,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           })}
 
           {/* Explosion effects */}
-          {uiExplosions.map((exp, idx) => {
+          {renderedExplosions.map((exp, idx) => {
             const progress = exp.time / exp.maxTime
             const scale = 1 + progress * 0.3
             const opacity = Math.max(0, 1 - progress)
@@ -2926,7 +2933,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           })}
 
           {/* Shockwave effects */}
-          {uiShockwaves.map((wave, idx) => {
+          {renderedShockwaves.map((wave, idx) => {
             const scale = 1 + (1 - wave.intensity) * 0.5
             const opacity = wave.intensity * 0.7
             const thickness = 2 + wave.intensity * 3
@@ -2968,11 +2975,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           {/* Overlay: stage_complete */}
           {uiState === 'stage_complete' && (
             <div style={{
-              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.80)',
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.80)',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-              zIndex: 40,
+              zIndex: 130,
               pointerEvents: 'auto',
-            }} onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
+            }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
               {uiEndless
                 ? <div style={{ fontSize: '2rem', fontWeight: 900, color: '#ff8800' }}>🔥 Endless Stage {uiStage} Clear!</div>
                 : <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#ffd666' }}>🏅 Stage {uiStage} Complete!</div>}
@@ -2986,7 +2993,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           )}
 
           {/* Spawn portals */}
-          {spawnPortals.map((portal, idx) => {
+          {renderedPortals.map((portal, idx) => {
             const progress = portal.time / portal.maxTime
             const scale = 1 + progress * 0.8
             const opacity = Math.max(0, 1 - progress * 1.5)
@@ -3008,7 +3015,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           })}
 
           {/* Tower action bursts (upgrade/sell) */}
-          {towerActionBursts.map((burst, idx) => {
+          {renderedActionBursts.map((burst, idx) => {
             const progress = burst.time / burst.maxTime
             const particles = burst.type === 'upgrade' ? 6 : 8
             return Array.from({ length: particles }).map((_, pi) => {
@@ -3033,7 +3040,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           }).flat()}
 
           {/* Coin flow effects */}
-          {coinFlows.map((flow, idx) => {
+          {renderedCoinFlows.map((flow, idx) => {
             const progress = Math.min(flow.time / flow.maxTime, 1)
             const easeProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2
             const x = flow.fromX + (flow.toX - flow.fromX) * easeProgress
@@ -3227,8 +3234,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           })()}
 
           {/* Victory effect confetti */}
-          {victoryEffect && Array.from({ length: 20 }).map((_, idx) => {
-            const angle = (Math.PI * 2 * idx) / 20 + (Math.random() - 0.5) * 0.5
+          {victoryEffect && Array.from({ length: victoryConfettiCount }).map((_, idx) => {
+            const angle = (Math.PI * 2 * idx) / victoryConfettiCount + (Math.random() - 0.5) * 0.5
             const distance = (victoryEffect.time / victoryEffect.maxTime) * (cell * ROWS)
             const x = (boardW / 2) + Math.cos(angle) * distance
             const y = -50 + (victoryEffect.time / victoryEffect.maxTime) * (boardH + 100)
@@ -3253,32 +3260,43 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           {/* Overlay: gameover / victory */}
           {isOver && (
             <div style={{
-              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)',
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14,
-            }}>
-              {uiState === 'victory' ? (
-                <>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#18e6c4' }}>🏆 VICTORY!</div>
-                  <div style={{ color: '#ddd', fontSize: '0.95rem' }}>All 10 stages conquered!</div>
-                  <div style={{ color: '#ffd666', fontWeight: 800, fontSize: '1.1rem' }}>Score: {uiScore.toLocaleString()}</div>
-                  <div style={{ color: '#aaa', fontSize: '0.85rem' }}>Best: {uiHighScore.toLocaleString()}</div>
-                  <button onClick={enterEndless} style={btnStyle('#ff8800', '#000', true)}>🔥 Enter Endless Mode</button>
-                  <button onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#fb7185' }}>💥 GAME OVER</div>
-                  <div style={{ color: '#ddd', fontSize: '1.1rem' }}>Score: <b style={{ color: '#ffd666' }}>{uiScore.toLocaleString()}</b></div>
-                  <div style={{ color: '#aaa', fontSize: '0.9rem' }}>Best: {uiHighScore.toLocaleString()}</div>
-                  <button onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>
-                </>
-              )}
+              zIndex: 135,
+              pointerEvents: 'auto',
+            }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 14,
+                pointerEvents: 'auto',
+              }}>
+                {uiState === 'victory' ? (
+                  <>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#18e6c4' }}>🏆 VICTORY!</div>
+                    <div style={{ color: '#ddd', fontSize: '0.95rem' }}>All 10 stages conquered!</div>
+                    <div style={{ color: '#ffd666', fontWeight: 800, fontSize: '1.1rem' }}>Score: {uiScore.toLocaleString()}</div>
+                    <div style={{ color: '#aaa', fontSize: '0.85rem' }}>Best: {uiHighScore.toLocaleString()}</div>
+                    <button type="button" onClick={enterEndless} style={btnStyle('#ff8800', '#000', true)}>🔥 Enter Endless Mode</button>
+                    <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#fb7185' }}>💥 GAME OVER</div>
+                    <div style={{ color: '#ddd', fontSize: '1.1rem' }}>Score: <b style={{ color: '#ffd666' }}>{uiScore.toLocaleString()}</b></div>
+                    <div style={{ color: '#aaa', fontSize: '0.9rem' }}>Best: {uiHighScore.toLocaleString()}</div>
+                    <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
 
         {/* Sidebar */}
-        <div style={{ flex: 1, minWidth: isCompact ? boardW : 160, width: isCompact ? boardW : 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ flex: isCompact ? 1 : '0 0 auto', minWidth: isCompact ? boardW : (sidebarWidth ?? 160), width: isCompact ? boardW : (sidebarWidth ?? 'auto'), display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ color: '#aaa', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Deploy Ship</div>
           <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : '1fr', gap: 6 }}>
             {TOWER_TYPES.map(t => (
@@ -3353,6 +3371,97 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           </div>
         </div>
       </div>
+
+      {showSettingsModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.58)',
+          zIndex: 120,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 10,
+        }} onMouseDown={() => setShowSettingsModal(false)}>
+          <div style={{
+            width: '100%',
+            maxWidth: 560,
+            maxHeight: 'min(88vh, 760px)',
+            overflowY: 'auto',
+            background: 'linear-gradient(180deg,#101826,#090f1a)',
+            border: '1px solid #3f4f63',
+            borderRadius: 10,
+            boxShadow: '0 12px 28px #00000099',
+            padding: 14,
+            color: '#d7dde5',
+          }} onMouseDown={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: '0.98rem', fontWeight: 900, letterSpacing: 1.1, color: '#d7ecff' }}>GAME SETTINGS</div>
+              <button type="button" onClick={() => setShowSettingsModal(false)} style={btnStyle('#2f3c4f', '#dce7f7', true)}>CLOSE</button>
+            </div>
+
+            <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#9fc7ff', marginBottom: 8 }}>LAYOUT MODE</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'repeat(3, minmax(0,1fr))', gap: 8 }}>
+                {([
+                  { key: 'auto', label: 'AUTO', desc: 'Match device orientation' },
+                  { key: 'portrait', label: 'PORTRAIT', desc: 'Board on top, shop below' },
+                  { key: 'landscape', label: 'LANDSCAPE', desc: 'Bigger board, shop on right' },
+                ] as const).map(mode => (
+                  <button
+                    key={mode.key}
+                    type="button"
+                    onClick={() => setMobileLayoutMode(mode.key)}
+                    style={{
+                      border: `1px solid ${mobileLayoutMode === mode.key ? '#75b8ff' : '#30435e'}`,
+                      background: mobileLayoutMode === mode.key ? '#1c2f4a' : '#121c2c',
+                      color: mobileLayoutMode === mode.key ? '#dff0ff' : '#adc1d8',
+                      borderRadius: 8,
+                      padding: '8px 9px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.76rem', fontWeight: 800, letterSpacing: 0.5 }}>{mode.label}</div>
+                    <div style={{ fontSize: '0.67rem', opacity: 0.8, marginTop: 2 }}>{mode.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#9ff2cc' }}>AUDIO</div>
+                <button type="button" onClick={toggleSound} style={btnStyle('#102b20', '#9ef2cc', true)}>{soundOn ? 'SFX ON' : 'SFX OFF'}</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'repeat(2,minmax(0,1fr))', gap: 8, marginTop: 8 }}>
+                {([
+                  { key: 'bgm', label: 'BGM', color: '#7dd3fc' },
+                  { key: 'explosion', label: 'EXPLOSIONS', color: '#fb923c' },
+                  { key: 'beam', label: 'BEAMS', color: '#22d3ee' },
+                  { key: 'ui', label: 'UI', color: '#c4b5fd' },
+                ] as const).map(control => (
+                  <label key={control.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#d1d5db', fontSize: '0.72rem', letterSpacing: 0.8 }}>
+                    <span style={{ color: control.color, fontWeight: 700 }}>{control.label}: {Math.round(audioMix[control.key] * 100)}%</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={audioMix[control.key]}
+                      onChange={(e) => updateAudioMixSetting(control.key, Number(e.currentTarget.value))}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ color: '#8ca2bb', fontSize: '0.68rem', lineHeight: 1.5 }}>
+              Changes are saved automatically and will persist next time you open the game.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </>
   )
