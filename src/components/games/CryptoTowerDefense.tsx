@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { getGameSoundEnabled, playGameSound, setGameSoundEnabled } from './sound'
+import { getGameSoundEnabled, playGameSound, setGameSoundEnabled, startBGM, stopBGM } from './sound'
 import type { CoinOption } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ type Bullet = {
 }
 
 type GameState = 'idle' | 'playing' | 'wave' | 'stage_complete' | 'gameover' | 'victory'
-type ParticleType = 'death' | 'build' | 'sell' | 'gold' | 'impact' | 'freeze'
+type ParticleType = 'death' | 'build' | 'sell' | 'gold' | 'impact' | 'freeze' | 'burst' | 'ember' | 'spark'
 const MAX_TOWER_LEVEL = 5
 
 function xpNeededForNextLevel(level: number) {
@@ -301,31 +301,93 @@ function triggerEnemyDeath(
   floatingText: {x: number; y: number; text: string; time: number; maxTime: number; color: string}[],
   screenFlashRef: React.MutableRefObject<{time: number; maxTime: number; intensity: number} | null>,
   coinFlowRef: React.MutableRefObject<{fromX: number; fromY: number; toX: number; toY: number; amount: number; time: number; maxTime: number}[]>,
-  setScreenFlashState: (state: number) => void
+  setScreenFlashState: (state: number) => void,
+  shockwaves?: {x: number; y: number; radius: number; time: number; maxTime: number; intensity: number}[]
 ) {
   e.dead = true
   goldRef.current += e.reward
   scoreRef.current += e.reward * 10
 
-  // Death particles based on tower type
-  const deathCount = towerType === 'rocket' ? 6 : towerType === 'aoe' ? 4 : towerType === 'artillery' ? 5 : 3
+  // Enhanced death effect with multiple particle layers
+  const x = e.x + 0.5, y = e.y + 0.5
+  
+  // Death particles - main burst
+  const deathCount = isBoss ? 12 : (towerType === 'rocket' ? 9 : towerType === 'aoe' ? 6 : towerType === 'artillery' ? 8 : 5)
   for (let i = 0; i < deathCount; i++) {
-    const angle = (Math.PI * 2 * i) / deathCount
+    const angle = (Math.PI * 2 * i) / deathCount + (Math.random() - 0.5) * 0.4
+    const speed = isBoss ? 2.2 : 1.8
     particles.push({
-      x: e.x, y: e.y,
+      x, y,
       type: 'death',
-      vx: Math.cos(angle) * 1.8, vy: Math.sin(angle) * 1.8,
-      life: 0, maxLife: 0.4
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 0, maxLife: isBoss ? 0.5 : 0.4
+    })
+  }
+  
+  // Energy burst particles - inner burst for visual drama
+  const burstCount = isBoss ? 20 : 12
+  for (let i = 0; i < burstCount; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const speed = 0.4 + Math.random() * 1.5
+    particles.push({
+      x, y,
+      type: 'burst',
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 0, maxLife: isBoss ? 0.6 : 0.45
+    })
+  }
+  
+  // Ember particles - trailing effect
+  const emberCount = isBoss ? 15 : 8
+  for (let i = 0; i < emberCount; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const speed = 0.3 + Math.random() * 0.9
+    particles.push({
+      x, y,
+      type: 'ember',
+      vx: Math.cos(angle) * speed, vy: (Math.sin(angle) * speed) - 0.5,  // slight upward bias
+      life: 0, maxLife: isBoss ? 0.7 : 0.55
+    })
+  }
+  
+  // Spark particles - quick bright flashes
+  const sparkCount = isBoss ? 12 : 6
+  for (let i = 0; i < sparkCount; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const speed = 1.2 + Math.random() * 2.0
+    particles.push({
+      x, y,
+      type: 'spark',
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 0, maxLife: 0.3
     })
   }
 
   // Floating text
   floatingText.push({ x: e.x, y: e.y, text: `+${e.reward}`, time: 0, maxTime: 2.0, color: '#ffd666' })
 
+  // Play appropriate explosion sound
+  const soundEnabled = getGameSoundEnabled()
+  if (soundEnabled) {
+    if (isBoss) playGameSound('explosion_big')
+    else playGameSound('explosion')
+  }
+
   // Screen flash on boss kill
   if (isBoss) {
     screenFlashRef.current = {time: 0, maxTime: 0.1, intensity: 1.0}
     setScreenFlashState(1.0)
+  }
+
+  // Add shockwave effect
+  if (shockwaves) {
+    shockwaves.push({
+      x: e.x + 0.5, y: e.y + 0.5,
+      radius: isBoss ? 2.0 : 1.2,
+      time: 0,
+      maxTime: isBoss ? 0.35 : 0.25,
+      intensity: isBoss ? 1.0 : 0.8
+    })
   }
 
   // Coin flow animation
@@ -912,6 +974,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const spaceAnimRef = useRef<number>(0)
   const explosionsRef = useRef<{x: number; y: number; radius: number; time: number; type: 'aoe'|'rocket'|'heavy'; maxTime: number}[]>([])
   const [uiExplosions, setUiExplosions] = useState<{x: number; y: number; radius: number; time: number; type: 'aoe'|'rocket'|'heavy'; maxTime: number}[]>([])
+  const shockwavesRef = useRef<{x: number; y: number; radius: number; time: number; maxTime: number; intensity: number}[]>([])
+  const [uiShockwaves, setUiShockwaves] = useState<{x: number; y: number; radius: number; time: number; maxTime: number; intensity: number}[]>([])
   const particlesRef = useRef<{x: number; y: number; type: ParticleType; vx: number; vy: number; life: number; maxLife: number}[]>([])
   const [uiParticles, setUiParticles] = useState<{x: number; y: number; type: ParticleType; vx: number; vy: number; life: number; maxLife: number}[]>([])
   const floatingTextRef = useRef<{x: number; y: number; text: string; time: number; maxTime: number; color: string}[]>([])
@@ -1157,6 +1221,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           if (livesRef.current <= 0) {
             stateRef.current = 'gameover'
             setUiState('gameover')
+            stopBGM()
             if (soundOn) playGameSound('gameover')
             const s = scoreRef.current
             if (s > (Number(localStorage.getItem(STORAGE_KEY) || 0))) {
@@ -1237,7 +1302,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           towerType: 'artillery',
           dead: false,
         })
-        if (soundOn) playGameSound('shoot')
+        if (soundOn) playGameSound('artillery')
       }
     }
 
@@ -1293,7 +1358,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           }
           if (e.hp <= 0) {
             grantTowerXp(tower, e.isBoss ? 28 : 6)
-            triggerEnemyDeath(e, 'laser', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState)
+            triggerEnemyDeath(e, 'laser', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
             if (soundOn) playGameSound('pop')
           }
         }
@@ -1358,7 +1423,13 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             dead: false,
           })
         }
-        if (soundOn) playGameSound('shoot')
+        // Tower-specific sounds
+        if (soundOn) {
+          if (td.key === 'laser') playGameSound('laser')
+          else if (td.key === 'rocket') playGameSound('rocket')
+          else if (td.key === 'artillery') playGameSound('artillery')
+          else playGameSound('shoot')
+        }
         // Muzzle flash
         setFiringTowers(prev => { const s = new Set(prev); s.add(tower.id); return s })
         setTimeout(() => setFiringTowers(prev => { const s = new Set(prev); s.delete(tower.id); return s }), 80)
@@ -1398,7 +1469,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 5, 1.6, 0.22)
               if (e.hp <= 0) { 
                 if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 28 : 6)
-                triggerEnemyDeath(e, 'rocket', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState)
+                triggerEnemyDeath(e, 'rocket', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
                 if (soundOn) playGameSound('combo')
               }
             }
@@ -1415,7 +1486,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 4, 1.3, 0.18)
               if (e.hp <= 0) { 
                 if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 28 : 6)
-                triggerEnemyDeath(e, 'aoe', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState)
+                triggerEnemyDeath(e, 'aoe', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
                 if (soundOn) playGameSound('pop')
               }
             }
@@ -1432,7 +1503,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 5, 1.45, 0.2)
               if (e.hp <= 0) { 
                 if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 28 : 6)
-                triggerEnemyDeath(e, 'artillery', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState)
+                triggerEnemyDeath(e, 'artillery', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
                 if (soundOn) playGameSound('combo')
               }
             }
@@ -1453,7 +1524,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           )
           if (target.hp <= 0) { 
             if (sourceTower) grantTowerXp(sourceTower, target.isBoss ? 28 : 6)
-            triggerEnemyDeath(target, b.towerType, target.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState)
+            triggerEnemyDeath(target, b.towerType, target.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
             if (soundOn) playGameSound('pop')
           }
         }
@@ -1470,6 +1541,13 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       exp.time += dt
     }
     explosionsRef.current = explosionsRef.current.filter(e => e.time < e.maxTime)
+
+    // ── Update shockwaves ──────────────────────────────────────────────────
+    for (const wave of shockwavesRef.current) {
+      wave.time += dt
+      wave.intensity = Math.max(0, 1 - wave.time / wave.maxTime)
+    }
+    shockwavesRef.current = shockwavesRef.current.filter(w => w.time < w.maxTime)
 
     // ── Update particles ────────────────────────────────────────────────────
     for (const p of particlesRef.current) {
@@ -1604,6 +1682,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     setUiBullets([...bulletsRef.current])
     setUiTowers([...towersRef.current])
     setUiExplosions([...explosionsRef.current])
+    setUiShockwaves([...shockwavesRef.current])
     setUiParticles([...particlesRef.current])
     setUiFloatingText([...floatingTextRef.current])
     setUiBossLightning([...bossLightningRef.current])
@@ -1613,7 +1692,10 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
 
   useEffect(() => {
     frameRef.current = requestAnimationFrame(gameLoop)
-    return () => cancelAnimationFrame(frameRef.current)
+    return () => {
+      cancelAnimationFrame(frameRef.current)
+      stopBGM()
+    }
   }, [gameLoop])
 
   // ── Enter Endless Mode ─────────────────────────────────────────────────────
@@ -1650,6 +1732,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     setSelectedTowerOnGrid(null)
     stateRef.current = 'playing'
     setUiState('playing')
+    startBGM()
   }
 
   // ── Start wave ─────────────────────────────────────────────────────────────
@@ -1709,6 +1792,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     setUiBullets([])
     setUiTowers([...towersRef.current])
     setSelectedTowerOnGrid(null)
+    startBGM()
     // Stage transition animation
     stageTransitionRef.current = {phase: 'fade', time: 0, maxTime: 0.3}
     setStageTransitionState({phase: 'fade', progress: 0})
@@ -1925,6 +2009,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
 
   // ── Restart ────────────────────────────────────────────────────────────────
   function restart() {
+    stopBGM()
     const ps = generatePaths(1)
     enemiesRef.current = []
     towersRef.current = []
@@ -2646,11 +2731,31 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               gold: { color: '#ffd666', glow: '#ffd666cc', size: 6 },
               impact: { color: '#f8fafc', glow: '#f59e0bcc', size: 4 },
               freeze: { color: '#d8f3ff', glow: '#7dd3fccc', size: 5 },
+              burst: { color: '#ff1493', glow: '#ff1493dd', size: 5 },
+              ember: { color: '#ff6b35', glow: '#ff6b35bb', size: 4 },
+              spark: { color: '#ffff00', glow: '#ffff00ee', size: 3 },
             }
             const style = styles[p.type]
             const progress = p.life / p.maxLife
-            const opacity = Math.max(0, 1 - progress)
-            const scale = p.type === 'impact' ? (1.15 - progress * 0.5) : (1 - progress * 0.35)
+            let opacity = Math.max(0, 1 - progress)
+            let scale = 1
+            
+            if (p.type === 'impact') {
+              scale = 1.15 - progress * 0.5
+            } else if (p.type === 'spark') {
+              // Sparks fade and shrink fast
+              scale = 1 - progress * 0.8
+              opacity *= 1.2
+            } else if (p.type === 'burst') {
+              // Bursts pulse outward then fade
+              scale = 0.7 + progress * 0.5
+            } else if (p.type === 'ember') {
+              // Embers glow brighter then fade
+              scale = 1 - progress * 0.2
+            } else {
+              scale = 1 - progress * 0.35
+            }
+            
             return (
               <div key={`p-${idx}`} style={{
                 position: 'absolute',
@@ -2658,8 +2763,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                 width: style.size, height: style.size,
                 borderRadius: '50%',
                 background: style.color,
-                boxShadow: `0 0 6px ${style.glow}`,
-                opacity,
+                boxShadow: `0 0 ${6 + (1 - progress) * 4}px ${style.glow}`,
+                opacity: Math.min(1, opacity),
                 transform: `translate(-50%, -50%) scale(${scale})`,
                 pointerEvents: 'none',
               }} />
@@ -2708,6 +2813,27 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                 background: color.inner,
                 boxShadow: `inset 0 0 ${12 * scale}px ${color.outer}99, 0 0 ${20 * scale}px ${color.outer}`,
                 opacity,
+                pointerEvents: 'none',
+                transition: 'none',
+              }} />
+            )
+          })}
+
+          {/* Shockwave effects */}
+          {uiShockwaves.map((wave, idx) => {
+            const scale = 1 + (1 - wave.intensity) * 0.5
+            const opacity = wave.intensity * 0.7
+            const thickness = 2 + wave.intensity * 3
+            return (
+              <div key={`wave-${idx}`} style={{
+                position: 'absolute',
+                left: wave.x * cell - (wave.radius * cell * scale) / 2,
+                top: wave.y * cell - (wave.radius * cell * scale) / 2,
+                width: wave.radius * cell * scale,
+                height: wave.radius * cell * scale,
+                borderRadius: '50%',
+                border: `${thickness}px solid rgba(255, 200, 100, ${opacity})`,
+                boxShadow: `0 0 ${15 * wave.intensity}px rgba(255, 150, 50, ${opacity * 0.8}), inset 0 0 ${10 * wave.intensity}px rgba(255, 200, 100, ${opacity * 0.5})`,
                 pointerEvents: 'none',
                 transition: 'none',
               }} />

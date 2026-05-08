@@ -124,3 +124,6 @@ nbernardo1411
 ---
 
 **Deploy to Netlify**: Add `_redirects` file or configure `netlify.toml` for SPA routing.
+
+
+git add -A && git commit -m "Remove laser beam box glow + move boss HP bar above boss sprite" && git push origin main
