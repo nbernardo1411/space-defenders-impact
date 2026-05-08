@@ -2280,7 +2280,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                   zIndex: 3,
                   boxShadow: selectedTowerOnGrid?.id === tower.id 
                     ? `0 0 12px ${tower.towerDef.color}, 0 0 24px ${tower.towerDef.color}${Math.round(pulseOpacity * 255).toString(16).padStart(2, '0')}`
-                    : tower.type === 'laser' && tower.laserActive > 0 ? '0 0 10px 3px #dbecffaa' : 'none',
+                    : 'none',
                   opacity: tower.type === 'laser' && tower.laserExhaust > 0 ? 0.55 : 1,
                   userSelect: 'none',
                   transform: `rotate(${tower.aimAngle}deg) scale(${scale})`,
