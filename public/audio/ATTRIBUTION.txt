@@ -1,0 +1,24 @@
+Audio assets bundled in this folder were downloaded from OpenGameArt.
+
+1) Theremin Laser SFX by Zane Little Music
+Source page: https://opengameart.org/content/theremin-laser-sfx
+Downloaded file: https://opengameart.org/sites/default/files/theremin_lasers.zip
+Used for: sfx_laser.wav, sfx_shoot.wav, sfx_hit.wav, sfx_combo.wav, sfx_levelup.wav,
+          sfx_ui_select.wav, sfx_ui_tower_select.wav, sfx_ui_swap.wav,
+          sfx_ui_clear.wav, sfx_countdown.wav, sfx_score.wav, sfx_cannon.wav
+Credit note from source page: "Copyright/Attribution Notice: by Zane Little"
+
+2) Vintage SciFi SFX Vol 1 by Zander Noriega
+Source page: https://opengameart.org/content/vintage-scifi-sfx-vol-1
+Downloaded file: https://opengameart.org/sites/default/files/zander-noriega-scifi-vol-1.tar.gz
+Used for: sfx_rocket.wav, sfx_explosion_small.wav, sfx_explosion_big.wav,
+          sfx_gameover.wav, sfx_damage.wav, sfx_whoosh.wav
+
+3) Sunless by Centurion_of_war
+Source page: https://opengameart.org/content/sunless
+Downloaded file: https://opengameart.org/sites/default/files/sunless_0.ogg
+Used for: bgm_scifi_loop.ogg
+
+Publisher note:
+- Verify each asset's exact license text on its OpenGameArt page before final release.
+- If attribution is required, include credits in-game and/or in your game credits page.

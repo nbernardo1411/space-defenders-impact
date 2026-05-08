@@ -1,6 +1,83 @@
 let audioContext: AudioContext | null = null
 let soundEnabledCache: boolean | null = null
 const SOUND_ENABLED_STORAGE_KEY = 'gameSoundEnabled'
+const AUDIO_PACK_STORAGE_KEY = 'spaceImpactAudioPack'
+
+export type GameSoundKind =
+  | 'flap'
+  | 'score'
+  | 'hit'
+  | 'select'
+  | 'swap'
+  | 'clear'
+  | 'shoot'
+  | 'pop'
+  | 'gameover'
+  | 'combo'
+  | 'levelup'
+  | 'countdown'
+  | 'whoosh'
+  | 'laser'
+  | 'rocket'
+  | 'artillery'
+  | 'explosion'
+  | 'explosion_big'
+  | 'select_tower'
+
+type SoundPackConfig = {
+  sfx?: Partial<Record<GameSoundKind, string>>
+  bgm?: string
+  sfxVolume?: number
+  bgmVolume?: number
+}
+
+const DEFAULT_AUDIO_PACK: SoundPackConfig = {
+  // Bundled production assets served from public/audio.
+  bgm: '/audio/bgm_scifi_loop.ogg',
+  bgmVolume: 0.3,
+  sfxVolume: 0.72,
+  sfx: {
+    laser: '/audio/sfx_laser.wav',
+    rocket: '/audio/sfx_rocket.wav',
+    artillery: '/audio/sfx_cannon.wav',
+    explosion: '/audio/sfx_explosion_small.wav',
+    explosion_big: '/audio/sfx_explosion_big.wav',
+    shoot: '/audio/sfx_shoot.wav',
+    pop: '/audio/sfx_hit.wav',
+    combo: '/audio/sfx_combo.wav',
+    levelup: '/audio/sfx_levelup.wav',
+    gameover: '/audio/sfx_gameover.wav',
+    hit: '/audio/sfx_damage.wav',
+    select: '/audio/sfx_ui_select.wav',
+    select_tower: '/audio/sfx_ui_tower_select.wav',
+    swap: '/audio/sfx_ui_swap.wav',
+    clear: '/audio/sfx_ui_clear.wav',
+    countdown: '/audio/sfx_countdown.wav',
+    whoosh: '/audio/sfx_whoosh.wav',
+    score: '/audio/sfx_score.wav',
+  },
+}
+
+declare global {
+  interface Window {
+    spaceImpactSetSoundPack?: (config: SoundPackConfig | null) => void
+    spaceImpactGetSoundPack?: () => SoundPackConfig
+  }
+}
+
+let soundPackCache: SoundPackConfig | null = null
+let bgmElement: HTMLAudioElement | null = null
+
+function mergeSoundPack(base: SoundPackConfig, override?: SoundPackConfig): SoundPackConfig {
+  return {
+    ...base,
+    ...override,
+    sfx: {
+      ...(base.sfx ?? {}),
+      ...(override?.sfx ?? {}),
+    },
+  }
+}
 
 export function getGameSoundEnabled() {
   if (soundEnabledCache !== null) {
@@ -19,6 +96,79 @@ export function setGameSoundEnabled(enabled: boolean) {
   soundEnabledCache = enabled
   if (typeof window !== 'undefined') {
     localStorage.setItem(SOUND_ENABLED_STORAGE_KEY, enabled ? '1' : '0')
+  }
+  if (!enabled) {
+    stopBGM()
+  }
+}
+
+function clamp01(v: number) {
+  return Math.max(0, Math.min(1, v))
+}
+
+function loadSoundPackConfig(): SoundPackConfig {
+  if (soundPackCache) return soundPackCache
+  if (typeof window === 'undefined') {
+    soundPackCache = DEFAULT_AUDIO_PACK
+    return soundPackCache
+  }
+  try {
+    const raw = localStorage.getItem(AUDIO_PACK_STORAGE_KEY)
+    if (!raw) {
+      soundPackCache = DEFAULT_AUDIO_PACK
+      return soundPackCache
+    }
+    const parsed = JSON.parse(raw) as SoundPackConfig
+    soundPackCache = mergeSoundPack(DEFAULT_AUDIO_PACK, parsed ?? undefined)
+    return soundPackCache
+  } catch {
+    soundPackCache = DEFAULT_AUDIO_PACK
+    return soundPackCache
+  }
+}
+
+function getSoundPackConfig() {
+  return loadSoundPackConfig()
+}
+
+export function setGameSoundPack(config: SoundPackConfig | null) {
+  soundPackCache = mergeSoundPack(DEFAULT_AUDIO_PACK, config ?? undefined)
+  if (typeof window !== 'undefined') {
+    if (!config) {
+      localStorage.removeItem(AUDIO_PACK_STORAGE_KEY)
+    } else {
+      localStorage.setItem(AUDIO_PACK_STORAGE_KEY, JSON.stringify(config))
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.spaceImpactSetSoundPack = (config: SoundPackConfig | null) => {
+    setGameSoundPack(config)
+    // Apply changes immediately to active BGM.
+    stopBGM()
+    if (getGameSoundEnabled()) {
+      startBGM()
+    }
+  }
+  window.spaceImpactGetSoundPack = () => getSoundPackConfig()
+}
+
+function tryPlaySample(kind: GameSoundKind) {
+  if (typeof window === 'undefined') return false
+  const pack = getSoundPackConfig()
+  const sampleUrl = pack.sfx?.[kind]
+  if (!sampleUrl) return false
+  try {
+    const a = new Audio(sampleUrl)
+    a.preload = 'auto'
+    a.volume = clamp01((pack.sfxVolume ?? 0.7))
+    void a.play().catch(() => {
+      // Ignore playback errors; synth fallback handles the event.
+    })
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -66,50 +216,69 @@ function tone(
 
 let bgmOscillators: OscillatorNode[] = []
 
+function stopSynthBGM() {
+  bgmOscillators.forEach(osc => {
+    try { osc.stop() } catch { /* noop */ }
+  })
+  bgmOscillators = []
+}
+
+function startSynthBGM() {
+  const ctx = getAudioContext()
+  if (!ctx) return
+  stopSynthBGM()
+
+  // Layered sci-fi ambient: deep bass, mid drone, high shimmer.
+  const createBgmLayer = (freq: number, waveType: OscillatorType, volumeStart: number) => {
+    const osc = ctx.createOscillator()
+    osc.type = waveType
+    osc.frequency.setValueAtTime(freq, ctx.currentTime)
+
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(volumeStart * 0.12, ctx.currentTime)
+
+    // Pulsing effect with slow LFO for a more cinematic ambience.
+    const lfo = ctx.createOscillator()
+    lfo.frequency.setValueAtTime(0.43, ctx.currentTime)
+    const lfoGain = ctx.createGain()
+    lfoGain.gain.setValueAtTime(volumeStart * 0.075, ctx.currentTime)
+
+    lfo.connect(lfoGain)
+    lfoGain.connect(gain.gain)
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.start()
+    lfo.start()
+
+    bgmOscillators.push(osc, lfo)
+  }
+
+  createBgmLayer(55, 'sine', 0.8)
+  createBgmLayer(110, 'triangle', 0.6)
+  createBgmLayer(220, 'sine', 0.5)
+  createBgmLayer(440, 'sine', 0.34)
+}
+
 export function startBGM() {
   if (!getGameSoundEnabled()) return
   try {
-    const ctx = getAudioContext()
-    if (!ctx) return
-    
-    // Stop existing BGM
-    bgmOscillators.forEach(osc => {
-      try { osc.stop() } catch { }
-    })
-    bgmOscillators = []
-
-    // Sci-fi ambient BGM: layered drone with pulsing bass
-    const createBgmLayer = (freq: number, waveType: OscillatorType, volumeStart: number) => {
-      const osc = ctx.createOscillator()
-      osc.type = waveType
-      osc.frequency.setValueAtTime(freq, ctx.currentTime)
-      
-      const gain = ctx.createGain()
-      gain.gain.setValueAtTime(volumeStart * 0.15, ctx.currentTime)
-      
-      // Pulsing effect - modulate volume every 2 seconds
-      const lfo = ctx.createOscillator()
-      lfo.frequency.setValueAtTime(0.5, ctx.currentTime)
-      const lfoGain = ctx.createGain()
-      lfoGain.gain.setValueAtTime(volumeStart * 0.08, ctx.currentTime)
-      
-      lfo.connect(lfoGain)
-      lfoGain.connect(gain.gain)
-      
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      
-      osc.start()
-      lfo.start()
-      
-      bgmOscillators.push(osc, lfo)
+    stopBGM()
+    const pack = getSoundPackConfig()
+    if (pack.bgm) {
+      const audio = new Audio(pack.bgm)
+      audio.loop = true
+      audio.preload = 'auto'
+      audio.volume = clamp01(pack.bgmVolume ?? 0.32)
+      bgmElement = audio
+      void audio.play().catch(() => {
+        // If remote/local BGM fails, fall back to synth BGM.
+        startSynthBGM()
+      })
+      return
     }
-
-    // Layered sci-fi ambient: deep bass, mid drone, high shimmer
-    createBgmLayer(55, 'sine', 0.8)      // Deep bass foundation
-    createBgmLayer(110, 'triangle', 0.6) // Mid drone
-    createBgmLayer(220, 'sine', 0.5)     // Upper harmonics
-    createBgmLayer(440, 'sine', 0.35)    // High shimmer
+    startSynthBGM()
   } catch {
     // BGM should never break gameplay
   }
@@ -117,20 +286,23 @@ export function startBGM() {
 
 export function stopBGM() {
   try {
-    bgmOscillators.forEach(osc => {
-      try { osc.stop() } catch { }
-    })
-    bgmOscillators = []
+    if (bgmElement) {
+      bgmElement.pause()
+      bgmElement.currentTime = 0
+      bgmElement = null
+    }
+    stopSynthBGM()
   } catch {
     // Cleanup should never break gameplay
   }
 }
 
 export function playGameSound(
-  kind: 'flap' | 'score' | 'hit' | 'select' | 'swap' | 'clear' | 'shoot' | 'pop' | 'gameover' | 'combo' | 'levelup' | 'countdown' | 'whoosh' | 'laser' | 'rocket' | 'artillery' | 'explosion' | 'explosion_big' | 'select_tower'
+  kind: GameSoundKind
 ) {
   try {
     if (!getGameSoundEnabled()) return
+    if (tryPlaySample(kind)) return
 
     if (kind === 'flap') {
       tone(440, 70, 'triangle', 0.06)
