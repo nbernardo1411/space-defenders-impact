@@ -145,8 +145,10 @@
 .raid__hp {
   justify-self: end;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
+  max-width: 240px;
   min-height: 42px;
   padding: 8px 10px;
   border-radius: 8px;
@@ -163,6 +165,16 @@
 .raid__pip--filled {
   background: linear-gradient(90deg, #991b1b, #ef233c, #fca5a5);
   box-shadow: 0 0 12px rgba(239, 35, 60, 0.65);
+}
+
+.raid__pip--force {
+  border-color: rgba(34, 211, 238, 0.72);
+  background: rgba(8, 47, 73, 0.55);
+}
+
+.raid__pip--force.raid__pip--filled {
+  background: linear-gradient(90deg, #083344, #0891b2, #a5f3fc);
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.82);
 }
 
 .raid__exit,
@@ -192,6 +204,15 @@
   inset: 0;
 }
 
+.raid__fx-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .raid__playfield::before,
 .raid__playfield::after {
   content: '';
@@ -218,14 +239,11 @@
 .raid__player,
 .raid__option,
 .raid__enemy,
-.raid__shot,
-.raid__enemy-shot,
 .raid__power,
-.raid__spark,
-.raid__ripple,
 .raid__finger-guide {
   position: absolute;
   transform: translate(-50%, -50%);
+  will-change: transform, opacity;
 }
 
 .raid__player {
@@ -279,6 +297,26 @@
   border-radius: 50%;
   box-shadow: inset 0 0 24px rgba(196, 181, 253, 0.24), 0 0 24px rgba(196, 181, 253, 0.32);
   animation: raidShield 0.72s ease-in-out infinite alternate;
+}
+
+.raid__player--forcefield {
+  filter: drop-shadow(0 0 26px rgba(34, 211, 238, 0.95));
+}
+
+.raid__player--forcefield::before {
+  content: '';
+  position: absolute;
+  width: 104px;
+  aspect-ratio: 1;
+  border: 2px solid rgba(165, 243, 252, 0.76);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(34, 211, 238, 0.12), transparent 58%),
+    conic-gradient(from 0deg, transparent, rgba(34, 211, 238, 0.58), transparent, rgba(255, 255, 255, 0.42), transparent);
+  box-shadow:
+    inset 0 0 34px rgba(34, 211, 238, 0.24),
+    0 0 30px rgba(34, 211, 238, 0.42);
+  animation: raidForceField 1s linear infinite;
 }
 
 .raid__player--down {
@@ -641,26 +679,26 @@
   height: 24px;
   border-radius: 999px;
   background: linear-gradient(180deg, #ffffff, #ef233c, transparent);
-  box-shadow: 0 0 14px rgba(239, 35, 60, 0.9);
+  box-shadow: 0 0 8px rgba(239, 35, 60, 0.78);
 }
 
 .raid__shot--laser {
   width: 8px;
   height: 52px;
   background: linear-gradient(180deg, #ffffff, #67e8f9, #0891b2);
-  box-shadow: 0 0 24px rgba(103, 232, 249, 0.95);
+  box-shadow: 0 0 12px rgba(103, 232, 249, 0.8);
 }
 
 .raid__shot--spread {
   background: linear-gradient(180deg, #ffffff, #fbbf24, transparent);
-  box-shadow: 0 0 14px rgba(251, 191, 36, 0.86);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.76);
 }
 
 .raid__shot--scatter {
   width: 7px;
   height: 18px;
   background: linear-gradient(180deg, #ffffff, #fb7185, transparent);
-  box-shadow: 0 0 14px rgba(251, 113, 133, 0.84);
+  box-shadow: 0 0 8px rgba(251, 113, 133, 0.72);
 }
 
 .raid__shot--rocket {
@@ -668,7 +706,7 @@
   height: 22px;
   border-radius: 50% 50% 8px 8px;
   background: linear-gradient(180deg, #fef3c7, #f97316 44%, #7c2d12);
-  box-shadow: 0 0 18px rgba(249, 115, 22, 0.9);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.78);
 }
 
 .raid__enemy-shot {
@@ -677,7 +715,7 @@
   height: 11px;
   border-radius: 50%;
   background: #fb7185;
-  box-shadow: 0 0 16px rgba(251, 113, 133, 0.92);
+  box-shadow: 0 0 9px rgba(251, 113, 133, 0.78);
 }
 
 .raid__enemy-shot--boss,
@@ -698,7 +736,7 @@
   border: 2px solid #d8b4fe;
   border-radius: 50%;
   background: radial-gradient(circle, #ffffff 0 16%, #a855f7 18% 38%, transparent 42%);
-  box-shadow: 0 0 18px rgba(168, 85, 247, 0.95), inset 0 0 10px rgba(216, 180, 254, 0.55);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.82);
   animation: raidOrbShot 0.7s linear infinite;
 }
 
@@ -707,7 +745,7 @@
   height: 34px;
   border-radius: 999px 999px 2px 2px;
   background: linear-gradient(180deg, #ecfeff, #22d3ee 38%, #164e63);
-  box-shadow: 0 0 18px rgba(34, 211, 238, 0.85);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.72);
   clip-path: polygon(50% 0, 100% 24%, 72% 100%, 28% 100%, 0 24%);
   animation: raidBladeShot 0.18s ease-in-out infinite alternate;
 }
@@ -719,7 +757,7 @@
   background:
     radial-gradient(circle at 38% 32%, #ffffff 0 10%, transparent 12%),
     conic-gradient(from 0deg, #fbbf24, #ef233c, #7f1d1d, #fbbf24);
-  box-shadow: 0 0 24px rgba(251, 191, 36, 0.9), 0 0 34px rgba(239, 35, 60, 0.65);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.82);
   animation: raidSuperShot 0.34s linear infinite;
 }
 
@@ -989,6 +1027,11 @@
   to { transform: scale(1.08); opacity: 0.9; }
 }
 
+@keyframes raidForceField {
+  from { transform: scale(0.92) rotate(0deg); opacity: 0.56; }
+  to { transform: scale(1.08) rotate(360deg); opacity: 0.92; }
+}
+
 @keyframes raidArenaPulse {
   from { opacity: 0.5; transform: scale(1); }
   to { opacity: 0.9; transform: scale(1.04); }
@@ -1066,6 +1109,11 @@
 }
 
 @media (max-width: 860px) {
+  .raid__speedlines,
+  .raid__playfield::after {
+    opacity: 0.22;
+  }
+
   .raid__hud {
     grid-template-columns: minmax(42px, 0.82fr) minmax(38px, 0.62fr) minmax(50px, 0.95fr) auto auto auto;
     inset: max(8px, env(safe-area-inset-top)) 8px auto 8px;
@@ -1101,6 +1149,8 @@
     justify-self: end;
     justify-content: center;
     gap: 3px;
+    row-gap: 2px;
+    max-width: 98px;
     min-height: 28px;
     padding: 6px 6px;
     border-radius: 5px;
@@ -1108,8 +1158,8 @@
   }
 
   .raid__pip {
-    width: 8px;
-    height: 6px;
+    width: 7px;
+    height: 5px;
   }
 
   .raid__pause,
@@ -1135,6 +1185,22 @@
     padding: 7px 10px;
     font-size: 0.62rem;
     letter-spacing: 0.08rem;
+  }
+
+  .raid__enemy--boss::before,
+  .raid__enemy--boss::after,
+  .raid__boss-reticle {
+    opacity: 0.35;
+  }
+
+  .raid__boss-aura span {
+    box-shadow: 0 0 10px rgba(239, 35, 60, 0.22);
+  }
+
+  .raid__shot,
+  .raid__enemy-shot,
+  .raid__spark {
+    box-shadow: 0 0 8px currentColor;
   }
 
   .raid__panel {
