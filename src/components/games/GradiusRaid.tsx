@@ -1578,8 +1578,6 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         >
           <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={player.ship.key === 'dreadnought' ? 88 : player.ship.key === 'xwing' ? 78 : 74} />
           <span className="raid__engine" />
-          <span className="raid__wing-glow raid__wing-glow--left" />
-          <span className="raid__wing-glow raid__wing-glow--right" />
         </div>
         {player.optionTimer > 0 && (
           <>

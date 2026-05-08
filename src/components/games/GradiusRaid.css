@@ -290,17 +290,17 @@
 }
 
 .raid__player--shielded {
-  filter: drop-shadow(0 0 20px rgba(196, 181, 253, 0.95));
+  filter: drop-shadow(0 0 12px rgba(196, 181, 253, 0.52));
 }
 
 .raid__player--shielded::before {
   content: '';
   position: absolute;
-  width: 84px;
+  width: 76px;
   aspect-ratio: 1;
-  border: 2px solid rgba(196, 181, 253, 0.68);
+  border: 1px solid rgba(196, 181, 253, 0.42);
   border-radius: 50%;
-  box-shadow: inset 0 0 24px rgba(196, 181, 253, 0.24), 0 0 24px rgba(196, 181, 253, 0.32);
+  box-shadow: inset 0 0 16px rgba(196, 181, 253, 0.14), 0 0 14px rgba(196, 181, 253, 0.18);
   animation: raidShield 0.72s ease-in-out infinite alternate;
 }
 
@@ -331,43 +331,21 @@
 
 .raid__engine {
   position: absolute;
-  bottom: -24px;
+  bottom: -12px;
   left: 50%;
-  width: 26px;
-  height: 82px;
+  width: 30px;
+  height: 34px;
   transform: translateX(-50%);
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.95), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 35, 60, 0.86) 28%, rgba(251, 191, 36, 0.42) 58%, transparent);
-  clip-path: polygon(50% 100%, 0 0, 100% 0);
-  filter: blur(0.85px);
-  opacity: 0.94;
+    radial-gradient(ellipse at 28% 0%, rgba(255, 255, 255, 0.95) 0 9%, rgba(103, 232, 249, 0.88) 10% 22%, rgba(239, 35, 60, 0.46) 34%, transparent 72%),
+    radial-gradient(ellipse at 72% 0%, rgba(255, 255, 255, 0.95) 0 9%, rgba(103, 232, 249, 0.88) 10% 22%, rgba(239, 35, 60, 0.46) 34%, transparent 72%),
+    radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.88) 0 7%, rgba(239, 35, 60, 0.54) 18%, transparent 68%);
+  clip-path: polygon(0 0, 100% 0, 82% 72%, 50% 100%, 18% 72%);
+  filter: blur(0.35px);
+  opacity: 0.92;
   z-index: -1;
-  box-shadow: 0 0 22px rgba(239, 35, 60, 0.48), 0 0 34px rgba(251, 191, 36, 0.16);
-  animation: raidEngine 0.1s linear infinite alternate;
-}
-
-.raid__wing-glow {
-  position: absolute;
-  bottom: 5px;
-  width: 10px;
-  height: 50px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #ffffff, #ef233c 36%, rgba(251, 191, 36, 0.28), transparent);
-  opacity: 0.8;
-  filter: blur(1.15px);
-  transform-origin: 50% 0;
-  box-shadow: 0 0 16px rgba(239, 35, 60, 0.45), 0 0 24px rgba(251, 191, 36, 0.12);
-}
-
-.raid__wing-glow--left {
-  left: calc(50% - 27px);
-  transform: translateX(-50%) rotate(10deg);
-}
-
-.raid__wing-glow--right {
-  left: calc(50% + 27px);
-  transform: translateX(-50%) rotate(-10deg);
+  box-shadow: 0 0 16px rgba(239, 35, 60, 0.42), 0 0 18px rgba(103, 232, 249, 0.2);
+  animation: raidEngine 0.13s linear infinite alternate;
 }
 
 .raid__option {
@@ -1170,8 +1148,8 @@
 }
 
 @keyframes raidEngine {
-  from { height: 58px; opacity: 0.7; }
-  to { height: 88px; opacity: 0.98; }
+  from { transform: translateX(-50%) scaleY(0.88); opacity: 0.72; }
+  to { transform: translateX(-50%) scaleY(1.12); opacity: 0.96; }
 }
 
 @keyframes raidShield {
@@ -1325,6 +1303,20 @@
   .raid__player {
     width: 62px;
     height: 76px;
+  }
+
+  .raid__player--shielded::before {
+    width: 62px;
+    border-color: rgba(196, 181, 253, 0.32);
+    box-shadow: inset 0 0 10px rgba(196, 181, 253, 0.1), 0 0 10px rgba(196, 181, 253, 0.14);
+  }
+
+  .raid__engine {
+    bottom: -8px;
+    width: 24px;
+    height: 26px;
+    opacity: 0.88;
+    filter: blur(0.3px);
   }
 
   .raid__option {
