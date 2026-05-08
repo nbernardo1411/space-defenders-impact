@@ -34,12 +34,13 @@ let _bid = 1
 let _sid = 1
 
 const DREADNOUGHT_SCOUT_COUNT = 3
-const DREADNOUGHT_SCOUT_INTERVAL = 10
+const DREADNOUGHT_SCOUT_INTERVAL = 16
 const DREADNOUGHT_SCOUT_ATTACK_TIME = 5
 const DREADNOUGHT_SCOUT_RATE = 0.5
 const DREADNOUGHT_SCOUT_DAMAGE = 8
 const DREADNOUGHT_SCOUT_COLOR = '#f43f5e'
 const DREADNOUGHT_SCOUT_DOCK_RADIUS = 0.85
+const DREADNOUGHT_FIELD_LIMIT = 4
 
 type CommanderAbilityKey = 'ion' | 'freeze' | 'repair'
 type CommanderCooldowns = Record<CommanderAbilityKey, number>
@@ -397,6 +398,10 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     if (activeEnemies.length === 0) return null
     const sorted = [...activeEnemies].sort((a, b) => (b.pathIndex + b.progress) - (a.pathIndex + a.progress))
     return sorted[seed % Math.min(3, sorted.length)] ?? sorted[0]
+  }
+
+  function getDreadnoughtFieldCount() {
+    return towersRef.current.filter(t => t.type === 'dreadnought').length
   }
 
   function spawnDreadnoughtScouts(tower: Tower, enemies: Enemy[], count: number) {
@@ -1449,6 +1454,11 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
     const tDef = TOWER_TYPES.find(t => t.key === selectedTowerKey)!
     const footprint = getTowerFootprint(selectedTowerKey)
+    if (selectedTowerKey === 'dreadnought' && getDreadnoughtFieldCount() >= DREADNOUGHT_FIELD_LIMIT) {
+      playGameSound('hit')
+      floatingTextRef.current.push({ x: COLS / 2, y: 1.2, text: `DREADNOUGHT ${DREADNOUGHT_FIELD_LIMIT}/${DREADNOUGHT_FIELD_LIMIT}`, time: 0, maxTime: 0.75, color: '#fda4af' })
+      return
+    }
     if (!canPlaceTowerAt(col, row, footprint)) {
       playGameSound('hit')
       return
@@ -1801,6 +1811,8 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   })
   const compactTowerShop = isCompact
   const selectedTowerDef = selectedTowerKey ? TOWER_TYPES.find(t => t.key === selectedTowerKey) ?? null : null
+  const dreadnoughtFieldCount = uiTowers.filter(t => t.type === 'dreadnought').length
+  const dreadnoughtLimitReached = dreadnoughtFieldCount >= DREADNOUGHT_FIELD_LIMIT
 
 
   return (
@@ -1955,7 +1967,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               const canAfford = tDef != null && goldRef.current >= tDef.cost
               const selectedFootprint = selectedTowerKey ? getTowerFootprint(selectedTowerKey) : 1
               const isInPlacementPreview = hoveredCell != null && selectedTowerKey != null && c >= hoveredCell[0] && c < hoveredCell[0] + selectedFootprint && r >= hoveredCell[1] && r < hoveredCell[1] + selectedFootprint
-              const canPlacePreview = hoveredCell != null && selectedTowerKey != null && canPlaceTowerAt(hoveredCell[0], hoveredCell[1], selectedFootprint)
+              const canPlacePreview = hoveredCell != null && selectedTowerKey != null && canPlaceTowerAt(hoveredCell[0], hoveredCell[1], selectedFootprint) && (selectedTowerKey !== 'dreadnought' || !dreadnoughtLimitReached)
               return (
                 <div
                   key={key}
@@ -2931,21 +2943,32 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
         <div style={{ flex: isCompact ? 1 : isLandscapeMobile ? 1 : '0 0 auto', minWidth: isCompact ? boardW : 0, width: isCompact ? boardW : undefined, display: 'flex', flexDirection: 'column', gap: isCompact ? 3 : 6, minHeight: 0, overflow: 'hidden', maxHeight: isLandscapeMobile ? boardH : undefined, overflowY: isLandscapeMobile ? 'auto' : undefined }}>
           {(!isCompact && !isLandscapeMobile) && <div style={{ color: '#aaa', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Deploy Ship</div>}
           <div style={{ display: 'grid', gridTemplateColumns: compactTowerShop ? 'repeat(5,minmax(0,1fr))' : isLandscapeMobile ? 'repeat(2,minmax(0,1fr))' : '1fr', gridTemplateRows: compactTowerShop ? 'repeat(2, 58px)' : undefined, gap: isCompact ? 4 : 5, flex: compactTowerShop ? '0 0 auto' : isCompact ? 1 : undefined, minHeight: isCompact ? 0 : undefined }}>
-            {TOWER_TYPES.map(t => (
+            {TOWER_TYPES.map(t => {
+              const isDreadnoughtCapped = t.key === 'dreadnought' && dreadnoughtLimitReached
+              return (
               <button
                 key={t.key}
-                onClick={() => { setSelectedTowerKey(prev => prev === t.key ? null : t.key as TowerKey); setSelectedTowerOnGrid(null) }}
+                onClick={() => {
+                  if (isDreadnoughtCapped && selectedTowerKey !== t.key) {
+                    playGameSound('hit')
+                    setSelectedTowerOnGrid(null)
+                    return
+                  }
+                  setSelectedTowerKey(prev => prev === t.key ? null : t.key as TowerKey)
+                  setSelectedTowerOnGrid(null)
+                }}
                 style={{
                   background: selectedTowerKey === t.key ? t.color + '33' : '#111',
                   border: `2px solid ${selectedTowerKey === t.key ? t.color : '#333'}`,
                   borderRadius: 8,
                   padding: compactTowerShop ? '3px 4px' : isCompact ? '4px 5px' : '6px 7px',
-                  cursor: 'pointer',
+                  cursor: isDreadnoughtCapped && selectedTowerKey !== t.key ? 'not-allowed' : 'pointer',
                   color: '#fff',
                   textAlign: 'left',
                   transition: 'all 0.15s',
                   height: isCompact ? '100%' : undefined,
                   boxSizing: 'border-box',
+                  opacity: isDreadnoughtCapped && selectedTowerKey !== t.key ? 0.55 : 1,
                 }}
               >
                 {isCompact ? (
@@ -2961,7 +2984,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                       <TowerShip tType={t.key} color={t.color} size={compactTowerShop ? 16 : 18} />
                     </div>
                     <span style={{ fontWeight: 800, color: t.color, fontSize: compactTowerShop ? '0.55rem' : '0.68rem', textAlign: 'center', lineHeight: 1.05, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
-                    <span style={{ color: '#ffd666', fontSize: compactTowerShop ? '0.52rem' : '0.62rem', fontWeight: 700, lineHeight: 1 }}>{t.cost}</span>
+                    <span style={{ color: '#ffd666', fontSize: compactTowerShop ? '0.52rem' : '0.62rem', fontWeight: 700, lineHeight: 1 }}>{t.key === 'dreadnought' ? `${t.cost} ${dreadnoughtFieldCount}/${DREADNOUGHT_FIELD_LIMIT}` : t.cost}</span>
                     {!compactTowerShop && <span style={{ color: '#888', fontSize: '0.55rem', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{t.desc}</span>}
                   </div>
                 ) : (
@@ -2979,14 +3002,15 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                         <span style={{ fontWeight: 800, color: t.color, fontSize: isLandscapeMobile ? '0.76rem' : '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
-                        <span style={{ color: '#ffd666', fontSize: isLandscapeMobile ? '0.68rem' : '0.76rem', whiteSpace: 'nowrap', flexShrink: 0 }}>CR {t.cost}</span>
+                        <span style={{ color: '#ffd666', fontSize: isLandscapeMobile ? '0.68rem' : '0.76rem', whiteSpace: 'nowrap', flexShrink: 0 }}>CR {t.cost}{t.key === 'dreadnought' ? ` | ${dreadnoughtFieldCount}/${DREADNOUGHT_FIELD_LIMIT}` : ''}</span>
                       </div>
                       <div style={{ color: '#888', fontSize: isLandscapeMobile ? '0.62rem' : '0.7rem', marginTop: 2, lineHeight: 1.3, whiteSpace: isLandscapeMobile ? 'nowrap' : undefined, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.desc}</div>
                     </div>
                   </div>
                 )}
               </button>
-            ))}
+              )
+            })}
           </div>
 
           {isCompact && (
