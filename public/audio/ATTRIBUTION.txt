@@ -11,10 +11,19 @@ Credit note from source page: "Copyright/Attribution Notice: by Zane Little"
 2) Vintage SciFi SFX Vol 1 by Zander Noriega
 Source page: https://opengameart.org/content/vintage-scifi-sfx-vol-1
 Downloaded file: https://opengameart.org/sites/default/files/zander-noriega-scifi-vol-1.tar.gz
-Used for: sfx_rocket.wav, sfx_explosion_small.wav, sfx_explosion_big.wav,
-          sfx_gameover.wav, sfx_damage.wav, sfx_whoosh.wav
+Used for: sfx_gameover.wav, sfx_damage.wav, sfx_whoosh.wav
 
-3) Sunless by Centurion_of_war
+3) 40 Sci Fi NES Sound Effects by LazyNerdComp
+Source page: https://opengameart.org/content/40-sci-fi-nes-sound-effects
+Downloaded file: https://opengameart.org/sites/default/files/nes-sci-fi-fx-wav-ftm.zip
+Used for: sfx_explosion_small.wav, sfx_explosion_big.wav
+
+4) Theremin Laser SFX by Zane Little Music (additional clip use)
+Source page: https://opengameart.org/content/theremin-laser-sfx
+Downloaded file: https://opengameart.org/sites/default/files/theremin_lasers.zip
+Used for: sfx_rocket.wav
+
+5) Sunless by Centurion_of_war
 Source page: https://opengameart.org/content/sunless
 Downloaded file: https://opengameart.org/sites/default/files/sunless_0.ogg
 Used for: bgm_scifi_loop.ogg

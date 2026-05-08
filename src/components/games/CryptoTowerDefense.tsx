@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { getGameSoundEnabled, playGameSound, setGameSoundEnabled, startBGM, stopBGM } from './sound'
+import { getGameAudioMixSettings, getGameSoundEnabled, playGameSound, setGameAudioMixSettings, setGameSoundEnabled, startBGM, stopBGM } from './sound'
+import type { AudioMixSettings } from './sound'
 import type { CoinOption } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -921,6 +922,8 @@ function MothershipSpawnIcon({ size }: { size: number }) {
 export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins: CoinOption[]; onClose: () => void }) {
   const [cell, setCell] = useState(calcCell)
   const [soundOn, setSoundOn] = useState(getGameSoundEnabled)
+  const [audioMix, setAudioMix] = useState<AudioMixSettings>(getGameAudioMixSettings)
+  const [showAudioMix, setShowAudioMix] = useState(false)
   const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 900 : false)
 
   // Game data refs (avoid re-render on every frame)
@@ -970,6 +973,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const dragOffsetRef = useRef<[number, number]>([0, 0])
   const dragTouchPointRef = useRef<{x: number; y: number} | null>(null)
   const dragMousePointRef = useRef<{x: number; y: number} | null>(null)
+  const gameRootRef = useRef<HTMLDivElement | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const spaceCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const spaceAnimRef = useRef<number>(0)
@@ -1015,6 +1019,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const [uiBossLightning, setUiBossLightning] = useState<{fromX: number; fromY: number; toX: number; toY: number; time: number; maxTime: number}[]>([])
   const bossScreenFlashRef = useRef<{time: number; maxTime: number; intensity: number} | null>(null)
   const [bossScreenFlashState, setBossScreenFlashState] = useState(0)
+  const prevUiStateRef = useRef<GameState>('gameover')
 
   const coinsRef = useRef(availableCoins)
   useEffect(() => { coinsRef.current = availableCoins }, [availableCoins])
@@ -1097,9 +1102,62 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   // ── Sound toggle ──────────────────────────────────────────────────────────
   function toggleSound() {
     const next = !soundOn
-    setSoundOn(next)
     setGameSoundEnabled(next)
+    setSoundOn(next)
+    if (next) {
+      startBGM()
+      playGameSound('select')
+    } else {
+      stopBGM()
+    }
   }
+
+  function updateAudioMixSetting(key: keyof AudioMixSettings, value: number) {
+    const nextMix: AudioMixSettings = {
+      ...audioMix,
+      [key]: Math.max(0, Math.min(1, value)),
+    }
+    setAudioMix(nextMix)
+    setGameAudioMixSettings(nextMix)
+    if (soundOn && (key === 'bgm' || key === 'master')) {
+      startBGM()
+    }
+  }
+
+  useEffect(() => {
+    if (soundOn) {
+      startBGM()
+    } else {
+      stopBGM()
+    }
+  }, [soundOn])
+
+  useEffect(() => {
+    if (!soundOn) {
+      prevUiStateRef.current = uiState
+      return
+    }
+    const prevState = prevUiStateRef.current
+    if (uiState === 'idle' && prevState !== 'idle') {
+      playGameSound('explosion_big')
+      startBGM()
+    }
+    prevUiStateRef.current = uiState
+  }, [uiState, soundOn])
+
+  useEffect(() => {
+    function handleButtonClickSfx(e: MouseEvent) {
+      if (!soundOn) return
+      const target = e.target as HTMLElement | null
+      const root = gameRootRef.current
+      if (!target || !root || !root.contains(target)) return
+      if (target.closest('button')) {
+        playGameSound('select')
+      }
+    }
+    document.addEventListener('click', handleButtonClickSfx, true)
+    return () => document.removeEventListener('click', handleButtonClickSfx, true)
+  }, [soundOn])
 
   // ── Auto-play next wave ────────────────────────────────────────────────────
   useEffect(() => {
@@ -1222,7 +1280,6 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           if (livesRef.current <= 0) {
             stateRef.current = 'gameover'
             setUiState('gameover')
-            stopBGM()
             if (soundOn) playGameSound('gameover')
             const s = scoreRef.current
             if (s > (Number(localStorage.getItem(STORAGE_KEY) || 0))) {
@@ -2010,7 +2067,6 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
 
   // ── Restart ────────────────────────────────────────────────────────────────
   function restart() {
-    stopBGM()
     const ps = generatePaths(1)
     enemiesRef.current = []
     towersRef.current = []
@@ -2168,7 +2224,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
         }
       `}</style>
-      <div style={{
+      <div ref={gameRootRef} style={{
       position: 'fixed', inset: 0, zIndex: 1000,
       background: 'radial-gradient(120% 180% at 10% 0%, #203228 0%, #0c1411 42%, #070b09 100%)',
       display: 'flex', flexDirection: 'column',
@@ -2191,8 +2247,45 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         <div style={{ flex: 1, textAlign: 'center', fontWeight: 900, fontSize: isCompact ? '0.9rem' : '1.05rem', color: '#ffcf86', letterSpacing: 1.6, whiteSpace: 'nowrap', textTransform: 'uppercase', textShadow: '0 0 12px #ff7b2f66' }}>
           SPACE IMPACT DEFENSE
         </div>
+        <button onClick={() => setShowAudioMix(v => !v)} style={btnStyle('#2d2148', '#d3c6ff')} aria-label="Audio Mixer">{showAudioMix ? 'MIX ON' : 'AUDIO'}</button>
         <button onClick={toggleSound} style={btnStyle('#102b20','#9ef2cc')}>{soundOn ? 'SFX ON' : 'SFX OFF'}</button>
       </div>
+
+      {showAudioMix && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isCompact ? '1fr' : 'repeat(4, minmax(0, 1fr))',
+          gap: 8,
+          marginBottom: 8,
+          width: '100%',
+          maxWidth: chromeMaxW,
+          position: 'relative',
+          zIndex: 1,
+          background: '#111827cc',
+          border: '1px solid #334155',
+          borderRadius: 8,
+          padding: '8px 10px'
+        }}>
+          {([
+            { key: 'bgm', label: 'BGM', color: '#7dd3fc' },
+            { key: 'explosion', label: 'EXPLOSIONS', color: '#fb923c' },
+            { key: 'beam', label: 'BEAMS', color: '#22d3ee' },
+            { key: 'ui', label: 'UI', color: '#c4b5fd' },
+          ] as const).map(control => (
+            <label key={control.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#d1d5db', fontSize: '0.72rem', letterSpacing: 0.8 }}>
+              <span style={{ color: control.color, fontWeight: 700 }}>{control.label}: {Math.round(audioMix[control.key] * 100)}%</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={audioMix[control.key]}
+                onChange={(e) => updateAudioMixSetting(control.key, Number(e.currentTarget.value))}
+              />
+            </label>
+          ))}
+        </div>
+      )}
 
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: 8, alignItems: 'stretch', width: '100%', maxWidth: chromeMaxW, marginBottom: 8, position: 'relative', zIndex: 1 }}>

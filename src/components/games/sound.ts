@@ -2,6 +2,7 @@ let audioContext: AudioContext | null = null
 let soundEnabledCache: boolean | null = null
 const SOUND_ENABLED_STORAGE_KEY = 'gameSoundEnabled'
 const AUDIO_PACK_STORAGE_KEY = 'spaceImpactAudioPack'
+const AUDIO_MIX_STORAGE_KEY = 'spaceImpactAudioMix'
 
 export type GameSoundKind =
   | 'flap'
@@ -29,6 +30,22 @@ type SoundPackConfig = {
   bgm?: string
   sfxVolume?: number
   bgmVolume?: number
+}
+
+export type AudioMixSettings = {
+  master: number
+  bgm: number
+  explosion: number
+  beam: number
+  ui: number
+}
+
+const DEFAULT_AUDIO_MIX: AudioMixSettings = {
+  master: 1,
+  bgm: 0.8,
+  explosion: 1,
+  beam: 1,
+  ui: 0.8,
 }
 
 const DEFAULT_AUDIO_PACK: SoundPackConfig = {
@@ -66,7 +83,34 @@ declare global {
 }
 
 let soundPackCache: SoundPackConfig | null = null
+let audioMixCache: AudioMixSettings | null = null
 let bgmElement: HTMLAudioElement | null = null
+let noiseBuffer: AudioBuffer | null = null
+const recentSfxTimesMs: number[] = []
+const lastKindPlayMs: Partial<Record<GameSoundKind, number>> = {}
+
+const MAX_SFX_OUTPUT = 0.78
+const RECENT_SFX_WINDOW_MS = 240
+const RAPID_FIRE_MIN_INTERVAL_MS: Partial<Record<GameSoundKind, number>> = {
+  laser: 32,
+  shoot: 26,
+  pop: 30,
+  hit: 28,
+  explosion: 40,
+  explosion_big: 55,
+}
+
+function mergeAudioMix(base: AudioMixSettings, override?: Partial<AudioMixSettings>): AudioMixSettings {
+  return {
+    ...base,
+    ...(override ?? {}),
+    master: clamp01(override?.master ?? base.master),
+    bgm: clamp01(override?.bgm ?? base.bgm),
+    explosion: clamp01(override?.explosion ?? base.explosion),
+    beam: clamp01(override?.beam ?? base.beam),
+    ui: clamp01(override?.ui ?? base.ui),
+  }
+}
 
 function mergeSoundPack(base: SoundPackConfig, override?: SoundPackConfig): SoundPackConfig {
   return {
@@ -104,6 +148,87 @@ export function setGameSoundEnabled(enabled: boolean) {
 
 function clamp01(v: number) {
   return Math.max(0, Math.min(1, v))
+}
+
+function nowMs() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now()
+  }
+  return Date.now()
+}
+
+function getSfxEventGain(kind: GameSoundKind) {
+  const t = nowMs()
+  const minInterval = RAPID_FIRE_MIN_INTERVAL_MS[kind] ?? 0
+  const last = lastKindPlayMs[kind]
+  if (minInterval > 0 && typeof last === 'number' && t - last < minInterval) {
+    return 0
+  }
+  lastKindPlayMs[kind] = t
+
+  while (recentSfxTimesMs.length > 0 && t - recentSfxTimesMs[0] > RECENT_SFX_WINDOW_MS) {
+    recentSfxTimesMs.shift()
+  }
+  recentSfxTimesMs.push(t)
+
+  const overlap = Math.max(0, recentSfxTimesMs.length - 4)
+  const attenuation = 1 / (1 + overlap * 0.18)
+  return clamp01(attenuation)
+}
+
+function loadAudioMixSettings(): AudioMixSettings {
+  if (audioMixCache) return audioMixCache
+  if (typeof window === 'undefined') {
+    audioMixCache = DEFAULT_AUDIO_MIX
+    return audioMixCache
+  }
+  try {
+    const raw = localStorage.getItem(AUDIO_MIX_STORAGE_KEY)
+    if (!raw) {
+      audioMixCache = DEFAULT_AUDIO_MIX
+      return audioMixCache
+    }
+    const parsed = JSON.parse(raw) as Partial<AudioMixSettings>
+    audioMixCache = mergeAudioMix(DEFAULT_AUDIO_MIX, parsed)
+    return audioMixCache
+  } catch {
+    audioMixCache = DEFAULT_AUDIO_MIX
+    return audioMixCache
+  }
+}
+
+export function getGameAudioMixSettings() {
+  return loadAudioMixSettings()
+}
+
+export function setGameAudioMixSettings(settings: Partial<AudioMixSettings>) {
+  audioMixCache = mergeAudioMix(DEFAULT_AUDIO_MIX, settings)
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(AUDIO_MIX_STORAGE_KEY, JSON.stringify(audioMixCache))
+  }
+}
+
+function getKindBusGain(kind: GameSoundKind) {
+  const mix = getGameAudioMixSettings()
+  if (kind === 'explosion' || kind === 'explosion_big' || kind === 'rocket' || kind === 'artillery') {
+    return mix.master * mix.explosion
+  }
+  if (kind === 'laser') {
+    return mix.master * mix.beam
+  }
+  if (
+    kind === 'select' ||
+    kind === 'select_tower' ||
+    kind === 'swap' ||
+    kind === 'clear' ||
+    kind === 'countdown' ||
+    kind === 'score' ||
+    kind === 'levelup' ||
+    kind === 'gameover'
+  ) {
+    return mix.master * mix.ui
+  }
+  return mix.master
 }
 
 function loadSoundPackConfig(): SoundPackConfig {
@@ -154,7 +279,7 @@ if (typeof window !== 'undefined') {
   window.spaceImpactGetSoundPack = () => getSoundPackConfig()
 }
 
-function tryPlaySample(kind: GameSoundKind) {
+function tryPlaySample(kind: GameSoundKind, eventGain = 1) {
   if (typeof window === 'undefined') return false
   const pack = getSoundPackConfig()
   const sampleUrl = pack.sfx?.[kind]
@@ -162,7 +287,7 @@ function tryPlaySample(kind: GameSoundKind) {
   try {
     const a = new Audio(sampleUrl)
     a.preload = 'auto'
-    a.volume = clamp01((pack.sfxVolume ?? 0.7))
+    a.volume = clamp01((pack.sfxVolume ?? 0.7) * getKindBusGain(kind) * eventGain * MAX_SFX_OUTPUT)
     void a.play().catch(() => {
       // Ignore playback errors; synth fallback handles the event.
     })
@@ -170,6 +295,83 @@ function tryPlaySample(kind: GameSoundKind) {
   } catch {
     return false
   }
+}
+
+function getNoiseBuffer(ctx: AudioContext) {
+  if (noiseBuffer) return noiseBuffer
+  const durationSec = 0.35
+  const frameCount = Math.floor(ctx.sampleRate * durationSec)
+  const buffer = ctx.createBuffer(1, frameCount, ctx.sampleRate)
+  const channel = buffer.getChannelData(0)
+  for (let i = 0; i < frameCount; i++) {
+    channel[i] = (Math.random() * 2 - 1) * 0.9
+  }
+  noiseBuffer = buffer
+  return buffer
+}
+
+function playExplosionBoom(big: boolean, eventGain = 1) {
+  const ctx = getAudioContext()
+  if (!ctx) return
+  const now = ctx.currentTime
+  const dur = big ? 0.22 : 0.14
+  const busGain = getKindBusGain(big ? 'explosion_big' : 'explosion') * eventGain * MAX_SFX_OUTPUT
+
+  // Body: short low-end thump with a steep downward pitch sweep.
+  const bodyOsc = ctx.createOscillator()
+  bodyOsc.type = 'triangle'
+  bodyOsc.frequency.setValueAtTime(big ? 170 : 210, now)
+  bodyOsc.frequency.exponentialRampToValueAtTime(big ? 42 : 58, now + dur)
+
+  const bodyGain = ctx.createGain()
+  bodyGain.gain.setValueAtTime(0.0001, now)
+  bodyGain.gain.exponentialRampToValueAtTime((big ? 0.35 : 0.25) * busGain, now + 0.006)
+  bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+
+  const bodyLowpass = ctx.createBiquadFilter()
+  bodyLowpass.type = 'lowpass'
+  bodyLowpass.frequency.setValueAtTime(big ? 240 : 300, now)
+
+  bodyOsc.connect(bodyLowpass)
+  bodyLowpass.connect(bodyGain)
+  bodyGain.connect(ctx.destination)
+  bodyOsc.start(now)
+  bodyOsc.stop(now + dur)
+
+  // Crack: very short high-passed noise burst for impact definition.
+  const crack = ctx.createBufferSource()
+  crack.buffer = getNoiseBuffer(ctx)
+  const crackHP = ctx.createBiquadFilter()
+  crackHP.type = 'highpass'
+  crackHP.frequency.setValueAtTime(1400, now)
+
+  const crackGain = ctx.createGain()
+  crackGain.gain.setValueAtTime((big ? 0.17 : 0.14) * busGain, now)
+  crackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.038)
+
+  crack.connect(crackHP)
+  crackHP.connect(crackGain)
+  crackGain.connect(ctx.destination)
+  crack.start(now)
+  crack.stop(now + 0.04)
+
+  // Debris tail: short band-passed noise to mimic brittle crash fragments.
+  const debris = ctx.createBufferSource()
+  debris.buffer = getNoiseBuffer(ctx)
+  const debrisBP = ctx.createBiquadFilter()
+  debrisBP.type = 'bandpass'
+  debrisBP.frequency.setValueAtTime(big ? 520 : 680, now)
+  debrisBP.Q.value = 0.65
+
+  const debrisGain = ctx.createGain()
+  debrisGain.gain.setValueAtTime((big ? 0.08 : 0.06) * busGain, now + 0.015)
+  debrisGain.gain.exponentialRampToValueAtTime(0.0001, now + (big ? 0.16 : 0.11))
+
+  debris.connect(debrisBP)
+  debrisBP.connect(debrisGain)
+  debrisGain.connect(ctx.destination)
+  debris.start(now + 0.012)
+  debris.stop(now + (big ? 0.17 : 0.12))
 }
 
 function getAudioContext() {
@@ -190,7 +392,8 @@ function tone(
   durationMs: number,
   type: OscillatorType,
   volume: number,
-  startDelayMs = 0
+  startDelayMs = 0,
+  gainScale = 1
 ) {
   const ctx = getAudioContext()
   if (!ctx) return
@@ -203,11 +406,21 @@ function tone(
   oscillator.frequency.setValueAtTime(frequency, startAt)
 
   const gain = ctx.createGain()
+  const finalVolume = clamp01(volume * gainScale * MAX_SFX_OUTPUT)
   gain.gain.setValueAtTime(0.0001, startAt)
-  gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.01)
+  gain.gain.exponentialRampToValueAtTime(finalVolume, startAt + 0.008)
   gain.gain.exponentialRampToValueAtTime(0.0001, endAt)
 
-  oscillator.connect(gain)
+  if (type === 'square' || type === 'sawtooth') {
+    // Tame upper harmonics so stacked shots stay punchy rather than shrill.
+    const mellow = ctx.createBiquadFilter()
+    mellow.type = 'lowpass'
+    mellow.frequency.setValueAtTime(3600, startAt)
+    oscillator.connect(mellow)
+    mellow.connect(gain)
+  } else {
+    oscillator.connect(gain)
+  }
   gain.connect(ctx.destination)
 
   oscillator.start(startAt)
@@ -270,7 +483,8 @@ export function startBGM() {
       const audio = new Audio(pack.bgm)
       audio.loop = true
       audio.preload = 'auto'
-      audio.volume = clamp01(pack.bgmVolume ?? 0.32)
+      const mix = getGameAudioMixSettings()
+      audio.volume = clamp01((pack.bgmVolume ?? 0.32) * mix.master * mix.bgm)
       bgmElement = audio
       void audio.play().catch(() => {
         // If remote/local BGM fails, fall back to synth BGM.
@@ -302,111 +516,109 @@ export function playGameSound(
 ) {
   try {
     if (!getGameSoundEnabled()) return
-    if (tryPlaySample(kind)) return
+    const eventGain = getSfxEventGain(kind)
+    if (eventGain <= 0) return
+
+    if (kind === 'explosion') {
+      playExplosionBoom(false, eventGain)
+      return
+    }
+    if (kind === 'explosion_big') {
+      playExplosionBoom(true, eventGain)
+      return
+    }
+
+    const hasSample = tryPlaySample(kind, eventGain)
+    if (hasSample) return
 
     if (kind === 'flap') {
-      tone(440, 70, 'triangle', 0.06)
+      tone(440, 70, 'triangle', 0.06, 0, eventGain)
       return
     }
     if (kind === 'score') {
-      tone(660, 60, 'sine', 0.06)
-      tone(980, 90, 'sine', 0.045, 42)
+      tone(660, 60, 'sine', 0.06, 0, eventGain)
+      tone(980, 90, 'sine', 0.045, 42, eventGain)
       return
     }
     if (kind === 'hit') {
-      tone(180, 180, 'sawtooth', 0.08)
+      tone(180, 180, 'sawtooth', 0.08, 0, eventGain)
       return
     }
     if (kind === 'select') {
-      tone(520, 55, 'square', 0.04)
+      tone(520, 55, 'square', 0.04, 0, eventGain)
       return
     }
     if (kind === 'select_tower') {
       // Distinct tower selection chirp
-      tone(320, 45, 'square', 0.05)
-      tone(480, 65, 'square', 0.04, 30)
+      tone(320, 45, 'square', 0.05, 0, eventGain)
+      tone(480, 65, 'square', 0.04, 30, eventGain)
       return
     }
     if (kind === 'swap') {
-      tone(280, 85, 'triangle', 0.055)
+      tone(280, 85, 'triangle', 0.055, 0, eventGain)
       return
     }
     if (kind === 'clear') {
-      tone(620, 70, 'triangle', 0.05)
-      tone(860, 110, 'triangle', 0.05, 35)
-      tone(1120, 130, 'triangle', 0.045, 75)
+      tone(620, 70, 'triangle', 0.05, 0, eventGain)
+      tone(860, 110, 'triangle', 0.05, 35, eventGain)
+      tone(1120, 130, 'triangle', 0.045, 75, eventGain)
       return
     }
     if (kind === 'shoot') {
-      tone(420, 85, 'square', 0.05)
+      tone(420, 85, 'square', 0.05, 0, eventGain)
       return
     }
     if (kind === 'laser') {
       // Sci-fi laser zap - high frequency descending sweep
-      tone(1200, 40, 'sine', 0.07)
-      tone(900, 50, 'sine', 0.055, 15)
-      tone(600, 35, 'sine', 0.04, 35)
+      tone(1200, 40, 'sine', 0.07, 0, eventGain)
+      tone(900, 50, 'sine', 0.055, 15, eventGain)
+      tone(600, 35, 'sine', 0.04, 35, eventGain)
       return
     }
     if (kind === 'rocket') {
       // Deep whoosh with resonance
-      tone(280, 120, 'sawtooth', 0.08)
-      tone(150, 150, 'sine', 0.07, 20)
+      tone(280, 120, 'sawtooth', 0.08, 0, eventGain)
+      tone(150, 150, 'sine', 0.07, 20, eventGain)
       return
     }
     if (kind === 'artillery') {
       // Heavy orbital strike - deep bass boom with metallic ring
-      tone(80, 180, 'sine', 0.1)
-      tone(320, 90, 'square', 0.065, 40)
-      tone(200, 200, 'sine', 0.08, 50)
+      tone(80, 180, 'sine', 0.1, 0, eventGain)
+      tone(320, 90, 'square', 0.065, 40, eventGain)
+      tone(200, 200, 'sine', 0.08, 50, eventGain)
       return
     }
     if (kind === 'pop') {
-      tone(760, 65, 'triangle', 0.05)
-      tone(980, 80, 'triangle', 0.04, 20)
-      return
-    }
-    if (kind === 'explosion') {
-      // Enemy explosion - chaotic burst
-      tone(400, 150, 'sawtooth', 0.09)
-      tone(200, 180, 'sawtooth', 0.08, 30)
-      tone(600, 120, 'square', 0.07, 60)
-      return
-    }
-    if (kind === 'explosion_big') {
-      // Boss explosion - massive boom with sustained ring
-      tone(100, 200, 'sine', 0.12)
-      tone(250, 250, 'sawtooth', 0.1, 50)
-      tone(500, 180, 'sine', 0.08, 100)
-      tone(150, 300, 'sine', 0.09, 120)
+      tone(760, 65, 'triangle', 0.05, 0, eventGain)
+      tone(980, 80, 'triangle', 0.04, 20, eventGain)
       return
     }
     if (kind === 'combo') {
-      tone(520, 50, 'sine', 0.05)
-      tone(720, 60, 'sine', 0.05, 35)
-      tone(960, 70, 'sine', 0.045, 75)
-      tone(1200, 100, 'sine', 0.04, 120)
+      tone(520, 50, 'sine', 0.05, 0, eventGain)
+      tone(720, 60, 'sine', 0.05, 35, eventGain)
+      tone(960, 70, 'sine', 0.045, 75, eventGain)
+      tone(1200, 100, 'sine', 0.04, 120, eventGain)
       return
     }
     if (kind === 'levelup') {
-      tone(440, 80, 'triangle', 0.06)
-      tone(660, 80, 'triangle', 0.055, 70)
-      tone(880, 100, 'triangle', 0.05, 150)
-      tone(1100, 130, 'sine', 0.045, 240)
+      tone(440, 80, 'triangle', 0.06, 0, eventGain)
+      tone(660, 80, 'triangle', 0.055, 70, eventGain)
+      tone(880, 100, 'triangle', 0.05, 150, eventGain)
+      tone(1100, 130, 'sine', 0.045, 240, eventGain)
       return
     }
     if (kind === 'countdown') {
-      tone(660, 100, 'square', 0.035)
+      tone(660, 100, 'square', 0.035, 0, eventGain)
       return
     }
     if (kind === 'whoosh') {
-      tone(300, 120, 'sawtooth', 0.03)
-      tone(600, 80, 'sawtooth', 0.025, 30)
+      tone(300, 120, 'sawtooth', 0.03, 0, eventGain)
+      tone(600, 80, 'sawtooth', 0.025, 30, eventGain)
       return
     }
     if (kind === 'gameover') {
-      tone(240, 130, 'sawtooth', 0.06)
-      tone(180, 180, 'sawtooth', 0.055, 95)
+      tone(240, 130, 'sawtooth', 0.06, 0, eventGain)
+      tone(180, 180, 'sawtooth', 0.055, 95, eventGain)
     }
   } catch {
     // Sound should never break gameplay.
