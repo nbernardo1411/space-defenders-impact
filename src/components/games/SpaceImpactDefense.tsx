@@ -40,6 +40,8 @@ const DREADNOUGHT_SCOUT_RATE = 0.5
 const DREADNOUGHT_SCOUT_DAMAGE = 8
 const DREADNOUGHT_SCOUT_COLOR = '#f43f5e'
 const DREADNOUGHT_SCOUT_DOCK_RADIUS = 0.85
+const DREADNOUGHT_SCOUT_APPROACH_RADIUS = 1.65
+const DREADNOUGHT_SCOUT_ATTACK_RADIUS = 1.45
 const DREADNOUGHT_FIELD_LIMIT = 4
 
 type CommanderAbilityKey = 'ion' | 'freeze' | 'repair'
@@ -791,8 +793,8 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       drone.targetId = target.id
 
       if (drone.state === 'launch') {
-        const tx = target.x + 0.5 + Math.cos(drone.orbit) * 0.75
-        const ty = target.y + 0.5 + Math.sin(drone.orbit) * 0.75
+        const tx = target.x + 0.5 + Math.cos(drone.orbit) * DREADNOUGHT_SCOUT_APPROACH_RADIUS
+        const ty = target.y + 0.5 + Math.sin(drone.orbit) * DREADNOUGHT_SCOUT_APPROACH_RADIUS
         if (moveToward(tx, ty, 8) < 0.25) {
           drone.state = 'attack'
           drone.timer = getDreadnoughtScoutAttackTime(homeTower)
@@ -803,7 +805,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
       drone.timer -= dt
       drone.orbit += dt * (drone.id % 2 === 0 ? 3.2 : -3.2)
-      moveToward(target.x + 0.5 + Math.cos(drone.orbit) * 0.72, target.y + 0.5 + Math.sin(drone.orbit) * 0.72, 6.5)
+      moveToward(target.x + 0.5 + Math.cos(drone.orbit) * DREADNOUGHT_SCOUT_ATTACK_RADIUS, target.y + 0.5 + Math.sin(drone.orbit) * DREADNOUGHT_SCOUT_ATTACK_RADIUS, 6.5)
       drone.cooldown -= dt
       if (drone.cooldown <= 0) {
         drone.cooldown = DREADNOUGHT_SCOUT_RATE
@@ -2332,7 +2334,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               filter: drone.state === 'attack' ? `drop-shadow(0 0 8px ${DREADNOUGHT_SCOUT_COLOR})` : 'drop-shadow(0 0 5px #7dd3fc)',
             }}>
               <div style={{ transform: 'translate(-50%, -50%)' }}>
-                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(22, cell * 0.50)} />
+                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(18, Math.min(22, cell * 0.46))} />
               </div>
             </div>
           ))}
