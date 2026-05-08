@@ -89,6 +89,27 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
     </>,
 
     // ── RAIL GUN: SR-71 stealth delta ── ultra-long barrel + swept wings ─────
+    xwing: <>
+      <path d="M30 4 H34 L36 13 L35 52 L32 62 L29 52 L28 13 Z" fill={hull} />
+      <path d="M30.5 7 H33.5 L34.7 15 L34 48 L32 56 L30 48 L29.3 15 Z" fill={paint} opacity="0.92" />
+      <path d="M28.5 18 L25 31 L1 19 L3 11 L12 12 Z" fill={hull} />
+      <path d="M35.5 18 L39 31 L63 19 L61 11 L52 12 Z" fill={hull} />
+      <path d="M27.5 34 L24 47 L1 54 L3 45 L16 38 Z" fill={hull} />
+      <path d="M36.5 34 L40 47 L63 54 L61 45 L48 38 Z" fill={hull} />
+      <path d="M7 14 L27 23" stroke={core} strokeWidth="5.2" strokeLinecap="square" />
+      <path d="M57 14 L37 23" stroke={core} strokeWidth="5.2" strokeLinecap="square" />
+      <path d="M7 49 L26 42" stroke={core} strokeWidth="5.2" strokeLinecap="square" />
+      <path d="M57 49 L38 42" stroke={core} strokeWidth="5.2" strokeLinecap="square" />
+      <line x1="-1" y1="12" x2="11" y2="14" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
+      <line x1="65" y1="12" x2="53" y2="14" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
+      <line x1="-1" y1="55" x2="12" y2="51" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
+      <line x1="65" y1="55" x2="52" y2="51" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
+      <path d="M29 10 C28 15 28.4 23 32 25 C35.6 23 36 15 35 10 Z" fill={glass} opacity="0.95" />
+      <path d="M25 28 L32 24 L39 28" stroke="#ffffff7a" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+      <ellipse cx="27" cy="57" rx="4" ry="5.6" fill={engine} opacity="0.9" />
+      <ellipse cx="37" cy="57" rx="4" ry="5.6" fill={engine} opacity="0.9" />
+    </>,
+
     sniper: <>
       {/* Narrow spine hull */}
       <path d="M32 4 L38 9 L42 20 L46 34 L42 59 L22 59 L18 34 L22 20 L26 9 Z" fill={hull} />
@@ -319,7 +340,7 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
   )
 }
 
-export function AlienShip({ variant, isBoss, isFinalBoss, color, size }: { variant: number; isBoss: boolean; isFinalBoss: boolean; color: string; size: number }) {
+export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size }: { variant: number; isBoss: boolean; isFinalBoss: boolean; bossKind?: string; color: string; size: number }) {
   const s = Math.max(8, size)
   const svgId = useId().replace(/:/g, '')
   const shellGrad = `alien-shell-${svgId}`
@@ -386,6 +407,74 @@ export function AlienShip({ variant, isBoss, isFinalBoss, color, size }: { varia
 
   // ── BOSS: Alien assault carrier — wide crescent + 3 gun batteries ────────
   if (isBoss) {
+    if (bossKind === 'orb') {
+      return (
+        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 14px #000a)' }}>
+          {defs}
+          <circle cx="32" cy="32" r="25" fill={shell} />
+          <circle cx="32" cy="32" r="18" fill={paint} opacity="0.82" />
+          <path d="M32 3 L38 16 L32 22 L26 16 Z M61 32 L48 38 L42 32 L48 26 Z M32 61 L26 48 L32 42 L38 48 Z M3 32 L16 26 L22 32 L16 38 Z" fill={spine} />
+          <circle cx="32" cy="32" r="11" fill={dark} />
+          <circle cx="32" cy="32" r="7" fill={eye} opacity="0.85" />
+          <circle cx="32" cy="32" r="3.5" fill="#fff" />
+        </svg>
+      )
+    }
+
+    if (bossKind === 'serpent') {
+      return (
+        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 14px #000a)' }}>
+          {defs}
+          <path d="M32 3 L43 12 L45 24 L39 31 L47 39 L44 53 L32 61 L20 53 L17 39 L25 31 L19 24 L21 12 Z" fill={shell} />
+          <path d="M32 9 L39 15 L40 23 L32 29 L24 23 L25 15 Z" fill={paint} />
+          <path d="M26 31 L32 27 L38 31 L41 42 L36 52 H28 L23 42 Z" fill={paint} opacity="0.78" />
+          <path d="M20 18 L5 9 L8 26 L20 26 Z M44 18 L59 9 L56 26 L44 26 Z M20 44 L5 57 L10 39 L22 36 Z M44 44 L59 57 L54 39 L42 36 Z" fill={spine} />
+          <ellipse cx="32" cy="22" rx="8" ry="6" fill={eye} opacity="0.78" />
+          <circle cx="32" cy="22" r="3" fill="#fff" />
+        </svg>
+      )
+    }
+
+    if (bossKind === 'mantis') {
+      return (
+        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 14px #000a)' }}>
+          {defs}
+          <path d="M26 8 H38 L43 22 L40 49 L32 60 L24 49 L21 22 Z" fill={shell} />
+          <path d="M28 13 H36 L39 24 L37 45 L32 53 L27 45 L25 24 Z" fill={paint} opacity="0.86" />
+          <path d="M23 20 L4 7 L7 25 L20 35 Z M41 20 L60 7 L57 25 L44 35 Z M18 35 L2 54 L15 50 L26 38 Z M46 35 L62 54 L49 50 L38 38 Z" fill={spine} />
+          <path d="M5 8 L20 33 M59 8 L44 33" stroke={c} strokeWidth="2.4" strokeLinecap="round" opacity="0.75" />
+          <ellipse cx="32" cy="25" rx="8" ry="6" fill={eye} opacity="0.76" />
+        </svg>
+      )
+    }
+
+    if (bossKind === 'hydra') {
+      return (
+        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 14px #000a)' }}>
+          {defs}
+          <path d="M17 18 L26 8 L32 18 L38 8 L47 18 L46 39 L38 55 H26 L18 39 Z" fill={shell} />
+          <path d="M10 21 L18 10 L26 19 L24 34 L14 39 Z M27 20 L32 7 L37 20 L36 39 L28 39 Z M38 19 L46 10 L54 21 L50 39 L40 34 Z" fill={paint} opacity="0.84" />
+          <circle cx="18" cy="24" r="5" fill={eye} opacity="0.72" />
+          <circle cx="32" cy="22" r="6" fill={eye} opacity="0.82" />
+          <circle cx="46" cy="24" r="5" fill={eye} opacity="0.72" />
+          <path d="M18 42 L26 55 H38 L46 42 L39 48 H25 Z" fill={spine} />
+        </svg>
+      )
+    }
+
+    if (bossKind === 'gate') {
+      return (
+        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 14px #000a)' }}>
+          {defs}
+          <path d="M8 9 H56 L62 18 L57 32 L62 46 L56 55 H8 L2 46 L7 32 L2 18 Z" fill={shell} />
+          <path d="M15 16 H49 L53 24 L48 32 L53 40 L49 48 H15 L11 40 L16 32 L11 24 Z" fill={paint} opacity="0.78" />
+          <rect x="25" y="9" width="14" height="46" rx="3" fill={dark} />
+          <circle cx="32" cy="32" r="11" fill={eye} opacity="0.7" />
+          <circle cx="32" cy="32" r="5" fill="#fff" opacity="0.92" />
+        </svg>
+      )
+    }
+
     return (
       <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 14px #000a)' }}>
         {defs}

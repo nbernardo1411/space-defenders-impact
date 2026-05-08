@@ -266,6 +266,11 @@
     drop-shadow(0 0 16px rgba(239, 35, 60, 0.66));
 }
 
+.raid__player svg {
+  width: min(100%, 82px);
+  height: auto;
+}
+
 .raid__player svg line,
 .raid__ship-card svg line {
   stroke: #ef233c !important;
@@ -641,6 +646,60 @@
 
 .raid__enemy--boss-super .raid__boss-reticle {
   inset: -28%;
+}
+
+.raid__enemy--boss-mantis .raid__boss-aura span:nth-child(1),
+.raid__enemy--boss-mantis .raid__boss-aura span:nth-child(2) {
+  top: 18%;
+  width: 26%;
+  height: 72%;
+  border-color: rgba(190, 242, 100, 0.46);
+  background: linear-gradient(180deg, rgba(54, 83, 20, 0.55), transparent);
+}
+
+.raid__enemy--boss-mantis .raid__boss-aura span:nth-child(1) {
+  left: -2%;
+  clip-path: polygon(100% 0, 0 55%, 100% 100%);
+}
+
+.raid__enemy--boss-mantis .raid__boss-aura span:nth-child(2) {
+  right: -2%;
+  clip-path: polygon(0 0, 100% 55%, 0 100%);
+}
+
+.raid__enemy--boss-hydra .raid__boss-aura span {
+  top: 2%;
+  width: 26%;
+  height: 82%;
+  border-radius: 50%;
+  border-color: rgba(168, 85, 247, 0.5);
+  background: radial-gradient(ellipse, rgba(76, 29, 149, 0.32), transparent 66%);
+}
+
+.raid__enemy--boss-hydra .raid__boss-aura span:nth-child(1) { left: 8%; }
+.raid__enemy--boss-hydra .raid__boss-aura span:nth-child(2) { left: 37%; }
+.raid__enemy--boss-hydra .raid__boss-aura span:nth-child(3) { right: 8%; }
+
+.raid__enemy--boss-gate {
+  animation-duration: 4s;
+}
+
+.raid__enemy--boss-gate .raid__boss-aura span {
+  inset: -4%;
+  border-radius: 12%;
+  border-color: rgba(148, 163, 184, 0.44);
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.62), transparent, rgba(15, 23, 42, 0.62));
+}
+
+.raid__enemy--boss-gate .raid__boss-aura span:nth-child(2) {
+  inset: 12%;
+  transform: rotate(45deg);
+}
+
+.raid__enemy--boss-gate .raid__boss-aura span:nth-child(3) {
+  inset: 22%;
+  border-radius: 50%;
+  border-color: rgba(34, 211, 238, 0.35);
 }
 
 .raid__boss-bar {

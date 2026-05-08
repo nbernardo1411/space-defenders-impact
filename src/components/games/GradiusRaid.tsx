@@ -7,7 +7,7 @@ type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
 type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair'
 type GamePhase = 'select' | 'playing' | 'paused' | 'gameover'
 type BossMessage = 'incoming' | 'clear' | null
-type BossKind = 'carrier' | 'orb' | 'serpent' | 'super'
+type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super'
 
 type Vec = { x: number; y: number }
 
@@ -40,7 +40,7 @@ type Shot = Vec & {
   vx: number
   vy: number
   damage: number
-  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot'
+  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot'
   radius: number
   pierce?: number
   turn?: number
@@ -129,6 +129,9 @@ const BOSS_COLORS: Record<BossKind, string> = {
   carrier: '#7f1d1d',
   orb: '#581c87',
   serpent: '#164e63',
+  mantis: '#365314',
+  hydra: '#4c1d95',
+  gate: '#0f172a',
   super: '#3f1d2e',
 }
 const RAID_BGM_THEMES = [
@@ -144,6 +147,7 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'gatling', name: 'Crimson Saw', role: 'Rapid assault striker', speed: 0.96, hp: 6, fireRate: 1.18 },
   { key: 'laser', name: 'Night Lance', role: 'Sharper beam control', speed: 1.03, hp: 5, fireRate: 1.12 },
   { key: 'dreadnought', name: 'Obsidian Ark', role: 'Heavy survival hull', speed: 0.82, hp: 8, fireRate: 0.86 },
+  { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.12, hp: 5, fireRate: 1.14 },
 ]
 
 const EMPTY_WEAPONS: Record<WeaponKey, number> = {
@@ -511,6 +515,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     for (const shot of enemyShotsRef.current) {
       if (shot.kind === 'orbShot') drawOrb(shot, 'rgba(168,85,247,0.92)', 12)
       else if (shot.kind === 'blade') drawTrail(shot, 'rgba(34,211,238,0.9)', 46, 7)
+      else if (shot.kind === 'needle') drawTrail(shot, 'rgba(190,242,100,0.92)', 42, 5)
+      else if (shot.kind === 'voidShot') drawOrb(shot, 'rgba(192,132,252,0.95)', 15)
       else if (shot.kind === 'superShot') drawOrb(shot, 'rgba(251,191,36,0.95)', 14)
       else drawOrb(shot, 'rgba(251,113,133,0.9)', 10)
     }
@@ -725,34 +731,47 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
   const spawnBoss = useCallback(() => {
     const wave = waveRef.current
+    const stage = stageRef.current
     const player = playerRef.current
     const powerScore = getPowerScore(playerRef.current)
-    const bossKind: BossKind =
-      stageRef.current % 4 === 0 ? 'super' :
-      stageRef.current % 3 === 0 ? 'serpent' :
-      stageRef.current % 2 === 0 ? 'orb' :
-      'carrier'
-    const hpMultiplier = bossKind === 'super' ? 1.9 : bossKind === 'serpent' ? 1.35 : bossKind === 'orb' ? 1.22 : 1
-    const hp = Math.round((260 + wave * 58 + powerScore * 34) * hpMultiplier)
+    const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate', 'super']
+    const bossKind = bossCycle[(stage - 1) % bossCycle.length]
+    const hpMultiplier =
+      bossKind === 'super' ? 2.45 :
+      bossKind === 'gate' ? 1.75 :
+      bossKind === 'hydra' ? 1.62 :
+      bossKind === 'serpent' ? 1.48 :
+      bossKind === 'mantis' ? 1.38 :
+      bossKind === 'orb' ? 1.3 :
+      1.16
+    const stagePressure = Math.max(0, stage - 1)
+    const hp = Math.round((360 + wave * 74 + stagePressure * 135 + powerScore * 48) * hpMultiplier)
+    const radius =
+      bossKind === 'super' ? 17 :
+      bossKind === 'gate' ? 15 :
+      bossKind === 'hydra' ? 14 :
+      bossKind === 'serpent' ? 13.4 :
+      bossKind === 'mantis' ? 12.8 :
+      11.4
     enemiesRef.current.push({
       id: enemyId++,
       x: 50,
-      y: bossKind === 'super' ? -22 : -16,
+      y: bossKind === 'super' || bossKind === 'gate' ? -24 : -16,
       vx: 0,
-      vy: bossKind === 'super' ? 5.5 : 7,
+      vy: bossKind === 'super' || bossKind === 'gate' ? 5.3 : 7,
       hp,
       maxHp: hp,
-      radius: bossKind === 'super' ? 15.5 : bossKind === 'serpent' ? 12.8 : 10.8,
-      variant: bossKind === 'super' ? 0 : wave % 4,
+      radius,
+      variant: stage % 4,
       isBoss: true,
-      fireCooldown: 0.9,
+      fireCooldown: Math.max(0.75, 1 - stagePressure * 0.025),
       phase: Math.random() * Math.PI * 2,
       color: BOSS_COLORS[bossKind],
-      pattern: bossKind === 'carrier' ? 0 : bossKind === 'orb' ? 1 : bossKind === 'serpent' ? 2 : 3,
+      pattern: bossCycle.indexOf(bossKind),
       bossKind,
-      shieldTime: bossKind === 'super' ? 5 : 3.8,
+      shieldTime: (bossKind === 'super' || bossKind === 'gate' ? 5.4 : 3.8) + Math.min(2.2, stagePressure * 0.18),
       originX: 50,
-      amplitude: bossKind === 'super' ? 30 : bossKind === 'serpent' ? 26 : 22,
+      amplitude: bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
       trainSlot: 0,
       pathSpeed: 0.05,
     })
@@ -870,6 +889,28 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + offset * 8, y: enemy.y + 8, vx: offset * 10, vy: 38, damage: 1, kind: 'blade', radius: 1.9 })
         })
       }
+      if (kind === 'mantis') {
+        const sweep = Math.sin(performance.now() / 260) * 24
+        ;[-1, 1].forEach((side) => {
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 13, y: enemy.y + 5, vx: side * 24 + sweep * 0.24, vy: 40, damage: 1, kind: 'needle', radius: 1.55 })
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 6, y: enemy.y + 10, vx: side * -10, vy: 35, damage: 1, kind: 'blade', radius: 1.9 })
+        })
+      }
+      if (kind === 'hydra') {
+        ;[-16, 0, 16].forEach((head, index) => {
+          const aimX = player.x - (enemy.x + head)
+          const aimY = player.y - enemy.y
+          const mag = Math.hypot(aimX, aimY) || 1
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + head, y: enemy.y + 8, vx: (aimX / mag) * (28 + index * 3), vy: (aimY / mag) * 30, damage: 1, kind: index === 1 ? 'voidShot' : 'orbShot', radius: index === 1 ? 2 : 1.55 })
+        })
+      }
+      if (kind === 'gate') {
+        const phase = performance.now() / 380
+        ;[-24, -8, 8, 24].forEach((lane, index) => {
+          const drift = Math.sin(phase + index) * 4
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + drift, y: enemy.y + 12, vx: drift * 0.8, vy: 30 + index * 2, damage: 1, kind: index % 2 === 0 ? 'superShot' : 'needle', radius: 1.85 })
+        })
+      }
       if (kind === 'super') {
         const fan = [-34, -17, 0, 17, 34]
         fan.forEach((vx) => enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 10, vx, vy: 34, damage: 1, kind: 'superShot', radius: 2 }))
@@ -881,8 +922,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       const aimX = player.x - enemy.x
       const aimY = player.y - enemy.y
       const mag = Math.hypot(aimX, aimY) || 1
-      if (kind !== 'orb') {
-        enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: kind === 'serpent' ? 'blade' : kind === 'super' ? 'superShot' : 'boss', radius: 2 })
+      if (kind !== 'orb' && kind !== 'gate') {
+        enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: kind === 'serpent' || kind === 'mantis' ? 'blade' : kind === 'super' ? 'superShot' : kind === 'hydra' ? 'voidShot' : 'boss', radius: 2 })
       }
       playGameSound('rocket')
       if (enemyShotsRef.current.length > MAX_ENEMY_SHOTS) {
@@ -1010,9 +1051,15 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
           bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
           bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
+          bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
+          bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
+          bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
           50 + Math.sin(t * 0.42) * 30
         const bossYTarget =
           bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
+          bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
+          bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
+          bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
           bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
           bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
           18
@@ -1032,7 +1079,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           y: enemy.isBoss ? (enemy.y < bossYTarget ? Math.min(bossYTarget, enemy.y + enemy.vy * dt) : bossYTarget) : enemy.y + enemy.vy * dt,
           shieldTime: Math.max(0, enemy.shieldTime - dt),
           fireCooldown: nextFire <= 0
-            ? (enemy.isBoss ? Math.max(1.05, 1.75 - waveRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
+            ? (enemy.isBoss ? Math.max(0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
             : nextFire,
         }
       })
@@ -1312,9 +1359,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
               enemy.isBoss ? 'raid__enemy--boss' : '',
               enemy.bossKind ? `raid__enemy--boss-${enemy.bossKind}` : '',
             ].join(' ')}
-            style={{ left: `${enemy.x}%`, top: `${enemy.y}%`, width: enemy.isBoss ? (enemy.bossKind === 'super' ? 'min(34vw, 310px)' : 'min(24vw, 210px)') : 'min(8vw, 64px)' }}
+            style={{ left: `${enemy.x}%`, top: `${enemy.y}%`, width: enemy.isBoss ? (enemy.bossKind === 'super' || enemy.bossKind === 'gate' ? 'min(34vw, 310px)' : enemy.bossKind === 'hydra' ? 'min(30vw, 260px)' : 'min(24vw, 210px)') : 'min(8vw, 64px)' }}
           >
-            <AlienShip variant={enemy.variant} isBoss={enemy.isBoss} isFinalBoss={enemy.bossKind === 'super'} color={enemy.color} size={enemy.isBoss ? (enemy.bossKind === 'super' ? 220 : 156) : 50} />
+            <AlienShip variant={enemy.variant} isBoss={enemy.isBoss} isFinalBoss={enemy.bossKind === 'super'} bossKind={enemy.bossKind ?? undefined} color={enemy.color} size={enemy.isBoss ? (enemy.bossKind === 'super' || enemy.bossKind === 'gate' ? 220 : enemy.bossKind === 'hydra' ? 190 : 156) : 50} />
             {enemy.isBoss && (
               <div className="raid__boss-aura">
                 <span />
@@ -1365,7 +1412,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           ].join(' ')}
           style={{ left: `${player.x}%`, top: `${player.y}%` }}
         >
-          <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={player.ship.key === 'dreadnought' ? 88 : 74} />
+          <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={player.ship.key === 'dreadnought' ? 88 : player.ship.key === 'xwing' ? 78 : 74} />
           <span className="raid__engine" />
           <span className="raid__wing-glow raid__wing-glow--left" />
           <span className="raid__wing-glow raid__wing-glow--right" />
@@ -1419,7 +1466,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
                   className={selectedShipKey === ship.key ? 'raid__ship-card raid__ship-card--active' : 'raid__ship-card'}
                   onClick={() => chooseShip(ship)}
                 >
-                  <TowerShip tType={ship.key} color={PLAYER_COLOR} size={ship.key === 'dreadnought' ? 76 : 64} />
+                  <TowerShip tType={ship.key} color={PLAYER_COLOR} size={ship.key === 'dreadnought' ? 76 : ship.key === 'xwing' ? 68 : 64} />
                   <span>{ship.name}</span>
                   <small>{ship.role}</small>
                 </button>
