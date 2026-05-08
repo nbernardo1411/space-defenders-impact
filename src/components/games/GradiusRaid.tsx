@@ -28,6 +28,7 @@ type Player = Vec & {
   forceField: number
   optionTimer: number
   fireCooldown: number
+  weaponCooldowns: Record<WeaponKey, number>
   score: number
   rank: number
   ship: ShipOption
@@ -158,12 +159,12 @@ const BRIEFING_PANELS = [
   },
   {
     title: 'Weapon Drops',
-    body: 'Weapon pickups stack together for a limited time, so the strongest builds combine several attacks at once.',
-    items: ['V Spread: adds fan shots for crowd control.', 'L Laser: fast piercing beam damage.', '* Scatter: sprays angled bursts around the nose.', 'R Rocket: heavy explosive side missiles.', 'H Homing: seeker missiles that curve into targets.'],
+    body: 'Weapon pickups stack within balanced limits and reset after every boss, so each stage starts fresh.',
+    items: ['V Spread: max 2 stacks for wider fan shots.', 'L Laser: max 1 stack for piercing beam damage.', '* Scatter: max 2 stacks for angled burst coverage.', 'R Rocket: max 2 stacks for heavy side missiles.', 'H Homing: max 1 stack for seeker missiles.'],
   },
   {
     title: 'Support Buffs',
-    body: 'Support pickups keep a run alive when the screen gets busy. Boss arrivals extend active weapon timers.',
+    body: 'Support pickups keep a run alive when the screen gets busy. Active weapons and buffs clear after a boss is defeated.',
     items: ['O Scouts: two side escorts copy your selected ship and fire with you.', 'S Shield: absorbs hits before hull damage.', 'F Force Field: five temporary armor bars and safe enemy ramming.', '+ Repair: restores hull by one bar.'],
   },
 ]
@@ -176,12 +177,36 @@ const EMPTY_WEAPONS: Record<WeaponKey, number> = {
   homing: 0,
 }
 
+const EMPTY_WEAPON_FLAGS: Record<WeaponKey, boolean> = {
+  spread: false,
+  laser: false,
+  scatter: false,
+  rocket: false,
+  homing: false,
+}
+
 const EMPTY_WEAPON_TIMERS: Record<WeaponKey, number> = {
   spread: 0,
   laser: 0,
   scatter: 0,
   rocket: 0,
   homing: 0,
+}
+
+const WEAPON_STACK_CAPS: Record<WeaponKey, number> = {
+  spread: 2,
+  laser: 1,
+  scatter: 2,
+  rocket: 2,
+  homing: 1,
+}
+
+const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
+  spread: 0.34,
+  laser: 0.22,
+  scatter: 0.48,
+  rocket: 0.82,
+  homing: 6.5,
 }
 
 const WEAPON_PICKUP_SECONDS = 36
@@ -234,6 +259,7 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     forceField: 0,
     optionTimer: 0,
     fireCooldown: 0,
+    weaponCooldowns: { ...EMPTY_WEAPON_TIMERS },
     score: 0,
     rank: 1,
     ship,
@@ -268,6 +294,15 @@ function powerGlyph(type: PowerKind) {
 
 function getPowerScore(player: Player) {
   return Object.values(player.weapons).reduce((sum, value) => sum + value, 0)
+}
+
+function resetStageLoadout(player: Player) {
+  player.weapons = { ...EMPTY_WEAPONS }
+  player.weaponTimers = { ...EMPTY_WEAPON_TIMERS }
+  player.optionTimer = 0
+  player.shield = 0
+  player.forceField = 0
+  player.weaponCooldowns = { ...EMPTY_WEAPON_TIMERS }
 }
 
 export function GradiusRaid({ onClose }: { onClose: () => void }) {
@@ -329,6 +364,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         ...playerRef.current,
         weapons: { ...playerRef.current.weapons },
         weaponTimers: { ...playerRef.current.weaponTimers },
+        weaponCooldowns: { ...playerRef.current.weaponCooldowns },
       },
       shots: [],
       enemyShots: [],
@@ -442,7 +478,14 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       const y = toY(shot.y)
       const scaledLength = length * visualScale
       const scaledWidth = widthPx * visualScale
-      const gradient = ctx.createLinearGradient(x, y - scaledLength * 0.5, x, y + scaledLength * 0.5)
+      const mag = Math.hypot(shot.vx, shot.vy) || 1
+      const ux = shot.vx / mag
+      const uy = shot.vy / mag
+      const headX = x + ux * scaledLength * 0.32
+      const headY = y + uy * scaledLength * 0.32
+      const tailX = x - ux * scaledLength * 0.5
+      const tailY = y - uy * scaledLength * 0.5
+      const gradient = ctx.createLinearGradient(headX, headY, tailX, tailY)
       gradient.addColorStop(0, 'rgba(255,255,255,0.95)')
       gradient.addColorStop(0.35, color)
       gradient.addColorStop(1, 'rgba(0,0,0,0)')
@@ -450,8 +493,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       ctx.lineWidth = scaledWidth
       ctx.lineCap = 'round'
       ctx.beginPath()
-      ctx.moveTo(x, y - scaledLength * 0.5)
-      ctx.lineTo(x, y + scaledLength * 0.5)
+      ctx.moveTo(headX, headY)
+      ctx.lineTo(tailX, tailY)
       ctx.stroke()
     }
 
@@ -636,11 +679,15 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
     const baseDamage = 1 + Math.floor(player.rank / 3)
     const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
-    const emitters = [{ x: player.x, y: player.y, scale: 1 }]
+    const emitters = [{ x: player.x, y: player.y, scale: 1, main: true }]
+    const firingWeapons = (Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).reduce((ready, key) => {
+      ready[key] = stacks[key] > 0 && player.weaponCooldowns[key] <= 0
+      return ready
+    }, { ...EMPTY_WEAPON_FLAGS })
     if (player.optionTimer > 0) {
       emitters.push(
-        { x: clamp(player.x - optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72 },
-        { x: clamp(player.x + optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72 },
+        { x: clamp(player.x - optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72, main: false },
+        { x: clamp(player.x + optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72, main: false },
       )
     }
 
@@ -648,12 +695,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       const damage = Math.max(1, Math.ceil(baseDamage * emitter.scale))
       pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -96, damage, kind: 'pulse', radius: 1.35 })
 
-      if (stacks.spread > 0) {
-        const fan = stacks.spread >= 3 ? [-34, -18, 18, 34] : [-24, 24]
+      if (firingWeapons.spread) {
+        const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
         fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
       }
 
-      if (stacks.laser > 0) {
+      if (firingWeapons.laser) {
         const side = stacks.laser >= 2 ? 1.6 : 0
         pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
         if (stacks.laser >= 3) {
@@ -661,7 +708,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         }
       }
 
-      if (stacks.scatter > 0) {
+      if (firingWeapons.scatter) {
         const count = Math.min(8, 2 + stacks.scatter * 2)
         for (let i = 0; i < count; i += 1) {
           const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
@@ -669,33 +716,37 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         }
       }
 
-      if (stacks.rocket > 0) {
-        const offsets = stacks.rocket >= 3 ? [-4.6, 4.6] : [stacks.rocket >= 2 ? -3.5 : 3.5]
+      if (firingWeapons.rocket) {
+        const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
         offsets.forEach((offset) => {
           pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
         })
       }
 
-      if (stacks.homing > 0) {
-        const missileCount = stacks.homing >= 4 ? 3 : stacks.homing >= 2 ? 2 : 1
-        const offsets = missileCount === 1 ? [0] : missileCount === 2 ? [-3.2, 3.2] : [-4.2, 0, 4.2]
-        offsets.forEach((offset, index) => {
-          const sideKick = (offset || (index % 2 === 0 ? -1 : 1)) * 4.5
+      if (emitter.main && firingWeapons.homing) {
+        const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        salvoOffsets.forEach((offset, index) => {
+          const side = offset < 0 ? -1 : 1
           pushShot({
             x: emitter.x + offset,
-            y: emitter.y - 2,
-            vx: sideKick,
-            vy: -58,
-            damage: Math.ceil((baseDamage + 2 + Math.floor(stacks.homing / 2)) * emitter.scale),
+            y: emitter.y + (index < 2 ? -1.8 : 0.8),
+            vx: side * (28 + index * 4),
+            vy: -46 - index * 4,
+            damage: Math.ceil((baseDamage + 4) * emitter.scale),
             kind: 'homing',
             radius: 2.1,
-            turn: 7.5 + stacks.homing * 0.8,
+            turn: 5.2,
           })
         })
       }
     })
 
     if ((stacks.rocket > 0 || stacks.homing > 0) && Math.random() < 0.12) playGameSound('rocket')
+    ;(Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).forEach((key) => {
+      if (firingWeapons[key]) {
+        player.weaponCooldowns[key] = WEAPON_FIRE_INTERVALS[key]
+      }
+    })
 
     player.fireCooldown = Math.max(0.052, (0.12 - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
     playGameSound(stacks.laser > 0 ? 'laser' : 'shoot')
@@ -846,7 +897,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.shield < 2.5) candidates.push('shield')
     if (player.optionTimer <= 6) candidates.push('option')
     ;(['spread', 'laser', 'scatter', 'rocket', 'homing'] as WeaponKey[]).forEach((key) => {
-      const copies = player.weapons[key] === 0 ? 3 : player.weapons[key] >= 3 ? 1 : 2
+      const maxStack = WEAPON_STACK_CAPS[key]
+      const copies = player.weapons[key] === 0 ? 3 : player.weapons[key] >= maxStack ? 1 : 2
       for (let i = 0; i < copies; i += 1) candidates.push(key)
     })
 
@@ -854,6 +906,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     killsSincePowerRef.current = 0
     powerDropCooldownRef.current = guaranteed ? NORMAL_POWER_DROP_COOLDOWN * 0.7 : NORMAL_POWER_DROP_COOLDOWN + powerScore * 0.8
     powerUpsRef.current.push({ id: powerId++, type, x, y, vy: 11, radius: 3, spin: Math.random() * 360 })
+  }, [])
+
+  const spawnRepairPowerUp = useCallback((x: number, y: number) => {
+    killsSincePowerRef.current = 0
+    powerDropCooldownRef.current = NORMAL_POWER_DROP_COOLDOWN * 0.65
+    powerUpsRef.current.push({ id: powerId++, type: 'repair', x, y, vy: 11, radius: 3, spin: Math.random() * 360 })
   }, [])
 
   const damagePlayer = useCallback((amount: number) => {
@@ -988,6 +1046,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     player.x = clamp(player.x, 4, 96)
     player.y = clamp(player.y, 13, 93)
     player.fireCooldown = Math.max(0, player.fireCooldown - dt)
+    ;(Object.keys(player.weaponCooldowns) as WeaponKey[]).forEach((key) => {
+      player.weaponCooldowns[key] = Math.max(0, player.weaponCooldowns[key] - dt)
+    })
     player.invuln = Math.max(0, player.invuln - dt)
     player.shield = Math.max(0, player.shield - dt * 0.16)
     player.optionTimer = Math.max(0, player.optionTimer - dt)
@@ -996,6 +1057,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       player.weaponTimers[key] = Math.max(0, player.weaponTimers[key] - dt)
       if (player.weaponTimers[key] <= 0) {
         player.weapons[key] = 0
+        player.weaponCooldowns[key] = 0
       }
     })
     firePlayer()
@@ -1122,8 +1184,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       .filter((ripple) => ripple.life > 0)
       .slice(-MAX_RIPPLES)
 
+    let bossDefeatedThisFrame = false
     for (const shot of shotsRef.current) {
       for (const enemy of enemiesRef.current) {
+        if (enemy.hp <= 0) continue
         if (distSq(shot, enemy) <= (shot.radius + enemy.radius) ** 2) {
           const bossShielded = enemy.isBoss && (enemy.shieldTime > 0 || enemy.y < 15)
           if (!bossShielded) {
@@ -1149,8 +1213,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             player.score += enemy.isBoss ? 2800 + waveRef.current * 220 : 95 + waveRef.current * 14
             spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fda4af' : '#fb7185', enemy.isBoss ? 60 : 18, enemy.isBoss ? 8 : 5)
             addRipple(enemy.x, enemy.y, enemy.isBoss ? '#fb7185' : '#f97316', enemy.isBoss ? 18 : 9)
-            spawnPowerUp(enemy.x, enemy.y, enemy.isBoss)
+            if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
             if (enemy.isBoss) {
+              bossDefeatedThisFrame = true
               stageRef.current += 1
               bossAlertRef.current = 2.4
               bossMessageRef.current = 'clear'
@@ -1166,6 +1231,17 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       }
     }
     shotsRef.current = shotsRef.current.filter((shot) => shot.y > -50)
+    if (bossDefeatedThisFrame) {
+      const defeatedBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp <= 0)
+      resetStageLoadout(player)
+      shotsRef.current = []
+      enemyShotsRef.current = []
+      powerUpsRef.current = []
+      if (defeatedBoss) {
+        spawnRepairPowerUp(defeatedBoss.x, defeatedBoss.y)
+      }
+      addRipple(player.x, player.y, '#fca5a5', 12)
+    }
 
     for (const enemyShot of enemyShotsRef.current) {
       if (distSq(enemyShot, player) <= (enemyShot.radius + PLAYER_RADIUS) ** 2) {
@@ -1214,7 +1290,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         } else if (powerUp.type === 'option') {
           player.optionTimer = Math.min(OPTION_PICKUP_MAX_SECONDS, Math.max(player.optionTimer, 0) + OPTION_PICKUP_SECONDS)
         } else {
-          player.weapons[powerUp.type] = Math.min(4, player.weapons[powerUp.type] + 1)
+          player.weapons[powerUp.type] = Math.min(WEAPON_STACK_CAPS[powerUp.type], player.weapons[powerUp.type] + 1)
           player.weaponTimers[powerUp.type] = Math.min(
             WEAPON_PICKUP_MAX_SECONDS,
             Math.max(player.weaponTimers[powerUp.type], 0) + WEAPON_PICKUP_SECONDS,
@@ -1231,7 +1307,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.score > highScoreRef.current) {
       highScoreRef.current = player.score
     }
-  }, [addRipple, damagePlayer, fireEnemy, firePlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnSparks, startRaidBgm])
+  }, [addRipple, damagePlayer, fireEnemy, firePlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnRepairPowerUp, spawnSparks, startRaidBgm])
 
   useEffect(() => {
     const tick = (time: number) => {
