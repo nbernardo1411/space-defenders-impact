@@ -692,6 +692,37 @@
   animation: raidPlasma 0.22s linear infinite;
 }
 
+.raid__enemy-shot--orbShot {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d8b4fe;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0 16%, #a855f7 18% 38%, transparent 42%);
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.95), inset 0 0 10px rgba(216, 180, 254, 0.55);
+  animation: raidOrbShot 0.7s linear infinite;
+}
+
+.raid__enemy-shot--blade {
+  width: 10px;
+  height: 34px;
+  border-radius: 999px 999px 2px 2px;
+  background: linear-gradient(180deg, #ecfeff, #22d3ee 38%, #164e63);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.85);
+  clip-path: polygon(50% 0, 100% 24%, 72% 100%, 28% 100%, 0 24%);
+  animation: raidBladeShot 0.18s ease-in-out infinite alternate;
+}
+
+.raid__enemy-shot--superShot {
+  width: 22px;
+  height: 22px;
+  border-radius: 32% 68% 44% 56%;
+  background:
+    radial-gradient(circle at 38% 32%, #ffffff 0 10%, transparent 12%),
+    conic-gradient(from 0deg, #fbbf24, #ef233c, #7f1d1d, #fbbf24);
+  box-shadow: 0 0 24px rgba(251, 191, 36, 0.9), 0 0 34px rgba(239, 35, 60, 0.65);
+  animation: raidSuperShot 0.34s linear infinite;
+}
+
 .raid__power {
   z-index: 9;
   display: grid;
@@ -1012,6 +1043,21 @@
 @keyframes raidPlasma {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to { transform: translate(-50%, -50%) rotate(180deg); }
+}
+
+@keyframes raidOrbShot {
+  from { transform: translate(-50%, -50%) rotate(0deg) scale(0.9); }
+  to { transform: translate(-50%, -50%) rotate(360deg) scale(1.08); }
+}
+
+@keyframes raidBladeShot {
+  from { filter: brightness(0.9); }
+  to { filter: brightness(1.35); }
+}
+
+@keyframes raidSuperShot {
+  from { transform: translate(-50%, -50%) rotate(0deg) scale(0.92); }
+  to { transform: translate(-50%, -50%) rotate(360deg) scale(1.08); }
 }
 
 @keyframes raidRipple {

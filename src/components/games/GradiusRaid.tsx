@@ -39,7 +39,7 @@ type Shot = Vec & {
   vx: number
   vy: number
   damage: number
-  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma'
+  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot'
   radius: number
   pierce?: number
 }
@@ -676,28 +676,28 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       if (kind === 'orb') {
         for (let i = 0; i < 12; i += 1) {
           const angle = (i / 12) * Math.PI * 2 + performance.now() / 900
-          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y, vx: Math.cos(angle) * 25, vy: Math.sin(angle) * 25 + 19, damage: 1, kind: 'plasma', radius: 1.45 })
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y, vx: Math.cos(angle) * 25, vy: Math.sin(angle) * 25 + 19, damage: 1, kind: 'orbShot', radius: 1.45 })
         }
       }
       if (kind === 'serpent') {
         const lane = Math.sin(performance.now() / 280) * 18
         ;[-1, 0, 1].forEach((offset) => {
-          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + offset * 8, y: enemy.y + 8, vx: offset * 10, vy: 38, damage: 1, kind: 'plasma', radius: 1.7 })
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + offset * 8, y: enemy.y + 8, vx: offset * 10, vy: 38, damage: 1, kind: 'blade', radius: 1.9 })
         })
       }
       if (kind === 'super') {
         const fan = [-42, -28, -14, 0, 14, 28, 42]
-        fan.forEach((vx) => enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 10, vx, vy: 34, damage: 1, kind: 'boss', radius: 2 }))
+        fan.forEach((vx) => enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 10, vx, vy: 34, damage: 1, kind: 'superShot', radius: 2 }))
         for (let i = 0; i < 10; i += 1) {
           const angle = (i / 10) * Math.PI * 2 - performance.now() / 800
-          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: Math.cos(angle) * 22, vy: Math.sin(angle) * 22 + 20, damage: 1, kind: 'plasma', radius: 1.7 })
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: Math.cos(angle) * 22, vy: Math.sin(angle) * 22 + 20, damage: 1, kind: 'orbShot', radius: 1.7 })
         }
       }
       const aimX = player.x - enemy.x
       const aimY = player.y - enemy.y
       const mag = Math.hypot(aimX, aimY) || 1
       if (kind !== 'orb') {
-        enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: 'boss', radius: 2 })
+        enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: kind === 'serpent' ? 'blade' : kind === 'super' ? 'superShot' : 'boss', radius: 2 })
       }
       playGameSound('rocket')
       return
@@ -872,7 +872,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     for (const enemyShot of enemyShotsRef.current) {
       if (distSq(enemyShot, player) <= (enemyShot.radius + PLAYER_RADIUS) ** 2) {
         enemyShot.y = HEIGHT + 99
-        damagePlayer(enemyShot.kind === 'boss' || enemyShot.kind === 'plasma' ? 1 : enemyShot.damage)
+        damagePlayer(enemyShot.kind === 'boss' || enemyShot.kind === 'plasma' || enemyShot.kind === 'blade' || enemyShot.kind === 'orbShot' || enemyShot.kind === 'superShot' ? 1 : enemyShot.damage)
       }
     }
     enemyShotsRef.current = enemyShotsRef.current.filter((shot) => shot.y < HEIGHT + 30)
