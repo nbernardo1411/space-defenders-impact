@@ -43,6 +43,18 @@ const DREADNOUGHT_SCOUT_DOCK_RADIUS = 0.85
 const DREADNOUGHT_SCOUT_APPROACH_RADIUS = 1.65
 const DREADNOUGHT_SCOUT_ATTACK_RADIUS = 1.45
 const DREADNOUGHT_FIELD_LIMIT = 4
+const DESKTOP_TOWER_SHIP_SCALE: Record<TowerKey, number> = {
+  fast: 0.58,
+  sniper: 0.63,
+  aoe: 0.66,
+  slow: 0.60,
+  burst: 0.68,
+  gatling: 0.64,
+  rocket: 0.74,
+  laser: 0.72,
+  artillery: 0.76,
+  dreadnought: 1.55,
+}
 
 type CommanderAbilityKey = 'ion' | 'freeze' | 'repair'
 type CommanderCooldowns = Record<CommanderAbilityKey, number>
@@ -2042,7 +2054,11 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             const footprint = getTowerFootprint(tower.type)
             const towerW = footprint * cell - 4
             const towerH = footprint * cell - 4
-            const shipSize = tower.type === 'dreadnought' ? Math.max(54, cell * 1.55) : cell > 38 ? 26 : 20
+            const shipSize = tower.type === 'dreadnought'
+              ? Math.max(54, cell * 1.55)
+              : isMobileViewport
+                ? (cell > 38 ? 26 : 20)
+                : Math.max(36, Math.min(58, cell * DESKTOP_TOWER_SHIP_SCALE[tower.type]))
             // Tower scale-in animation
             const creationTime = towerCreationTimeRef.current.get(tower.id) ?? 0
             const scaleProgress = Math.min(creationTime / 0.42, 1)
@@ -2098,9 +2114,6 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 <TowerShip tType={tower.type} color={tower.towerDef.color} size={shipSize} />
                 {tower.level > 1 && (
                   <div style={{ fontSize: cell * 0.22, color: '#ffd666', fontWeight: 700, lineHeight: 1 }}>★{tower.level}</div>
-                )}
-                {tower.type === 'laser' && tower.laserExhaust > 0 && (
-                  <div style={{ fontSize: cell * 0.18, color: '#fb7185', fontWeight: 900, lineHeight: 1 }}>⏳</div>
                 )}
               </div>
             )
