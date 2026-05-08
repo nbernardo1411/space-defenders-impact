@@ -2061,9 +2061,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   // Collect all spawn starts and single finish
   const uiSpawnCells = new Set(uiPaths.map(p => p.length > 0 ? `${p[0][0]},${p[0][1]}` : ''))
   const uiFinishCell = uiPath.length > 0 ? `${uiPath[uiPath.length - 1][0]},${uiPath[uiPath.length - 1][1]}` : ''
-  const aliveBosses = uiEnemies.filter(e => e.isBoss && !e.dead && !e.leaked)
-  const totalBossMaxHp = aliveBosses.reduce((sum, b) => sum + Math.max(1, b.maxHp), 0)
-  const totalBossHp = aliveBosses.reduce((sum, b) => sum + Math.max(0, b.hp), 0)
+
 
   return (
     <>
@@ -2150,71 +2148,6 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           <button onClick={enterEndless} style={btnStyle('#7a4312', '#ffe1b3', true)}>ENDLESS</button>
         )}
       </div>
-
-      {/* Global boss HP bar (multi-segment: one segment per alive boss) */}
-      {aliveBosses.length > 0 && (
-        <div style={{
-          width: '100%',
-          maxWidth: chromeMaxW,
-          marginBottom: 8,
-          position: 'relative',
-          zIndex: 2,
-          background: '#230f0f',
-          border: '1px solid #6a2525',
-          borderRadius: 6,
-          padding: '6px 8px',
-          boxShadow: '0 0 18px #b91c1c55, inset 0 0 0 1px #00000088',
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-            marginBottom: 5,
-            color: '#ffd4d4',
-            fontWeight: 900,
-            fontSize: isCompact ? '0.72rem' : '0.8rem',
-            letterSpacing: 1,
-            textTransform: 'uppercase',
-            textShadow: '0 0 8px #ef444488',
-          }}>
-            <span>{uiStage === MAX_STAGES ? 'Final Boss' : `Boss Wave ${uiWave}`} · {aliveBosses.length} target{aliveBosses.length > 1 ? 's' : ''}</span>
-            <span>{Math.ceil(totalBossHp)} / {totalBossMaxHp}</span>
-          </div>
-          <div style={{
-            width: '100%',
-            height: 12,
-            background: '#1a1a1a',
-            border: '1px solid #6b1f1f',
-            borderRadius: 3,
-            overflow: 'hidden',
-            display: 'flex',
-            gap: 2,
-          }}>
-            {aliveBosses.map((boss) => {
-              const segmentWidthPct = totalBossMaxHp > 0 ? (Math.max(1, boss.maxHp) / totalBossMaxHp) * 100 : 0
-              const fillPct = Math.max(0, Math.min(1, boss.hp / Math.max(1, boss.maxHp))) * 100
-              return (
-                <div key={boss.id} style={{
-                  width: `${segmentWidthPct}%`,
-                  height: '100%',
-                  background: '#2a1212',
-                  borderRight: '1px solid #5a1f1f',
-                  overflow: 'hidden',
-                }}>
-                  <div style={{
-                    width: `${fillPct}%`,
-                    height: '100%',
-                    background: 'linear-gradient(90deg,#ef4444,#fb7185)',
-                    boxShadow: '0 0 10px #ef444499',
-                    transition: 'width 0.08s linear',
-                  }} />
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       <div style={{ display: 'flex', flexDirection: isCompact ? 'column' : 'row', alignItems: isCompact ? 'center' : 'flex-start', gap: 8, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1 }}>
         {/* Board */}
@@ -2510,9 +2443,22 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             }}>
               {isFinalBoss && <div style={{ fontSize: cell * 0.42, lineHeight: 1, marginBottom: 1 }}>💀</div>}
               {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.35, lineHeight: 1, marginBottom: 1 }}>BOSS</div>}
-              <div style={{ width: cell * bossScale - 6, height: e.isBoss ? 5 : 3, background: '#333', borderRadius: 2, marginBottom: 2 }}>
-                <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? '#34d399' : e.hp / e.maxHp > 0.25 ? '#ffd666' : '#fb7185', borderRadius: 2 }} />
-              </div>
+              {/* Boss HP bar — wider, taller, glowing red to stand out from normal bars */}
+              {e.isBoss ? (
+                <div style={{ width: cell * bossScale + 4, marginBottom: 3 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fca5a5', fontSize: Math.max(8, cell * 0.18), fontWeight: 900, lineHeight: 1, marginBottom: 2, textShadow: '0 0 6px #ef4444' }}>
+                    <span>{isFinalBoss ? '☠' : '⚠'}</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.ceil(e.hp)}/{e.maxHp}</span>
+                  </div>
+                  <div style={{ width: '100%', height: 7, background: '#1a0505', border: '1px solid #7f1d1d', borderRadius: 2, overflow: 'hidden', boxShadow: '0 0 8px #ef444466' }}>
+                    <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? 'linear-gradient(90deg,#dc2626,#f87171)' : e.hp / e.maxHp > 0.25 ? 'linear-gradient(90deg,#b45309,#fbbf24)' : 'linear-gradient(90deg,#7f1d1d,#ef4444)', boxShadow: '0 0 10px #ef444488', borderRadius: 2, transition: 'width 0.06s linear' }} />
+                  </div>
+                </div>
+              ) : (
+                <div style={{ width: cell * bossScale - 6, height: 3, background: '#333', borderRadius: 2, marginBottom: 2 }}>
+                  <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? '#34d399' : e.hp / e.maxHp > 0.25 ? '#ffd666' : '#fb7185', borderRadius: 2 }} />
+                </div>
+              )}
               <div style={{
                 width: sz, height: sz,
                 overflow: 'visible',
