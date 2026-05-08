@@ -41,7 +41,7 @@ type Shot = Vec & {
   vx: number
   vy: number
   damage: number
-  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot'
+  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss'
   radius: number
   pierce?: number
   turn?: number
@@ -118,6 +118,7 @@ type Snapshot = {
   highScore: number
   selectedShipKey: string
   pointer: Vec | null
+  stageClear: number
 }
 
 const WIDTH = 100
@@ -210,10 +211,11 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
 }
 
 const FORCE_FIELD_ARMOR = 5
-const NORMAL_POWER_DROP_COOLDOWN = 5.5
-const POWER_PITY_KILLS = 20
+const NORMAL_POWER_DROP_COOLDOWN = 3.8
+const POWER_PITY_KILLS = 12
 const RENDER_INTERVAL_MS = 16
-const BOSS_RESPAWN_SECONDS = 240
+const BOSS_RESPAWN_SECONDS = 90
+const STAGE_CLEAR_SECONDS = 3.15
 const MAX_SPARKS = 45
 const MAX_RIPPLES = 10
 
@@ -331,10 +333,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const spawnTimerRef = useRef(0.5)
   const formationTimerRef = useRef(2.1)
   const bossTimerRef = useRef(28)
+  const spawnLockRef = useRef(0)
   const powerDropCooldownRef = useRef(0)
   const killsSincePowerRef = useRef(0)
   const bossAlertRef = useRef(0)
   const bossMessageRef = useRef<BossMessage>(null)
+  const stageClearRef = useRef(0)
   const highScoreRef = useRef(getHighScore())
   const raidAudioContextRef = useRef<AudioContext | null>(null)
   const raidBgmOscillatorsRef = useRef<OscillatorNode[]>([])
@@ -357,6 +361,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     highScore: highScoreRef.current,
     selectedShipKey: SHIP_OPTIONS[0].key,
     pointer: null,
+    stageClear: 0,
   }))
 
   const syncSnapshot = useCallback(() => {
@@ -381,6 +386,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       highScore: highScoreRef.current,
       selectedShipKey: selectedShipRef.current.key,
       pointer: pointerVisualRef.current ? { ...pointerVisualRef.current } : null,
+      stageClear: stageClearRef.current,
     })
   }, [])
 
@@ -579,6 +585,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       else if (shot.kind === 'blade') drawTrail(shot, 'rgba(34,211,238,0.9)', 46, 7)
       else if (shot.kind === 'needle') drawTrail(shot, 'rgba(190,242,100,0.92)', 42, 5)
       else if (shot.kind === 'voidShot') drawOrb(shot, 'rgba(192,132,252,0.95)', 15)
+      else if (shot.kind === 'beam') drawTrail(shot, 'rgba(248,113,113,0.96)', 92, 11)
+      else if (shot.kind === 'scatterBoss') drawTrail(shot, 'rgba(251,146,60,0.9)', 34, 5)
       else if (shot.kind === 'superShot') drawOrb(shot, 'rgba(251,191,36,0.95)', 14)
       else drawOrb(shot, 'rgba(251,113,133,0.9)', 10)
     }
@@ -629,10 +637,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     spawnTimerRef.current = 1.25
     formationTimerRef.current = 3.4
     bossTimerRef.current = 36
+    spawnLockRef.current = 0
     powerDropCooldownRef.current = 0
     killsSincePowerRef.current = 0
     bossAlertRef.current = 0
     bossMessageRef.current = null
+    stageClearRef.current = 0
     highScoreRef.current = getHighScore()
     stopBGM()
     startRaidBgm(stageRef.current)
@@ -869,14 +879,14 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       if (powerDropCooldownRef.current > 0) return
 
       const pityBonus =
-        killsSincePowerRef.current >= POWER_PITY_KILLS + 8 ? 0.55 :
-        killsSincePowerRef.current >= POWER_PITY_KILLS ? 0.22 :
+        killsSincePowerRef.current >= POWER_PITY_KILLS + 6 ? 0.5 :
+        killsSincePowerRef.current >= POWER_PITY_KILLS ? 0.25 :
         0
-      const lowHullBonus = player.hp <= Math.ceil(player.maxHp * 0.35) ? 0.035 : 0
+      const lowHullBonus = player.hp <= Math.ceil(player.maxHp * 0.35) ? 0.06 : 0
       const chance = clamp(
-        0.065 + waveRef.current * 0.0025 + lowHullBonus + pityBonus - powerScore * 0.009,
-        0.035,
-        0.34,
+        0.115 + waveRef.current * 0.004 + lowHullBonus + pityBonus - powerScore * 0.006,
+        0.055,
+        0.42,
       )
 
       if (Math.random() > chance) return
@@ -895,13 +905,13 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
     const type = candidates[Math.floor(Math.random() * candidates.length)] ?? 'spread'
     killsSincePowerRef.current = 0
-    powerDropCooldownRef.current = guaranteed ? NORMAL_POWER_DROP_COOLDOWN * 0.7 : NORMAL_POWER_DROP_COOLDOWN + powerScore * 0.8
+    powerDropCooldownRef.current = guaranteed ? NORMAL_POWER_DROP_COOLDOWN * 0.7 : NORMAL_POWER_DROP_COOLDOWN + powerScore * 0.55
     powerUpsRef.current.push({ id: powerId++, type, x, y, vy: 11, radius: 3, spin: Math.random() * 360 })
   }, [])
 
   const spawnRepairPowerUp = useCallback((x: number, y: number) => {
     killsSincePowerRef.current = 0
-    powerDropCooldownRef.current = NORMAL_POWER_DROP_COOLDOWN * 0.65
+    powerDropCooldownRef.current = NORMAL_POWER_DROP_COOLDOWN * 0.45
     powerUpsRef.current.push({ id: powerId++, type: 'repair', x, y, vy: 11, radius: 3, spin: Math.random() * 360 })
   }, [])
 
@@ -955,6 +965,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           const angle = (i / 8) * Math.PI * 2 + performance.now() / 900
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y, vx: Math.cos(angle) * 25, vy: Math.sin(angle) * 25 + 19, damage: 1, kind: 'orbShot', radius: 1.45 })
         }
+        for (let i = 0; i < 10; i += 1) {
+          if (i === 2 || i === 7) continue
+          const angle = -Math.PI * 0.92 + (i / 9) * Math.PI * 0.84
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 5, vx: Math.cos(angle) * 34, vy: Math.sin(angle) * 14 + 36, damage: 1, kind: 'scatterBoss', radius: 1.35 })
+        }
       }
       if (kind === 'serpent') {
         const lane = Math.sin(performance.now() / 280) * 18
@@ -983,6 +998,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           const drift = Math.sin(phase + index) * 4
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + drift, y: enemy.y + 12, vx: drift * 0.8, vy: 30 + index * 2, damage: 1, kind: index % 2 === 0 ? 'superShot' : 'needle', radius: 1.85 })
         })
+        const lane = Math.round((enemy.x + Math.sin(performance.now() / 520) * 16) / 10) * 10
+        for (let i = 0; i < 6; i += 1) {
+          enemyShotsRef.current.push({ id: shotId++, x: clamp(lane, 12, 88), y: enemy.y + 8 - i * 8, vx: 0, vy: 58, damage: 1, kind: 'beam', radius: 2.35 })
+        }
       }
       if (kind === 'super') {
         const fan = [-34, -17, 0, 17, 34]
@@ -1014,6 +1033,38 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (phaseRef.current !== 'playing') return
 
     const player = playerRef.current
+    if (stageClearRef.current > 0) {
+      const before = stageClearRef.current
+      stageClearRef.current = Math.max(0, stageClearRef.current - dt)
+      const progress = 1 - stageClearRef.current / STAGE_CLEAR_SECONDS
+      pointerTargetRef.current = null
+      pointerVisualRef.current = null
+      player.x += (50 - player.x) * Math.min(1, dt * 4.8)
+      player.y = progress < 0.78 ? Math.max(4, player.y - dt * 31) : player.y
+      player.invuln = Math.max(player.invuln, 0.45)
+      sparksRef.current = sparksRef.current
+        .map((spark) => ({ ...spark, x: spark.x + spark.vx * dt, y: spark.y + spark.vy * dt, life: spark.life - dt }))
+        .filter((spark) => spark.life > 0)
+        .slice(-MAX_SPARKS)
+      ripplesRef.current = ripplesRef.current
+        .map((ripple) => ({ ...ripple, life: ripple.life - dt }))
+        .filter((ripple) => ripple.life > 0)
+        .slice(-MAX_RIPPLES)
+      if (before > 0 && stageClearRef.current <= 0) {
+        player.x = 50
+        player.y = 82
+        enemiesRef.current = []
+        shotsRef.current = []
+        enemyShotsRef.current = []
+        spawnLockRef.current = 1.2
+        spawnTimerRef.current = 1.1
+        formationTimerRef.current = 2.2
+        pointerTargetRef.current = null
+        pointerVisualRef.current = null
+      }
+      return
+    }
+
     const keys = keysRef.current
     let dx = 0
     let dy = 0
@@ -1044,6 +1095,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     player.shield = Math.max(0, player.shield - dt * 0.16)
     firePlayer()
 
+    spawnLockRef.current = Math.max(0, spawnLockRef.current - dt)
+    const canSpawnStageEnemies = spawnLockRef.current <= 0 && stageClearRef.current <= 0
     spawnTimerRef.current -= dt
     formationTimerRef.current -= dt
     const bossActive = enemiesRef.current.some((enemy) => enemy.isBoss)
@@ -1059,11 +1112,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       waveRef.current += 1
       player.rank = Math.min(20, player.rank + 1)
     }
-    if (formationTimerRef.current <= 0) {
+    if (canSpawnStageEnemies && formationTimerRef.current <= 0) {
       spawnFormation()
       formationTimerRef.current = Math.max(1.75, 4.6 - waveRef.current * 0.12)
     }
-    if (spawnTimerRef.current <= 0) {
+    if (canSpawnStageEnemies && spawnTimerRef.current <= 0) {
       spawnEnemyAt(10 + Math.random() * 80, -6, waveRef.current, Math.floor(Math.random() * 4))
       spawnTimerRef.current = Math.max(0.42, 1.25 - waveRef.current * 0.045)
     }
@@ -1227,10 +1280,19 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         resetStageLoadout(player)
       }
       bossTimerRef.current = BOSS_RESPAWN_SECONDS
+      stageClearRef.current = STAGE_CLEAR_SECONDS
+      spawnLockRef.current = STAGE_CLEAR_SECONDS + 1.2
       shotsRef.current = []
       enemyShotsRef.current = []
+      enemiesRef.current = enemiesRef.current.filter((enemy) => enemy.isBoss && enemy.hp <= 0)
       powerUpsRef.current = []
       if (defeatedBoss) {
+        ;[120, 320, 540, 780].forEach((delay, index) => {
+          window.setTimeout(() => {
+            spawnSparks(defeatedBoss.x + (Math.random() - 0.5) * 12, defeatedBoss.y + (Math.random() - 0.5) * 9, index % 2 === 0 ? '#fda4af' : '#fbbf24', 32, 7)
+            addRipple(defeatedBoss.x, defeatedBoss.y, index % 2 === 0 ? '#fb7185' : '#fbbf24', 12 + index * 2)
+          }, delay)
+        })
         spawnRepairPowerUp(defeatedBoss.x, defeatedBoss.y)
       }
       addRipple(player.x, player.y, '#fca5a5', 12)
@@ -1239,7 +1301,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     for (const enemyShot of enemyShotsRef.current) {
       if (distSq(enemyShot, player) <= (enemyShot.radius + PLAYER_RADIUS) ** 2) {
         enemyShot.y = HEIGHT + 99
-        damagePlayer(enemyShot.kind === 'boss' || enemyShot.kind === 'plasma' || enemyShot.kind === 'blade' || enemyShot.kind === 'orbShot' || enemyShot.kind === 'superShot' ? 1 : enemyShot.damage)
+        damagePlayer(enemyShot.kind === 'boss' || enemyShot.kind === 'plasma' || enemyShot.kind === 'blade' || enemyShot.kind === 'orbShot' || enemyShot.kind === 'superShot' || enemyShot.kind === 'beam' || enemyShot.kind === 'scatterBoss' ? 1 : enemyShot.damage)
       }
     }
     enemyShotsRef.current = enemyShotsRef.current.filter((shot) => shot.y < HEIGHT + 30)
@@ -1383,6 +1445,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
   const optionShipSize = player.ship.key === 'dreadnought' ? 40 : player.ship.key === 'xwing' ? 36 : 34
   const briefing = BRIEFING_PANELS[briefingStep] ?? BRIEFING_PANELS[0]
+  const stageClearProgress = snapshot.stageClear > 0 ? 1 - snapshot.stageClear / STAGE_CLEAR_SECONDS : 0
+  const stageFlashOpacity =
+    stageClearProgress > 0.66 && stageClearProgress < 0.9
+      ? Math.sin(((stageClearProgress - 0.66) / 0.24) * Math.PI)
+      : 0
 
   return (
     <div
@@ -1530,6 +1597,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         <div className="raid__boss-alert">
           {snapshot.bossMessage === 'clear' ? 'Boss Destroyed' : 'Boss Vector Incoming'}
         </div>
+      )}
+
+      {snapshot.stageClear > 0 && (
+        <div className="raid__stage-flash" style={{ opacity: stageFlashOpacity }} />
       )}
 
       {snapshot.phase !== 'playing' && snapshot.phase === 'paused' && (

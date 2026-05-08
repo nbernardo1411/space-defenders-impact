@@ -331,38 +331,43 @@
 
 .raid__engine {
   position: absolute;
-  bottom: 0;
+  bottom: -24px;
   left: 50%;
-  width: 22px;
-  height: 50px;
+  width: 26px;
+  height: 82px;
   transform: translateX(-50%);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 35, 60, 0.82), transparent);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.95), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 35, 60, 0.86) 28%, rgba(251, 191, 36, 0.42) 58%, transparent);
   clip-path: polygon(50% 100%, 0 0, 100% 0);
-  filter: blur(0.6px);
-  opacity: 0.9;
+  filter: blur(0.85px);
+  opacity: 0.94;
   z-index: -1;
+  box-shadow: 0 0 22px rgba(239, 35, 60, 0.48), 0 0 34px rgba(251, 191, 36, 0.16);
   animation: raidEngine 0.1s linear infinite alternate;
 }
 
 .raid__wing-glow {
   position: absolute;
-  bottom: 22px;
-  width: 8px;
-  height: 28px;
+  bottom: 5px;
+  width: 10px;
+  height: 50px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #ffffff, #ef233c, transparent);
-  opacity: 0.72;
-  filter: blur(1px);
+  background: linear-gradient(180deg, #ffffff, #ef233c 36%, rgba(251, 191, 36, 0.28), transparent);
+  opacity: 0.8;
+  filter: blur(1.15px);
+  transform-origin: 50% 0;
+  box-shadow: 0 0 16px rgba(239, 35, 60, 0.45), 0 0 24px rgba(251, 191, 36, 0.12);
 }
 
 .raid__wing-glow--left {
-  left: 18px;
-  transform: rotate(12deg);
+  left: calc(50% - 27px);
+  transform: translateX(-50%) rotate(10deg);
 }
 
 .raid__wing-glow--right {
-  right: 18px;
-  transform: rotate(-12deg);
+  left: calc(50% + 27px);
+  transform: translateX(-50%) rotate(-10deg);
 }
 
 .raid__option {
@@ -898,6 +903,17 @@
   box-shadow: 0 0 30px rgba(239, 35, 60, 0.38);
 }
 
+.raid__stage-flash {
+  position: absolute;
+  z-index: 38;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 82%, rgba(239, 35, 60, 0.22), transparent 28%),
+    #000000;
+  pointer-events: none;
+  transition: opacity 0.08s linear;
+}
+
 .raid__overlay {
   position: absolute;
   z-index: 40;
@@ -1154,8 +1170,8 @@
 }
 
 @keyframes raidEngine {
-  from { height: 34px; opacity: 0.62; }
-  to { height: 56px; opacity: 0.98; }
+  from { height: 58px; opacity: 0.7; }
+  to { height: 88px; opacity: 0.98; }
 }
 
 @keyframes raidShield {
