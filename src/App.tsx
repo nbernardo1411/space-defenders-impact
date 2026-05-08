@@ -1,4 +1,5 @@
 import './App.css'
+import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -30,10 +31,12 @@ const CUTSCENE_SCENES = [
 
 type ScreenState = 'title' | 'cutscene' | 'game'
 type GameMode = 'normal' | 'endless'
+type ActiveGame = 'towerDefense' | 'rocketRaid'
 
 function App() {
   const [screen, setScreen] = useState<ScreenState>('title')
   const [gameMode, setGameMode] = useState<GameMode>('normal')
+  const [activeGame, setActiveGame] = useState<ActiveGame>('towerDefense')
   const [cutsceneIndex, setCutsceneIndex] = useState(0)
 
   const currentScene = useMemo(() => CUTSCENE_SCENES[cutsceneIndex], [cutsceneIndex])
@@ -66,13 +69,20 @@ function App() {
   }, [screen, cutsceneIndex])
 
   const startCutscene = () => {
+    setActiveGame('towerDefense')
     setGameMode('normal')
     setCutsceneIndex(0)
     setScreen('cutscene')
   }
 
   const startEndless = () => {
+    setActiveGame('towerDefense')
     setGameMode('endless')
+    setScreen('game')
+  }
+
+  const startRocketRaid = () => {
+    setActiveGame('rocketRaid')
     setScreen('game')
   }
 
@@ -103,6 +113,9 @@ function App() {
             </button>
             <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
               Endless Mode
+            </button>
+            <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
+              Rocket Raid
             </button>
           </div>
         </div>
@@ -155,11 +168,15 @@ function App() {
 
   return (
     <div className="app">
-      <SpaceImpactDefense 
-        availableCoins={DEFAULT_COINS}
-        onClose={() => setScreen('title')}
-        initialMode={gameMode}
-      />
+      {activeGame === 'rocketRaid' ? (
+        <GradiusRaid onClose={() => setScreen('title')} />
+      ) : (
+        <SpaceImpactDefense
+          availableCoins={DEFAULT_COINS}
+          onClose={() => setScreen('title')}
+          initialMode={gameMode}
+        />
+      )}
     </div>
   )
 }
