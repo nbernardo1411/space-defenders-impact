@@ -1,951 +1,57 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type * as React from 'react'
 import { getGameAudioMixSettings, getGameSoundEnabled, playGameSound, setGameAudioMixSettings, setGameSoundEnabled, startBGM, stopBGM } from './sound'
 import type { AudioMixSettings } from './sound'
 import type { CoinOption } from './types'
+import {
+  COLS,
+  ENEMY_COLORS,
+  MAX_STAGES,
+  MAX_TOWER_LEVEL,
+  MOBILE_LAYOUT_STORAGE_KEY,
+  ROWS,
+  STORAGE_KEY,
+  TOWER_TYPES,
+  WAVES_PER_STAGE,
+  calcCell,
+  generatePaths,
+  getIsCompactLayout,
+  getTowerFootprint,
+  getNormalWaveCfg,
+  getWaveCfg,
+  isHeavyBossStage,
+  xpNeededForNextLevel,
+} from './towerDefense/config'
+import type { MobileLayoutMode, TowerKey } from './towerDefense/config'
+import type { Bullet, Enemy, EnemyTrait, GameState, ParticleType, ScoutDrone, Tower } from './towerDefense/model'
+import { angleToDeg, lerp, spawnImpactParticles, triggerEnemyDeath } from './towerDefense/effects'
+import { AlienShip, EarthHQIcon, MothershipSpawnIcon, TowerShip } from './towerDefense/sprites'
+import { StatPill, btnStyle } from './towerDefense/ui'
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const COLS = 14
-const ROWS = 10
-const MAX_STAGES = 10
-const WAVES_PER_STAGE = 5
-const STORAGE_KEY = 'spaceImpactDefenseHighScore'
-const ENDLESS_KEY = 'spaceImpactDefenseEndlessUnlocked'
-const MOBILE_LAYOUT_STORAGE_KEY = 'spaceImpactDefenseLayoutMode'
-
-type MobileLayoutMode = 'auto' | 'portrait' | 'landscape'
-
-// ─── Spawn point count per stage ──────────────────────────────────────────────
-function spawnCountForStage(stage: number): number {
-  if (stage >= 14) return 6
-  if (stage >= 11) return 5
-  if (stage >= 9) return 4
-  if (stage >= 6) return 3
-  if (stage >= 3) return 2
-  return 1
-}
-
-// ─── Path generator — unique multi-spawn Y-shaped paths per stage ─────────────
-// Returns array of full paths (branch + shared trunk), one per spawn point.
-// All paths converge at a merge column then share the same trunk to the finish.
-function generatePaths(stage: number): [number, number][][] {
-  const numSpawns = spawnCountForStage(stage)
-
-  // deterministic seeded RNG
-  let s = (stage + 3) * 69069 + 1
-  const rng = () => { s = ((s * 1664525) + 1013904223) >>> 0; return s / 0x100000000 }
-  const ri = (lo: number, hi: number) => lo + Math.floor(rng() * (hi - lo + 1))
-
-  const MERGE_COL = 7   // all branches converge here
-  const FINISH_COL = 13
-
-  // ── Build shared trunk: merge col → finish ──────────────────────────────
-  // Anchor rows for trunk
-  const trunkAnchCols = [MERGE_COL, 10, FINISH_COL]
-  const trunkAnchRows: number[] = [ri(2, 7)]
-  trunkAnchRows.push(trunkAnchRows[0] <= 5 ? ri(6, 8) : ri(1, 3))
-  trunkAnchRows.push(ri(2, 7))
-
-  const trunk: [number, number][] = []
-  const trunkUsed = new Set<string>()
-  const addT = (c: number, r: number) => {
-    if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return
-    const k = `${c},${r}`
-    if (!trunkUsed.has(k)) { trunk.push([c, r]); trunkUsed.add(k) }
-  }
-  for (let seg = 0; seg < trunkAnchCols.length - 1; seg++) {
-    const c0 = trunkAnchCols[seg], r0 = trunkAnchRows[seg]
-    const c1 = trunkAnchCols[seg + 1], r1 = trunkAnchRows[seg + 1]
-    if (seg === 0) addT(c0, r0)
-    for (let c = c0 + 1; c <= c1; c++) addT(c, r0)
-    const dr = r1 > r0 ? 1 : -1
-    if (r1 !== r0) for (let r = r0 + dr; dr > 0 ? r <= r1 : r >= r1; r += dr) addT(c1, r)
-  }
-  const mergeRow = trunk[0][1]  // row at which branches must arrive
-
-  // ── Build each branch: spawn → merge point ─────────────────────────────
-  // Distribute spawn rows evenly
-  const spawnRows: number[] = []
-  if (numSpawns === 1) {
-    spawnRows.push(mergeRow)  // single path — spawn aligns with merge
-  } else {
-    const step = Math.floor((ROWS - 2) / (numSpawns - 1))
-    for (let i = 0; i < numSpawns; i++) spawnRows.push(1 + i * step)
-  }
-
-  const allPaths: [number, number][][] = []
-  for (let sp = 0; sp < numSpawns; sp++) {
-    const spawnRow = spawnRows[sp]
-    const branch: [number, number][] = []
-    const bUsed = new Set<string>()
-    const addB = (c: number, r: number) => {
-      if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return
-      const k = `${c},${r}`
-      if (!bUsed.has(k)) { branch.push([c, r]); bUsed.add(k) }
-    }
-
-    // Meander from col 0 at spawnRow → to col MERGE_COL at mergeRow
-    // Multiple bends for increased complexity
-    const minBendRow = Math.max(0, Math.min(spawnRow, mergeRow) - 1)
-    const maxBendRow = Math.min(ROWS - 1, Math.max(spawnRow, mergeRow) + 1)
-    const bend1Col = ri(2, 4)
-    const bend1Row = ri(minBendRow, maxBendRow)
-    const bend2Col = ri(5, 6)
-    const bend2Row = ri(minBendRow, maxBendRow)
-    
-    addB(0, spawnRow)
-    // walk right to bend1Col at spawnRow
-    for (let c = 1; c <= bend1Col; c++) addB(c, spawnRow)
-    // walk vertically to bend1Row at bend1Col
-    if (bend1Row !== spawnRow) {
-      const dr = bend1Row > spawnRow ? 1 : -1
-      for (let r = spawnRow + dr; dr > 0 ? r <= bend1Row : r >= bend1Row; r += dr) addB(bend1Col, r)
-    }
-    // walk right from bend1Col to bend2Col at bend1Row
-    for (let c = bend1Col + 1; c <= bend2Col; c++) addB(c, bend1Row)
-    // walk vertically to bend2Row at bend2Col
-    if (bend2Row !== bend1Row) {
-      const dr = bend2Row > bend1Row ? 1 : -1
-      for (let r = bend1Row + dr; dr > 0 ? r <= bend2Row : r >= bend2Row; r += dr) addB(bend2Col, r)
-    }
-    // walk right from bend2Col to MERGE_COL at bend2Row
-    for (let c = bend2Col + 1; c <= MERGE_COL; c++) addB(c, bend2Row)
-    // walk vertically to mergeRow at MERGE_COL if needed
-    if (bend2Row !== mergeRow) {
-      const dr = mergeRow > bend2Row ? 1 : -1
-      for (let r = bend2Row + dr; dr > 0 ? r <= mergeRow : r >= mergeRow; r += dr) addB(MERGE_COL, r)
-    }
-
-    // Full path = branch (excluding merge cell) + trunk
-    // Remove the merge cell from branch end to avoid duplicate when appending trunk
-    const branchWithoutMerge = branch.filter(([c, r]) => !(c === MERGE_COL && r === mergeRow))
-    allPaths.push([...branchWithoutMerge, ...trunk])
-  }
-
-  return allPaths
-}
-
-// Legacy single-path wrapper (kept for reference)
-// function generatePath(stage: number): [number, number][] {
-//   return generatePaths(stage)[0]
-// }
-
-// Tower definitions: each type maps to a ship role
-const TOWER_TYPES = [
-  { key: 'fast',      label: 'Scout',    color: '#00fff2', range: 2.0, dmg: 8,   rate: 0.5,  cost: 60,   desc: 'High fire rate, short range' },
-  { key: 'sniper',    label: 'Rail Gun', color: '#7c5dff', range: 10,  dmg: 45,  rate: 3.5,  cost: 120,  desc: 'Long range, heavy piercing shot' },
-  { key: 'aoe',       label: 'Bomber',   color: '#ffd666', range: 2.5, dmg: 20,  rate: 1.8,  cost: 100,  desc: 'Plasma splash, hits nearby aliens' },
-  { key: 'slow',      label: 'Cryo',     color: '#5e53ff', range: 2.8, dmg: 6,   rate: 1.2,  cost: 80,   desc: 'Freeze beam, slows aliens 50%' },
-  { key: 'burst',     label: 'Cannon',   color: '#f99b45', range: 4.0, dmg: 170, rate: 5.0,  cost: 200,  desc: 'High burst, slow reload' },
-  { key: 'gatling',   label: 'Gatling',  color: '#00ff0d', range: 4,   dmg: 4,   rate: 0.1,  cost: 400,  desc: 'Rapid-fire chain guns' },
-  { key: 'rocket',    label: 'Rocket',   color: '#ff0000', range: 6,   dmg: 250, rate: 12.0, cost: 600,  desc: 'Massive AOE blast, 12s reload' },
-  { key: 'laser',     label: 'Laser',    color: '#dbecff', range: 4.5, dmg: 3,   rate: 0.01, cost: 2000, desc: 'Beam 10s · exhaust 5s · 300 DPS pierce' },
-  { key: 'artillery', label: 'Orbital',  color: '#ff8800', range: 999, dmg: 250, rate: 7.0,  cost: 3500, desc: 'Global range · 3 orbital strikes' },
-] as const
-type TowerKey = typeof TOWER_TYPES[number]['key']
-
-const ENEMY_COLORS = ['#ff5f8a', '#ff944d', '#ffd84d', '#71f79f', '#4dd8ff', '#8f7cff', '#ff74d4'] as const
-
-// ─── Wave config (dynamic per stage + wave) ───────────────────────────────────
-type WaveCfg = { count: number; hp: number; speed: number; reward: number; isBoss: boolean }
-
-function getNormalWaveCfg(stage: number, wave: number): WaveCfg {
-  const ss = 1 + (stage - 1) * 0.65   // stage HP scale (was 0.45)
-  const ws = 1 + (wave  - 1) * 0.22   // wave HP scale  (was 0.18)
-  return {
-    count:  8 + wave * 2 + stage * 4,  // was 6 + wave*2 + stage*2
-    hp:     Math.round(65 * ss * ws),
-    speed:  Math.min(2.6, 0.9 + (stage - 1) * 0.16 + (wave - 1) * 0.05),
-    reward: 12 + stage * 4 + wave * 2,
-    isBoss: false,
-  }
-}
-
-function getWaveCfg(stage: number, wave: number): WaveCfg {
-  const isBoss = wave === WAVES_PER_STAGE || stage === MAX_STAGES
-  const ss = 1 + (stage - 1) * 0.65   // stage HP scale (was 0.45)
-  // Stage 10 final boss — slow but destroys towers
-  if (isBoss && stage === MAX_STAGES) return {
-    count:  3,
-    hp:     22000,
-    speed:  0.28,
-    reward: 400,
-    isBoss: true,
-  }
-  if (isBoss) return {
-    count:  spawnCountForStage(stage),
-    hp:     Math.round(2000 * ss),
-    speed:  Math.max(0.5, 0.65 + (stage - 1) * 0.06),
-    reward: 90 + stage * 20,
-    isBoss: true,
-  }
-  return getNormalWaveCfg(stage, wave)
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 let _eid = 1
 let _tid = 1
 let _bid = 1
+let _sid = 1
 
-type Enemy = {
-  id: number
-  pathIdx: number  // which path (0..numSpawns-1) this enemy follows
-  pathIndex: number
-  progress: number // 0..1 between pathIndex and pathIndex+1
-  x: number; y: number
-  hp: number; maxHp: number
-  speed: number
-  baseSpeed: number
-  slowTimer: number
-  reward: number
-  coinImg: string
-  tint: string
-  isBoss: boolean
-  destroyCooldown: number  // stage-10 boss: smashes nearby towers
-  hitFlash: number  // time remaining to show red hit indicator
-  dead: boolean
-  leaked: boolean
-}
+const DREADNOUGHT_SCOUT_COUNT = 3
+const DREADNOUGHT_SCOUT_INTERVAL = 10
+const DREADNOUGHT_SCOUT_ATTACK_TIME = 5
+const DREADNOUGHT_SCOUT_RATE = 0.5
+const DREADNOUGHT_SCOUT_DAMAGE = 8
+const DREADNOUGHT_SCOUT_COLOR = '#f43f5e'
+const DREADNOUGHT_SCOUT_DOCK_RADIUS = 0.85
 
-type Tower = {
-  id: number
-  col: number; row: number
-  type: TowerKey
-  towerDef: typeof TOWER_TYPES[number]
-  coin: CoinOption
-  cooldown: number
-  level: number
-  xp: number
-  aimAngle: number
-  burstQueue: { tx: number; ty: number; targetId: number; delay: number; dmg: number }[]
-  laserActive: number   // seconds remaining in beam
-  laserExhaust: number  // seconds remaining in exhaust (cooldown)
-}
+type CommanderAbilityKey = 'ion' | 'freeze' | 'repair'
+type CommanderCooldowns = Record<CommanderAbilityKey, number>
 
-type Bullet = {
-  id: number
-  x: number; y: number
-  tx: number; ty: number
-  speed: number
-  color: string
-  targetId: number
-  towerId: number
-  dmg: number
-  isAoe: boolean
-  isSlow: boolean
-  isRocket: boolean
-  isHeavy: boolean
-  isHoming: boolean
-  towerType: string
-  dead: boolean
-}
+const COMMANDER_COOLDOWNS: CommanderCooldowns = { ion: 28, freeze: 34, repair: 46 }
+const HQ_MAX_LEVEL = 4
 
-type GameState = 'idle' | 'playing' | 'wave' | 'stage_complete' | 'gameover' | 'victory'
-type ParticleType = 'death' | 'build' | 'sell' | 'gold' | 'impact' | 'freeze' | 'burst' | 'ember' | 'spark'
-const MAX_TOWER_LEVEL = 5
 
-function xpNeededForNextLevel(level: number) {
-  // 200 -> 320 -> 440 -> 560 XP (Lv1->2..Lv4->5): auto-XP from normal kills is slow;
-  // the manual upgrade button remains the primary way to level up quickly.
-  return 140 + level * 120
-}
 
-// ─── Cell size calculation ─────────────────────────────────────────────────────
-function calcCell(layoutMode: MobileLayoutMode = 'auto') {
-  if (typeof window === 'undefined') return 44
-  // A real desktop always has height > 550. Wide-landscape phones (e.g. S20 Ultra = 915×412) must not be treated as desktop.
-  const isDesktop = window.innerWidth > 900 && window.innerHeight > 550
-  const isMobile = !isDesktop
-  const isNaturalLandscape = window.innerWidth > window.innerHeight
-  const useMobileLandscape = isMobile && (
-    layoutMode === 'landscape' ||
-    (layoutMode === 'auto' && isNaturalLandscape)
-  )
-
-  if (!isDesktop && !useMobileLandscape) {
-    // Portrait compact: CSS flex distributes remaining height to the shop,
-    // so we only constrain by width to prevent horizontal overflow.
-    const byWidth = (window.innerWidth - 24) / COLS
-    return Math.floor(Math.max(20, Math.min(38, byWidth)))
-  }
-
-  // Desktop or landscape mobile: constrain by both width and height.
-  const reservedWidth = isDesktop ? 240 : 210   // sidebar ~200px + padding
-  const reservedHeight = isDesktop ? 140 : 130  // actual landscape phone HUD ≈ 110px + safety
-  const byWidth = (window.innerWidth - reservedWidth) / COLS
-  const byHeight = (window.innerHeight - reservedHeight) / ROWS
-  const target = Math.min(byWidth, byHeight)
-  const minCell = isDesktop ? 32 : 20
-  const maxCell = isDesktop ? 72 : 56
-  return Math.floor(Math.max(minCell, Math.min(maxCell, target)))
-}
-
-function getIsCompactLayout(layoutMode: MobileLayoutMode) {
-  if (typeof window === 'undefined') return false
-  if (window.innerWidth > 900 && window.innerHeight > 550) return false
-  if (layoutMode === 'portrait') return true
-  if (layoutMode === 'landscape') return false
-  return window.innerHeight >= window.innerWidth
-}
-
-// ─── Lerp helper ──────────────────────────────────────────────────────────────
-function lerp(a: number, b: number, t: number) { return a + (b - a) * t }
-
-function angleToDeg(fromX: number, fromY: number, toX: number, toY: number) {
-  return Math.atan2(toY - fromY, toX - fromX) * 180 / Math.PI + 90
-}
-
-function spawnImpactParticles(
-  particles: {x: number; y: number; type: ParticleType; vx: number; vy: number; life: number; maxLife: number}[],
-  x: number,
-  y: number,
-  type: 'impact' | 'freeze',
-  count: number,
-  speed: number,
-  maxLife: number,
-) {
-  for (let i = 0; i < count; i++) {
-    const angle = (-Math.PI / 2) + (Math.random() - 0.5) * 2.2
-    const velocity = speed * (0.7 + Math.random() * 0.7)
-    particles.push({
-      x,
-      y,
-      type,
-      vx: Math.cos(angle) * velocity,
-      vy: Math.sin(angle) * velocity,
-      life: 0,
-      maxLife,
-    })
-  }
-}
-
-// ─── Enemy death helper with animations ────────────────────────────────────────
-function triggerEnemyDeath(
-  e: Enemy,
-  towerType: string,
-  isBoss: boolean,
-  goldRef: { current: number },
-  scoreRef: { current: number },
-  particles: {x: number; y: number; type: ParticleType; vx: number; vy: number; life: number; maxLife: number}[],
-  floatingText: {x: number; y: number; text: string; time: number; maxTime: number; color: string}[],
-  screenFlashRef: React.MutableRefObject<{time: number; maxTime: number; intensity: number} | null>,
-  coinFlowRef: React.MutableRefObject<{fromX: number; fromY: number; toX: number; toY: number; amount: number; time: number; maxTime: number}[]>,
-  setScreenFlashState: (state: number) => void,
-  shockwaves?: {x: number; y: number; radius: number; time: number; maxTime: number; intensity: number}[]
-) {
-  e.dead = true
-  goldRef.current += e.reward
-  scoreRef.current += e.reward * 10
-
-  // Enhanced death effect with multiple particle layers
-  const x = e.x + 0.5, y = e.y + 0.5
-  
-  // Death particles - main burst
-  const deathCount = isBoss ? 12 : (towerType === 'rocket' ? 9 : towerType === 'aoe' ? 6 : towerType === 'artillery' ? 8 : 5)
-  for (let i = 0; i < deathCount; i++) {
-    const angle = (Math.PI * 2 * i) / deathCount + (Math.random() - 0.5) * 0.4
-    const speed = isBoss ? 2.2 : 1.8
-    particles.push({
-      x, y,
-      type: 'death',
-      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-      life: 0, maxLife: isBoss ? 0.5 : 0.4
-    })
-  }
-  
-  // Energy burst particles - inner burst for visual drama
-  const burstCount = isBoss ? 20 : 12
-  for (let i = 0; i < burstCount; i++) {
-    const angle = Math.random() * Math.PI * 2
-    const speed = 0.4 + Math.random() * 1.5
-    particles.push({
-      x, y,
-      type: 'burst',
-      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-      life: 0, maxLife: isBoss ? 0.6 : 0.45
-    })
-  }
-  
-  // Ember particles - trailing effect
-  const emberCount = isBoss ? 15 : 8
-  for (let i = 0; i < emberCount; i++) {
-    const angle = Math.random() * Math.PI * 2
-    const speed = 0.3 + Math.random() * 0.9
-    particles.push({
-      x, y,
-      type: 'ember',
-      vx: Math.cos(angle) * speed, vy: (Math.sin(angle) * speed) - 0.5,  // slight upward bias
-      life: 0, maxLife: isBoss ? 0.7 : 0.55
-    })
-  }
-  
-  // Spark particles - quick bright flashes
-  const sparkCount = isBoss ? 12 : 6
-  for (let i = 0; i < sparkCount; i++) {
-    const angle = Math.random() * Math.PI * 2
-    const speed = 1.2 + Math.random() * 2.0
-    particles.push({
-      x, y,
-      type: 'spark',
-      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-      life: 0, maxLife: 0.3
-    })
-  }
-
-  // Floating text
-  floatingText.push({ x: e.x, y: e.y, text: `+${e.reward}`, time: 0, maxTime: 2.0, color: '#ffd666' })
-
-  // Play appropriate explosion sound
-  const soundEnabled = getGameSoundEnabled()
-  if (soundEnabled) {
-    if (isBoss) playGameSound('explosion_big')
-    else playGameSound('explosion')
-  }
-
-  // Screen flash on boss kill
-  if (isBoss) {
-    screenFlashRef.current = {time: 0, maxTime: 0.1, intensity: 1.0}
-    setScreenFlashState(1.0)
-  }
-
-  // Add shockwave effect
-  if (shockwaves) {
-    shockwaves.push({
-      x: e.x + 0.5, y: e.y + 0.5,
-      radius: isBoss ? 2.0 : 1.2,
-      time: 0,
-      maxTime: isBoss ? 0.35 : 0.25,
-      intensity: isBoss ? 1.0 : 0.8
-    })
-  }
-
-  // Coin flow animation
-  coinFlowRef.current.push({
-    fromX: e.x, fromY: e.y,
-    toX: 14, toY: -0.5,  // top-right corner
-    amount: e.reward,
-    time: 0, maxTime: 0.6
-  })
-}
-
-// ─── Top-view Sprite Models ───────────────────────────────────────────────────
-function TowerShip({ tType, color, size }: { tType: string; color: string; size: number }) {
-  const s = size
-  const svgId = useId().replace(/:/g, '')
-  const paintGrad = `tower-paint-${svgId}`
-  const hullGrad = `tower-hull-${svgId}`
-  const glassGrad = `tower-glass-${svgId}`
-  const engineGrad = `tower-engine-${svgId}`
-
-  const core = color
-  const hull = `url(#${hullGrad})`
-  const paint = `url(#${paintGrad})`
-  const glass = `url(#${glassGrad})`
-  const engine = `url(#${engineGrad})`
-  const dark = '#172130'
-  const metal = '#617086'
-
-  const defs = (
-    <defs>
-      <linearGradient id={hullGrad} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#f8fbff" />
-        <stop offset="55%" stopColor="#ced9e7" />
-        <stop offset="100%" stopColor="#7e8ea5" />
-      </linearGradient>
-      <linearGradient id={paintGrad} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#ffffff" stopOpacity="0.98" />
-        <stop offset="18%" stopColor={core} stopOpacity="0.98" />
-        <stop offset="100%" stopColor={core} stopOpacity="0.4" />
-      </linearGradient>
-      <linearGradient id={glassGrad} x1="0" y1="0" x2="0.7" y2="1">
-        <stop offset="0%" stopColor="#f8feff" />
-        <stop offset="40%" stopColor="#9cecff" />
-        <stop offset="100%" stopColor="#2f6f9e" />
-      </linearGradient>
-      <radialGradient id={engineGrad} cx="0.5" cy="0.45" r="0.7">
-        <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
-        <stop offset="28%" stopColor="#b9f6ff" stopOpacity="0.95" />
-        <stop offset="68%" stopColor="#4ee0ff" stopOpacity="0.9" />
-        <stop offset="100%" stopColor="#4ee0ff" stopOpacity="0" />
-      </radialGradient>
-    </defs>
-  )
-
-  // ── Shared reusable micro-elements ────────────────────────────────────────
-  // 2-engine glow nozzles at rear
-  const eng2 = <>
-    <ellipse cx="26" cy="57" rx="4.5" ry="6" fill={engine} opacity="0.92" />
-    <ellipse cx="38" cy="57" rx="4.5" ry="6" fill={engine} opacity="0.92" />
-  </>
-  // 3-engine cluster at rear
-  const eng3 = <>
-    <ellipse cx="23" cy="57" rx="3.8" ry="5" fill={engine} opacity="0.88" />
-    <ellipse cx="32" cy="59" rx="3.5" ry="4.5" fill={engine} opacity="0.92" />
-    <ellipse cx="41" cy="57" rx="3.8" ry="5" fill={engine} opacity="0.88" />
-  </>
-
-  const shapes: Record<string, React.ReactNode> = {
-
-    // ── SCOUT: X-Wing quad interceptor ── 4 spread wings + 4 laser cannons ──
-    fast: <>
-      {/* Fuselage spine */}
-      <path d="M30 4 L34 4 L36 15 L36 52 L32 63 L28 52 L28 15 Z" fill={hull} />
-      <path d="M30.5 7 L33.5 7 L35 17 L35 48 L32 57 L29 48 L29 17 Z" fill={paint} opacity="0.9" />
-      {/* Forward-port wing — swept back */}
-      <path d="M30 18 L29 29 L3 22 L1 14 L9 11 Z" fill={hull} />
-      {/* Forward-stbd wing */}
-      <path d="M34 18 L35 29 L61 22 L63 14 L55 11 Z" fill={hull} />
-      {/* Aft-port wing */}
-      <path d="M28.5 33 L27 44 L2 49 L1 41 L7 37 Z" fill={hull} />
-      {/* Aft-stbd wing */}
-      <path d="M35.5 33 L37 44 L62 49 L63 41 L57 37 Z" fill={hull} />
-      {/* Color accent stripes */}
-      <path d="M8 12 L28 22" stroke={core} strokeWidth="5" strokeLinecap="butt" />
-      <path d="M56 12 L36 22" stroke={core} strokeWidth="5" strokeLinecap="butt" />
-      <path d="M7 42 L26 42.5" stroke={core} strokeWidth="4.5" strokeLinecap="butt" />
-      <path d="M57 42 L38 42.5" stroke={core} strokeWidth="4.5" strokeLinecap="butt" />
-      {/* 4 laser cannon barrels at wing tips */}
-      <line x1="-1" y1="15" x2="9" y2="15" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
-      <line x1="55" y1="15" x2="65" y2="15" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
-      <line x1="-1" y1="41.5" x2="8" y2="41.5" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
-      <line x1="56" y1="41.5" x2="65" y2="41.5" stroke={metal} strokeWidth="3.2" strokeLinecap="square" />
-      {/* Cockpit canopy */}
-      <path d="M30 10 C28 13 28 21 32 23 C36 21 36 13 34 10 Z" fill={glass} opacity="0.95" />
-      {/* Panel seam */}
-      <path d="M26 33 L32 30 L38 33" stroke="#ffffff7a" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      {eng2}
-    </>,
-
-    // ── RAIL GUN: SR-71 stealth delta ── ultra-long barrel + swept wings ─────
-    sniper: <>
-      {/* Narrow spine hull */}
-      <path d="M32 4 L38 9 L42 20 L46 34 L42 59 L22 59 L18 34 L22 20 L26 9 Z" fill={hull} />
-      <path d="M32 7 L37 11 L40 21 L43 33 L39 54 L25 54 L21 33 L24 21 L27 11 Z" fill={paint} opacity="0.92" />
-      {/* Ultra-long barrel pair extending past nose */}
-      <rect x="30.5" y="-5" width="2.5" height="22" rx="1.2" fill={dark} />
-      <rect x="31" y="-4" width="2" height="21" rx="1" fill="#9bb0c5" opacity="0.75" />
-      {/* Swept-back delta wings — sharply angled */}
-      <path d="M27 21 L21 13 L2 45 L4 52 L17 49 L26 35 Z" fill={hull} />
-      <path d="M37 21 L43 13 L62 45 L60 52 L47 49 L38 35 Z" fill={hull} />
-      {/* Wing color bar near fuselage */}
-      <path d="M6 48 L18 40 L25 40" stroke={core} strokeWidth="4.5" strokeLinecap="square" />
-      <path d="M58 48 L46 40 L39 40" stroke={core} strokeWidth="4.5" strokeLinecap="square" />
-      {/* Scope block on barrel */}
-      <rect x="28" y="10" width="8" height="6" rx="1.5" fill={dark} />
-      <rect x="29.5" y="11" width="5" height="4" rx="1" fill="#9bb0c5" opacity="0.65" />
-      {/* Cockpit */}
-      <path d="M30.5 13 L29 16 L29 22 L32 23.5 L35 22 L35 16 L33.5 13 Z" fill={glass} />
-      {eng3}
-    </>,
-
-    // ── BOMBER: Rocket-style strike craft ── pointed hull + hard wing pods ──
-    aoe: <>
-      {/* Pointed center fuselage, similar language to Rocket */}
-      <path d="M30 5 L34 5 L37 15 L38 51 L32 62 L26 51 L27 15 Z" fill={hull} />
-      <path d="M30.5 8 L33.5 8 L35.5 16 L36 47 L32 56 L28 47 L28.5 16 Z" fill={paint} opacity="0.9" />
-      {/* Broad swept wings */}
-      <path d="M29 20 L25 45 L4 52 L2 44 L16 33 L24 26 Z" fill={hull} />
-      <path d="M35 20 L39 45 L60 52 L62 44 L48 33 L40 26 Z" fill={hull} />
-      {/* Twin bomb racks each side (all angular) */}
-      <path d="M5 28 L12 28 L13 41 L6 45 L4 38 Z" fill={dark} />
-      <path d="M14 33 L21 33 L22 45 L16 48 L13 42 Z" fill={dark} />
-      <path d="M59 28 L52 28 L51 41 L58 45 L60 38 Z" fill={dark} />
-      <path d="M50 33 L43 33 L42 45 L48 48 L51 42 Z" fill={dark} />
-      {/* Warhead tips */}
-      <path d="M6 28 L9 22 L12 28" fill={core} opacity="0.9" />
-      <path d="M15 33 L18 27 L21 33" fill={core} opacity="0.82" />
-      <path d="M58 28 L55 22 L52 28" fill={core} opacity="0.9" />
-      <path d="M49 33 L46 27 L43 33" fill={core} opacity="0.82" />
-      {/* Angular bomb bay hatch */}
-      <path d="M32 25 L38 31 L32 37 L26 31 Z" fill={dark} opacity="0.92" />
-      <path d="M32 27 L35.5 31 L32 35 L28.5 31 Z" fill="#fff8b0" opacity="0.9" />
-      {/* Spine panel */}
-      <path d="M29 30 L32 28 L35 30 L35 44 L32 47 L29 44 Z" fill="#ffffff24" />
-      {eng2}
-    </>,
-
-    // ── CRYO: Sharp arrowhead fighter ── angular ice prism, swept wings ──────
-    slow: <>
-      {/* Sharp arrowhead fuselage — no blobs */}
-      <path d="M32 5 L40 12 L44 24 L42 50 L36 60 L28 60 L22 50 L20 24 L24 12 Z" fill={hull} />
-      <path d="M32 8 L38 14 L41 24 L39 46 L35 55 L29 55 L25 46 L23 24 L26 14 Z" fill={paint} opacity="0.9" />
-      {/* Swept cryo wings */}
-      <path d="M23 24 L18 16 L1 34 L3 42 L21 38 L24 30 Z" fill={hull} />
-      <path d="M41 24 L46 16 L63 34 L61 42 L43 38 L40 30 Z" fill={hull} />
-      {/* Wing color accent */}
-      <path d="M4 39 L18 32 L23 32" stroke={core} strokeWidth="4" strokeLinecap="square" />
-      <path d="M60 39 L46 32 L41 32" stroke={core} strokeWidth="4" strokeLinecap="square" />
-      {/* Forward ice prism emitter — sharp diamond, NO circles */}
-      <path d="M32 5 L37 14 L32 21 L27 14 Z" fill="#d8fbff" opacity="0.92" />
-      <path d="M32 8 L35 14 L32 19 L29 14 Z" fill="#ffffff" opacity="0.95" />
-      {/* Ice beam spine down fuselage */}
-      <line x1="32" y1="21" x2="32" y2="44" stroke="#a8f5ff" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
-      {/* Ice exhaust jets */}
-      <path d="M23 49 L18 59" stroke="#a8f5ffcc" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M41 49 L46 59" stroke="#a8f5ffcc" strokeWidth="2.4" strokeLinecap="round" />
-      <ellipse cx="26" cy="57" rx="4" ry="5.5" fill={engine} opacity="0.88" />
-      <ellipse cx="38" cy="57" rx="4" ry="5.5" fill={engine} opacity="0.88" />
-    </>,
-
-    // ── CANNON: Heavy gunship ── swept attack wings + massive triple cannon ──
-    burst: <>
-      {/* Central armored fuselage */}
-      <path d="M26 8 H38 L43 16 L44 44 L38 60 H26 L20 44 L21 16 Z" fill={hull} />
-      <path d="M28 11 H36 L40 18 L41 41 L36 55 H28 L24 41 L23 18 Z" fill={paint} opacity="0.9" />
-      {/* Triple-barrel forward cannon */}
-      <rect x="27.5" y="-5" width="9" height="24" rx="3" fill={dark} />
-      <rect x="28.5" y="-4" width="7" height="22" rx="2.5" fill="#8797a9" opacity="0.84" />
-      <rect x="30" y="-2" width="4" height="20" rx="2" fill="#c4cedb" opacity="0.72" />
-      {/* Wide swept attack wings — proper fighter wings */}
-      <path d="M22 17 L18 10 L1 31 L3 42 L22 37 L24 27 Z" fill={hull} />
-      <path d="M42 17 L46 10 L63 31 L61 42 L42 37 L40 27 Z" fill={hull} />
-      {/* Wing weapon hardpoints */}
-      <path d="M3 31 L16 28 L20 35 L4 39 Z" fill={dark} />
-      <path d="M61 31 L48 28 L44 35 L60 39 Z" fill={dark} />
-      <rect x="3" y="31" width="13" height="5" rx="1.5" fill={core} opacity="0.82" />
-      <rect x="48" y="31" width="13" height="5" rx="1.5" fill={core} opacity="0.82" />
-      {/* Wing color accent */}
-      <path d="M4 38 L18 33 L22 33" stroke={core} strokeWidth="4" strokeLinecap="square" />
-      <path d="M60 38 L46 33 L42 33" stroke={core} strokeWidth="4" strokeLinecap="square" />
-      {/* Cockpit slit */}
-      <path d="M27 13 H37 L38.5 15 V20 L37 21.5 H27 L25.5 20 V15 Z" fill={glass} opacity="0.88" />
-      {eng3}
-    </>,
-
-    // ── GATLING: Assault striker ── rocket-like frame + 6 forward barrels ───
-    gatling: <>
-      {/* Rocket-like center hull with pointed nose */}
-      <path d="M29 4 L35 4 L38 15 L39 50 L32 62 L25 50 L26 15 Z" fill={hull} />
-      <path d="M29.5 7 L34.5 7 L36.5 16 L37 46 L32 56 L27 46 L27.5 16 Z" fill={paint} opacity="0.9" />
-      {/* Heavy swept wings with hard edges */}
-      <path d="M28 20 L24 43 L5 50 L2 42 L15 33 L23 26 Z" fill={hull} />
-      <path d="M36 20 L40 43 L59 50 L62 42 L49 33 L41 26 Z" fill={hull} />
-      {/* Side weapon sponsons */}
-      <path d="M6 29 L14 29 L15 41 L8 45 L5 39 Z" fill={dark} />
-      <path d="M58 29 L50 29 L49 41 L56 45 L59 39 Z" fill={dark} />
-      {/* 6 gatling barrels in a broad rack */}
-      <rect x="18" y="-6" width="3" height="20" fill={dark} />
-      <rect x="22" y="-7" width="3" height="22" fill="#9bb0c5" />
-      <rect x="26" y="-6" width="3" height="20" fill={dark} />
-      <rect x="35" y="-6" width="3" height="20" fill={dark} />
-      <rect x="39" y="-7" width="3" height="22" fill="#9bb0c5" />
-      <rect x="43" y="-6" width="3" height="20" fill={dark} />
-      {/* Barrel rack braces */}
-      <rect x="17" y="4" width="30" height="4" fill={metal} opacity="0.82" />
-      <rect x="17" y="10" width="30" height="3" fill={metal} opacity="0.62" />
-      {/* Spine accents */}
-      <path d="M29 31 L32 29 L35 31 L35 45 L32 48 L29 45 Z" fill="#ffffff24" />
-      <path d="M8 44 L22 37" stroke={core} strokeWidth="4.5" strokeLinecap="square" />
-      <path d="M56 44 L42 37" stroke={core} strokeWidth="4.5" strokeLinecap="square" />
-      {eng3}
-    </>,
-
-    // ── ROCKET: Swept missile destroyer ── 4 visible pods + warhead tips ────
-    rocket: <>
-      {/* Central fuselage */}
-      <path d="M30 5 L34 5 L36 14 L37 52 L32 62 L27 52 L28 14 Z" fill={hull} />
-      <path d="M30.5 8 L33.5 8 L35 15 L35.5 48 L32 56 L28.5 48 L29 15 Z" fill={paint} opacity="0.9" />
-      {/* Wide swept wings */}
-      <path d="M30 21 L28 46 L5 51 L2 43 L18 33 L27 25 Z" fill={hull} />
-      <path d="M34 21 L36 46 L59 51 L62 43 L46 33 L37 25 Z" fill={hull} />
-      {/* 4 missile pods (angular, NOT circles) */}
-      <path d="M4 27 L13 27 L13 46 L6 46 L3 38 Z" fill={dark} />
-      <path d="M15 32 L23 32 L23 48 L17 48 L14 41 Z" fill={dark} />
-      <path d="M51 27 L60 27 L61 38 L58 46 L51 46 Z" fill={dark} />
-      <path d="M41 32 L49 32 L50 41 L47 48 L41 48 Z" fill={dark} />
-      {/* Missile warhead tips */}
-      <path d="M6 27 L8.5 21 L11 27" fill={core} opacity="0.92" />
-      <path d="M17 32 L19.5 26 L22 32" fill={core} opacity="0.82" />
-      <path d="M53 27 L56 21 L59 27" fill={core} opacity="0.92" />
-      <path d="M43 32 L45.5 26 L48 32" fill={core} opacity="0.82" />
-      {/* Nose cannon */}
-      <rect x="30" y="1" width="4" height="16" rx="2" fill="#9bb0c5" />
-      {/* Cockpit */}
-      <path d="M29.5 9 L29 11 L29 20 L32 22 L35 20 L35 11 L34.5 9 Z" fill={glass} />
-      {eng2}
-    </>,
-
-    // ── LASER: Kite/diamond hull ── angular prism emitter, swept fins ────────
-    laser: <>
-      {/* Diamond kite hull */}
-      <path d="M32 4 L44 15 L47 30 L42 50 L32 62 L22 50 L17 30 L20 15 Z" fill={hull} />
-      <path d="M32 7 L41 16 L44 29 L39 46 L32 55 L25 46 L20 29 L23 16 Z" fill={paint} opacity="0.9" />
-      {/* Long swept-back wing fins */}
-      <path d="M22 17 L4 48 L8 55 L22 45 L26 32 Z" fill={hull} />
-      <path d="M42 17 L60 48 L56 55 L42 45 L38 32 Z" fill={hull} />
-      {/* Wing accent */}
-      <path d="M7 51 L20 41 L24 41" stroke={core} strokeWidth="3.5" strokeLinecap="square" />
-      <path d="M57 51 L44 41 L40 41" stroke={core} strokeWidth="3.5" strokeLinecap="square" />
-      {/* Angular prism emitter at nose tip — NO circles */}
-      <path d="M32 4 L37 11 L34 14 L30 14 L27 11 Z" fill="#c8f6ff" opacity="0.96" />
-      <path d="M32 6 L35.5 11 L33.5 13 L30.5 13 L28.5 11 Z" fill="#ffffff" opacity="0.9" />
-      {/* Energy beam spine */}
-      <line x1="32" y1="14" x2="32" y2="24" stroke="#a0f4ff" strokeWidth="3.2" strokeLinecap="round" opacity="0.9" />
-      <line x1="32" y1="24" x2="32" y2="44" stroke="#a0f4ff" strokeWidth="1.6" strokeLinecap="round" opacity="0.4" />
-      {/* Wing fin exhaust tips */}
-      <path d="M10 53 L5 61" stroke={core} strokeWidth="3" strokeLinecap="round" />
-      <path d="M54 53 L59 61" stroke={core} strokeWidth="3" strokeLinecap="round" />
-      <ellipse cx="26" cy="58" rx="4.5" ry="5.5" fill={engine} opacity="0.9" />
-      <ellipse cx="38" cy="58" rx="4.5" ry="5.5" fill={engine} opacity="0.9" />
-    </>,
-
-    // ── ORBITAL: Triple-missile cruiser ── rocket body + 3 launch rails ─────
-    artillery: <>
-      {/* Rocket-like capital hull with pointed nose */}
-      <path d="M30 4 L34 4 L40 14 L43 30 L40 49 L34 62 L30 62 L24 49 L21 30 L24 14 Z" fill={hull} />
-      <path d="M30.5 7 L33.5 7 L38 16 L40 30 L37.5 46 L33.5 56 L30.5 56 L26.5 46 L24 30 L26 16 Z" fill={paint} opacity="0.88" />
-      {/* Large support wings like Rocket class */}
-      <path d="M25 22 L21 44 L4 50 L2 42 L15 33 L20 27 Z" fill={hull} />
-      <path d="M39 22 L43 44 L60 50 L62 42 L49 33 L44 27 Z" fill={hull} />
-      {/* 3 launch rails / silos across center */}
-      <path d="M14 21 L22 21 L22 45 L14 45 Z" fill={dark} />
-      <path d="M28 17 L36 17 L36 46 L28 46 Z" fill={dark} />
-      <path d="M42 21 L50 21 L50 45 L42 45 Z" fill={dark} />
-      {/* 3 rocket warheads */}
-      <path d="M14 21 L18 13 L22 21" fill={core} opacity="0.9" />
-      <path d="M28 17 L32 8 L36 17" fill={core} opacity="0.98" />
-      <path d="M42 21 L46 13 L50 21" fill={core} opacity="0.9" />
-      {/* Rail separators */}
-      <line x1="24" y1="20" x2="24" y2="46" stroke="#ffffff3d" strokeWidth="1.4" />
-      <line x1="40" y1="20" x2="40" y2="46" stroke="#ffffff3d" strokeWidth="1.4" />
-      {/* Targeting chevron */}
-      <path d="M32 48 L36 52 L32 56 L28 52 Z" fill="#fff5bc" opacity="0.8" />
-      <path d="M26 52 L32 49 L38 52" stroke="#ffffff9a" strokeWidth="1.5" fill="none" />
-      {eng3}
-    </>,
-  }
-
-  return (
-    <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 4px 10px #000a)' }}>
-      {defs}
-      {shapes[tType] ?? shapes.fast}
-    </svg>
-  )
-}
-
-function AlienShip({ variant, isBoss, isFinalBoss, color, size }: { variant: number; isBoss: boolean; isFinalBoss: boolean; color: string; size: number }) {
-  const s = Math.max(8, size)
-  const svgId = useId().replace(/:/g, '')
-  const shellGrad = `alien-shell-${svgId}`
-  const paintGrad = `alien-paint-${svgId}`
-  const eyeGrad = `alien-eye-${svgId}`
-  const c = color
-  const shell = `url(#${shellGrad})`
-  const paint = `url(#${paintGrad})`
-  const eye = `url(#${eyeGrad})`
-  const dark = '#0e0817'
-  const spine = '#2c173a'
-
-  const defs = (
-    <defs>
-      <linearGradient id={shellGrad} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#5a2e72" />
-        <stop offset="55%" stopColor="#2a1040" />
-        <stop offset="100%" stopColor="#100818" />
-      </linearGradient>
-      <linearGradient id={paintGrad} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#ffe6f8" stopOpacity="0.88" />
-        <stop offset="18%" stopColor={c} stopOpacity="0.98" />
-        <stop offset="100%" stopColor={c} stopOpacity="0.38" />
-      </linearGradient>
-      <radialGradient id={eyeGrad} cx="0.5" cy="0.42" r="0.72">
-        <stop offset="0%" stopColor="#ffffff" />
-        <stop offset="28%" stopColor="#fffacd" />
-        <stop offset="62%" stopColor="#7ef5ff" />
-        <stop offset="100%" stopColor="#7ef5ff" stopOpacity="0" />
-      </radialGradient>
-    </defs>
-  )
-
-  // ── FINAL BOSS: Biomechanical star fortress ──────────────────────────────
-  if (isFinalBoss) {
-    return (
-      <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 16px #000a)' }}>
-        {defs}
-        {/* Outer star-fortress hull — 8 spiked points */}
-        <path d="M32 2 L38 12 L50 8 L46 20 L60 22 L52 31 L60 40 L46 42 L50 54 L38 50 L32 62 L26 50 L14 54 L18 42 L4 40 L12 31 L4 22 L18 20 L14 8 L26 12 Z" fill={shell} />
-        {/* Inner armored hull */}
-        <path d="M32 8 L36 15 L46 12 L43 21 L52 23 L46 30 L52 37 L43 39 L46 48 L36 45 L32 52 L28 45 L18 48 L21 39 L12 37 L18 30 L12 23 L21 21 L18 12 L28 15 Z" fill={paint} opacity="0.82" />
-        {/* Spike weapon tips (8 points) */}
-        <circle cx="32" cy="3" r="2.8" fill={c} opacity="0.96" />
-        <circle cx="60" cy="22" r="2.8" fill={c} opacity="0.92" />
-        <circle cx="60" cy="40" r="2.8" fill={c} opacity="0.92" />
-        <circle cx="32" cy="61" r="2.8" fill={c} opacity="0.96" />
-        <circle cx="4" cy="40" r="2.8" fill={c} opacity="0.92" />
-        <circle cx="4" cy="22" r="2.8" fill={c} opacity="0.92" />
-        <circle cx="50" cy="9" r="2.2" fill={c} opacity="0.78" />
-        <circle cx="14" cy="9" r="2.2" fill={c} opacity="0.78" />
-        {/* Central power core (massive) */}
-        <circle cx="32" cy="32" r="14" fill={dark} />
-        <circle cx="32" cy="32" r="10" fill="#0a0516" />
-        <circle cx="32" cy="32" r="7" fill={eye} opacity="0.78" />
-        <circle cx="32" cy="32" r="4" fill="#fffde0" opacity="0.96" />
-        <circle cx="32" cy="32" r="2" fill="#ffffff" />
-        {/* Weapon ring details */}
-        <path d="M20 20 L32 16 L44 20" stroke="#ffffff66" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-        <path d="M20 44 L32 48 L44 44" stroke="#ffffff44" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      </svg>
-    )
-  }
-
-  // ── BOSS: Alien assault carrier — wide crescent + 3 gun batteries ────────
-  if (isBoss) {
-    return (
-      <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 6px 14px #000a)' }}>
-        {defs}
-        {/* Wide carrier hull */}
-        <path d="M6 32 C8 18 18 10 32 9 C46 10 56 18 58 32 C55 46 46 54 32 56 C18 54 9 46 6 32 Z" fill={shell} />
-        <path d="M12 31 C13 20 20 15 32 14 C44 15 51 20 52 31 C50 40 44 46 32 47 C20 46 14 40 12 31 Z" fill={paint} opacity="0.9" />
-        {/* Forward bow spike */}
-        <path d="M29 9 L32 2 L35 9 L33.5 13 L30.5 13 Z" fill={c} opacity="0.9" />
-        {/* Extended side carrier wings / landing decks */}
-        <path d="M12 27 L2 20 L1 36 L12 36 Z" fill={spine} />
-        <path d="M52 27 L62 20 L63 36 L52 36 Z" fill={spine} />
-        <path d="M3 23 L1 20 L2 36 L4 36" stroke={c} strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.7" />
-        <path d="M61 23 L63 20 L62 36 L60 36" stroke={c} strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.7" />
-        {/* 3 gun battery arrays */}
-        <rect x="13" y="17" width="9" height="4.5" rx="2" fill={dark} />
-        <rect x="13.5" y="18" width="7" height="2.5" rx="1.2" fill={c} opacity="0.72" />
-        <rect x="27.5" y="7" width="9" height="4.5" rx="2" fill={dark} />
-        <rect x="28" y="8" width="7" height="2.5" rx="1.2" fill={c} opacity="0.72" />
-        <rect x="42" y="17" width="9" height="4.5" rx="2" fill={dark} />
-        <rect x="42.5" y="18" width="7" height="2.5" rx="1.2" fill={c} opacity="0.72" />
-        {/* Command bridge sensor eye */}
-        <ellipse cx="32" cy="28" rx="11" ry="7" fill={eye} opacity="0.6" />
-        <circle cx="32" cy="28" r="4.5" fill="#fffae0" opacity="0.88" />
-        <circle cx="32" cy="28" r="2" fill="#ffffff" />
-        {/* Thruster bank */}
-        <rect x="10" y="49" width="13" height="6" rx="3" fill="#5c3872" />
-        <rect x="26" y="52" width="12" height="6" rx="3" fill="#5c3872" />
-        <rect x="41" y="49" width="13" height="6" rx="3" fill="#5c3872" />
-      </svg>
-    )
-  }
-
-  switch (variant % 4) {
-    // ── Variant 0: Scorpion disc — saucer with 4 scorpion claw spines ──────
-    case 0:
-      return (
-        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 4px 10px #000a)' }}>
-          {defs}
-          {/* Saucer hull */}
-          <path d="M12 34 C13 22 21 15 32 15 C43 15 51 22 52 34 C51 44 43 50 32 51 C21 50 13 44 12 34 Z" fill={shell} />
-          <path d="M17 33 C18 24 23 20 32 19 C41 20 46 24 47 33 C46 40 41 44 32 45 C23 44 18 40 17 33 Z" fill={paint} opacity="0.92" />
-          {/* Scorpion claw spines (4 directions) */}
-          <path d="M17 23 L3 13 L2 20 L11 25 Z" fill={spine} />
-          <path d="M47 23 L61 13 L62 20 L53 25 Z" fill={spine} />
-          <path d="M17 43 L3 53 L5 59 L15 49 Z" fill={spine} />
-          <path d="M47 43 L61 53 L59 59 L49 49 Z" fill={spine} />
-          {/* Claw glow tips */}
-          <circle cx="2" cy="13" r="2.5" fill={c} opacity="0.9" />
-          <circle cx="62" cy="13" r="2.5" fill={c} opacity="0.9" />
-          <circle cx="3" cy="56" r="2.5" fill={c} opacity="0.8" />
-          <circle cx="61" cy="56" r="2.5" fill={c} opacity="0.8" />
-          {/* Central eye */}
-          <ellipse cx="32" cy="32" rx="9" ry="7" fill={eye} opacity="0.75" />
-          <circle cx="32" cy="32" r="3.5" fill="#ffffff" opacity="0.9" />
-        </svg>
-      )
-
-    // ── Variant 1: Bat-wing fighter — dark swept wings, predator silhouette ─
-    case 1:
-      return (
-        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 4px 10px #000a)' }}>
-          {defs}
-          {/* Central spine/fuselage */}
-          <path d="M30 10 L34 10 L36 20 L35 50 L32 57 L29 50 L28 20 Z" fill={shell} />
-          {/* Large swept bat-wings */}
-          <path d="M30 18 L13 11 L2 28 L6 39 L20 37 L28 28 Z" fill={paint} />
-          <path d="M34 18 L51 11 L62 28 L58 39 L44 37 L36 28 Z" fill={paint} />
-          {/* Wing inner shadow for depth */}
-          <path d="M28 22 L15 16 L6 30 L9 36 L19 34 Z" fill="#00000030" />
-          <path d="M36 22 L49 16 L58 30 L55 36 L45 34 Z" fill="#00000030" />
-          {/* Wing edge accents */}
-          <path d="M4 27 L13 12" stroke={c} strokeWidth="2.2" strokeLinecap="round" opacity="0.8" />
-          <path d="M60 27 L51 12" stroke={c} strokeWidth="2.2" strokeLinecap="round" opacity="0.8" />
-          {/* Claw wing tips */}
-          <path d="M6 37 L2 45 L8 49 L12 41 Z" fill={spine} />
-          <path d="M58 37 L62 45 L56 49 L52 41 Z" fill={spine} />
-          {/* Eye */}
-          <ellipse cx="32" cy="30" rx="8" ry="6" fill={eye} opacity="0.72" />
-          <circle cx="32" cy="30" r="3.2" fill="#ffffff" opacity="0.88" />
-        </svg>
-      )
-
-    // ── Variant 2: Crescent scythe — sharp arced hull, hollow center ────────
-    case 2:
-      return (
-        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 4px 10px #000a)' }}>
-          {defs}
-          {/* Outer crescent/ring */}
-          <path d="M32 4 L52 12 L61 28 L57 46 L44 56 L32 59 L20 56 L7 46 L3 28 L12 12 Z" fill={shell} />
-          {/* Inner void — creates crescent illusion */}
-          <path d="M32 13 L46 19 L51 28 L47 42 L37 50 L32 51 L27 50 L17 42 L13 28 L18 19 Z" fill={dark} />
-          {/* Central bridge connecting crescent */}
-          <path d="M30 16 H34 L34 49 H30 Z" fill={paint} opacity="0.75" />
-          {/* Forward tip weapon spike */}
-          <path d="M29 11 L32 4 L35 11 L33.5 15 L30.5 15 Z" fill={c} opacity="0.94" />
-          {/* Crescent interior glow lines */}
-          <path d="M20 20 L28 34" stroke={c} strokeWidth="1.8" strokeLinecap="round" opacity="0.6" />
-          <path d="M44 20 L36 34" stroke={c} strokeWidth="1.8" strokeLinecap="round" opacity="0.6" />
-          {/* Eye / sensor */}
-          <circle cx="32" cy="30" r="5.5" fill={eye} opacity="0.8" />
-          <circle cx="32" cy="30" r="2.5" fill="#ffffff" opacity="0.94" />
-        </svg>
-      )
-
-    // ── Variant 3: Spider cruiser — oval body, 4 weapon tentacle appendages ─
-    default:
-      return (
-        <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 4px 10px #000a)' }}>
-          {defs}
-          {/* Central oval body */}
-          <ellipse cx="32" cy="32" rx="14" ry="12" fill={shell} />
-          <ellipse cx="32" cy="32" rx="10" ry="8.5" fill={paint} opacity="0.92" />
-          {/* 4 long spider appendages */}
-          <path d="M22 22 L4 7 L8 13 L18 23 Z" fill={spine} />
-          <path d="M42 22 L60 7 L56 13 L46 23 Z" fill={spine} />
-          <path d="M22 42 L4 57 L8 51 L18 41 Z" fill={spine} />
-          <path d="M42 42 L60 57 L56 51 L46 41 Z" fill={spine} />
-          {/* Weapon tips (glowing orbs) */}
-          <circle cx="4" cy="7" r="3" fill={c} opacity="0.96" />
-          <circle cx="60" cy="7" r="3" fill={c} opacity="0.96" />
-          <circle cx="4" cy="57" r="3" fill={c} opacity="0.88" />
-          <circle cx="60" cy="57" r="3" fill={c} opacity="0.88" />
-          {/* Core eye */}
-          <ellipse cx="32" cy="32" rx="7" ry="5.5" fill={eye} opacity="0.78" />
-          <circle cx="32" cy="32" r="3" fill="#ffffff" opacity="0.88" />
-        </svg>
-      )
-  }
-}
-
-function EarthHQIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" style={{ filter: 'drop-shadow(0 0 4px #7dd3fcaa)' }}>
-      <circle cx="24" cy="24" r="21" fill="#1b4e96" />
-      <path d="M9 20c4-5 8-6 12-5 2 1 2 4 1 6-2 3-4 4-7 4-2 0-4-2-6-5z" fill="#36c67a" />
-      <path d="M20 28c2-2 6-3 9-1 2 1 4 4 3 6-1 2-5 4-8 3-3-1-5-4-4-8z" fill="#36c67a" />
-      <path d="M30 13c4 1 7 4 8 8-3 1-6 0-8-2-2-1-2-4 0-6z" fill="#36c67a" />
-      <circle cx="24" cy="24" r="21" fill="none" stroke="#b7f0ff" strokeWidth="2" opacity="0.75" />
-    </svg>
-  )
-}
-
-function MothershipSpawnIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" style={{ filter: 'drop-shadow(0 0 4px #f472b6aa)' }}>
-      <ellipse cx="24" cy="30" rx="18" ry="10" fill="#3c2948" />
-      <ellipse cx="24" cy="24" rx="12" ry="9" fill="#a855f7" opacity="0.92" />
-      <ellipse cx="24" cy="23" rx="6" ry="4" fill="#f5d0fe" opacity="0.6" />
-      <rect x="8" y="31" width="8" height="4" rx="2" fill="#6b4b7d" />
-      <rect x="20" y="34" width="8" height="4" rx="2" fill="#6b4b7d" />
-      <rect x="32" y="31" width="8" height="4" rx="2" fill="#6b4b7d" />
-    </svg>
-  )
-}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins: CoinOption[]; onClose: () => void }) {
+export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'normal' }: { availableCoins: CoinOption[]; onClose: () => void; initialMode?: 'normal' | 'endless' }) {
   const [mobileLayoutMode, setMobileLayoutMode] = useState<MobileLayoutMode>(() => {
     if (typeof window === 'undefined') return 'auto'
     const raw = localStorage.getItem(MOBILE_LAYOUT_STORAGE_KEY)
@@ -961,8 +67,10 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const enemiesRef = useRef<Enemy[]>([])
   const towersRef = useRef<Tower[]>([])
   const bulletsRef = useRef<Bullet[]>([])
+  const scoutDronesRef = useRef<ScoutDrone[]>([])
   const goldRef = useRef(400)
   const livesRef = useRef(20)
+  const hqLevelRef = useRef(1)
   const waveRef = useRef(0)
   const scoreRef = useRef(0)
   const stateRef = useRef<GameState>('idle')
@@ -983,6 +91,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   // Reactive UI state (polled from refs)
   const [uiGold, setUiGold] = useState(400)
   const [uiLives, setUiLives] = useState(20)
+  const [uiHqLevel, setUiHqLevel] = useState(1)
   const [uiWave, setUiWave] = useState(0)
   const [uiStage, setUiStage] = useState(1)
   const [uiScore, setUiScore] = useState(0)
@@ -991,6 +100,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const uiPath = uiPaths[0] ?? []  // kept for single-path compat (finish marker etc.)
   const [uiEnemies, setUiEnemies] = useState<Enemy[]>([])
   const [uiBullets, setUiBullets] = useState<Bullet[]>([])
+  const [uiScoutDrones, setUiScoutDrones] = useState<ScoutDrone[]>([])
   const [uiTowers, setUiTowers] = useState<Tower[]>([])
   const [uiHighScore, setUiHighScore] = useState(() => Number(localStorage.getItem(STORAGE_KEY) || 0))
 
@@ -1008,8 +118,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const boardRef = useRef<HTMLDivElement | null>(null)
   const spaceCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const spaceAnimRef = useRef<number>(0)
-  const explosionsRef = useRef<{x: number; y: number; radius: number; time: number; type: 'aoe'|'rocket'|'heavy'; maxTime: number}[]>([])
-  const [uiExplosions, setUiExplosions] = useState<{x: number; y: number; radius: number; time: number; type: 'aoe'|'rocket'|'heavy'; maxTime: number}[]>([])
+  const explosionsRef = useRef<{x: number; y: number; radius: number; time: number; type: 'aoe'|'rocket'|'heavy'|'dreadnought'; maxTime: number}[]>([])
+  const [uiExplosions, setUiExplosions] = useState<{x: number; y: number; radius: number; time: number; type: 'aoe'|'rocket'|'heavy'|'dreadnought'; maxTime: number}[]>([])
   const shockwavesRef = useRef<{x: number; y: number; radius: number; time: number; maxTime: number; intensity: number}[]>([])
   const [uiShockwaves, setUiShockwaves] = useState<{x: number; y: number; radius: number; time: number; maxTime: number; intensity: number}[]>([])
   const particlesRef = useRef<{x: number; y: number; type: ParticleType; vx: number; vy: number; life: number; maxLife: number}[]>([])
@@ -1018,7 +128,6 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const [uiFloatingText, setUiFloatingText] = useState<{x: number; y: number; text: string; time: number; maxTime: number; color: string}[]>([])
   const endlessRef = useRef(false)
   const [uiEndless, setUiEndless] = useState(false)
-  const [endlessUnlocked, setEndlessUnlocked] = useState(() => localStorage.getItem(ENDLESS_KEY) === '1')
 
   const [uiLaserBeams, setUiLaserBeams] = useState<{towerId:number;x1:number;y1:number;x2:number;y2:number}[]>([])
   const [autoPlayWave, setAutoPlayWave] = useState(false)
@@ -1050,6 +159,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const [uiBossLightning, setUiBossLightning] = useState<{fromX: number; fromY: number; toX: number; toY: number; time: number; maxTime: number}[]>([])
   const bossScreenFlashRef = useRef<{time: number; maxTime: number; intensity: number} | null>(null)
   const [bossScreenFlashState, setBossScreenFlashState] = useState(0)
+  const commanderCooldownsRef = useRef<CommanderCooldowns>({ ion: 0, freeze: 0, repair: 0 })
+  const [uiCommanderCooldowns, setUiCommanderCooldowns] = useState<CommanderCooldowns>({ ion: 0, freeze: 0, repair: 0 })
   const prevUiStateRef = useRef<GameState>('gameover')
 
   const coinsRef = useRef(availableCoins)
@@ -1244,6 +355,179 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   }
 
   // ── Game Loop ─────────────────────────────────────────────────────────────
+  function getTowerCells(col: number, row: number, footprint: number) {
+    const cells: string[] = []
+    for (let r = row; r < row + footprint; r++) {
+      for (let c = col; c < col + footprint; c++) {
+        cells.push(`${c},${r}`)
+      }
+    }
+    return cells
+  }
+
+  function getTowerCenter(tower: Tower) {
+    const footprint = getTowerFootprint(tower.type)
+    return { x: tower.col + footprint / 2, y: tower.row + footprint / 2 }
+  }
+
+  function towerOccupiesCell(tower: Tower, col: number, row: number) {
+    const footprint = getTowerFootprint(tower.type)
+    return col >= tower.col && col < tower.col + footprint && row >= tower.row && row < tower.row + footprint
+  }
+
+  function findTowerAtCell(col: number, row: number) {
+    return towersRef.current.find(t => towerOccupiesCell(t, col, row)) ?? null
+  }
+
+  function canPlaceTowerAt(col: number, row: number, footprint: number, ignoreTowerId?: number) {
+    if (col < 0 || row < 0 || col + footprint > COLS || row + footprint > ROWS) return false
+    return getTowerCells(col, row, footprint).every((key) => {
+      if (pathSetRef.current.has(key)) return false
+      const [cellCol, cellRow] = key.split(',').map(Number)
+      return !towersRef.current.some(t => t.id !== ignoreTowerId && towerOccupiesCell(t, cellCol, cellRow))
+    })
+  }
+
+  function getBestScoutTarget(seed: number, enemies: Enemy[]) {
+    if (enemies.length === 0) return null
+    const sorted = [...enemies].sort((a, b) => (b.pathIndex + b.progress) - (a.pathIndex + a.progress))
+    return sorted[seed % Math.min(3, sorted.length)] ?? sorted[0]
+  }
+
+  function spawnDreadnoughtScouts(tower: Tower, enemies: Enemy[], count: number) {
+    const center = getTowerCenter(tower)
+    for (let i = 0; i < count; i++) {
+      const orbit = (Math.PI * 2 * i) / Math.max(1, count)
+      const target = getBestScoutTarget(i, enemies)
+      scoutDronesRef.current.push({
+        id: _sid++,
+        towerId: tower.id,
+        x: center.x + Math.cos(orbit) * 0.35,
+        y: center.y + Math.sin(orbit) * 0.35,
+        angle: tower.aimAngle,
+        orbit,
+        timer: getDreadnoughtScoutAttackTime(tower),
+        cooldown: 0,
+        targetId: target?.id ?? null,
+        state: 'launch',
+        dead: false,
+      })
+    }
+  }
+
+  function getHqMaxLives(level = hqLevelRef.current) {
+    return 20 + (level - 1) * 5
+  }
+
+  function resetCommanderCooldowns() {
+    commanderCooldownsRef.current = { ion: 0, freeze: 0, repair: 0 }
+    setUiCommanderCooldowns({ ...commanderCooldownsRef.current })
+  }
+
+  function getDreadnoughtScoutCount(tower: Tower) {
+    return DREADNOUGHT_SCOUT_COUNT + Math.floor((tower.level - 1) / 2)
+  }
+
+  function getDreadnoughtScoutAttackTime(tower: Tower) {
+    return DREADNOUGHT_SCOUT_ATTACK_TIME + (tower.level - 1) * 0.5
+  }
+
+  function rollEnemyTrait(isBoss: boolean, hp: number): { trait: EnemyTrait; shield: number; maxShield: number; blinkUsed: boolean } {
+    if (isBoss) return { trait: 'none', shield: 0, maxShield: 0, blinkUsed: false }
+    const chance = Math.min(0.36, 0.08 + stageRef.current * 0.018 + waveRef.current * 0.012 + (endlessRef.current ? 0.08 : 0))
+    if (Math.random() > chance) return { trait: 'none', shield: 0, maxShield: 0, blinkUsed: false }
+    const traits: EnemyTrait[] = ['shielded', 'armored', 'phase', 'splitter', 'blink']
+    const trait = traits[Math.floor(Math.random() * traits.length)]
+    const maxShield = trait === 'shielded' ? Math.ceil(hp * 0.34) : 0
+    return { trait, shield: maxShield, maxShield, blinkUsed: false }
+  }
+
+  function getTowerSynergy(tower: Tower) {
+    const center = getTowerCenter(tower)
+    const near = (type: TowerKey, radius = 2.35) => towersRef.current.some(other => {
+      if (other.id === tower.id || other.type !== type) return false
+      const oc = getTowerCenter(other)
+      return Math.hypot(oc.x - center.x, oc.y - center.y) <= radius
+    })
+    const bonus = { rateMult: 1, dmgMult: 1, rangeBonus: 0, barrageDelayMult: 1, active: false }
+    if (tower.type === 'gatling' && near('laser')) { bonus.rateMult *= 0.75; bonus.active = true }
+    if (tower.type === 'rocket' && near('slow')) { bonus.dmgMult *= 1.15; bonus.active = true }
+    if (tower.type === 'laser' && near('slow')) { bonus.rangeBonus += 0.8; bonus.active = true }
+    if (tower.type === 'artillery' && near('dreadnought', 3.2)) { bonus.rateMult *= 0.85; bonus.active = true }
+    if (tower.type === 'dreadnought' && near('artillery', 3.2)) { bonus.barrageDelayMult *= 0.65; bonus.active = true }
+    return bonus
+  }
+
+  function applyEnemyDamage(e: Enemy, rawDamage: number, damageType: string) {
+    if (e.dead || e.leaked || rawDamage <= 0) return 0
+    if (e.trait === 'phase' && damageType !== 'laser' && Math.random() < 0.16) {
+      e.hitFlash = 0.08
+      floatingTextRef.current.push({ x: e.x + 0.5, y: e.y + 0.2, text: 'PHASE', time: 0, maxTime: 0.45, color: '#a78bfa' })
+      return 0
+    }
+    let amount = rawDamage
+    if (e.trait === 'armored') amount *= damageType === 'laser' ? 0.9 : 0.72
+    let applied = 0
+    if (e.shield > 0) {
+      const absorbed = Math.min(e.shield, amount)
+      e.shield -= absorbed
+      amount -= absorbed
+      applied += absorbed * 0.45
+      if (e.shield <= 0) {
+        floatingTextRef.current.push({ x: e.x + 0.5, y: e.y + 0.18, text: 'SHIELD BREAK', time: 0, maxTime: 0.55, color: '#7dd3fc' })
+      }
+    }
+    if (amount > 0) {
+      e.hp -= amount
+      applied += amount
+    }
+    e.hitFlash = 0.1
+    return applied
+  }
+
+  function spawnSplitterChildren(e: Enemy) {
+    if (e.trait !== 'splitter' || e.isBoss) return
+    const ePath = pathsRef.current[e.pathIdx] ?? pathsRef.current[0]
+    const pathIndex = Math.min(e.pathIndex, Math.max(0, ePath.length - 2))
+    const childHp = Math.max(12, e.maxHp * 0.28)
+    for (let i = 0; i < 2; i++) {
+      enemiesRef.current.push({
+        id: _eid++,
+        pathIdx: e.pathIdx,
+        pathIndex,
+        progress: Math.min(0.95, e.progress + i * 0.08),
+        x: e.x + (i === 0 ? -0.12 : 0.12),
+        y: e.y,
+        hp: childHp,
+        maxHp: childHp,
+        speed: e.baseSpeed * 1.18,
+        baseSpeed: e.baseSpeed * 1.18,
+        slowTimer: 0,
+        reward: Math.max(1, Math.floor(e.reward * 0.25)),
+        coinImg: e.coinImg,
+        tint: '#ff74d4',
+        isBoss: false,
+        trait: 'none',
+        shield: 0,
+        maxShield: 0,
+        blinkUsed: false,
+        destroyCooldown: 9999,
+        summonCooldown: 9999,
+        hitFlash: 0,
+        dead: false,
+        leaked: false,
+      })
+    }
+  }
+
+  function handleEnemyDeath(e: Enemy, towerType: string, sourceTower: Tower | undefined, comboSound = false) {
+    if (e.hp > 0 || e.dead) return
+    if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
+    spawnSplitterChildren(e)
+    triggerEnemyDeath(e, towerType, e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
+    if (soundOn) playGameSound(comboSound ? 'combo' : 'pop')
+  }
+
   const gameLoop = useCallback((ts: number) => {
     const dt = Math.min((ts - (lastTimeRef.current || ts)) / 1000, 0.1)
     lastTimeRef.current = ts
@@ -1254,8 +538,12 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       return
     }
 
+    for (const key of Object.keys(commanderCooldownsRef.current) as CommanderAbilityKey[]) {
+      commanderCooldownsRef.current[key] = Math.max(0, commanderCooldownsRef.current[key] - dt)
+    }
+
     const coins = coinsRef.current
-    const waveCfg = getWaveCfg(stageRef.current, waveRef.current)
+    const waveCfg = getWaveCfg(stageRef.current, waveRef.current, endlessRef.current)
 
     // ── Spawn enemies ──────────────────────────────────────────────────────
     if (state === 'wave' && spawnQueueRef.current > 0) {
@@ -1267,6 +555,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           normalEscortQueueRef.current === 0 || Math.random() < (bossQueueRef.current / Math.max(1, bossQueueRef.current + normalEscortQueueRef.current))
         )
         const enemyCfg = spawnBoss ? waveCfg : normalCfg
+        const isHeavyBoss = spawnBoss && isHeavyBossStage(stageRef.current, endlessRef.current)
         const baseInterval = spawnBoss ? 1.1 : 0.65
         spawnTimerRef.current = baseInterval / numSpawns
         const coin = coins[Math.floor(Math.random() * coins.length)]
@@ -1276,6 +565,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         // 30% chance a normal enemy gets a random 10-30% speed surge
         const spdMult = (!spawnBoss && Math.random() < 0.30) ? 1.1 + Math.random() * 0.20 : 1
         const tint = ENEMY_COLORS[Math.floor(Math.random() * ENEMY_COLORS.length)]
+        const traitState = rollEnemyTrait(spawnBoss, enemyCfg.hp)
         enemiesRef.current.push({
           id: _eid++,
           pathIdx: pidx,
@@ -1288,7 +578,9 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           coinImg: coin?.image || '',
           tint,
           isBoss: spawnBoss,
-          destroyCooldown: (spawnBoss && stageRef.current === MAX_STAGES) ? 6.5 : 9999,
+          ...traitState,
+          destroyCooldown: isHeavyBoss ? 6.5 : 9999,
+          summonCooldown: isHeavyBoss ? 8 : 9999,
           hitFlash: 0,
           dead: false, leaked: false,
         })
@@ -1303,9 +595,6 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       if (waveRef.current >= WAVES_PER_STAGE) {
         // All waves in stage done
         if (stageRef.current >= MAX_STAGES && !endlessRef.current) {
-          // Unlock endless mode permanently
-          localStorage.setItem(ENDLESS_KEY, '1')
-          setEndlessUnlocked(true)
           stateRef.current = 'victory'
           setUiState('victory')
           if (soundOn) playGameSound('levelup')
@@ -1357,6 +646,13 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           break
         }
       }
+      if (!e.leaked && e.trait === 'blink' && !e.blinkUsed && e.pathIndex >= Math.floor(ePath.length * 0.45)) {
+        e.pathIndex = Math.min(e.pathIndex + 1, Math.max(0, ePath.length - 2))
+        e.progress = Math.min(0.85, e.progress + 0.15)
+        e.blinkUsed = true
+        floatingTextRef.current.push({ x: e.x + 0.5, y: e.y + 0.2, text: 'BLINK', time: 0, maxTime: 0.5, color: '#c084fc' })
+        spawnPortalRef.current.push({ x: e.x + 0.5, y: e.y + 0.5, time: 0, maxTime: 0.28, pathIdx: e.pathIdx })
+      }
       if (!e.leaked) {
         const pos = getEnemyPos(e.pathIdx, e.pathIndex, e.progress)
         e.x = pos.x; e.y = pos.y
@@ -1365,17 +661,53 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     enemiesRef.current = enemiesRef.current.filter(e => !e.leaked && !e.dead)
 
     // ── Stage-10 boss: smash nearby towers ────────────────────────────────
-    if (stageRef.current === MAX_STAGES) {
+    if (isHeavyBossStage(stageRef.current, endlessRef.current)) {
       for (const e of enemiesRef.current) {
         if (!e.isBoss || e.dead || e.leaked) continue
+        e.summonCooldown -= dt
+        if (e.summonCooldown <= 0) {
+          e.summonCooldown = 8
+          const normalCfg = getNormalWaveCfg(stageRef.current, waveRef.current)
+          const numSpawns = Math.max(1, pathsRef.current.length)
+          for (let i = 0; i < 5; i++) {
+            const coin = coins[Math.floor(Math.random() * coins.length)]
+            const pidx = Math.floor(Math.random() * numSpawns)
+            const pos = getEnemyPos(pidx, 0, 0)
+            const spdMult = Math.random() < 0.30 ? 1.1 + Math.random() * 0.20 : 1
+            const tint = ENEMY_COLORS[Math.floor(Math.random() * ENEMY_COLORS.length)]
+            enemiesRef.current.push({
+              id: _eid++,
+              pathIdx: pidx,
+              pathIndex: 0, progress: 0,
+              x: pos.x, y: pos.y,
+              hp: normalCfg.hp, maxHp: normalCfg.hp,
+              speed: normalCfg.speed * spdMult, baseSpeed: normalCfg.speed * spdMult,
+              slowTimer: 0,
+              reward: normalCfg.reward,
+              coinImg: coin?.image || '',
+              tint,
+              isBoss: false,
+              trait: 'none',
+              shield: 0,
+              maxShield: 0,
+              blinkUsed: false,
+              destroyCooldown: 9999,
+              summonCooldown: 9999,
+              hitFlash: 0,
+              dead: false, leaked: false,
+            })
+          }
+          if (soundOn) playGameSound('whoosh')
+        }
         e.destroyCooldown -= dt
         if (e.destroyCooldown > 0) continue
         // Find nearest tower within 1.8 cells
         let nearest: Tower | null = null
         let nearDist = 1.8
         for (const t of towersRef.current) {
-          const dx = t.col + 0.5 - (e.x + 0.5)
-          const dy = t.row + 0.5 - (e.y + 0.5)
+          const center = getTowerCenter(t)
+          const dx = center.x - (e.x + 0.5)
+          const dy = center.y - (e.y + 0.5)
           const d = Math.sqrt(dx * dx + dy * dy)
           if (d < nearDist) { nearDist = d; nearest = t }
         }
@@ -1391,8 +723,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           bossLightningRef.current.push({
             fromX: e.x + 0.5,
             fromY: e.y + 0.5,
-            toX: nearest.col + 0.5,
-            toY: nearest.row + 0.5,
+            toX: getTowerCenter(nearest).x,
+            toY: getTowerCenter(nearest).y,
             time: 0,
             maxTime: 0.15
           })
@@ -1408,23 +740,109 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     // ── Tower shooting ────────────────────────────────────────────────────
     const aliveEnemies = enemiesRef.current.filter(e => !e.dead && !e.leaked)
 
+    for (const tower of towersRef.current) {
+      if (tower.type !== 'dreadnought') continue
+      if (!Number.isFinite(tower.scoutCooldown)) tower.scoutCooldown = DREADNOUGHT_SCOUT_INTERVAL
+      tower.scoutCooldown -= dt
+      if (tower.scoutCooldown <= 0) {
+        const activeCount = scoutDronesRef.current.filter(d => d.towerId === tower.id && !d.dead).length
+        const spawnCount = Math.max(0, getDreadnoughtScoutCount(tower) - activeCount)
+        if (spawnCount > 0 && aliveEnemies.length > 0) {
+          spawnDreadnoughtScouts(tower, aliveEnemies, spawnCount)
+          tower.scoutCooldown = DREADNOUGHT_SCOUT_INTERVAL
+        } else {
+          tower.scoutCooldown = aliveEnemies.length > 0 ? DREADNOUGHT_SCOUT_INTERVAL : 1
+        }
+      }
+    }
+
+    for (const drone of scoutDronesRef.current) {
+      const homeTower = towersRef.current.find(t => t.id === drone.towerId)
+      if (!homeTower) { drone.dead = true; continue }
+      const home = getTowerCenter(homeTower)
+      const moveToward = (tx: number, ty: number, speed: number) => {
+        const dx = tx - drone.x
+        const dy = ty - drone.y
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1
+        drone.angle = angleToDeg(drone.x, drone.y, tx, ty)
+        const step = Math.min(dist, speed * dt)
+        drone.x += (dx / dist) * step
+        drone.y += (dy / dist) * step
+        return dist
+      }
+
+      if (drone.state === 'return') {
+        if (moveToward(home.x, home.y, 7.5) < DREADNOUGHT_SCOUT_DOCK_RADIUS) drone.dead = true
+        continue
+      }
+
+      const target = aliveEnemies.find(e => e.id === drone.targetId && !e.dead && !e.leaked) ?? getBestScoutTarget(drone.id, aliveEnemies)
+      if (!target) { drone.state = 'return'; continue }
+      drone.targetId = target.id
+
+      if (drone.state === 'launch') {
+        const tx = target.x + 0.5 + Math.cos(drone.orbit) * 0.75
+        const ty = target.y + 0.5 + Math.sin(drone.orbit) * 0.75
+        if (moveToward(tx, ty, 8) < 0.25) {
+          drone.state = 'attack'
+          drone.timer = getDreadnoughtScoutAttackTime(homeTower)
+          drone.cooldown = 0
+        }
+        continue
+      }
+
+      drone.timer -= dt
+      drone.orbit += dt * (drone.id % 2 === 0 ? 3.2 : -3.2)
+      moveToward(target.x + 0.5 + Math.cos(drone.orbit) * 0.72, target.y + 0.5 + Math.sin(drone.orbit) * 0.72, 6.5)
+      drone.cooldown -= dt
+      if (drone.cooldown <= 0) {
+        drone.cooldown = DREADNOUGHT_SCOUT_RATE
+        bulletsRef.current.push({
+          id: _bid++,
+          x: drone.x, y: drone.y,
+          tx: target.x + 0.5, ty: target.y + 0.5,
+          speed: 12,
+          color: DREADNOUGHT_SCOUT_COLOR,
+          targetId: target.id,
+          towerId: homeTower.id,
+          dmg: DREADNOUGHT_SCOUT_DAMAGE * (1 + (homeTower.level - 1) * 0.5),
+          isAoe: false, isSlow: false, isRocket: false, isHeavy: false, isHoming: false,
+          towerType: 'gatling',
+          dead: false,
+        })
+      }
+      if (drone.timer <= 0) drone.state = 'return'
+    }
+    scoutDronesRef.current = scoutDronesRef.current.filter(d => !d.dead)
+
     // Drain burst queues (artillery 1s interval between rockets)
     for (const tower of towersRef.current) {
       if (tower.burstQueue.length === 0) continue
+      if (aliveEnemies.length === 0) {
+        tower.burstQueue = []
+        continue
+      }
       tower.burstQueue[0].delay -= dt
       if (tower.burstQueue[0].delay <= 0) {
         const shot = tower.burstQueue.shift()!
-        tower.aimAngle = angleToDeg(tower.col + 0.5, tower.row + 0.5, shot.tx, shot.ty)
+        const currentTargets = enemiesRef.current.filter(e => !e.dead && !e.leaked && e.hp > 0)
+        const tracked = currentTargets.find(e => e.id === shot.targetId) ?? getBestScoutTarget(0, currentTargets)
+        if (!tracked) continue
+        const towerCenter = getTowerCenter(tower)
+        const tx = tracked.x + 0.5
+        const ty = tracked.y + 0.5
+        tower.aimAngle = angleToDeg(towerCenter.x, towerCenter.y, tx, ty)
         bulletsRef.current.push({
           id: _bid++,
-          x: tower.col + 0.5, y: tower.row + 0.5,
-          tx: shot.tx, ty: shot.ty,
-          speed: 7, color: '#ff8800',
-          targetId: shot.targetId,
+          x: towerCenter.x, y: towerCenter.y,
+          tx, ty,
+          speed: tower.type === 'dreadnought' ? 8 : 7,
+          color: tower.type === 'dreadnought' ? '#f43f5e' : '#ff8800',
+          targetId: tracked.id,
           towerId: tower.id,
           dmg: shot.dmg,
           isAoe: false, isSlow: false, isRocket: false, isHeavy: true, isHoming: true,
-          towerType: 'artillery',
+          towerType: tower.type,
           dead: false,
         })
         if (soundOn) playGameSound('artillery')
@@ -1438,10 +856,12 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       if (tower.laserExhaust > 0) { tower.laserExhaust -= dt; continue }
       // Find all enemies in range — furthest-along is primary, rest take pierce dmg
       const td = tower.towerDef
+      const synergy = getTowerSynergy(tower)
+      const towerCenter = getTowerCenter(tower)
       const inRange: Enemy[] = []
       for (const e of aliveEnemies) {
-        const dx = e.x - tower.col, dy = e.y - tower.row
-        if (Math.sqrt(dx*dx+dy*dy) <= td.range) inRange.push(e)
+        const dx = e.x - towerCenter.x, dy = e.y - towerCenter.y
+        if (Math.sqrt(dx*dx+dy*dy) <= td.range + synergy.rangeBonus) inRange.push(e)
       }
       // Sort by path progress descending so index 0 = primary target
       inRange.sort((a, b) => (b.pathIndex + b.progress) - (a.pathIndex + a.progress))
@@ -1450,14 +870,14 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         if (tower.laserActive > 0) { tower.laserActive = 0; tower.laserExhaust = 5 }
         continue
       }
-      tower.aimAngle = angleToDeg(tower.col + 0.5, tower.row + 0.5, laserTarget.x + 0.5, laserTarget.y + 0.5)
+      tower.aimAngle = angleToDeg(towerCenter.x, towerCenter.y, laserTarget.x + 0.5, laserTarget.y + 0.5)
       // Only pierce enemies that lie along the beam line (tower → primary target)
-      const bx = laserTarget.x - tower.col, by = laserTarget.y - tower.row
+      const bx = laserTarget.x - towerCenter.x, by = laserTarget.y - towerCenter.y
       const bLen = Math.sqrt(bx*bx + by*by) || 1
       const laserHits: Enemy[] = [laserTarget]
       for (let i = 1; i < inRange.length; i++) {
         const e = inRange[i]
-        const ex = e.x - tower.col, ey = e.y - tower.row
+        const ex = e.x - towerCenter.x, ey = e.y - towerCenter.y
         // Project enemy position onto beam direction
         const proj = (ex*bx + ey*by) / bLen
         if (proj <= 0) continue  // behind the tower, skip
@@ -1471,26 +891,22 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       tower.cooldown -= dt
       if (tower.cooldown <= 0) {
         tower.cooldown = td.rate
-        const tickDmg = td.dmg * (1 + (tower.level - 1) * 0.5)
+        const tickDmg = td.dmg * (1 + (tower.level - 1) * 0.5) * synergy.dmgMult
         const pierceDmg = 1.5  // flat damage per tick to secondary targets
         for (let hi = 0; hi < laserHits.length; hi++) {
           const e = laserHits[hi]
           const applied = hi === 0 ? tickDmg : pierceDmg
-          e.hp -= hi === 0 ? tickDmg : pierceDmg
-          grantTowerXp(tower, Math.max(0.01, Math.min(0.06, applied * 0.0015)))
+          const dealt = applyEnemyDamage(e, applied, 'laser')
+          grantTowerXp(tower, Math.max(0.01, Math.min(0.06, dealt * 0.0015)))
           if (Math.random() < 0.18) {
             spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', hi === 0 ? 3 : 2, 0.85, 0.18)
           }
-          if (e.hp <= 0) {
-            grantTowerXp(tower, e.isBoss ? 40 : 1.5)
-            triggerEnemyDeath(e, 'laser', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
-            if (soundOn) playGameSound('pop')
-          }
+          handleEnemyDeath(e, 'laser', tower)
         }
       }
       // Beam endpoint: furthest enemy in range for full visual pierce
       const beamEnd = laserHits[laserHits.length - 1]
-      laserBeams.push({ towerId: tower.id, x1: tower.col + 0.5, y1: tower.row + 0.5, x2: beamEnd.x + 0.5, y2: beamEnd.y + 0.5 })
+      laserBeams.push({ towerId: tower.id, x1: towerCenter.x, y1: towerCenter.y, x2: beamEnd.x + 0.5, y2: beamEnd.y + 0.5 })
       if (tower.laserActive <= 0) { tower.laserActive = 0; tower.laserExhaust = 5 }
     }
     setUiLaserBeams(laserBeams)
@@ -1501,44 +917,47 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       tower.cooldown -= dt
       if (tower.cooldown > 0) continue
       const td = tower.towerDef
+      const synergy = getTowerSynergy(tower)
+      const towerCenter = getTowerCenter(tower)
       let target: Enemy | null = null
       let bestProgress = -1
       for (const e of aliveEnemies) {
-        const dx = e.x - tower.col
-        const dy = e.y - tower.row
+        const dx = e.x - towerCenter.x
+        const dy = e.y - towerCenter.y
         const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist <= td.range) {
+        if (dist <= td.range + synergy.rangeBonus) {
           const ep = e.pathIndex + e.progress
           if (ep > bestProgress) { bestProgress = ep; target = e }
         }
       }
       if (target) {
-        tower.aimAngle = angleToDeg(tower.col + 0.5, tower.row + 0.5, target.x + 0.5, target.y + 0.5)
-        tower.cooldown = td.rate
-        if (td.key === 'artillery') {
-          // Queue 3 rockets with 1s interval each
+        tower.aimAngle = angleToDeg(towerCenter.x, towerCenter.y, target.x + 0.5, target.y + 0.5)
+        tower.cooldown = Math.max(0.04, td.rate * synergy.rateMult)
+        if (td.key === 'artillery' || td.key === 'dreadnought') {
+          const barrageCount = td.key === 'dreadnought' ? 5 : 3
+          const barrageDelay = (td.key === 'dreadnought' ? 0.45 : 1.0) * synergy.barrageDelayMult
           const topTargets = [...aliveEnemies]
             .sort((a, b) => (b.pathIndex + b.progress) - (a.pathIndex + a.progress))
-            .slice(0, 3)
-          const dmg = td.dmg * (1 + (tower.level - 1) * 0.5)
+            .slice(0, barrageCount)
+          const dmg = td.dmg * (1 + (tower.level - 1) * 0.5) * synergy.dmgMult
           topTargets.forEach((t, i) => {
             tower.burstQueue.push({
               tx: t.x + 0.5, ty: t.y + 0.5,
               targetId: t.id,
-              delay: i * 1.0,  // 0s, 1s, 2s
+              delay: i * barrageDelay,
               dmg,
             })
           })
         } else {
           bulletsRef.current.push({
             id: _bid++,
-            x: tower.col + 0.5, y: tower.row + 0.5,
+            x: towerCenter.x, y: towerCenter.y,
             tx: target.x + 0.5, ty: target.y + 0.5,
             speed: td.key === 'rocket' ? 6 : 12,
             color: td.color,
             targetId: target.id,
             towerId: tower.id,
-            dmg: td.dmg * (1 + (tower.level - 1) * 0.5),
+            dmg: td.dmg * (1 + (tower.level - 1) * 0.5) * synergy.dmgMult,
             isAoe: td.key === 'aoe',
             isSlow: td.key === 'slow',
             isRocket: td.key === 'rocket',
@@ -1552,7 +971,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         if (soundOn) {
           if (td.key === 'laser') playGameSound('laser')
           else if (td.key === 'rocket') playGameSound('rocket')
-          else if (td.key === 'artillery') playGameSound('artillery')
+          else if (td.key === 'artillery' || td.key === 'dreadnought') playGameSound('artillery')
           else playGameSound('shoot')
         }
         // Muzzle flash
@@ -1588,15 +1007,10 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               // falloff: full damage in centre, 50% at edge
               const falloff = 1 - (dist2 / 3.0) * 0.5
               const applied = b.dmg * falloff
-              e.hp -= applied
-              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.4, applied * 0.006)))
-              e.hitFlash = 0.1
+              const dealt = applyEnemyDamage(e, applied, 'rocket')
+              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.4, dealt * 0.006)))
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 5, 1.6, 0.22)
-              if (e.hp <= 0) { 
-                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
-                triggerEnemyDeath(e, 'rocket', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
-                if (soundOn) playGameSound('combo')
-              }
+              handleEnemyDeath(e, 'rocket', sourceTower, true)
             }
           }
         } else if (b.isAoe) {
@@ -1605,39 +1019,35 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           for (const e of aliveEnemies) {
             const edx = e.x - b.tx, edy = e.y - b.ty
             if (Math.sqrt(edx*edx+edy*edy) <= 1.5) {
-              e.hp -= b.dmg
-              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.35, b.dmg * 0.006)))
-              e.hitFlash = 0.1
+              const dealt = applyEnemyDamage(e, b.dmg, 'aoe')
+              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.35, dealt * 0.006)))
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 4, 1.3, 0.18)
-              if (e.hp <= 0) { 
-                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
-                triggerEnemyDeath(e, 'aoe', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
-                if (soundOn) playGameSound('pop')
-              }
+              handleEnemyDeath(e, 'aoe', sourceTower)
             }
           }
         } else if (b.isHeavy) {
-          // Small AOE: 1.0 cell radius
-          explosionsRef.current.push({ x: b.tx, y: b.ty, radius: 1.0, time: 0, type: 'heavy', maxTime: 0.35 })
+          const heavyRadius = b.towerType === 'dreadnought' ? 1.75 : 1.0
+          explosionsRef.current.push({
+            x: b.tx,
+            y: b.ty,
+            radius: heavyRadius,
+            time: 0,
+            type: b.towerType === 'dreadnought' ? 'dreadnought' : 'heavy',
+            maxTime: b.towerType === 'dreadnought' ? 0.48 : 0.35,
+          })
           for (const e of aliveEnemies) {
             const edx = e.x - b.tx, edy = e.y - b.ty
-            if (Math.sqrt(edx*edx+edy*edy) <= 1.0) {
-              e.hp -= b.dmg
-              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.4, b.dmg * 0.006)))
-              e.hitFlash = 0.1
+            if (Math.sqrt(edx*edx+edy*edy) <= heavyRadius) {
+              const dealt = applyEnemyDamage(e, b.dmg, b.towerType)
+              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.4, dealt * 0.006)))
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 5, 1.45, 0.2)
-              if (e.hp <= 0) { 
-                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
-                triggerEnemyDeath(e, 'artillery', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
-                if (soundOn) playGameSound('combo')
-              }
+              handleEnemyDeath(e, b.towerType, sourceTower, true)
             }
           }
         } else if (target) {
           if (b.isSlow) target.slowTimer = 2.5
-          target.hp -= b.dmg
-          if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.35, b.dmg * 0.006)))
-          target.hitFlash = 0.1
+          const dealt = applyEnemyDamage(target, b.dmg, b.towerType)
+          if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.35, dealt * 0.006)))
           spawnImpactParticles(
             particlesRef.current,
             target.x + 0.5,
@@ -1647,11 +1057,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             b.isSlow ? 1.1 : 1.25,
             b.isSlow ? 0.32 : 0.18,
           )
-          if (target.hp <= 0) { 
-            if (sourceTower) grantTowerXp(sourceTower, target.isBoss ? 40 : 1.5)
-            triggerEnemyDeath(target, b.towerType, target.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
-            if (soundOn) playGameSound('pop')
-          }
+          handleEnemyDeath(target, b.towerType, sourceTower)
         }
       } else {
         const ratio = Math.min(b.speed * dt / dist, 1)
@@ -1802,15 +1208,18 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     // ── Update UI ─────────────────────────────────────────────────────────
     setUiGold(goldRef.current)
     setUiLives(livesRef.current)
+    setUiHqLevel(hqLevelRef.current)
     setUiScore(scoreRef.current)
     setUiEnemies([...enemiesRef.current])
     setUiBullets([...bulletsRef.current])
+    setUiScoutDrones([...scoutDronesRef.current])
     setUiTowers([...towersRef.current])
     setUiExplosions([...explosionsRef.current])
     setUiShockwaves([...shockwavesRef.current])
     setUiParticles([...particlesRef.current])
     setUiFloatingText([...floatingTextRef.current])
     setUiBossLightning([...bossLightningRef.current])
+    setUiCommanderCooldowns({ ...commanderCooldownsRef.current })
 
     frameRef.current = requestAnimationFrame(gameLoop)
   }, [soundOn])
@@ -1829,7 +1238,9 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     enemiesRef.current = []
     towersRef.current = []
     bulletsRef.current = []
+    scoutDronesRef.current = []
     goldRef.current = 50000
+    hqLevelRef.current = 1
     livesRef.current = 20
     waveRef.current = 0
     stageRef.current = MAX_STAGES
@@ -1843,16 +1254,19 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     spawnTimerRef.current = 0
     spawnRRRef.current = 0
     explosionsRef.current = []
+    resetCommanderCooldowns()
     endlessRef.current = true
     setUiEndless(true)
     setUiStage(MAX_STAGES)
     setUiWave(0)
     setUiPaths(ps)
     setUiGold(50000)
+    setUiHqLevel(1)
     setUiLives(20)
     setUiScore(0)
     setUiEnemies([])
     setUiBullets([])
+    setUiScoutDrones([])
     setUiTowers([])
     setSelectedTowerOnGrid(null)
     stateRef.current = 'playing'
@@ -1860,13 +1274,17 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     startBGM()
   }
 
+  useEffect(() => {
+    if (initialMode === 'endless') enterEndless()
+  }, [])
+
   // ── Start wave ─────────────────────────────────────────────────────────────
   function startWave() {
     if (stateRef.current !== 'playing' && stateRef.current !== 'idle') return
     const nextWave = waveRef.current + 1
     waveRef.current = nextWave
     setUiWave(nextWave)
-    const cfg = getWaveCfg(stageRef.current, nextWave)
+    const cfg = getWaveCfg(stageRef.current, nextWave, endlessRef.current)
     const numSpawns = Math.max(1, pathsRef.current.length)
     if (cfg.isBoss) {
       const normalCfg = getNormalWaveCfg(stageRef.current, nextWave)
@@ -1899,12 +1317,13 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     pathSetRef.current = newPathSet
     // Remove towers that are now on the new paths (70% refund)
     const removedGold = towersRef.current
-      .filter(t => newPathSet.has(`${t.col},${t.row}`))
+      .filter(t => getTowerCells(t.col, t.row, getTowerFootprint(t.type)).some(key => newPathSet.has(key)))
       .reduce((sum, t) => sum + Math.floor(t.towerDef.cost * 0.7), 0)
-    towersRef.current = towersRef.current.filter(t => !newPathSet.has(`${t.col},${t.row}`))
+    towersRef.current = towersRef.current.filter(t => !getTowerCells(t.col, t.row, getTowerFootprint(t.type)).some(key => newPathSet.has(key)))
     goldRef.current += removedGold
     enemiesRef.current = []
     bulletsRef.current = []
+    scoutDronesRef.current = []
     waveRef.current = 0
     spawnRRRef.current = 0
     stateRef.current = 'playing'
@@ -1915,6 +1334,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     setUiGold(goldRef.current)
     setUiEnemies([])
     setUiBullets([])
+    setUiScoutDrones([])
     setUiTowers([...towersRef.current])
     setSelectedTowerOnGrid(null)
     startBGM()
@@ -1935,17 +1355,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     const newCol = Math.round(x / cell)
     const newRow = Math.round(y / cell)
 
-    if (newCol >= 0 && newCol < COLS && newRow >= 0 && newRow < ROWS) {
-      const key = `${newCol},${newRow}`
-      if (!pathSetRef.current.has(key)) {
-        const existingTower = towersRef.current.find(t => t.col === newCol && t.row === newRow && t.id !== movingTower.id)
-        if (!existingTower) {
-          movingTower.col = newCol
-          movingTower.row = newRow
-          setUiTowers([...towersRef.current])
-          setSelectedTowerOnGrid({ ...movingTower })
-        }
-      }
+    if (canPlaceTowerAt(newCol, newRow, getTowerFootprint(movingTower.type), movingTower.id)) {
+      movingTower.col = newCol
+      movingTower.row = newRow
+      setUiTowers([...towersRef.current])
+      setSelectedTowerOnGrid({ ...movingTower })
     }
   }
 
@@ -2014,7 +1428,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     if (pathSetRef.current.has(key)) return
 
     // Check existing tower
-    const existing = towersRef.current.find(t => t.col === col && t.row === row)
+    const existing = findTowerAtCell(col, row)
     if (existing) {
       setSelectedTowerOnGrid(existing)
       return
@@ -2023,6 +1437,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     if (!selectedTowerKey) return
 
     const tDef = TOWER_TYPES.find(t => t.key === selectedTowerKey)!
+    const footprint = getTowerFootprint(selectedTowerKey)
+    if (!canPlaceTowerAt(col, row, footprint)) {
+      playGameSound('hit')
+      return
+    }
     const cost = tDef.cost
     if (goldRef.current < cost) {
       playGameSound('hit')
@@ -2043,19 +1462,21 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       burstQueue: [],
       laserActive: 0,
       laserExhaust: 0,
+      scoutCooldown: selectedTowerKey === 'dreadnought' ? DREADNOUGHT_SCOUT_INTERVAL : 0,
     }
     towersRef.current.push(newTower)
     towerCreationTimeRef.current.set(newTower.id, 0)
     setUiTowers([...towersRef.current])
     setUiGold(goldRef.current)
     playGameSound('select')
+    const towerCenter = getTowerCenter(newTower)
     // Spawn portal effect
-    spawnPortalRef.current.push({x: col + 0.5, y: row + 0.5, time: 0, maxTime: 0.4, pathIdx: 0})
+    spawnPortalRef.current.push({x: towerCenter.x, y: towerCenter.y, time: 0, maxTime: 0.4, pathIdx: 0})
     // Build particles
     for (let i = 0; i < 8; i++) {
       const angle = (Math.PI * 2 * i) / 8
       particlesRef.current.push({
-        x: col + 0.5, y: row + 0.5,
+        x: towerCenter.x, y: towerCenter.y,
         type: 'build',
         vx: Math.cos(angle) * 1.8, vy: Math.sin(angle) * 1.8,
         life: 0, maxLife: 0.35
@@ -2064,6 +1485,52 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   }
 
   // ── Upgrade tower ──────────────────────────────────────────────────────────
+  function castCommanderAbility(kind: CommanderAbilityKey) {
+    if (commanderCooldownsRef.current[kind] > 0) { playGameSound('hit'); return }
+    if (kind === 'repair') {
+      const maxLives = getHqMaxLives()
+      if (livesRef.current >= maxLives) { playGameSound('hit'); return }
+      livesRef.current = Math.min(maxLives, livesRef.current + 4 + hqLevelRef.current * 2)
+      setUiLives(livesRef.current)
+      floatingTextRef.current.push({ x: COLS - 1.2, y: ROWS - 1.2, text: '+REPAIR', time: 0, maxTime: 0.65, color: '#7dd3fc' })
+      playGameSound('levelup')
+    } else {
+      const targets = enemiesRef.current.filter(e => !e.dead && !e.leaked)
+      if (targets.length === 0) { playGameSound('hit'); return }
+      if (kind === 'freeze') {
+        for (const e of targets) e.slowTimer = Math.max(e.slowTimer, 3.8 + hqLevelRef.current * 0.35)
+        floatingTextRef.current.push({ x: COLS / 2, y: 1.2, text: 'ORBITAL FREEZE', time: 0, maxTime: 0.75, color: '#7dd3fc' })
+        playGameSound('laser')
+      } else {
+        const dmg = 70 + uiStage * 12 + hqLevelRef.current * 22
+        for (const e of targets) {
+          const applied = applyEnemyDamage(e, dmg, 'ion')
+          if (applied > 0) spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 4, 1.3, 0.18)
+          handleEnemyDeath(e, 'ion', undefined, true)
+        }
+        screenFlashRef.current = { time: 0, maxTime: 0.25, intensity: 0.75 }
+        floatingTextRef.current.push({ x: COLS / 2, y: 1.2, text: 'ION STORM', time: 0, maxTime: 0.75, color: '#f0abfc' })
+        playGameSound('explosion_big')
+      }
+    }
+    commanderCooldownsRef.current[kind] = COMMANDER_COOLDOWNS[kind]
+    setUiCommanderCooldowns({ ...commanderCooldownsRef.current })
+  }
+
+  function upgradeHq() {
+    if (hqLevelRef.current >= HQ_MAX_LEVEL) { playGameSound('hit'); return }
+    const cost = 800 + hqLevelRef.current * 650
+    if (goldRef.current < cost) { playGameSound('hit'); return }
+    goldRef.current -= cost
+    hqLevelRef.current += 1
+    livesRef.current = Math.min(getHqMaxLives(), livesRef.current + 5)
+    setUiGold(goldRef.current)
+    setUiHqLevel(hqLevelRef.current)
+    setUiLives(livesRef.current)
+    floatingTextRef.current.push({ x: COLS - 1.2, y: ROWS - 1.2, text: `HQ LV ${hqLevelRef.current}`, time: 0, maxTime: 0.8, color: '#ffd666' })
+    playGameSound('levelup')
+  }
+
   function grantTowerXp(tower: Tower, amount: number) {
     if (amount <= 0 || tower.level >= MAX_TOWER_LEVEL) return
     tower.xp += amount
@@ -2074,7 +1541,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       tower.xp -= need
       tower.level += 1
       leveled = true
-      towerActionBurstRef.current.push({ x: tower.col + 0.5, y: tower.row + 0.5, type: 'upgrade', time: 0, maxTime: 0.4 })
+      const center = getTowerCenter(tower)
+      towerActionBurstRef.current.push({ x: center.x, y: center.y, type: 'upgrade', time: 0, maxTime: 0.4 })
     }
     if (tower.level >= MAX_TOWER_LEVEL) tower.xp = 0
     if (leveled) {
@@ -2098,12 +1566,13 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     setSelectedTowerOnGrid({...refTower})
     playGameSound('levelup')
     // Upgrade burst effect
-    towerActionBurstRef.current.push({x: refTower.col + 0.5, y: refTower.row + 0.5, type: 'upgrade', time: 0, maxTime: 0.5})
+    const refCenter = getTowerCenter(refTower)
+    towerActionBurstRef.current.push({x: refCenter.x, y: refCenter.y, type: 'upgrade', time: 0, maxTime: 0.5})
     // Upgrade particles
     for (let i = 0; i < 6; i++) {
       const angle = (Math.PI * 2 * i) / 6
       particlesRef.current.push({
-        x: refTower.col + 0.5, y: refTower.row + 0.5,
+        x: refCenter.x, y: refCenter.y,
         type: 'build',
         vx: Math.cos(angle) * 1.5, vy: (Math.sin(angle) - 1.2) * 1.5,
         life: 0, maxLife: 0.4
@@ -2115,19 +1584,21 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   function sellTower(tower: Tower) {
     const sellValue = Math.floor(tower.towerDef.cost * 0.5)
     goldRef.current += sellValue
+    const center = getTowerCenter(tower)
     // Sell burst effect
-    towerActionBurstRef.current.push({x: tower.col + 0.5, y: tower.row + 0.5, type: 'sell', time: 0, maxTime: 0.5})
+    towerActionBurstRef.current.push({x: center.x, y: center.y, type: 'sell', time: 0, maxTime: 0.5})
     // Gold particles from tower to top-right
     for (let i = 0; i < 8; i++) {
       const angle = (Math.PI * 2 * i) / 8
       particlesRef.current.push({
-        x: tower.col + 0.5, y: tower.row + 0.5,
+        x: center.x, y: center.y,
         type: 'gold',
         vx: Math.cos(angle) * 2.0, vy: Math.sin(angle) * 2.0,
         life: 0, maxLife: 0.5
       })
     }
     towersRef.current = towersRef.current.filter(t => t.id !== tower.id)
+    scoutDronesRef.current = scoutDronesRef.current.filter(d => d.towerId !== tower.id)
     towerCreationTimeRef.current.delete(tower.id)
     setUiTowers([...towersRef.current])
     setUiGold(goldRef.current)
@@ -2137,11 +1608,18 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
 
   // ── Restart ────────────────────────────────────────────────────────────────
   function restart() {
+    if (endlessRef.current) {
+      enterEndless()
+      return
+    }
+
     const ps = generatePaths(1)
     enemiesRef.current = []
     towersRef.current = []
     bulletsRef.current = []
+    scoutDronesRef.current = []
     goldRef.current = 400
+    hqLevelRef.current = 1
     livesRef.current = 20
     waveRef.current = 0
     stageRef.current = 1
@@ -2155,6 +1633,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     spawnTimerRef.current = 0
     spawnRRRef.current = 0
     explosionsRef.current = []
+    resetCommanderCooldowns()
     endlessRef.current = false
     setUiEndless(false)
     stateRef.current = 'idle'
@@ -2163,10 +1642,12 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     setUiStage(1)
     setUiPaths(ps)
     setUiGold(400)
+    setUiHqLevel(1)
     setUiLives(20)
     setUiScore(0)
     setUiEnemies([])
     setUiBullets([])
+    setUiScoutDrones([])
     setUiTowers([])
     setSelectedTowerOnGrid(null)
   }
@@ -2269,7 +1750,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   }, [boardW, boardH])
 
   const nextWaveNum = uiWave + 1
-  const nextWaveCfg = getWaveCfg(uiStage, nextWaveNum)
+  const nextWaveCfg = getWaveCfg(uiStage, nextWaveNum, uiEndless)
   const isBossNextWave = nextWaveCfg.isBoss
   const canStartWave = uiState === 'idle' || uiState === 'playing'
   const isOver = uiState === 'gameover' || uiState === 'victory'
@@ -2290,6 +1771,25 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   // Collect all spawn starts and single finish
   const uiSpawnCells = new Set(uiPaths.map(p => p.length > 0 ? `${p[0][0]},${p[0][1]}` : ''))
   const uiFinishCell = uiPath.length > 0 ? `${uiPath[uiPath.length - 1][0]},${uiPath[uiPath.length - 1][1]}` : ''
+  const hqMaxLives = getHqMaxLives(uiHqLevel)
+  const hqUpgradeCost = uiHqLevel >= HQ_MAX_LEVEL ? 0 : 800 + uiHqLevel * 650
+  const bossIntel = isBossNextWave
+    ? isHeavyBossStage(uiStage, uiEndless)
+      ? 'INTEL: SIEGE BOSS'
+      : 'INTEL: BOSS WAVE'
+    : nextWaveNum >= 3
+      ? 'INTEL: ELITE CONTACTS'
+      : 'INTEL: CLEAR'
+  const commandButtonStyle = (bg: string, color: string, disabled = false): React.CSSProperties => ({
+    ...btnStyle(disabled ? '#303642' : bg, color, true),
+    ...(isCompact
+      ? { minWidth: 112, minHeight: 32, padding: '7px 8px', fontSize: '0.66rem', flex: '0 0 auto' }
+      : isLandscapeMobile
+        ? { minHeight: 32, padding: '7px 8px', fontSize: '0.7rem' }
+        : {}),
+  })
+  const compactTowerShop = isCompact
+  const selectedTowerDef = selectedTowerKey ? TOWER_TYPES.find(t => t.key === selectedTowerKey) ?? null : null
 
 
   return (
@@ -2373,9 +1873,37 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             </button>
           </div>
         )}
-        {uiState === 'idle' && endlessUnlocked && !uiEndless && (
-          <button onClick={enterEndless} style={btnStyle('#7a4312', '#ffe1b3', true)}>ENDLESS</button>
-        )}
+      </div>
+
+      <div style={{
+        display: isCompact ? 'flex' : 'grid',
+        gridTemplateColumns: isCompact ? undefined : 'repeat(5,minmax(0,1fr))',
+        gap: isCompact ? 5 : 6,
+        width: '100%',
+        maxWidth: chromeMaxW,
+        marginBottom: (isCompact || isLandscapeMobile) ? 4 : 8,
+        position: 'relative',
+        zIndex: 1,
+        flexShrink: 0,
+        overflowX: isCompact ? 'auto' : undefined,
+        paddingBottom: isCompact ? 2 : undefined,
+        scrollbarWidth: isCompact ? 'thin' : undefined,
+      }}>
+        <button type="button" onClick={() => castCommanderAbility('ion')} disabled={uiCommanderCooldowns.ion > 0} style={commandButtonStyle('#5b1b68', '#fce7ff', uiCommanderCooldowns.ion > 0)}>
+          {uiCommanderCooldowns.ion > 0 ? `ION ${Math.ceil(uiCommanderCooldowns.ion)}` : 'ION STORM'}
+        </button>
+        <button type="button" onClick={() => castCommanderAbility('freeze')} disabled={uiCommanderCooldowns.freeze > 0} style={commandButtonStyle('#164e63', '#e0f7ff', uiCommanderCooldowns.freeze > 0)}>
+          {uiCommanderCooldowns.freeze > 0 ? `FREEZE ${Math.ceil(uiCommanderCooldowns.freeze)}` : 'FREEZE'}
+        </button>
+        <button type="button" onClick={() => castCommanderAbility('repair')} disabled={uiCommanderCooldowns.repair > 0 || uiLives >= hqMaxLives} style={commandButtonStyle('#1d4d35', '#dfffea', uiCommanderCooldowns.repair > 0 || uiLives >= hqMaxLives)}>
+          {uiCommanderCooldowns.repair > 0 ? `REPAIR ${Math.ceil(uiCommanderCooldowns.repair)}` : `REPAIR ${uiLives}/${hqMaxLives}`}
+        </button>
+        <button type="button" onClick={upgradeHq} disabled={uiHqLevel >= HQ_MAX_LEVEL || uiGold < hqUpgradeCost} style={commandButtonStyle('#6b4d12', '#fff5c2', uiHqLevel >= HQ_MAX_LEVEL || uiGold < hqUpgradeCost)}>
+          {uiHqLevel >= HQ_MAX_LEVEL ? `HQ LV ${HQ_MAX_LEVEL}` : `HQ LV ${uiHqLevel} CR ${hqUpgradeCost}`}
+        </button>
+        <div style={{ border: '1px solid #385264', borderRadius: 6, padding: isCompact ? '8px 9px' : '7px 8px', background: '#0d1520', color: isBossNextWave ? '#ffb4b4' : '#c6d1dd', fontSize: isCompact ? '0.66rem' : '0.76rem', fontWeight: 900, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: isCompact ? 132 : undefined, flex: isCompact ? '0 0 auto' : undefined }}>
+          {bossIntel}
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: isCompact ? 'column' : 'row', alignItems: isCompact ? 'center' : 'flex-start', gap: isCompact ? 4 : 8, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1, flex: isCompact ? 1 : undefined, minHeight: isCompact ? 0 : undefined, overflow: (isCompact || isLandscapeMobile) ? 'hidden' : undefined, flexShrink: isLandscapeMobile ? 0 : undefined }}>
@@ -2410,10 +1938,13 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               const isPath = uiPathSet.has(key)
               const isStart = uiSpawnCells.has(key)
               const isEnd = key === uiFinishCell
-              const hasTower = towersRef.current.some(t => t.col === c && t.row === r)
+              const hasTower = findTowerAtCell(c, r) != null
               const isHovered = hoveredCell?.[0] === c && hoveredCell?.[1] === r
               const tDef = selectedTowerKey ? TOWER_TYPES.find(t => t.key === selectedTowerKey) ?? null : null
               const canAfford = tDef != null && goldRef.current >= tDef.cost
+              const selectedFootprint = selectedTowerKey ? getTowerFootprint(selectedTowerKey) : 1
+              const isInPlacementPreview = hoveredCell != null && selectedTowerKey != null && c >= hoveredCell[0] && c < hoveredCell[0] + selectedFootprint && r >= hoveredCell[1] && r < hoveredCell[1] + selectedFootprint
+              const canPlacePreview = hoveredCell != null && selectedTowerKey != null && canPlaceTowerAt(hoveredCell[0], hoveredCell[1], selectedFootprint)
               return (
                 <div
                   key={key}
@@ -2427,8 +1958,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                     background: isPath
                       ? (isStart ? 'rgba(78,255,190,0.18)' : isEnd ? 'rgba(255,127,127,0.18)' : 'rgba(79,137,201,0.13)')
                       : hasTower ? 'transparent'
-                      : isHovered && !isPath && !hasTower
-                        ? (canAfford ? 'rgba(255,255,255,0.14)' : 'rgba(255,0,0,0.14)')
+                      : (isHovered || isInPlacementPreview) && !isPath && !hasTower
+                        ? (canAfford && canPlacePreview ? 'rgba(244,63,94,0.18)' : 'rgba(255,0,0,0.14)')
                         : 'rgba(8,16,30,0.28)',
                     border: '1px solid rgba(66,99,132,0.34)',
                     cursor: isPath ? 'default' : 'pointer',
@@ -2483,6 +2014,10 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           )}
 
           {uiTowers.map(tower => {
+            const footprint = getTowerFootprint(tower.type)
+            const towerW = footprint * cell - 4
+            const towerH = footprint * cell - 4
+            const shipSize = tower.type === 'dreadnought' ? Math.max(54, cell * 1.55) : cell > 38 ? 26 : 20
             // Tower scale-in animation
             const creationTime = towerCreationTimeRef.current.get(tower.id) ?? 0
             const scaleProgress = Math.min(creationTime / 0.42, 1)
@@ -2504,7 +2039,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                 style={{
                   position: 'absolute',
                   left: tower.col * cell + 2, top: tower.row * cell + 2,
-                  width: cell - 4, height: cell - 4,
+                  width: towerW, height: towerH,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   cursor: draggedTower?.id === tower.id ? 'grabbing' : 'grab', overflow: 'visible',
                   zIndex: 3,
@@ -2525,8 +2060,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                       position: 'absolute',
                       left: '50%',
                       top: '50%',
-                      width: cell * 1.05,
-                      height: cell * 1.05,
+                      width: cell * footprint * 1.05,
+                      height: cell * footprint * 1.05,
                       borderRadius: '50%',
                       border: `2.5px solid ${tower.towerDef.color}`,
                       boxShadow: `0 0 14px ${tower.towerDef.color}99`,
@@ -2535,7 +2070,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                     }}
                   />
                 )}
-                <TowerShip tType={tower.type} color={tower.towerDef.color} size={cell > 38 ? 26 : 20} />
+                <TowerShip tType={tower.type} color={tower.towerDef.color} size={shipSize} />
                 {tower.level > 1 && (
                   <div style={{ fontSize: cell * 0.22, color: '#ffd666', fontWeight: 700, lineHeight: 1 }}>★{tower.level}</div>
                 )}
@@ -2550,11 +2085,12 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           {selectedTowerOnGrid && (() => {
             const t = selectedTowerOnGrid
             const r = t.towerDef.range * cell
+            const center = getTowerCenter(t)
             return (
               <div style={{
                 position: 'absolute',
-                left: (t.col + 0.5) * cell - r,
-                top: (t.row + 0.5) * cell - r,
+                left: center.x * cell - r,
+                top: center.y * cell - r,
                 width: r * 2, height: r * 2,
                 borderRadius: '50%',
                 border: `2px dashed ${t.towerDef.color}88`,
@@ -2573,9 +2109,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             const levelXpPct = canUpgrade ? Math.max(0, Math.min(1, t.xp / levelXpNeed)) : 1
             const menuWidth = 160
             const menuHeight = 60
-            const left = Math.max(8, Math.min(boardW - menuWidth - 8, (t.col + 0.5) * cell - menuWidth / 2))
-            const preferredBelow = (t.row + 1) * cell + 8
-            const preferredAbove = (t.row + 0.5) * cell - menuHeight - 8
+            const center = getTowerCenter(t)
+            const footprint = getTowerFootprint(t.type)
+            const left = Math.max(8, Math.min(boardW - menuWidth - 8, center.x * cell - menuWidth / 2))
+            const preferredBelow = (t.row + footprint) * cell + 8
+            const preferredAbove = center.y * cell - menuHeight - 8
             const top = preferredBelow <= boardH - menuHeight - 8 ? preferredBelow : Math.max(8, preferredAbove)
 
             const actionButtonStyle = (bg: string, disabled = false): React.CSSProperties => ({
@@ -2652,7 +2190,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
 
           {/* Enemies */}
           {uiEnemies.map(e => {
-            const isFinalBoss = e.isBoss && uiStage === MAX_STAGES
+            const isFinalBoss = e.isBoss && isHeavyBossStage(uiStage, uiEndless)
             const bossScale = isFinalBoss ? 1.6 : e.isBoss ? 1.35 : 1
             const ePath = uiPaths[e.pathIdx] ?? uiPath
             const [pc, pr] = ePath[Math.min(e.pathIndex, ePath.length - 1)] ?? [e.x, e.y]
@@ -2682,6 +2220,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               }}>
                 {isFinalBoss && <div style={{ fontSize: cell * 0.32, lineHeight: 1, marginBottom: 1 }}>💀</div>}
                 {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.28, lineHeight: 1, marginBottom: 1, color: '#fca5a5', fontWeight: 900, textShadow: '0 0 4px #ef4444' }}>BOSS</div>}
+                {!e.isBoss && e.trait !== 'none' && (
+                  <div style={{ color: e.trait === 'shielded' ? '#7dd3fc' : e.trait === 'armored' ? '#cbd5e1' : e.trait === 'phase' ? '#c084fc' : e.trait === 'splitter' ? '#f0abfc' : '#fbbf24', fontSize: Math.max(7, cell * 0.15), fontWeight: 900, lineHeight: 1, textShadow: '0 0 5px #000' }}>
+                    {e.trait.toUpperCase()}
+                  </div>
+                )}
                 {e.isBoss ? (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', color: '#fca5a5', fontSize: Math.max(8, cell * 0.18), fontWeight: 900, lineHeight: 1, marginBottom: 2, textShadow: '0 0 6px #ef4444' }}>
@@ -2693,9 +2236,16 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                     </div>
                   </>
                 ) : (
-                  <div style={{ width: '100%', height: 3, background: '#333', borderRadius: 2 }}>
-                    <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? '#34d399' : e.hp / e.maxHp > 0.25 ? '#ffd666' : '#fb7185', borderRadius: 2 }} />
-                  </div>
+                  <>
+                    {e.maxShield > 0 && (
+                      <div style={{ width: '100%', height: 2, background: '#102030', borderRadius: 2, marginBottom: 1 }}>
+                        <div style={{ width: `${Math.max(0, e.shield / e.maxShield) * 100}%`, height: '100%', background: '#7dd3fc', borderRadius: 2, boxShadow: '0 0 6px #7dd3fc' }} />
+                      </div>
+                    )}
+                    <div style={{ width: '100%', height: 3, background: '#333', borderRadius: 2 }}>
+                      <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? '#34d399' : e.hp / e.maxHp > 0.25 ? '#ffd666' : '#fb7185', borderRadius: 2 }} />
+                    </div>
+                  </>
                 )}
               </div>
               {/* Ship sprite — centered at the exact path position */}
@@ -2745,26 +2295,50 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             )
           })}
 
+          {/* Dreadnought gatling drones */}
+          {uiScoutDrones.map(drone => (
+            <div key={drone.id} style={{
+              position: 'absolute',
+              left: drone.x * cell,
+              top: drone.y * cell,
+              width: 0,
+              height: 0,
+              pointerEvents: 'none',
+              zIndex: 5,
+              transform: `rotate(${drone.angle}deg)`,
+              filter: drone.state === 'attack' ? `drop-shadow(0 0 8px ${DREADNOUGHT_SCOUT_COLOR})` : 'drop-shadow(0 0 5px #7dd3fc)',
+            }}>
+              <div style={{ transform: 'translate(-50%, -50%)' }}>
+                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(26, cell * 0.68)} />
+              </div>
+            </div>
+          ))}
+
           {/* Bullets */}
           {uiBullets.map(b => {
             const tt = b.towerType
             // Compute travel angle for elongated projectiles
             const angle = Math.atan2(b.ty - b.y, b.tx - b.x) * 180 / Math.PI
 
-            if (tt === 'rocket' || tt === 'artillery') {
+            if (tt === 'rocket' || tt === 'artillery' || tt === 'dreadnought') {
               // 🚀 Rocket / Artillery shell — elongated with flame trail
               const isArtillery = tt === 'artillery'
+              const isDreadnought = tt === 'dreadnought'
               return (
                 <div key={b.id} style={{
                   position: 'absolute',
                   left: b.x * cell, top: b.y * cell,
-                  width: isArtillery ? 18 : 14,
-                  height: isArtillery ? 8 : 6,
-                  background: isArtillery
+                  width: isDreadnought ? 22 : isArtillery ? 18 : 14,
+                  height: isDreadnought ? 10 : isArtillery ? 8 : 6,
+                  background: isDreadnought
+                    ? 'linear-gradient(90deg, #f43f5e, #fda4af)'
+                    : isArtillery
                     ? 'linear-gradient(90deg, #ff8800, #ffcc00)'
                     : 'linear-gradient(90deg, #ff0000, #ff6600)',
                   borderRadius: '50% 20% 20% 50%',
-                  boxShadow: isArtillery
+                  boxShadow: isDreadnought
+                    ? '0 0 18px 6px #f43f5eaa, 0 0 34px 10px #fb718566'
+                    : isArtillery
                     ? '0 0 14px 5px #ff880099, 0 0 28px 8px #ff440055'
                     : '0 0 18px 6px #ff000099, 0 0 36px 8px #ff660088',
                   transform: `translate(-50%,-50%) rotate(${angle}deg)`,
@@ -2773,8 +2347,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                   {/* flame exhaust */}
                   <div style={{
                     position: 'absolute', right: '100%', top: '15%',
-                    width: isArtillery ? 10 : 8, height: isArtillery ? 6 : 4,
-                    background: isArtillery
+                    width: isDreadnought ? 12 : isArtillery ? 10 : 8,
+                    height: isDreadnought ? 7 : isArtillery ? 6 : 4,
+                    background: isDreadnought
+                      ? 'linear-gradient(90deg, transparent, #f43f5e99)'
+                      : isArtillery
                       ? 'linear-gradient(90deg, transparent, #ff880088)'
                       : 'linear-gradient(90deg, transparent, #ff660088)',
                     borderRadius: '0 50% 50% 0',
@@ -2956,6 +2533,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               aoe: { inner: '#ffd66688', outer: '#ffd666' },
               rocket: { inner: '#ff444488', outer: '#ff0000' },
               heavy: { inner: '#ff880044', outer: '#ff8800' },
+              dreadnought: { inner: '#f43f5e66', outer: '#f43f5e' },
             }
             const color = colors[exp.type]
             return (
@@ -3323,7 +2901,6 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                     <div style={{ color: '#ddd', fontSize: '0.95rem' }}>All 10 stages conquered!</div>
                     <div style={{ color: '#ffd666', fontWeight: 800, fontSize: '1.1rem' }}>Score: {uiScore.toLocaleString()}</div>
                     <div style={{ color: '#aaa', fontSize: '0.85rem' }}>Best: {uiHighScore.toLocaleString()}</div>
-                    <button type="button" onClick={enterEndless} style={btnStyle('#ff8800', '#000', true)}>🔥 Enter Endless Mode</button>
                     <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>
                   </>
                 ) : (
@@ -3340,9 +2917,9 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         </div>
 
         {/* Sidebar */}
-        <div style={{ flex: (isCompact || isLandscapeMobile) ? 1 : '0 0 auto', minWidth: isCompact ? boardW : 0, width: isCompact ? boardW : undefined, display: 'flex', flexDirection: 'column', gap: isCompact ? 3 : 6, minHeight: 0, overflow: 'hidden', maxHeight: isLandscapeMobile ? boardH : undefined, overflowY: isLandscapeMobile ? 'auto' : undefined }}>
+        <div style={{ flex: isCompact ? 1 : isLandscapeMobile ? 1 : '0 0 auto', minWidth: isCompact ? boardW : 0, width: isCompact ? boardW : undefined, display: 'flex', flexDirection: 'column', gap: isCompact ? 3 : 6, minHeight: 0, overflow: 'hidden', maxHeight: isLandscapeMobile ? boardH : undefined, overflowY: isLandscapeMobile ? 'auto' : undefined }}>
           {(!isCompact && !isLandscapeMobile) && <div style={{ color: '#aaa', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Deploy Ship</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(3,minmax(0,1fr))' : isLandscapeMobile ? 'repeat(2,minmax(0,1fr))' : '1fr', gridTemplateRows: isCompact ? 'repeat(3, minmax(0, 1fr))' : undefined, gap: isCompact ? 4 : 5, flex: isCompact ? 1 : undefined, minHeight: isCompact ? 0 : undefined }}>
+          <div style={{ display: 'grid', gridTemplateColumns: compactTowerShop ? 'repeat(5,minmax(0,1fr))' : isLandscapeMobile ? 'repeat(2,minmax(0,1fr))' : '1fr', gridTemplateRows: compactTowerShop ? 'repeat(2, 58px)' : undefined, gap: isCompact ? 4 : 5, flex: compactTowerShop ? '0 0 auto' : isCompact ? 1 : undefined, minHeight: isCompact ? 0 : undefined }}>
             {TOWER_TYPES.map(t => (
               <button
                 key={t.key}
@@ -3351,7 +2928,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                   background: selectedTowerKey === t.key ? t.color + '33' : '#111',
                   border: `2px solid ${selectedTowerKey === t.key ? t.color : '#333'}`,
                   borderRadius: 8,
-                  padding: isCompact ? '4px 5px' : '6px 7px',
+                  padding: compactTowerShop ? '3px 4px' : isCompact ? '4px 5px' : '6px 7px',
                   cursor: 'pointer',
                   color: '#fff',
                   textAlign: 'left',
@@ -3362,19 +2939,19 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               >
                 {isCompact ? (
                   /* Portrait compact: icon centred, name + cost + desc stacked */
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, height: '100%', width: '100%' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: compactTowerShop ? 1 : 2, height: '100%', width: '100%' }}>
                     <div style={{
-                      width: 28, height: 28, borderRadius: 8,
+                      width: compactTowerShop ? 24 : 28, height: compactTowerShop ? 24 : 28, borderRadius: 8,
                       border: `1px solid ${t.color}55`,
                       background: 'linear-gradient(180deg,#182330,#0a0f18)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       flexShrink: 0, boxShadow: `inset 0 0 10px ${t.color}18`,
                     }}>
-                      <TowerShip tType={t.key} color={t.color} size={18} />
+                      <TowerShip tType={t.key} color={t.color} size={compactTowerShop ? 16 : 18} />
                     </div>
-                    <span style={{ fontWeight: 800, color: t.color, fontSize: '0.68rem', textAlign: 'center', lineHeight: 1.1, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
-                    <span style={{ color: '#ffd666', fontSize: '0.62rem', fontWeight: 700, lineHeight: 1 }}>{t.cost}</span>
-                    <span style={{ color: '#888', fontSize: '0.55rem', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{t.desc}</span>
+                    <span style={{ fontWeight: 800, color: t.color, fontSize: compactTowerShop ? '0.55rem' : '0.68rem', textAlign: 'center', lineHeight: 1.05, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
+                    <span style={{ color: '#ffd666', fontSize: compactTowerShop ? '0.52rem' : '0.62rem', fontWeight: 700, lineHeight: 1 }}>{t.cost}</span>
+                    {!compactTowerShop && <span style={{ color: '#888', fontSize: '0.55rem', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{t.desc}</span>}
                   </div>
                 ) : (
                   /* Landscape mobile (2-col) and desktop (1-col): icon left, name + cost + desc on right */
@@ -3401,10 +2978,95 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             ))}
           </div>
 
+          {isCompact && (
+            <div style={{
+              minHeight: 42,
+              borderRadius: 7,
+              border: `1px solid ${selectedTowerDef ? selectedTowerDef.color + '88' : '#2f4b40'}`,
+              background: selectedTowerDef ? `${selectedTowerDef.color}14` : '#0b1511',
+              padding: '6px 8px',
+              display: 'grid',
+              gridTemplateColumns: selectedTowerDef ? '32px 1fr auto' : '1fr',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: 'inset 0 0 0 1px #00000088',
+            }}>
+              {selectedTowerDef ? (
+                <>
+                  <div style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: 8,
+                    border: `1px solid ${selectedTowerDef.color}66`,
+                    background: 'linear-gradient(180deg,#182330,#0a0f18)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <TowerShip tType={selectedTowerDef.key} color={selectedTowerDef.color} size={20} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: selectedTowerDef.color, fontSize: '0.68rem', fontWeight: 900, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {selectedTowerDef.label}
+                    </div>
+                    <div style={{ color: '#a8b7c4', fontSize: '0.58rem', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {selectedTowerDef.desc}
+                    </div>
+                  </div>
+                  <div style={{ color: '#ffd666', fontSize: '0.62rem', fontWeight: 900, whiteSpace: 'nowrap' }}>CR {selectedTowerDef.cost}</div>
+                </>
+              ) : (
+                <div style={{ color: '#7f958a', fontSize: '0.64rem', fontWeight: 800, textAlign: 'center' }}>Select a ship to view its role and cost</div>
+              )}
+            </div>
+          )}
+
+          {isCompact && (
+            <div style={{
+              flex: 1,
+              minHeight: 118,
+              marginTop: 4,
+              borderRadius: 8,
+              border: '1px solid #2f5f74',
+              background: 'linear-gradient(135deg,#07131f 0%,#0b2019 58%,#07110d 100%)',
+              boxShadow: 'inset 0 0 0 1px #000000aa, inset 0 0 28px #38bdf81a',
+              display: 'grid',
+              gridTemplateColumns: '96px 1fr',
+              alignItems: 'center',
+              gap: 10,
+              padding: '8px 10px',
+              overflow: 'hidden',
+              position: 'relative',
+            }}>
+              <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(0deg, transparent 0 9px, #38bdf80d 9px 10px)', pointerEvents: 'none' }} />
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <EarthHQIcon size={82} />
+              </div>
+              <div style={{ position: 'relative', minWidth: 0 }}>
+                <div style={{ color: '#dff7ff', fontWeight: 900, fontSize: '0.86rem', letterSpacing: 1, textShadow: '0 0 10px #38bdf866' }}>EARTH ORBITAL HQ</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 5, marginTop: 8 }}>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>LEVEL <b style={{ color: '#ffd666' }}>{uiHqLevel}</b>/{HQ_MAX_LEVEL}</div>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>HULL <b style={{ color: '#fb7185' }}>{uiLives}</b>/{hqMaxLives}</div>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>MODE <b style={{ color: uiEndless ? '#ff8800' : '#18e6c4' }}>{uiEndless ? 'ENDLESS' : 'NORMAL'}</b></div>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>NEXT <b style={{ color: isBossNextWave ? '#ffb4b4' : '#8bffdf' }}>{isBossNextWave ? 'BOSS' : 'WAVE'}</b></div>
+                </div>
+                <div style={{ marginTop: 8, height: 7, borderRadius: 4, background: '#081018', border: '1px solid #24445c', overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.max(0, Math.min(100, (uiLives / hqMaxLives) * 100))}%`, height: '100%', background: 'linear-gradient(90deg,#fb7185,#ffd666,#7dd3fc)', boxShadow: '0 0 10px #7dd3fc88' }} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {selectedTowerOnGrid && !isCompact && !isLandscapeMobile && (
             <div style={{ marginTop: 8, background: '#111', border: `2px solid ${selectedTowerOnGrid.towerDef.color}`, borderRadius: 8, padding: 10 }}>
               <div style={{ color: selectedTowerOnGrid.towerDef.color, fontWeight: 800, fontSize: '0.9rem' }}>{selectedTowerOnGrid.towerDef.label} Lv{selectedTowerOnGrid.level}</div>
               <div style={{ color: '#aaa', fontSize: '0.75rem', margin: '4px 0' }}>DMG: {(selectedTowerOnGrid.towerDef.dmg * (1 + (selectedTowerOnGrid.level - 1) * 0.5)).toFixed(0)} | Range: {selectedTowerOnGrid.towerDef.range}</div>
+              {getTowerSynergy(selectedTowerOnGrid).active && (
+                <div style={{ color: '#8bffdf', fontSize: '0.7rem', fontWeight: 800, marginBottom: 4 }}>SYNERGY ONLINE</div>
+              )}
+              {selectedTowerOnGrid.type === 'dreadnought' && (
+                <div style={{ color: '#fda4af', fontSize: '0.7rem', fontWeight: 800, marginBottom: 4 }}>DRONES: {getDreadnoughtScoutCount(selectedTowerOnGrid)} | ACTIVE {getDreadnoughtScoutAttackTime(selectedTowerOnGrid).toFixed(1)}s</div>
+              )}
               {selectedTowerOnGrid.level < MAX_TOWER_LEVEL ? (
                 <div style={{ marginBottom: 6 }}>
                   <div style={{ color: '#8fb9ad', fontSize: '0.68rem', marginBottom: 3 }}>Auto EXP: {selectedTowerOnGrid.xp.toFixed(1)} / {xpNeededForNextLevel(selectedTowerOnGrid.level)}</div>
@@ -3427,7 +3089,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               <div>• Drag ship to reposition (mouse or touch)</div>
               <div>• Aliens reaching HQ cost lives</div>
               <div>• Wave 5 is boss wave, stage 10 is all bosses</div>
-              <div>• Beat stage 10 to unlock endless mode</div>
+              <div>• Endless mode is launched from the title screen</div>
             </div>
           )}
         </div>
@@ -3530,32 +3192,4 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     </div>
     </>
   )
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function StatPill({ icon, val, color }: { icon: string; val: number; color: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: '#111914', border: `1px solid ${color}55`, borderRadius: 4, padding: '5px 9px', boxShadow: 'inset 0 0 0 1px #00000088' }}>
-      <span style={{ color: '#9ab5a8', fontSize: '0.72rem', letterSpacing: 1.1 }}>{icon}</span>
-      <span style={{ color, fontWeight: 800, fontSize: '0.92rem', minWidth: 92, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{typeof val === 'number' ? val.toLocaleString() : val}</span>
-    </div>
-  )
-}
-
-function btnStyle(bg: string, color: string, bold = false): React.CSSProperties {
-  return {
-    background: bg,
-    color,
-    border: '1px solid #5c7e6a',
-    borderRadius: 4,
-    padding: '6px 12px',
-    cursor: 'pointer',
-    fontWeight: bold ? 800 : 600,
-    fontSize: '0.76rem',
-    transition: 'filter 0.15s',
-    fontFamily: 'inherit',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    boxShadow: 'inset 0 0 0 1px #00000088',
-  }
 }

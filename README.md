@@ -4,7 +4,7 @@ A polished tower defense game built with React and TypeScript. Defend against wa
 
 ## Features
 
-- **Strategic Tower Placement**: 9 unique tower types with different abilities
+- **Strategic Tower Placement**: 10 unique tower types with different abilities
 - **Procedurally Generated Paths**: Unique multi-spawn paths for each stage
 - **Dynamic Difficulty**: 10 stages with increasing complexity and boss enemies
 - **Polished Effects**: 
@@ -15,7 +15,12 @@ A polished tower defense game built with React and TypeScript. Defend against wa
   - Screen flashes and visual feedback
   - Victory and stage transition effects
   - Coin flow animations
-- **Endless Mode**: Unlock endless waves after beating stage 10
+- **Endless Mode**: Available from the title screen as a separate mode
+- **Endless Heavy Bosses**: Heavy tower-destroying bosses return every 5 endless stages
+- **Commander Abilities**: Ion Storm, Orbital Freeze, and Emergency Repair cooldown powers
+- **Elite Enemy Traits**: Shielded, armored, phase, splitter, and blink enemies appear in later waves
+- **HQ Upgrades**: Spend CR to reinforce Earth HQ and increase repair capacity
+- **Ship Synergies**: Nearby specialist ships unlock rate, damage, range, and barrage bonuses
 - **Sound Design**: Procedurally generated audio feedback (toggle with button)
 - **High Score Tracking**: Local storage for persistent high scores
 
@@ -30,6 +35,7 @@ A polished tower defense game built with React and TypeScript. Defend against wa
 - **Rocket**: Huge AOE blast (600 cost)
 - **Laser**: Beam tower with 10s fire + 5s exhaust (2000 cost)
 - **Artillery**: Global range with 3-rocket barrage (3500 cost)
+- **Dreadnought**: 2x2 capital ship with global range, AOE lance barrage, 3s attack interval, and scaling returning Gatling drones every 10s (5000 cost)
 
 ## Getting Started
 
@@ -96,7 +102,7 @@ Built with:
 - **Web Audio API**: Procedural sound generation
 
 ### Key Components
-- `CryptoTowerDefense.tsx`: Main game component (2100+ lines)
+- `SpaceImpactDefense.tsx`: Main game orchestration component
 - `sound.ts`: Audio engine with 13+ sound effects
 - `types.ts`: Shared TypeScript types
 

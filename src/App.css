@@ -236,8 +236,15 @@ body {
   line-height: 1.6;
 }
 
-.start-screen__button {
+.start-screen__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
   margin-top: 10px;
+}
+
+.start-screen__button {
   padding: 14px 34px;
   border: 1px solid #6ef5cb;
   border-radius: 999px;
@@ -250,6 +257,13 @@ body {
   cursor: pointer;
   box-shadow: 0 12px 32px rgba(22, 201, 171, 0.26), inset 0 1px 0 rgba(255,255,255,0.3);
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.start-screen__button--endless {
+  border-color: #ffbd73;
+  background: linear-gradient(180deg, #ff9f43, #7a4312);
+  color: #180b02;
+  box-shadow: 0 12px 32px rgba(255, 136, 0, 0.26), inset 0 1px 0 rgba(255,255,255,0.3);
 }
 
 .start-screen__button:hover {

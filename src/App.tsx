@@ -1,5 +1,5 @@
 import './App.css'
-import { SpaceImpactDefense } from './components/games/CryptoTowerDefense'
+import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { useEffect, useMemo, useState } from 'react'
 
 // Placeholder coins (not displayed — kept for prop compatibility)
@@ -29,9 +29,11 @@ const CUTSCENE_SCENES = [
 ] as const
 
 type ScreenState = 'title' | 'cutscene' | 'game'
+type GameMode = 'normal' | 'endless'
 
 function App() {
   const [screen, setScreen] = useState<ScreenState>('title')
+  const [gameMode, setGameMode] = useState<GameMode>('normal')
   const [cutsceneIndex, setCutsceneIndex] = useState(0)
 
   const currentScene = useMemo(() => CUTSCENE_SCENES[cutsceneIndex], [cutsceneIndex])
@@ -64,8 +66,14 @@ function App() {
   }, [screen, cutsceneIndex])
 
   const startCutscene = () => {
+    setGameMode('normal')
     setCutsceneIndex(0)
     setScreen('cutscene')
+  }
+
+  const startEndless = () => {
+    setGameMode('endless')
+    setScreen('game')
   }
 
   if (screen === 'title') {
@@ -89,9 +97,14 @@ function App() {
           <p>
             Deploy warships. Defend Earth. Break alien fleets across shifting space lanes.
           </p>
-          <button className="start-screen__button" onClick={startCutscene}>
-            Enter Command
-          </button>
+          <div className="start-screen__actions">
+            <button className="start-screen__button" onClick={startCutscene}>
+              Normal Campaign
+            </button>
+            <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
+              Endless Mode
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -145,6 +158,7 @@ function App() {
       <SpaceImpactDefense 
         availableCoins={DEFAULT_COINS}
         onClose={() => setScreen('title')}
+        initialMode={gameMode}
       />
     </div>
   )
