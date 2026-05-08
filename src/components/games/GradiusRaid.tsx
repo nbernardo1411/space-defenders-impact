@@ -5,7 +5,7 @@ import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
 type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair'
-type GamePhase = 'select' | 'playing' | 'paused' | 'gameover'
+type GamePhase = 'select' | 'briefing' | 'playing' | 'paused' | 'gameover'
 type BossMessage = 'incoming' | 'clear' | null
 type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super'
 
@@ -150,6 +150,24 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.12, hp: 5, fireRate: 1.14 },
 ]
 
+const BRIEFING_PANELS = [
+  {
+    title: 'Mission',
+    body: 'Break through the alien blockade, survive every stage, and destroy the boss guarding each sector.',
+    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Mobile follows above your finger so your hand does not cover the ship.'],
+  },
+  {
+    title: 'Weapon Drops',
+    body: 'Weapon pickups stack together for a limited time, so the strongest builds combine several attacks at once.',
+    items: ['V Spread: adds fan shots for crowd control.', 'L Laser: fast piercing beam damage.', '* Scatter: sprays angled bursts around the nose.', 'R Rocket: heavy explosive side missiles.', 'H Homing: seeker missiles that curve into targets.'],
+  },
+  {
+    title: 'Support Buffs',
+    body: 'Support pickups keep a run alive when the screen gets busy. Boss arrivals extend active weapon timers.',
+    items: ['O Scouts: two side escorts copy your selected ship and fire with you.', 'S Shield: absorbs hits before hull damage.', 'F Force Field: five temporary armor bars and safe enemy ramming.', '+ Repair: restores hull by one bar.'],
+  },
+]
+
 const EMPTY_WEAPONS: Record<WeaponKey, number> = {
   spread: 0,
   laser: 0,
@@ -287,6 +305,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const raidBgmOscillatorsRef = useRef<OscillatorNode[]>([])
   const raidBgmNodesRef = useRef<AudioNode[]>([])
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
+  const [briefingStep, setBriefingStep] = useState(0)
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
     phase: 'select',
     player: getInitialPlayer(),
@@ -577,6 +596,13 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     syncSnapshot()
   }, [startRaidBgm, syncSnapshot])
 
+  const openBriefing = useCallback(() => {
+    phaseRef.current = 'briefing'
+    setBriefingStep(0)
+    playGameSound('select')
+    syncSnapshot()
+  }, [syncSnapshot])
+
   const chooseShip = useCallback((ship: ShipOption) => {
     selectedShipRef.current = ship
     setSelectedShipKey(ship.key)
@@ -601,7 +627,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   }, [startRaidBgm, syncSnapshot])
 
   const pushShot = useCallback((shot: Omit<Shot, 'id'>) => {
-    if (shotsRef.current.length >= MAX_PLAYER_SHOTS) return
+    if (shotsRef.current.length >= MAX_PLAYER_SHOTS) {
+      shotsRef.current = shotsRef.current.slice(-(MAX_PLAYER_SHOTS - 1))
+    }
     shotsRef.current.push({ ...shot, id: shotId++ })
   }, [])
 
@@ -612,11 +640,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.fireCooldown > 0) return
 
     const baseDamage = 1 + Math.floor(player.rank / 3)
+    const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
     const emitters = [{ x: player.x, y: player.y, scale: 1 }]
     if (player.optionTimer > 0) {
       emitters.push(
-        { x: clamp(player.x - 7, 4, 96), y: player.y + 1.4, scale: 0.72 },
-        { x: clamp(player.x + 7, 4, 96), y: player.y + 1.4, scale: 0.72 },
+        { x: clamp(player.x - optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72 },
+        { x: clamp(player.x + optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72 },
       )
     }
 
@@ -1230,6 +1259,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     const down = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()
       if (key === 'enter' && phaseRef.current === 'paused') resumeGame()
+      else if (key === 'enter' && phaseRef.current === 'briefing') resetGame()
       else if (key === 'enter' && phaseRef.current !== 'playing') resetGame()
       if (key === 'p') {
         if (phaseRef.current === 'playing') pauseGame()
@@ -1237,6 +1267,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       }
       if (key === 'escape') {
         if (phaseRef.current === 'playing') pauseGame()
+        else if (phaseRef.current === 'briefing') {
+          phaseRef.current = 'select'
+          syncSnapshot()
+        }
         else onClose()
       }
       keysRef.current.add(key)
@@ -1248,7 +1282,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [onClose, pauseGame, resetGame, resumeGame])
+  }, [onClose, pauseGame, resetGame, resumeGame, syncSnapshot])
 
   useEffect(() => () => {
     stopBGM()
@@ -1286,6 +1320,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const hpPips = Array.from({ length: player.maxHp }, (_, index) => index < player.hp)
   const forcePips = Array.from({ length: FORCE_FIELD_ARMOR }, (_, index) => index < player.forceField)
   const weaponEntries = (Object.keys(player.weapons) as WeaponKey[]).filter((key) => player.weapons[key] > 0)
+  const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
+  const optionShipSize = player.ship.key === 'dreadnought' ? 40 : player.ship.key === 'xwing' ? 36 : 34
+  const briefing = BRIEFING_PANELS[briefingStep] ?? BRIEFING_PANELS[0]
 
   return (
     <div
@@ -1419,11 +1456,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         </div>
         {player.optionTimer > 0 && (
           <>
-            <div className="raid__option raid__option--left" style={{ left: `${clamp(player.x - 7, 4, 96)}%`, top: `${player.y + 1.4}%` }}>
-              <TowerShip tType="fast" color="#ef233c" size={34} />
+            <div className="raid__option raid__option--left" style={{ left: `${clamp(player.x - optionOffset, 4, 96)}%`, top: `${player.y + 1.8}%` }}>
+              <TowerShip tType={player.ship.key} color="#ef233c" size={optionShipSize} />
             </div>
-            <div className="raid__option raid__option--right" style={{ left: `${clamp(player.x + 7, 4, 96)}%`, top: `${player.y + 1.4}%` }}>
-              <TowerShip tType="fast" color="#ef233c" size={34} />
+            <div className="raid__option raid__option--right" style={{ left: `${clamp(player.x + optionOffset, 4, 96)}%`, top: `${player.y + 1.8}%` }}>
+              <TowerShip tType={player.ship.key} color="#ef233c" size={optionShipSize} />
             </div>
           </>
         )}
@@ -1453,7 +1490,62 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && (
+      {snapshot.phase === 'briefing' && (
+        <div className="raid__overlay">
+          <div className="raid__panel raid__panel--briefing">
+            <div className="raid__kicker">Launch Briefing</div>
+            <h2>{briefing.title}</h2>
+            <p className="raid__briefing-copy">{briefing.body}</p>
+            <div className="raid__briefing-grid">
+              {briefing.items.map((item) => (
+                <div key={item} className="raid__briefing-card">
+                  {item}
+                </div>
+              ))}
+            </div>
+            <div className="raid__briefing-progress" aria-label="Briefing progress">
+              {BRIEFING_PANELS.map((panel, index) => (
+                <button
+                  key={panel.title}
+                  type="button"
+                  className={index === briefingStep ? 'raid__briefing-dot raid__briefing-dot--active' : 'raid__briefing-dot'}
+                  onClick={() => setBriefingStep(index)}
+                  aria-label={`Show ${panel.title}`}
+                />
+              ))}
+            </div>
+            <div className="raid__pause-actions">
+              <button
+                type="button"
+                className="raid__menu-button"
+                onClick={() => {
+                  phaseRef.current = 'select'
+                  syncSnapshot()
+                }}
+              >
+                Back
+              </button>
+              <button type="button" className="raid__menu-button" onClick={resetGame}>Skip</button>
+              <button
+                type="button"
+                className="raid__start"
+                onClick={() => {
+                  if (briefingStep < BRIEFING_PANELS.length - 1) {
+                    setBriefingStep((step) => Math.min(BRIEFING_PANELS.length - 1, step + 1))
+                    playGameSound('select')
+                  } else {
+                    resetGame()
+                  }
+                }}
+              >
+                {briefingStep < BRIEFING_PANELS.length - 1 ? 'Next' : 'Launch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && (
         <div className="raid__overlay">
           <div className="raid__panel">
             <div className="raid__kicker">{snapshot.phase === 'gameover' ? 'Run Ended' : 'Choose Your Ship'}</div>
@@ -1477,7 +1569,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
               <span>PC follows cursor</span>
               <span>Mobile follows above finger</span>
             </div>
-            <button type="button" className="raid__start" onClick={resetGame}>
+            <button type="button" className="raid__start" onClick={snapshot.phase === 'gameover' ? resetGame : openBriefing}>
               {snapshot.phase === 'gameover' ? 'Launch Again' : 'Start Raid'}
             </button>
           </div>
