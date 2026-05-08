@@ -6,6 +6,11 @@
   justify-content: center;
 }
 
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
 .app {
   width: 100%;
   height: 100%;
@@ -16,27 +21,758 @@
 }
 
 .start-screen {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(88, 135, 255, 0.18), transparent 30%),
+    radial-gradient(circle at 80% 30%, rgba(0, 255, 200, 0.12), transparent 28%),
+    radial-gradient(circle at 60% 70%, rgba(255, 110, 160, 0.12), transparent 26%),
+    linear-gradient(180deg, #03060d 0%, #07101f 48%, #03070d 100%);
+}
+
+.start-screen__stars,
+.start-screen__nebula,
+.start-screen__battlefield {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.start-screen__stars {
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.9) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(120,180,255,0.75) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(255,220,180,0.75) 0 1px, transparent 1.5px);
+  background-size: 140px 140px, 220px 220px, 320px 320px;
+  background-position: 0 0, 40px 60px, 110px 20px;
+  animation: driftStars 18s linear infinite;
+}
+
+.start-screen__nebula {
+  filter: blur(18px);
+  opacity: 0.65;
+}
+
+.start-screen__nebula--a {
+  background: radial-gradient(circle at 30% 45%, rgba(41, 121, 255, 0.34), transparent 34%);
+  animation: driftNebula 18s ease-in-out infinite alternate;
+}
+
+.start-screen__nebula--b {
+  background: radial-gradient(circle at 65% 55%, rgba(0, 255, 170, 0.22), transparent 30%);
+  animation: driftNebula 23s ease-in-out infinite alternate-reverse;
+}
+
+.start-screen__battlefield {
+  overflow: hidden;
+}
+
+.start-screen__beam {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+  opacity: 0.9;
+  filter: blur(0.5px);
+}
+
+.start-screen__beam--a {
+  width: 28vw;
+  min-width: 160px;
+  top: 34%;
+  left: 16%;
+  background: linear-gradient(90deg, transparent, #7dd3fc, #ffffff);
+  transform: rotate(-14deg);
+  animation: beamSweepA 2.4s ease-in-out infinite;
+}
+
+.start-screen__beam--b {
+  width: 22vw;
+  min-width: 120px;
+  top: 46%;
+  right: 18%;
+  background: linear-gradient(90deg, #ff5f8a, #ffd166, transparent);
+  transform: rotate(16deg);
+  animation: beamSweepB 2.1s ease-in-out infinite;
+}
+
+.start-screen__beam--c {
+  width: 18vw;
+  min-width: 110px;
+  top: 60%;
+  left: 36%;
+  background: linear-gradient(90deg, transparent, #18e6c4, #c7fff6);
+  transform: rotate(-8deg);
+  animation: beamSweepC 2.8s ease-in-out infinite;
+}
+
+.start-screen__ship {
+  position: absolute;
+  background: linear-gradient(180deg, #e2e8f0, #7b8ba4 70%, #314058);
+  clip-path: polygon(50% 0%, 72% 18%, 67% 65%, 50% 100%, 33% 65%, 28% 18%);
+  filter: drop-shadow(0 0 18px rgba(90, 160, 255, 0.22));
+}
+
+.start-screen__ship::before,
+.start-screen__ship::after {
+  content: '';
+  position: absolute;
+  background: #35455f;
+}
+
+.start-screen__ship--frigate {
+  width: 86px;
+  height: 128px;
+  left: 14%;
+  top: 56%;
+  transform: rotate(-16deg);
+  animation: shipFloatA 5.5s ease-in-out infinite;
+}
+
+.start-screen__ship--frigate::before {
+  width: 24px;
+  height: 44px;
+  left: -14px;
+  top: 46px;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.start-screen__ship--frigate::after {
+  width: 24px;
+  height: 44px;
+  right: -14px;
+  top: 46px;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.start-screen__ship--fighter {
+  width: 58px;
+  height: 88px;
+  left: 32%;
+  top: 28%;
+  transform: rotate(24deg);
+  animation: shipFloatB 4.6s ease-in-out infinite;
+}
+
+.start-screen__ship--fighter::before {
+  width: 16px;
+  height: 28px;
+  left: -8px;
+  top: 34px;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.start-screen__ship--fighter::after {
+  width: 16px;
+  height: 28px;
+  right: -8px;
+  top: 34px;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.start-screen__ship--enemy,
+.start-screen__ship--enemy2 {
+  background: linear-gradient(180deg, #ef87b3, #8d3c75 70%, #32172f);
+  clip-path: polygon(50% 0%, 82% 28%, 68% 74%, 50% 100%, 32% 74%, 18% 28%);
+  filter: drop-shadow(0 0 18px rgba(255, 92, 157, 0.24));
+}
+
+.start-screen__ship--enemy {
+  width: 72px;
+  height: 104px;
+  right: 18%;
+  top: 22%;
+  transform: rotate(196deg);
+  animation: shipFloatC 5.2s ease-in-out infinite;
+}
+
+.start-screen__ship--enemy2 {
+  width: 110px;
+  height: 142px;
+  right: 8%;
+  top: 58%;
+  transform: rotate(208deg);
+  animation: shipFloatD 6.1s ease-in-out infinite;
+}
+
+.start-screen__content {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  gap: 32px;
+  gap: 18px;
+  text-align: center;
+  padding: 24px;
+}
+
+.start-screen__eyebrow {
+  color: #9cc3b3;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.28rem;
 }
 
 .start-screen h1 {
-  font-size: 3.5rem;
+  margin: 0;
+  font-size: clamp(2.6rem, 7vw, 5.6rem);
   font-weight: 900;
-  background: linear-gradient(135deg, #18e6c4, #00ff0d);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: 0 0 30px rgba(24, 230, 196, 0.3);
+  line-height: 0.95;
+  letter-spacing: 0.08em;
+  color: #f4f7fb;
+  text-shadow: 0 0 22px rgba(125, 211, 252, 0.24), 0 0 50px rgba(24, 230, 196, 0.12);
 }
 
-.start-screen button:hover {
-  background-color: #00ff0d;
-  box-shadow: 0 0 20px rgba(24, 230, 196, 0.5);
-  transform: scale(1.05);
+.start-screen p {
+  margin: 0;
+  max-width: 640px;
+  color: #c0d1dd;
+  font-size: clamp(0.95rem, 2vw, 1.1rem);
+  line-height: 1.6;
+}
+
+.start-screen__button {
+  margin-top: 10px;
+  padding: 14px 34px;
+  border: 1px solid #6ef5cb;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #16c9ab, #0b6a66);
+  color: #031512;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 12px 32px rgba(22, 201, 171, 0.26), inset 0 1px 0 rgba(255,255,255,0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.start-screen__button:hover {
+  transform: translateY(-2px) scale(1.03);
+  filter: brightness(1.06);
+  box-shadow: 0 18px 42px rgba(22, 201, 171, 0.34), inset 0 1px 0 rgba(255,255,255,0.35);
+}
+
+.cutscene {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(77, 148, 255, 0.18), transparent 26%),
+    radial-gradient(circle at 78% 38%, rgba(255, 108, 170, 0.14), transparent 24%),
+    linear-gradient(180deg, #01040b 0%, #040a16 45%, #02050c 100%);
+}
+
+.cutscene::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 100%, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.72) 65%);
+  pointer-events: none;
+}
+
+.cutscene--cyan {
+  --cutscene-accent: #72d9ff;
+  --cutscene-accent-soft: rgba(114, 217, 255, 0.24);
+}
+
+.cutscene--amber {
+  --cutscene-accent: #ffcf67;
+  --cutscene-accent-soft: rgba(255, 207, 103, 0.22);
+}
+
+.cutscene--teal {
+  --cutscene-accent: #59f1ca;
+  --cutscene-accent-soft: rgba(89, 241, 202, 0.24);
+}
+
+.cutscene__stars,
+.cutscene__scanlines,
+.cutscene__planet,
+.cutscene__hazard,
+.cutscene__fleet,
+.cutscene__hud,
+.cutscene__content {
+  position: absolute;
+}
+
+.cutscene__stars {
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.95) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(156,205,255,0.85) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(255,203,160,0.75) 0 1px, transparent 1.5px);
+  background-size: 120px 120px, 240px 240px, 360px 360px;
+  animation: cutsceneStars 12s linear infinite;
+  opacity: 0.8;
+}
+
+.cutscene__scanlines {
+  inset: 0;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.035) 0,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  mix-blend-mode: soft-light;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.cutscene__planet {
+  width: min(46vw, 500px);
+  aspect-ratio: 1;
+  left: -8vw;
+  bottom: -18vh;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(227, 247, 255, 0.94), rgba(79, 159, 255, 0.9) 24%, rgba(16, 58, 116, 0.98) 58%, rgba(5, 18, 44, 1) 100%),
+    radial-gradient(circle at 65% 72%, rgba(65, 228, 176, 0.5), transparent 25%);
+  box-shadow:
+    0 0 80px rgba(63, 150, 255, 0.22),
+    0 0 160px rgba(63, 150, 255, 0.14);
+  animation: planetPulse 7s ease-in-out infinite;
+}
+
+.cutscene__hazard {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--cutscene-accent), #ffffff);
+  box-shadow: 0 0 22px var(--cutscene-accent-soft);
+  opacity: 0;
+}
+
+.cutscene__hazard--one {
+  width: 32vw;
+  top: 24%;
+  left: 52%;
+  transform: rotate(154deg);
+  animation: cutsceneBeamOne 1.8s ease-in-out infinite;
+}
+
+.cutscene__hazard--two {
+  width: 26vw;
+  top: 38%;
+  left: 46%;
+  transform: rotate(170deg);
+  animation: cutsceneBeamTwo 2.2s ease-in-out infinite 0.35s;
+}
+
+.cutscene__hazard--three {
+  width: 18vw;
+  top: 58%;
+  left: 44%;
+  transform: rotate(190deg);
+  animation: cutsceneBeamThree 1.7s ease-in-out infinite 0.6s;
+}
+
+.cutscene__fleet {
+  inset: 0;
+  pointer-events: none;
+}
+
+.cutscene__vessel {
+  position: absolute;
+  clip-path: polygon(50% 0%, 78% 24%, 68% 78%, 50% 100%, 32% 78%, 22% 24%);
+}
+
+.cutscene__vessel::before,
+.cutscene__vessel::after {
+  content: '';
+  position: absolute;
+  top: 34%;
+  width: 22%;
+  height: 26%;
+}
+
+.cutscene__vessel::before {
+  left: -10%;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.cutscene__vessel::after {
+  right: -10%;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.cutscene__fleet--allied .cutscene__vessel {
+  background: linear-gradient(180deg, #f7fbff, #8191a9 64%, #324158);
+  filter: drop-shadow(0 0 20px rgba(97, 175, 255, 0.18));
+}
+
+.cutscene__fleet--allied .cutscene__vessel::before,
+.cutscene__fleet--allied .cutscene__vessel::after {
+  background: #43526b;
+}
+
+.cutscene__fleet--hostile .cutscene__vessel {
+  background: linear-gradient(180deg, #ffc0d8, #95527d 66%, #33182d);
+  filter: drop-shadow(0 0 20px rgba(255, 99, 160, 0.24));
+}
+
+.cutscene__fleet--hostile .cutscene__vessel::before,
+.cutscene__fleet--hostile .cutscene__vessel::after {
+  background: #5a2844;
+}
+
+.cutscene__vessel--capital {
+  width: 114px;
+  height: 170px;
+  left: 18%;
+  top: 18%;
+  transform: rotate(28deg);
+  animation: capitalRun 6.2s ease-in-out infinite;
+}
+
+.cutscene__vessel--escort {
+  width: 72px;
+  height: 112px;
+  left: 28%;
+  top: 48%;
+  transform: rotate(18deg);
+  animation: escortRun 4.4s ease-in-out infinite;
+}
+
+.cutscene__vessel--raider {
+  width: 76px;
+  height: 116px;
+  right: 28%;
+  top: 24%;
+  transform: rotate(206deg);
+  animation: raiderDive 5s ease-in-out infinite;
+}
+
+.cutscene__vessel--mothership {
+  width: 150px;
+  height: 196px;
+  right: 12%;
+  top: 52%;
+  transform: rotate(214deg);
+  animation: mothershipPush 6.8s ease-in-out infinite;
+}
+
+.cutscene__hud {
+  z-index: 2;
+  inset: 24px 24px auto 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cutscene__tag,
+.cutscene__skip {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(4, 10, 22, 0.58);
+  backdrop-filter: blur(14px);
+}
+
+.cutscene__tag {
+  padding: 10px 14px;
+  border-radius: 999px;
+  color: var(--cutscene-accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.16rem;
+  text-transform: uppercase;
+}
+
+.cutscene__skip {
+  padding: 10px 16px;
+  border-radius: 999px;
+  color: #eef6ff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.cutscene__skip:hover {
+  transform: translateY(-1px);
+  border-color: var(--cutscene-accent);
+  background: rgba(8, 18, 34, 0.84);
+}
+
+.cutscene__content {
+  z-index: 2;
+  left: min(7vw, 80px);
+  right: min(7vw, 80px);
+  bottom: min(8vh, 64px);
+  max-width: 760px;
+  padding: 28px 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(5, 11, 21, 0.86), rgba(3, 8, 17, 0.72));
+  backdrop-filter: blur(18px);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.34);
+  animation: cutscenePanelIn 420ms ease;
+}
+
+.cutscene__eyebrow {
+  margin-bottom: 10px;
+  color: var(--cutscene-accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.22rem;
+  text-transform: uppercase;
+}
+
+.cutscene h2 {
+  margin: 0;
+  color: #f5f9ff;
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 0.96;
+  letter-spacing: 0.04em;
+}
+
+.cutscene p {
+  margin: 14px 0 0;
+  color: #ccdae7;
+  font-size: clamp(0.98rem, 2vw, 1.16rem);
+  line-height: 1.7;
+  max-width: 58ch;
+}
+
+.cutscene__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.cutscene__progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cutscene__dot {
+  width: 34px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.cutscene__dot--active {
+  background: linear-gradient(90deg, var(--cutscene-accent), #ffffff);
+  box-shadow: 0 0 18px var(--cutscene-accent-soft);
+}
+
+.cutscene__hint {
+  color: #98aab9;
+  font-size: 0.88rem;
+}
+
+@keyframes driftStars {
+  from { transform: translateY(0); }
+  to { transform: translateY(40px); }
+}
+
+@keyframes cutsceneStars {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-20px, 24px, 0) scale(1.04); }
+}
+
+@keyframes planetPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+@keyframes cutsceneBeamOne {
+  0%, 100% { opacity: 0; transform: rotate(154deg) scaleX(0.25); }
+  20%, 55% { opacity: 1; transform: rotate(154deg) scaleX(1); }
+}
+
+@keyframes cutsceneBeamTwo {
+  0%, 100% { opacity: 0; transform: rotate(170deg) scaleX(0.3); }
+  16%, 52% { opacity: 0.95; transform: rotate(170deg) scaleX(1); }
+}
+
+@keyframes cutsceneBeamThree {
+  0%, 100% { opacity: 0; transform: rotate(190deg) scaleX(0.28); }
+  18%, 48% { opacity: 0.92; transform: rotate(190deg) scaleX(1); }
+}
+
+@keyframes capitalRun {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(28deg); }
+  50% { transform: translate3d(24px, -20px, 0) rotate(24deg); }
+}
+
+@keyframes escortRun {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(18deg); }
+  50% { transform: translate3d(28px, -12px, 0) rotate(12deg); }
+}
+
+@keyframes raiderDive {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(206deg); }
+  50% { transform: translate3d(-24px, 22px, 0) rotate(212deg); }
+}
+
+@keyframes mothershipPush {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(214deg); }
+  50% { transform: translate3d(-32px, 18px, 0) rotate(210deg); }
+}
+
+@keyframes cutscenePanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes driftNebula {
+  from { transform: translate3d(-2%, -1%, 0) scale(1); }
+  to { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
+@keyframes shipFloatA {
+  0%, 100% { transform: translateY(0) rotate(-16deg); }
+  50% { transform: translateY(-18px) rotate(-13deg); }
+}
+
+@keyframes shipFloatB {
+  0%, 100% { transform: translateY(0) rotate(24deg); }
+  50% { transform: translateY(12px) rotate(20deg); }
+}
+
+@keyframes shipFloatC {
+  0%, 100% { transform: translateY(0) rotate(196deg); }
+  50% { transform: translateY(-10px) rotate(200deg); }
+}
+
+@keyframes shipFloatD {
+  0%, 100% { transform: translateY(0) rotate(208deg); }
+  50% { transform: translateY(16px) rotate(204deg); }
+}
+
+@keyframes beamSweepA {
+  0%, 100% { opacity: 0.15; transform: rotate(-14deg) scaleX(0.75); }
+  50% { opacity: 1; transform: rotate(-14deg) scaleX(1); }
+}
+
+@keyframes beamSweepB {
+  0%, 100% { opacity: 0.2; transform: rotate(16deg) scaleX(0.7); }
+  50% { opacity: 1; transform: rotate(16deg) scaleX(1); }
+}
+
+@keyframes beamSweepC {
+  0%, 100% { opacity: 0.1; transform: rotate(-8deg) scaleX(0.65); }
+  50% { opacity: 0.95; transform: rotate(-8deg) scaleX(1); }
+}
+
+@media (max-width: 700px) {
+  .start-screen__content {
+    padding: 20px 18px;
+  }
+
+  .start-screen__ship--frigate {
+    width: 62px;
+    height: 96px;
+    left: 6%;
+    top: 62%;
+  }
+
+  .start-screen__ship--fighter {
+    width: 46px;
+    height: 72px;
+    left: 26%;
+    top: 20%;
+  }
+
+  .start-screen__ship--enemy {
+    width: 56px;
+    height: 82px;
+    right: 10%;
+  }
+
+  .start-screen__ship--enemy2 {
+    width: 84px;
+    height: 112px;
+    right: -2%;
+    top: 66%;
+  }
+
+  .cutscene__hud {
+    inset: 16px 16px auto 16px;
+    gap: 10px;
+  }
+
+  .cutscene__tag,
+  .cutscene__skip {
+    padding: 9px 12px;
+    font-size: 0.74rem;
+  }
+
+  .cutscene__content {
+    left: 14px;
+    right: 14px;
+    bottom: 18px;
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  .cutscene__meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cutscene__planet {
+    width: 72vw;
+    left: -18vw;
+    bottom: -8vh;
+  }
+
+  .cutscene__vessel--capital {
+    width: 86px;
+    height: 126px;
+    left: 6%;
+    top: 18%;
+  }
+
+  .cutscene__vessel--escort {
+    width: 54px;
+    height: 82px;
+    left: 16%;
+    top: 44%;
+  }
+
+  .cutscene__vessel--raider {
+    width: 58px;
+    height: 88px;
+    right: 16%;
+    top: 18%;
+  }
+
+  .cutscene__vessel--mothership {
+    width: 106px;
+    height: 142px;
+    right: 2%;
+    top: 50%;
+  }
+
+  .cutscene__hazard--one {
+    width: 42vw;
+  }
+
+  .cutscene__hazard--two {
+    width: 34vw;
+  }
+
+  .cutscene__hazard--three {
+    width: 22vw;
+  }
 }
