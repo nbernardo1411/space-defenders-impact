@@ -1852,7 +1852,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       position: 'fixed', inset: 0, zIndex: 1000,
       background: 'radial-gradient(120% 180% at 10% 0%, #203228 0%, #0c1411 42%, #070b09 100%)',
       display: 'flex', flexDirection: 'column',
-      alignItems: 'center', overflowY: 'hidden',
+      alignItems: 'center', overflowY: 'auto',
       padding: isCompact ? '4px 6px 6px' : isLandscapeMobile ? '4px 6px' : '12px 8px 24px',
       fontFamily: "'Orbitron','Rajdhani','Segoe UI',sans-serif",
       fontVariantNumeric: 'tabular-nums',
