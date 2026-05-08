@@ -379,6 +379,10 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     return towersRef.current.find(t => towerOccupiesCell(t, col, row)) ?? null
   }
 
+  function isEnemyActive(e: Enemy) {
+    return !e.dead && !e.leaked && e.hp > 0
+  }
+
   function canPlaceTowerAt(col: number, row: number, footprint: number, ignoreTowerId?: number) {
     if (col < 0 || row < 0 || col + footprint > COLS || row + footprint > ROWS) return false
     return getTowerCells(col, row, footprint).every((key) => {
@@ -389,8 +393,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   }
 
   function getBestScoutTarget(seed: number, enemies: Enemy[]) {
-    if (enemies.length === 0) return null
-    const sorted = [...enemies].sort((a, b) => (b.pathIndex + b.progress) - (a.pathIndex + a.progress))
+    const activeEnemies = enemies.filter(isEnemyActive)
+    if (activeEnemies.length === 0) return null
+    const sorted = [...activeEnemies].sort((a, b) => (b.pathIndex + b.progress) - (a.pathIndex + a.progress))
     return sorted[seed % Math.min(3, sorted.length)] ?? sorted[0]
   }
 
@@ -591,7 +596,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     }
 
     // If no spawns left and no enemies, wave ends
-    if (state === 'wave' && spawnQueueRef.current === 0 && enemiesRef.current.filter(e => !e.dead && !e.leaked).length === 0) {
+    if (state === 'wave' && spawnQueueRef.current === 0 && enemiesRef.current.filter(isEnemyActive).length === 0) {
       if (waveRef.current >= WAVES_PER_STAGE) {
         // All waves in stage done
         if (stageRef.current >= MAX_STAGES && !endlessRef.current) {
@@ -738,7 +743,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     }
 
     // ── Tower shooting ────────────────────────────────────────────────────
-    const aliveEnemies = enemiesRef.current.filter(e => !e.dead && !e.leaked)
+    const aliveEnemies = enemiesRef.current.filter(isEnemyActive)
 
     for (const tower of towersRef.current) {
       if (tower.type !== 'dreadnought') continue
@@ -776,7 +781,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
         continue
       }
 
-      const target = aliveEnemies.find(e => e.id === drone.targetId && !e.dead && !e.leaked) ?? getBestScoutTarget(drone.id, aliveEnemies)
+      const target = aliveEnemies.find(e => e.id === drone.targetId && isEnemyActive(e)) ?? getBestScoutTarget(drone.id, aliveEnemies)
       if (!target) { drone.state = 'return'; continue }
       drone.targetId = target.id
 
@@ -825,7 +830,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       tower.burstQueue[0].delay -= dt
       if (tower.burstQueue[0].delay <= 0) {
         const shot = tower.burstQueue.shift()!
-        const currentTargets = enemiesRef.current.filter(e => !e.dead && !e.leaked && e.hp > 0)
+        const currentTargets = enemiesRef.current.filter(isEnemyActive)
         const tracked = currentTargets.find(e => e.id === shot.targetId) ?? getBestScoutTarget(0, currentTargets)
         if (!tracked) continue
         const towerCenter = getTowerCenter(tower)
@@ -860,6 +865,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       const towerCenter = getTowerCenter(tower)
       const inRange: Enemy[] = []
       for (const e of aliveEnemies) {
+        if (!isEnemyActive(e)) continue
         const dx = e.x - towerCenter.x, dy = e.y - towerCenter.y
         if (Math.sqrt(dx*dx+dy*dy) <= td.range + synergy.rangeBonus) inRange.push(e)
       }
@@ -922,6 +928,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       let target: Enemy | null = null
       let bestProgress = -1
       for (const e of aliveEnemies) {
+        if (!isEnemyActive(e)) continue
         const dx = e.x - towerCenter.x
         const dy = e.y - towerCenter.y
         const dist = Math.sqrt(dx * dx + dy * dy)
@@ -937,6 +944,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
           const barrageCount = td.key === 'dreadnought' ? 5 : 3
           const barrageDelay = (td.key === 'dreadnought' ? 0.45 : 1.0) * synergy.barrageDelayMult
           const topTargets = [...aliveEnemies]
+            .filter(isEnemyActive)
             .sort((a, b) => (b.pathIndex + b.progress) - (a.pathIndex + a.progress))
             .slice(0, barrageCount)
           const dmg = td.dmg * (1 + (tower.level - 1) * 0.5) * synergy.dmgMult
@@ -984,7 +992,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     for (const b of bulletsRef.current) {
       if (b.dead) continue
       if (b.isHoming) {
-        const tracked = aliveEnemies.find(e => e.id === b.targetId)
+        const tracked = aliveEnemies.find(e => e.id === b.targetId && isEnemyActive(e))
         if (tracked) {
           b.tx = tracked.x + 0.5
           b.ty = tracked.y + 0.5
@@ -995,12 +1003,13 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       if (dist < 0.4) {
         b.dead = true
         // apply damage
-        const target = aliveEnemies.find(e => e.id === b.targetId)
+        const target = aliveEnemies.find(e => e.id === b.targetId && isEnemyActive(e))
         const sourceTower = towersRef.current.find(t => t.id === b.towerId)
         if (b.isRocket) {
           // Huge AOE: 3.0 cell radius, shockwave
           explosionsRef.current.push({ x: b.tx, y: b.ty, radius: 3.0, time: 0, type: 'rocket', maxTime: 0.5 })
           for (const e of aliveEnemies) {
+            if (!isEnemyActive(e)) continue
             const edx = e.x - b.tx, edy = e.y - b.ty
             const dist2 = Math.sqrt(edx * edx + edy * edy)
             if (dist2 <= 3.0) {
@@ -1017,6 +1026,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
           // AoE: 1.5 cell radius
           explosionsRef.current.push({ x: b.tx, y: b.ty, radius: 1.5, time: 0, type: 'aoe', maxTime: 0.4 })
           for (const e of aliveEnemies) {
+            if (!isEnemyActive(e)) continue
             const edx = e.x - b.tx, edy = e.y - b.ty
             if (Math.sqrt(edx*edx+edy*edy) <= 1.5) {
               const dealt = applyEnemyDamage(e, b.dmg, 'aoe')
@@ -1036,6 +1046,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             maxTime: b.towerType === 'dreadnought' ? 0.48 : 0.35,
           })
           for (const e of aliveEnemies) {
+            if (!isEnemyActive(e)) continue
             const edx = e.x - b.tx, edy = e.y - b.ty
             if (Math.sqrt(edx*edx+edy*edy) <= heavyRadius) {
               const dealt = applyEnemyDamage(e, b.dmg, b.towerType)
@@ -1495,7 +1506,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       floatingTextRef.current.push({ x: COLS - 1.2, y: ROWS - 1.2, text: '+REPAIR', time: 0, maxTime: 0.65, color: '#7dd3fc' })
       playGameSound('levelup')
     } else {
-      const targets = enemiesRef.current.filter(e => !e.dead && !e.leaked)
+      const targets = enemiesRef.current.filter(isEnemyActive)
       if (targets.length === 0) { playGameSound('hit'); return }
       if (kind === 'freeze') {
         for (const e of targets) e.slowTimer = Math.max(e.slowTimer, 3.8 + hqLevelRef.current * 0.35)
@@ -2309,7 +2320,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               filter: drone.state === 'attack' ? `drop-shadow(0 0 8px ${DREADNOUGHT_SCOUT_COLOR})` : 'drop-shadow(0 0 5px #7dd3fc)',
             }}>
               <div style={{ transform: 'translate(-50%, -50%)' }}>
-                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(26, cell * 0.68)} />
+                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(24, cell * 0.56)} />
               </div>
             </div>
           ))}
