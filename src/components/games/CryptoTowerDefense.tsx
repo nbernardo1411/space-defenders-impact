@@ -240,8 +240,9 @@ type ParticleType = 'death' | 'build' | 'sell' | 'gold' | 'impact' | 'freeze' | 
 const MAX_TOWER_LEVEL = 5
 
 function xpNeededForNextLevel(level: number) {
-  // 64 -> 86 -> 108 -> 130 XP (Lv1->2..Lv4->5): keeps auto-leveling meaningful but not too fast.
-  return 42 + level * 22
+  // 200 -> 320 -> 440 -> 560 XP (Lv1->2..Lv4->5): auto-XP from normal kills is slow;
+  // the manual upgrade button remains the primary way to level up quickly.
+  return 140 + level * 120
 }
 
 // ─── Cell size calculation ─────────────────────────────────────────────────────
@@ -1352,12 +1353,12 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           const e = laserHits[hi]
           const applied = hi === 0 ? tickDmg : pierceDmg
           e.hp -= hi === 0 ? tickDmg : pierceDmg
-          grantTowerXp(tower, Math.max(0.06, Math.min(0.24, applied * 0.006)))
+          grantTowerXp(tower, Math.max(0.01, Math.min(0.06, applied * 0.0015)))
           if (Math.random() < 0.18) {
             spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', hi === 0 ? 3 : 2, 0.85, 0.18)
           }
           if (e.hp <= 0) {
-            grantTowerXp(tower, e.isBoss ? 28 : 6)
+            grantTowerXp(tower, e.isBoss ? 40 : 1.5)
             triggerEnemyDeath(e, 'laser', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
             if (soundOn) playGameSound('pop')
           }
@@ -1464,11 +1465,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
               const falloff = 1 - (dist2 / 3.0) * 0.5
               const applied = b.dmg * falloff
               e.hp -= applied
-              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.45, Math.min(1.8, applied * 0.03)))
+              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.4, applied * 0.006)))
               e.hitFlash = 0.1
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 5, 1.6, 0.22)
               if (e.hp <= 0) { 
-                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 28 : 6)
+                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
                 triggerEnemyDeath(e, 'rocket', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
                 if (soundOn) playGameSound('combo')
               }
@@ -1481,11 +1482,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             const edx = e.x - b.tx, edy = e.y - b.ty
             if (Math.sqrt(edx*edx+edy*edy) <= 1.5) {
               e.hp -= b.dmg
-              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.45, Math.min(1.5, b.dmg * 0.028)))
+              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.35, b.dmg * 0.006)))
               e.hitFlash = 0.1
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 4, 1.3, 0.18)
               if (e.hp <= 0) { 
-                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 28 : 6)
+                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
                 triggerEnemyDeath(e, 'aoe', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
                 if (soundOn) playGameSound('pop')
               }
@@ -1498,11 +1499,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             const edx = e.x - b.tx, edy = e.y - b.ty
             if (Math.sqrt(edx*edx+edy*edy) <= 1.0) {
               e.hp -= b.dmg
-              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.5, Math.min(1.7, b.dmg * 0.03)))
+              if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.4, b.dmg * 0.006)))
               e.hitFlash = 0.1
               spawnImpactParticles(particlesRef.current, e.x + 0.5, e.y + 0.5, 'impact', 5, 1.45, 0.2)
               if (e.hp <= 0) { 
-                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 28 : 6)
+                if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
                 triggerEnemyDeath(e, 'artillery', e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
                 if (soundOn) playGameSound('combo')
               }
@@ -1511,7 +1512,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         } else if (target) {
           if (b.isSlow) target.slowTimer = 2.5
           target.hp -= b.dmg
-          if (sourceTower) grantTowerXp(sourceTower, Math.max(0.45, Math.min(1.4, b.dmg * 0.027)))
+          if (sourceTower) grantTowerXp(sourceTower, Math.max(0.08, Math.min(0.35, b.dmg * 0.006)))
           target.hitFlash = 0.1
           spawnImpactParticles(
             particlesRef.current,
@@ -1523,7 +1524,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             b.isSlow ? 0.32 : 0.18,
           )
           if (target.hp <= 0) { 
-            if (sourceTower) grantTowerXp(sourceTower, target.isBoss ? 28 : 6)
+            if (sourceTower) grantTowerXp(sourceTower, target.isBoss ? 40 : 1.5)
             triggerEnemyDeath(target, b.towerType, target.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
             if (soundOn) playGameSound('pop')
           }
@@ -2520,32 +2521,44 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             return (
             <div key={e.id} style={{
               position: 'absolute',
-              left: e.x * cell, top: e.y * cell,
-              width: cell * bossScale, height: cell * bossScale,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              // Anchor at the exact path center so ship sprite is always on-path
+              left: (e.x + 0.5) * cell,
+              top: (e.y + 0.5) * cell,
+              width: 0, height: 0,
               pointerEvents: 'none',
-              transform: `translate(${e.isBoss ? -cell*(bossScale-1)/2 : -2}px,${e.isBoss ? -cell*(bossScale-1)/2 : -2}px)`,
+              overflow: 'visible',
             }}>
-              {isFinalBoss && <div style={{ fontSize: cell * 0.42, lineHeight: 1, marginBottom: 1 }}>💀</div>}
-              {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.35, lineHeight: 1, marginBottom: 1 }}>BOSS</div>}
-              {/* Boss HP bar — wider, taller, glowing red to stand out from normal bars */}
-              {e.isBoss ? (
-                <div style={{ width: cell * bossScale + 4, marginBottom: 3 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fca5a5', fontSize: Math.max(8, cell * 0.18), fontWeight: 900, lineHeight: 1, marginBottom: 2, textShadow: '0 0 6px #ef4444' }}>
-                    <span>{isFinalBoss ? '☠' : '⚠'}</span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.ceil(e.hp)}/{e.maxHp}</span>
-                  </div>
-                  <div style={{ width: '100%', height: 7, background: '#1a0505', border: '1px solid #7f1d1d', borderRadius: 2, overflow: 'hidden', boxShadow: '0 0 8px #ef444466' }}>
-                    <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? 'linear-gradient(90deg,#dc2626,#f87171)' : e.hp / e.maxHp > 0.25 ? 'linear-gradient(90deg,#b45309,#fbbf24)' : 'linear-gradient(90deg,#7f1d1d,#ef4444)', boxShadow: '0 0 10px #ef444488', borderRadius: 2, transition: 'width 0.06s linear' }} />
-                  </div>
-                </div>
-              ) : (
-                <div style={{ width: cell * bossScale - 6, height: 3, background: '#333', borderRadius: 2, marginBottom: 2 }}>
-                  <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? '#34d399' : e.hp / e.maxHp > 0.25 ? '#ffd666' : '#fb7185', borderRadius: 2 }} />
-                </div>
-              )}
+              {/* HP bar + labels floated above the ship sprite */}
               <div style={{
+                position: 'absolute',
+                bottom: sz / 2 + 4,
+                left: -(e.isBoss ? cell * bossScale / 2 + 2 : cell / 2 - 3),
+                width: e.isBoss ? cell * bossScale + 4 : cell - 6,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+              }}>
+                {isFinalBoss && <div style={{ fontSize: cell * 0.32, lineHeight: 1, marginBottom: 1 }}>💀</div>}
+                {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.28, lineHeight: 1, marginBottom: 1, color: '#fca5a5', fontWeight: 900, textShadow: '0 0 4px #ef4444' }}>BOSS</div>}
+                {e.isBoss ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', color: '#fca5a5', fontSize: Math.max(8, cell * 0.18), fontWeight: 900, lineHeight: 1, marginBottom: 2, textShadow: '0 0 6px #ef4444' }}>
+                      <span>{isFinalBoss ? '☠' : '⚠'}</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.ceil(e.hp)}/{e.maxHp}</span>
+                    </div>
+                    <div style={{ width: '100%', height: 7, background: '#1a0505', border: '1px solid #7f1d1d', borderRadius: 2, overflow: 'hidden', boxShadow: '0 0 8px #ef444466' }}>
+                      <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? 'linear-gradient(90deg,#dc2626,#f87171)' : e.hp / e.maxHp > 0.25 ? 'linear-gradient(90deg,#b45309,#fbbf24)' : 'linear-gradient(90deg,#7f1d1d,#ef4444)', boxShadow: '0 0 10px #ef444488', borderRadius: 2, transition: 'width 0.06s linear' }} />
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ width: '100%', height: 3, background: '#333', borderRadius: 2 }}>
+                    <div style={{ width: `${Math.max(0, e.hp / e.maxHp) * 100}%`, height: '100%', background: e.hp / e.maxHp > 0.5 ? '#34d399' : e.hp / e.maxHp > 0.25 ? '#ffd666' : '#fb7185', borderRadius: 2 }} />
+                  </div>
+                )}
+              </div>
+              {/* Ship sprite — centered at the exact path position */}
+              <div style={{
+                position: 'absolute',
                 width: sz, height: sz,
+                left: -sz / 2, top: -sz / 2,
                 overflow: 'visible',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 filter: hitFlashOpacity > 0 ? `brightness(1.5) saturate(2) hue-rotate(-10deg)` : 'none',
@@ -2582,7 +2595,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                 )}
               </div>
               {isFinalBoss && (
-                <div style={{ fontSize: cell * 0.2, color: '#cc00ff', fontWeight: 900, lineHeight: 1, marginTop: 1, textShadow: '0 0 6px #cc00ff' }}>SIEGE</div>
+                <div style={{ position: 'absolute', top: sz / 2 + 2, left: -30, width: 60, textAlign: 'center', fontSize: cell * 0.18, color: '#cc00ff', fontWeight: 900, lineHeight: 1, textShadow: '0 0 6px #cc00ff' }}>SIEGE</div>
               )}
             </div>
             )
