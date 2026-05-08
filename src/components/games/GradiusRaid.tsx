@@ -155,16 +155,16 @@ const BRIEFING_PANELS = [
   {
     title: 'Mission',
     body: 'Break through the alien blockade, survive every stage, and destroy the boss guarding each sector.',
-    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Mobile follows above your finger so your hand does not cover the ship.'],
+    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Mobile follows above your finger so your hand does not cover the ship.', 'Every fifth stage is guarded by a larger super boss.'],
   },
   {
     title: 'Weapon Drops',
-    body: 'Weapon pickups stack within balanced limits and reset after every boss, so each stage starts fresh.',
+    body: 'Weapon pickups stack within balanced limits and last for the whole stage, then reset after a boss clear.',
     items: ['V Spread: max 2 stacks for wider fan shots.', 'L Laser: max 1 stack for piercing beam damage.', '* Scatter: max 2 stacks for angled burst coverage.', 'R Rocket: max 2 stacks for heavy side missiles.', 'H Homing: max 1 stack for seeker missiles.'],
   },
   {
     title: 'Support Buffs',
-    body: 'Support pickups keep a run alive when the screen gets busy. Active weapons and buffs clear after a boss is defeated.',
+    body: 'Support pickups keep a run alive when the screen gets busy. Normal boss clears reset buffs, but the stage before a super boss preserves them.',
     items: ['O Scouts: two side escorts copy your selected ship and fire with you.', 'S Shield: absorbs hits before hull damage.', 'F Force Field: five temporary armor bars and safe enemy ramming.', '+ Repair: restores hull by one bar.'],
   },
 ]
@@ -209,15 +209,11 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
   homing: 6.5,
 }
 
-const WEAPON_PICKUP_SECONDS = 36
-const WEAPON_PICKUP_MAX_SECONDS = 72
-const OPTION_PICKUP_SECONDS = 32
-const OPTION_PICKUP_MAX_SECONDS = 58
-const BOSS_EFFECT_EXTENSION_SECONDS = 30
 const FORCE_FIELD_ARMOR = 5
 const NORMAL_POWER_DROP_COOLDOWN = 5.5
 const POWER_PITY_KILLS = 20
 const RENDER_INTERVAL_MS = 16
+const BOSS_RESPAWN_SECONDS = 240
 const MAX_SPARKS = 45
 const MAX_RIPPLES = 10
 
@@ -303,6 +299,12 @@ function resetStageLoadout(player: Player) {
   player.shield = 0
   player.forceField = 0
   player.weaponCooldowns = { ...EMPTY_WEAPON_TIMERS }
+}
+
+function extendLoadoutForSuperBoss(player: Player) {
+  if (player.shield > 0) {
+    player.shield = Math.min(8, player.shield + 3)
+  }
 }
 
 export function GradiusRaid({ onClose }: { onClose: () => void }) {
@@ -809,10 +811,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     const stage = stageRef.current
     const player = playerRef.current
     const powerScore = getPowerScore(playerRef.current)
-    const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate', 'super']
-    const bossKind = bossCycle[(stage - 1) % bossCycle.length]
+    const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
+    const bossKind: BossKind = stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
-      bossKind === 'super' ? 2.45 :
+      bossKind === 'super' ? 3.45 :
       bossKind === 'gate' ? 1.75 :
       bossKind === 'hydra' ? 1.62 :
       bossKind === 'serpent' ? 1.48 :
@@ -822,7 +824,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     const stagePressure = Math.max(0, stage - 1)
     const hp = Math.round((360 + wave * 74 + stagePressure * 135 + powerScore * 48) * hpMultiplier)
     const radius =
-      bossKind === 'super' ? 17 :
+      bossKind === 'super' ? 21 :
       bossKind === 'gate' ? 15 :
       bossKind === 'hydra' ? 14 :
       bossKind === 'serpent' ? 13.4 :
@@ -842,7 +844,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       fireCooldown: Math.max(0.75, 1 - stagePressure * 0.025),
       phase: Math.random() * Math.PI * 2,
       color: BOSS_COLORS[bossKind],
-      pattern: bossCycle.indexOf(bossKind),
+      pattern: bossKind === 'super' ? 6 : bossCycle.indexOf(bossKind),
       bossKind,
       shieldTime: (bossKind === 'super' || bossKind === 'gate' ? 5.4 : 3.8) + Math.min(2.2, stagePressure * 0.18),
       originX: 50,
@@ -850,19 +852,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       trainSlot: 0,
       pathSpeed: 0.05,
     })
-    ;(Object.keys(player.weaponTimers) as WeaponKey[]).forEach((key) => {
-      if (player.weapons[key] > 0) {
-        player.weaponTimers[key] = Math.min(WEAPON_PICKUP_MAX_SECONDS, player.weaponTimers[key] + BOSS_EFFECT_EXTENSION_SECONDS)
-      }
-    })
-    if (player.optionTimer > 0) {
-      player.optionTimer = Math.min(OPTION_PICKUP_MAX_SECONDS, player.optionTimer + BOSS_EFFECT_EXTENSION_SECONDS)
-    }
     if (player.forceField > 0) {
       player.forceField = Math.min(FORCE_FIELD_ARMOR, player.forceField + 1)
-    }
-    if (player.shield > 0) {
-      player.shield = Math.min(8, player.shield + BOSS_EFFECT_EXTENSION_SECONDS * 0.16)
     }
     bossAlertRef.current = 2.7
     bossMessageRef.current = 'incoming'
@@ -895,7 +886,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.hp < player.maxHp) candidates.push('repair')
     if (player.forceField <= 1) candidates.push('forcefield', 'forcefield')
     if (player.shield < 2.5) candidates.push('shield')
-    if (player.optionTimer <= 6) candidates.push('option')
+    if (player.optionTimer <= 0) candidates.push('option')
     ;(['spread', 'laser', 'scatter', 'rocket', 'homing'] as WeaponKey[]).forEach((key) => {
       const maxStack = WEAPON_STACK_CAPS[key]
       const copies = player.weapons[key] === 0 ? 3 : player.weapons[key] >= maxStack ? 1 : 2
@@ -1051,26 +1042,20 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     })
     player.invuln = Math.max(0, player.invuln - dt)
     player.shield = Math.max(0, player.shield - dt * 0.16)
-    player.optionTimer = Math.max(0, player.optionTimer - dt)
-    ;(Object.keys(player.weaponTimers) as WeaponKey[]).forEach((key) => {
-      if (player.weapons[key] <= 0) return
-      player.weaponTimers[key] = Math.max(0, player.weaponTimers[key] - dt)
-      if (player.weaponTimers[key] <= 0) {
-        player.weapons[key] = 0
-        player.weaponCooldowns[key] = 0
-      }
-    })
     firePlayer()
 
     spawnTimerRef.current -= dt
     formationTimerRef.current -= dt
-    bossTimerRef.current -= dt
+    const bossActive = enemiesRef.current.some((enemy) => enemy.isBoss)
+    if (!bossActive) {
+      bossTimerRef.current = Math.max(0, bossTimerRef.current - dt)
+    }
     powerDropCooldownRef.current = Math.max(0, powerDropCooldownRef.current - dt)
     bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
 
-    if (bossTimerRef.current <= 0 && enemiesRef.current.every((enemy) => !enemy.isBoss)) {
+    if (bossTimerRef.current <= 0 && !bossActive) {
       spawnBoss()
-      bossTimerRef.current = 38 + Math.min(22, waveRef.current * 1.7)
+      bossTimerRef.current = 0
       waveRef.current += 1
       player.rank = Math.min(20, player.rank + 1)
     }
@@ -1185,6 +1170,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       .slice(-MAX_RIPPLES)
 
     let bossDefeatedThisFrame = false
+    let preserveLoadoutForSuperBoss = false
     for (const shot of shotsRef.current) {
       for (const enemy of enemiesRef.current) {
         if (enemy.hp <= 0) continue
@@ -1216,7 +1202,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
             if (enemy.isBoss) {
               bossDefeatedThisFrame = true
-              stageRef.current += 1
+              const nextStage = stageRef.current + 1
+              preserveLoadoutForSuperBoss = nextStage % 5 === 0
+              stageRef.current = nextStage
               bossAlertRef.current = 2.4
               bossMessageRef.current = 'clear'
               startRaidBgm(stageRef.current)
@@ -1233,7 +1221,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     shotsRef.current = shotsRef.current.filter((shot) => shot.y > -50)
     if (bossDefeatedThisFrame) {
       const defeatedBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp <= 0)
-      resetStageLoadout(player)
+      if (preserveLoadoutForSuperBoss) {
+        extendLoadoutForSuperBoss(player)
+      } else {
+        resetStageLoadout(player)
+      }
+      bossTimerRef.current = BOSS_RESPAWN_SECONDS
       shotsRef.current = []
       enemyShotsRef.current = []
       powerUpsRef.current = []
@@ -1288,13 +1281,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           player.forceField = FORCE_FIELD_ARMOR
           player.invuln = Math.max(player.invuln, 0.9)
         } else if (powerUp.type === 'option') {
-          player.optionTimer = Math.min(OPTION_PICKUP_MAX_SECONDS, Math.max(player.optionTimer, 0) + OPTION_PICKUP_SECONDS)
+          player.optionTimer = 1
         } else {
           player.weapons[powerUp.type] = Math.min(WEAPON_STACK_CAPS[powerUp.type], player.weapons[powerUp.type] + 1)
-          player.weaponTimers[powerUp.type] = Math.min(
-            WEAPON_PICKUP_MAX_SECONDS,
-            Math.max(player.weaponTimers[powerUp.type], 0) + WEAPON_PICKUP_SECONDS,
-          )
+          player.weaponTimers[powerUp.type] = 1
         }
         player.score += 120
         spawnSparks(powerUp.x, powerUp.y, powerColor(powerUp.type), 24, 6)
@@ -1438,7 +1428,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           <span>Stack</span>
           <b>
             {weaponEntries.length
-              ? weaponEntries.map((key) => `${key[0].toUpperCase()}${player.weapons[key]}:${Math.ceil(player.weaponTimers[key])}`).join(' ')
+              ? weaponEntries.map((key) => `${key[0].toUpperCase()}${player.weapons[key]}`).join(' ')
               : 'BASE'}
           </b>
         </div>
@@ -1466,9 +1456,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
               enemy.isBoss ? 'raid__enemy--boss' : '',
               enemy.bossKind ? `raid__enemy--boss-${enemy.bossKind}` : '',
             ].join(' ')}
-            style={{ left: `${enemy.x}%`, top: `${enemy.y}%`, width: enemy.isBoss ? (enemy.bossKind === 'super' || enemy.bossKind === 'gate' ? 'min(34vw, 310px)' : enemy.bossKind === 'hydra' ? 'min(30vw, 260px)' : 'min(24vw, 210px)') : 'min(8vw, 64px)' }}
+            style={{ left: `${enemy.x}%`, top: `${enemy.y}%`, width: enemy.isBoss ? (enemy.bossKind === 'super' ? 'min(42vw, 380px)' : enemy.bossKind === 'gate' ? 'min(34vw, 310px)' : enemy.bossKind === 'hydra' ? 'min(30vw, 260px)' : 'min(24vw, 210px)') : 'min(8vw, 64px)' }}
           >
-            <AlienShip variant={enemy.variant} isBoss={enemy.isBoss} isFinalBoss={enemy.bossKind === 'super'} bossKind={enemy.bossKind ?? undefined} color={enemy.color} size={enemy.isBoss ? (enemy.bossKind === 'super' || enemy.bossKind === 'gate' ? 220 : enemy.bossKind === 'hydra' ? 190 : 156) : 50} />
+            <AlienShip variant={enemy.variant} isBoss={enemy.isBoss} isFinalBoss={enemy.bossKind === 'super'} bossKind={enemy.bossKind ?? undefined} color={enemy.color} size={enemy.isBoss ? (enemy.bossKind === 'super' ? 280 : enemy.bossKind === 'gate' ? 220 : enemy.bossKind === 'hydra' ? 190 : 156) : 50} />
             {enemy.isBoss && (
               <div className="raid__boss-aura">
                 <span />
@@ -1487,7 +1477,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             {enemy.isBoss && (
               <>
               {(enemy.shieldTime > 0 || enemy.y < 15) && <div className="raid__boss-shield" />}
-              <div className="raid__boss-bar">
+              <div className={enemy.bossKind === 'super' ? 'raid__boss-bar raid__boss-bar--super' : 'raid__boss-bar'}>
                 <span style={{ width: `${Math.max(0, (enemy.hp / enemy.maxHp) * 100)}%` }} />
               </div>
               </>
