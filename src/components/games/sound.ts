@@ -518,6 +518,7 @@ export function playGameSound(
     if (!getGameSoundEnabled()) return
     const eventGain = getSfxEventGain(kind)
     if (eventGain <= 0) return
+    const kindGain = eventGain * getKindBusGain(kind)
 
     if (kind === 'explosion') {
       playExplosionBoom(false, eventGain)
@@ -532,93 +533,93 @@ export function playGameSound(
     if (hasSample) return
 
     if (kind === 'flap') {
-      tone(440, 70, 'triangle', 0.06, 0, eventGain)
+      tone(440, 70, 'triangle', 0.06, 0, kindGain)
       return
     }
     if (kind === 'score') {
-      tone(660, 60, 'sine', 0.06, 0, eventGain)
-      tone(980, 90, 'sine', 0.045, 42, eventGain)
+      tone(660, 60, 'sine', 0.06, 0, kindGain)
+      tone(980, 90, 'sine', 0.045, 42, kindGain)
       return
     }
     if (kind === 'hit') {
-      tone(180, 180, 'sawtooth', 0.08, 0, eventGain)
+      tone(180, 180, 'sawtooth', 0.08, 0, kindGain)
       return
     }
     if (kind === 'select') {
-      tone(520, 55, 'square', 0.04, 0, eventGain)
+      tone(520, 55, 'square', 0.04, 0, kindGain)
       return
     }
     if (kind === 'select_tower') {
       // Distinct tower selection chirp
-      tone(320, 45, 'square', 0.05, 0, eventGain)
-      tone(480, 65, 'square', 0.04, 30, eventGain)
+      tone(320, 45, 'square', 0.05, 0, kindGain)
+      tone(480, 65, 'square', 0.04, 30, kindGain)
       return
     }
     if (kind === 'swap') {
-      tone(280, 85, 'triangle', 0.055, 0, eventGain)
+      tone(280, 85, 'triangle', 0.055, 0, kindGain)
       return
     }
     if (kind === 'clear') {
-      tone(620, 70, 'triangle', 0.05, 0, eventGain)
-      tone(860, 110, 'triangle', 0.05, 35, eventGain)
-      tone(1120, 130, 'triangle', 0.045, 75, eventGain)
+      tone(620, 70, 'triangle', 0.05, 0, kindGain)
+      tone(860, 110, 'triangle', 0.05, 35, kindGain)
+      tone(1120, 130, 'triangle', 0.045, 75, kindGain)
       return
     }
     if (kind === 'shoot') {
-      tone(420, 85, 'square', 0.05, 0, eventGain)
+      tone(420, 85, 'square', 0.05, 0, kindGain)
       return
     }
     if (kind === 'laser') {
       // Sci-fi laser zap - high frequency descending sweep
-      tone(1200, 40, 'sine', 0.07, 0, eventGain)
-      tone(900, 50, 'sine', 0.055, 15, eventGain)
-      tone(600, 35, 'sine', 0.04, 35, eventGain)
+      tone(1200, 40, 'sine', 0.07, 0, kindGain)
+      tone(900, 50, 'sine', 0.055, 15, kindGain)
+      tone(600, 35, 'sine', 0.04, 35, kindGain)
       return
     }
     if (kind === 'rocket') {
       // Deep whoosh with resonance
-      tone(280, 120, 'sawtooth', 0.08, 0, eventGain)
-      tone(150, 150, 'sine', 0.07, 20, eventGain)
+      tone(280, 120, 'sawtooth', 0.08, 0, kindGain)
+      tone(150, 150, 'sine', 0.07, 20, kindGain)
       return
     }
     if (kind === 'artillery') {
       // Heavy orbital strike - deep bass boom with metallic ring
-      tone(80, 180, 'sine', 0.1, 0, eventGain)
-      tone(320, 90, 'square', 0.065, 40, eventGain)
-      tone(200, 200, 'sine', 0.08, 50, eventGain)
+      tone(80, 180, 'sine', 0.1, 0, kindGain)
+      tone(320, 90, 'square', 0.065, 40, kindGain)
+      tone(200, 200, 'sine', 0.08, 50, kindGain)
       return
     }
     if (kind === 'pop') {
-      tone(760, 65, 'triangle', 0.05, 0, eventGain)
-      tone(980, 80, 'triangle', 0.04, 20, eventGain)
+      tone(760, 65, 'triangle', 0.05, 0, kindGain)
+      tone(980, 80, 'triangle', 0.04, 20, kindGain)
       return
     }
     if (kind === 'combo') {
-      tone(520, 50, 'sine', 0.05, 0, eventGain)
-      tone(720, 60, 'sine', 0.05, 35, eventGain)
-      tone(960, 70, 'sine', 0.045, 75, eventGain)
-      tone(1200, 100, 'sine', 0.04, 120, eventGain)
+      tone(520, 50, 'sine', 0.05, 0, kindGain)
+      tone(720, 60, 'sine', 0.05, 35, kindGain)
+      tone(960, 70, 'sine', 0.045, 75, kindGain)
+      tone(1200, 100, 'sine', 0.04, 120, kindGain)
       return
     }
     if (kind === 'levelup') {
-      tone(440, 80, 'triangle', 0.06, 0, eventGain)
-      tone(660, 80, 'triangle', 0.055, 70, eventGain)
-      tone(880, 100, 'triangle', 0.05, 150, eventGain)
-      tone(1100, 130, 'sine', 0.045, 240, eventGain)
+      tone(440, 80, 'triangle', 0.06, 0, kindGain)
+      tone(660, 80, 'triangle', 0.055, 70, kindGain)
+      tone(880, 100, 'triangle', 0.05, 150, kindGain)
+      tone(1100, 130, 'sine', 0.045, 240, kindGain)
       return
     }
     if (kind === 'countdown') {
-      tone(660, 100, 'square', 0.035, 0, eventGain)
+      tone(660, 100, 'square', 0.035, 0, kindGain)
       return
     }
     if (kind === 'whoosh') {
-      tone(300, 120, 'sawtooth', 0.03, 0, eventGain)
-      tone(600, 80, 'sawtooth', 0.025, 30, eventGain)
+      tone(300, 120, 'sawtooth', 0.03, 0, kindGain)
+      tone(600, 80, 'sawtooth', 0.025, 30, kindGain)
       return
     }
     if (kind === 'gameover') {
-      tone(240, 130, 'sawtooth', 0.06, 0, eventGain)
-      tone(180, 180, 'sawtooth', 0.055, 95, eventGain)
+      tone(240, 130, 'sawtooth', 0.06, 0, kindGain)
+      tone(180, 180, 'sawtooth', 0.055, 95, kindGain)
     }
   } catch {
     // Sound should never break gameplay.
