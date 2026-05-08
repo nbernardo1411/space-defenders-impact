@@ -252,7 +252,8 @@ function xpNeededForNextLevel(level: number) {
 // ─── Cell size calculation ─────────────────────────────────────────────────────
 function calcCell(layoutMode: MobileLayoutMode = 'auto') {
   if (typeof window === 'undefined') return 44
-  const isDesktop = window.innerWidth > 900
+  // A real desktop always has height > 550. Wide-landscape phones (e.g. S20 Ultra = 915×412) must not be treated as desktop.
+  const isDesktop = window.innerWidth > 900 && window.innerHeight > 550
   const isMobile = !isDesktop
   const isNaturalLandscape = window.innerWidth > window.innerHeight
   const useMobileLandscape = isMobile && (
@@ -260,20 +261,27 @@ function calcCell(layoutMode: MobileLayoutMode = 'auto') {
     (layoutMode === 'auto' && isNaturalLandscape)
   )
 
-  // Reserve room for HUD + shop; mobile landscape keeps shop on the right.
-  const reservedWidth = isDesktop ? 240 : (useMobileLandscape ? 180 : 24)
-  const reservedHeight = isDesktop ? 140 : (useMobileLandscape ? 150 : 350)
+  if (!isDesktop && !useMobileLandscape) {
+    // Portrait compact: CSS flex distributes remaining height to the shop,
+    // so we only constrain by width to prevent horizontal overflow.
+    const byWidth = (window.innerWidth - 24) / COLS
+    return Math.floor(Math.max(20, Math.min(38, byWidth)))
+  }
+
+  // Desktop or landscape mobile: constrain by both width and height.
+  const reservedWidth = isDesktop ? 240 : 210   // sidebar ~200px + padding
+  const reservedHeight = isDesktop ? 140 : 130  // actual landscape phone HUD ≈ 110px + safety
   const byWidth = (window.innerWidth - reservedWidth) / COLS
   const byHeight = (window.innerHeight - reservedHeight) / ROWS
   const target = Math.min(byWidth, byHeight)
-  const minCell = isDesktop ? 32 : (useMobileLandscape ? 30 : 28)
-  const maxCell = isDesktop ? 72 : (useMobileLandscape ? 56 : 44)
+  const minCell = isDesktop ? 32 : 20
+  const maxCell = isDesktop ? 72 : 56
   return Math.floor(Math.max(minCell, Math.min(maxCell, target)))
 }
 
 function getIsCompactLayout(layoutMode: MobileLayoutMode) {
   if (typeof window === 'undefined') return false
-  if (window.innerWidth > 900) return false
+  if (window.innerWidth > 900 && window.innerHeight > 550) return false
   if (layoutMode === 'portrait') return true
   if (layoutMode === 'landscape') return false
   return window.innerHeight >= window.innerWidth
@@ -2076,23 +2084,26 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   }
 
   function upgradeTower(tower: Tower) {
-    if (tower.level >= MAX_TOWER_LEVEL) { playGameSound('hit'); return }
-    const cost = tower.towerDef.cost * tower.level * 1.2
+    // Always operate on the authoritative ref object, not a potentially stale copy from selectedTowerOnGrid
+    const refTower = towersRef.current.find(t => t.id === tower.id)
+    if (!refTower) return
+    if (refTower.level >= MAX_TOWER_LEVEL) { playGameSound('hit'); return }
+    const cost = Math.floor(refTower.towerDef.cost * refTower.level * 1.2)
     if (goldRef.current < cost) { playGameSound('hit'); return }
     goldRef.current -= cost
-    tower.level = Math.min(tower.level + 1, MAX_TOWER_LEVEL)
-    if (tower.level >= MAX_TOWER_LEVEL) tower.xp = 0
+    refTower.level = Math.min(refTower.level + 1, MAX_TOWER_LEVEL)
+    if (refTower.level >= MAX_TOWER_LEVEL) refTower.xp = 0
     setUiTowers([...towersRef.current])
     setUiGold(goldRef.current)
-    setSelectedTowerOnGrid({...tower})
+    setSelectedTowerOnGrid({...refTower})
     playGameSound('levelup')
     // Upgrade burst effect
-    towerActionBurstRef.current.push({x: tower.col + 0.5, y: tower.row + 0.5, type: 'upgrade', time: 0, maxTime: 0.5})
+    towerActionBurstRef.current.push({x: refTower.col + 0.5, y: refTower.row + 0.5, type: 'upgrade', time: 0, maxTime: 0.5})
     // Upgrade particles
     for (let i = 0; i < 6; i++) {
       const angle = (Math.PI * 2 * i) / 6
       particlesRef.current.push({
-        x: tower.col + 0.5, y: tower.row + 0.5,
+        x: refTower.col + 0.5, y: refTower.row + 0.5,
         type: 'build',
         vx: Math.cos(angle) * 1.5, vy: (Math.sin(angle) - 1.2) * 1.5,
         life: 0, maxLife: 0.4
@@ -2162,7 +2173,11 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
 
   const boardW = cell * COLS
   const boardH = cell * ROWS
-  const chromeMaxW = Math.min(typeof window !== 'undefined' ? window.innerWidth - 10 : 1200, isCompact ? boardW + 8 : boardW + 280)
+  // On any mobile (portrait or landscape phones), use full screen width so sidebar fills the space.
+  const isMobileChromeWidth = typeof window !== 'undefined' ? (window.innerWidth <= 900 || window.innerHeight <= 550) : false
+  const chromeMaxW = isMobileChromeWidth
+    ? (typeof window !== 'undefined' ? window.innerWidth - 10 : 1200)
+    : Math.min(typeof window !== 'undefined' ? window.innerWidth - 10 : 1200, boardW + 280)
 
   useEffect(() => {
     const canvas = spaceCanvasRef.current
@@ -2258,8 +2273,10 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
   const isBossNextWave = nextWaveCfg.isBoss
   const canStartWave = uiState === 'idle' || uiState === 'playing'
   const isOver = uiState === 'gameover' || uiState === 'victory'
-  const isMobileViewport = typeof window !== 'undefined' ? window.innerWidth <= 900 : false
-  const sidebarWidth = !isCompact && isMobileViewport ? 188 : undefined
+  // True for any phone/tablet (portrait or landscape) — wide landscape phones have small innerHeight.
+  const isMobileViewport = typeof window !== 'undefined' ? (window.innerWidth <= 900 || window.innerHeight <= 550) : false
+  // isLandscapeMobile: sidebar is on the right side but screen is small — needs compact items + own scroll.
+  const isLandscapeMobile = isMobileViewport && !isCompact
   const activeOverlay = isOver || uiState === 'stage_complete'
   const renderedLaserBeams = isMobileViewport ? uiLaserBeams.slice(0, 3) : uiLaserBeams
   const renderedParticles = isMobileViewport ? uiParticles.slice(-80) : uiParticles
@@ -2298,8 +2315,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       position: 'fixed', inset: 0, zIndex: 1000,
       background: 'radial-gradient(120% 180% at 10% 0%, #203228 0%, #0c1411 42%, #070b09 100%)',
       display: 'flex', flexDirection: 'column',
-      alignItems: 'center', overflowY: isMobileViewport ? 'hidden' : 'auto',
-      padding: isMobileViewport ? '8px 8px 10px' : '12px 8px 24px',
+      alignItems: 'center', overflowY: 'hidden',
+      padding: isCompact ? '4px 6px 6px' : isLandscapeMobile ? '4px 6px' : '12px 8px 24px',
       fontFamily: "'Orbitron','Rajdhani','Segoe UI',sans-serif",
       fontVariantNumeric: 'tabular-nums',
     }}>
@@ -2312,7 +2329,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         zIndex: 0,
       }} />
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: (isCompact || isLandscapeMobile) ? 3 : 6, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1, flexShrink: 0 }}>
         <button onClick={onClose} style={btnStyle('#3a120f', '#f9d7bf')} aria-label="Close">X</button>
         <div style={{ flex: 1, textAlign: 'center', fontWeight: 900, fontSize: isCompact ? '0.9rem' : '1.05rem', color: '#ffcf86', letterSpacing: 1.6, whiteSpace: 'nowrap', textTransform: 'uppercase', textShadow: '0 0 12px #ff7b2f66' }}>
           SPACE IMPACT DEFENSE
@@ -2321,7 +2338,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       </div>
 
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: 8, alignItems: 'stretch', width: '100%', maxWidth: chromeMaxW, marginBottom: 8, position: 'relative', zIndex: 1 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: (isCompact || isLandscapeMobile) ? 4 : 8, alignItems: 'stretch', width: '100%', maxWidth: chromeMaxW, marginBottom: (isCompact || isLandscapeMobile) ? 4 : 8, position: 'relative', zIndex: 1, flexShrink: 0 }}>
         <StatPill icon="CR" val={uiGold} color="#ffd666" />
         <StatPill icon="HP" val={uiLives} color="#fb7185" />
         <StatPill icon="SC" val={uiScore} color="#18e6c4" />
@@ -2329,7 +2346,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       </div>
 
       {/* Wave bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, width: '100%', maxWidth: chromeMaxW, flexWrap: isCompact ? 'wrap' : 'nowrap', position: 'relative', zIndex: 1, background: '#101714', border: '1px solid #335545', borderRadius: 6, padding: '6px 8px', boxShadow: 'inset 0 0 0 1px #00000088' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: (isCompact || isLandscapeMobile) ? 4 : 8, width: '100%', maxWidth: chromeMaxW, flexWrap: isCompact ? 'wrap' : 'nowrap', position: 'relative', zIndex: 1, background: '#101714', border: '1px solid #335545', borderRadius: 6, padding: (isCompact || isLandscapeMobile) ? '4px 6px' : '6px 8px', boxShadow: 'inset 0 0 0 1px #00000088', flexShrink: 0 }}>
         <span style={{ color: '#b9d7c8', fontSize: isCompact ? '0.75rem' : '0.86rem', whiteSpace: 'nowrap' }}>
           {uiEndless
             ? <><b style={{ color: '#ff8800' }}>ENDLESS</b> | STAGE <b style={{ color: '#ff8800' }}>{uiStage}</b> | WAVE <b style={{ color: '#ffd666' }}>{uiWave}</b>/{WAVES_PER_STAGE}</>
@@ -2361,7 +2378,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         )}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: isCompact ? 'column' : 'row', alignItems: isCompact ? 'center' : 'flex-start', gap: 8, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1 }}>
+      <div style={{ display: 'flex', flexDirection: isCompact ? 'column' : 'row', alignItems: isCompact ? 'center' : 'flex-start', gap: isCompact ? 4 : 8, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1, flex: isCompact ? 1 : undefined, minHeight: isCompact ? 0 : undefined, overflow: (isCompact || isLandscapeMobile) ? 'hidden' : undefined, flexShrink: isLandscapeMobile ? 0 : undefined }}>
         {/* Board */}
         <div
           ref={boardRef}
@@ -3323,9 +3340,9 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
         </div>
 
         {/* Sidebar */}
-        <div style={{ flex: isCompact ? 1 : '0 0 auto', minWidth: isCompact ? boardW : (sidebarWidth ?? 160), width: isCompact ? boardW : (sidebarWidth ?? 'auto'), display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ color: '#aaa', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Deploy Ship</div>
-          <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : '1fr', gap: 6 }}>
+        <div style={{ flex: (isCompact || isLandscapeMobile) ? 1 : '0 0 auto', minWidth: isCompact ? boardW : 0, width: isCompact ? boardW : undefined, display: 'flex', flexDirection: 'column', gap: isCompact ? 3 : 6, minHeight: 0, overflow: 'hidden', maxHeight: isLandscapeMobile ? boardH : undefined, overflowY: isLandscapeMobile ? 'auto' : undefined }}>
+          {(!isCompact && !isLandscapeMobile) && <div style={{ color: '#aaa', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Deploy Ship</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(3,minmax(0,1fr))' : isLandscapeMobile ? 'repeat(2,minmax(0,1fr))' : '1fr', gridTemplateRows: isCompact ? 'repeat(3, minmax(0, 1fr))' : undefined, gap: isCompact ? 4 : 5, flex: isCompact ? 1 : undefined, minHeight: isCompact ? 0 : undefined }}>
             {TOWER_TYPES.map(t => (
               <button
                 key={t.key}
@@ -3334,42 +3351,57 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                   background: selectedTowerKey === t.key ? t.color + '33' : '#111',
                   border: `2px solid ${selectedTowerKey === t.key ? t.color : '#333'}`,
                   borderRadius: 8,
-                  padding: isCompact ? '7px 8px' : '6px 8px',
+                  padding: isCompact ? '4px 5px' : '6px 7px',
                   cursor: 'pointer',
                   color: '#fff',
                   textAlign: 'left',
                   transition: 'all 0.15s',
-                  minHeight: isCompact ? 54 : 0,
+                  height: isCompact ? '100%' : undefined,
+                  boxSizing: 'border-box',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{
-                    width: isCompact ? 38 : 44,
-                    height: isCompact ? 38 : 44,
-                    borderRadius: 10,
-                    border: `1px solid ${t.color}55`,
-                    background: 'linear-gradient(180deg,#182330,#0a0f18)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    boxShadow: `inset 0 0 14px ${t.color}18`,
-                  }}>
-                    <TowerShip tType={t.key} color={t.color} size={isCompact ? 28 : 32} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 800, color: t.color, fontSize: isCompact ? '0.8rem' : '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
-                      <span style={{ color: '#ffd666', fontSize: '0.76rem', whiteSpace: 'nowrap' }}>CR {t.cost}</span>
+                {isCompact ? (
+                  /* Portrait compact: icon centred, name + cost + desc stacked */
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, height: '100%', width: '100%' }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: 8,
+                      border: `1px solid ${t.color}55`,
+                      background: 'linear-gradient(180deg,#182330,#0a0f18)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0, boxShadow: `inset 0 0 10px ${t.color}18`,
+                    }}>
+                      <TowerShip tType={t.key} color={t.color} size={18} />
                     </div>
-                    {!isCompact && <div style={{ color: '#888', fontSize: '0.7rem', marginTop: 2 }}>{t.desc}</div>}
+                    <span style={{ fontWeight: 800, color: t.color, fontSize: '0.68rem', textAlign: 'center', lineHeight: 1.1, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
+                    <span style={{ color: '#ffd666', fontSize: '0.62rem', fontWeight: 700, lineHeight: 1 }}>{t.cost}</span>
+                    <span style={{ color: '#888', fontSize: '0.55rem', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{t.desc}</span>
                   </div>
-                </div>
+                ) : (
+                  /* Landscape mobile (2-col) and desktop (1-col): icon left, name + cost + desc on right */
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                      width: isLandscapeMobile ? 32 : 44, height: isLandscapeMobile ? 32 : 44, borderRadius: 10,
+                      border: `1px solid ${t.color}55`,
+                      background: 'linear-gradient(180deg,#182330,#0a0f18)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0, boxShadow: `inset 0 0 14px ${t.color}18`,
+                    }}>
+                      <TowerShip tType={t.key} color={t.color} size={isLandscapeMobile ? 22 : 32} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontWeight: 800, color: t.color, fontSize: isLandscapeMobile ? '0.76rem' : '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
+                        <span style={{ color: '#ffd666', fontSize: isLandscapeMobile ? '0.68rem' : '0.76rem', whiteSpace: 'nowrap', flexShrink: 0 }}>CR {t.cost}</span>
+                      </div>
+                      <div style={{ color: '#888', fontSize: isLandscapeMobile ? '0.62rem' : '0.7rem', marginTop: 2, lineHeight: 1.3, whiteSpace: isLandscapeMobile ? 'nowrap' : undefined, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.desc}</div>
+                    </div>
+                  </div>
+                )}
               </button>
             ))}
           </div>
 
-          {selectedTowerOnGrid && (
+          {selectedTowerOnGrid && !isCompact && !isLandscapeMobile && (
             <div style={{ marginTop: 8, background: '#111', border: `2px solid ${selectedTowerOnGrid.towerDef.color}`, borderRadius: 8, padding: 10 }}>
               <div style={{ color: selectedTowerOnGrid.towerDef.color, fontWeight: 800, fontSize: '0.9rem' }}>{selectedTowerOnGrid.towerDef.label} Lv{selectedTowerOnGrid.level}</div>
               <div style={{ color: '#aaa', fontSize: '0.75rem', margin: '4px 0' }}>DMG: {(selectedTowerOnGrid.towerDef.dmg * (1 + (selectedTowerOnGrid.level - 1) * 0.5)).toFixed(0)} | Range: {selectedTowerOnGrid.towerDef.range}</div>
@@ -3389,13 +3421,15 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
             </div>
           )}
 
-          <div style={{ marginTop: 'auto', color: '#6f7e76', fontSize: isCompact ? '0.66rem' : '0.7rem', lineHeight: 1.45 }}>
-            <div>• Tap empty cell to deploy</div>
-            <div>• Drag ship to reposition (mouse or touch)</div>
-            <div>• Aliens reaching HQ cost lives</div>
-            {!isCompact && <div>• Wave 5 is boss wave, stage 10 is all bosses</div>}
-            {!isCompact && <div>• Beat stage 10 to unlock endless mode</div>}
-          </div>
+          {!isCompact && !isLandscapeMobile && (
+            <div style={{ marginTop: 'auto', color: '#6f7e76', fontSize: '0.7rem', lineHeight: 1.45 }}>
+              <div>• Tap empty cell to deploy</div>
+              <div>• Drag ship to reposition (mouse or touch)</div>
+              <div>• Aliens reaching HQ cost lives</div>
+              <div>• Wave 5 is boss wave, stage 10 is all bosses</div>
+              <div>• Beat stage 10 to unlock endless mode</div>
+            </div>
+          )}
         </div>
       </div>
 
