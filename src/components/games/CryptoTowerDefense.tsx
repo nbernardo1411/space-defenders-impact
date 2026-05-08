@@ -262,12 +262,12 @@ function calcCell(layoutMode: MobileLayoutMode = 'auto') {
 
   // Reserve room for HUD + shop; mobile landscape keeps shop on the right.
   const reservedWidth = isDesktop ? 240 : (useMobileLandscape ? 180 : 24)
-  const reservedHeight = isDesktop ? 140 : (useMobileLandscape ? 140 : 260)
+  const reservedHeight = isDesktop ? 140 : (useMobileLandscape ? 150 : 350)
   const byWidth = (window.innerWidth - reservedWidth) / COLS
   const byHeight = (window.innerHeight - reservedHeight) / ROWS
   const target = Math.min(byWidth, byHeight)
   const minCell = isDesktop ? 32 : (useMobileLandscape ? 30 : 28)
-  const maxCell = isDesktop ? 72 : (useMobileLandscape ? 58 : 48)
+  const maxCell = isDesktop ? 72 : (useMobileLandscape ? 56 : 44)
   return Math.floor(Math.max(minCell, Math.min(maxCell, target)))
 }
 
@@ -1152,6 +1152,34 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
     setGameAudioMixSettings(nextMix)
     if (soundOn && (key === 'bgm' || key === 'master')) {
       startBGM()
+    }
+  }
+
+  async function applyMobileLayoutMode(mode: MobileLayoutMode) {
+    setMobileLayoutMode(mode)
+    if (typeof window === 'undefined' || window.innerWidth > 900) return
+
+    try {
+      const orientationApi = (screen as Screen & { orientation?: { lock?: (mode: string) => Promise<void>; unlock?: () => void } }).orientation
+      if (!orientationApi) return
+
+      if (mode === 'auto') {
+        orientationApi.unlock?.()
+        return
+      }
+
+      // Most browsers require fullscreen + user gesture before orientation lock.
+      const docEl = document.documentElement as HTMLElement & { requestFullscreen?: () => Promise<void> }
+      if (!document.fullscreenElement && docEl.requestFullscreen) {
+        await docEl.requestFullscreen().catch(() => undefined)
+      }
+
+      const lockTarget = mode === 'landscape' ? 'landscape' : 'portrait'
+      if (orientationApi.lock) {
+        await orientationApi.lock(lockTarget).catch(() => undefined)
+      }
+    } catch {
+      // Best-effort only; some browsers (especially iOS) block programmatic orientation lock.
     }
   }
 
@@ -2270,8 +2298,8 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
       position: 'fixed', inset: 0, zIndex: 1000,
       background: 'radial-gradient(120% 180% at 10% 0%, #203228 0%, #0c1411 42%, #070b09 100%)',
       display: 'flex', flexDirection: 'column',
-      alignItems: 'center', overflowY: 'auto',
-      padding: '12px 8px 24px',
+      alignItems: 'center', overflowY: isMobileViewport ? 'hidden' : 'auto',
+      padding: isMobileViewport ? '8px 8px 10px' : '12px 8px 24px',
       fontFamily: "'Orbitron','Rajdhani','Segoe UI',sans-serif",
       fontVariantNumeric: 'tabular-nums',
     }}>
@@ -2290,7 +2318,6 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
           SPACE IMPACT DEFENSE
         </div>
         <button onClick={() => setShowSettingsModal(true)} style={btnStyle('#2d2148', '#d3c6ff')} aria-label="Settings">SETTINGS</button>
-        <button onClick={toggleSound} style={btnStyle('#102b20','#9ef2cc')}>{soundOn ? 'SFX ON' : 'SFX OFF'}</button>
       </div>
 
       {/* Stats row */}
@@ -3411,7 +3438,7 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                   <button
                     key={mode.key}
                     type="button"
-                    onClick={() => setMobileLayoutMode(mode.key)}
+                    onClick={() => { void applyMobileLayoutMode(mode.key) }}
                     style={{
                       border: `1px solid ${mobileLayoutMode === mode.key ? '#75b8ff' : '#30435e'}`,
                       background: mobileLayoutMode === mode.key ? '#1c2f4a' : '#121c2c',
@@ -3427,6 +3454,10 @@ export function SpaceImpactDefense({ availableCoins, onClose }: { availableCoins
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div style={{ marginBottom: 12, color: '#8fa6bf', fontSize: '0.66rem', lineHeight: 1.45 }}>
+              Orientation lock is best-effort on mobile browsers and depends on device/browser support.
             </div>
 
             <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>

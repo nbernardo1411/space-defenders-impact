@@ -110,7 +110,7 @@ Built with:
 ## Controls
 
 - **Mouse**: Click to place towers and interact with UI
-- **Sound Button**: Toggle procedural sound effects
+- **Settings Modal**: Configure audio mix (master/BGM/explosions/beams/UI), SFX toggle, and mobile layout mode
 - **Auto-Play**: Automatically start next wave (optional)
 
 ## License
@@ -124,6 +124,3 @@ nbernardo1411
 ---
 
 **Deploy to Netlify**: Add `_redirects` file or configure `netlify.toml` for SPA routing.
-
-
-git add -A && git commit -m "Remove laser beam box glow + move boss HP bar above boss sprite" && git push origin main
