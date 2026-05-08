@@ -2320,7 +2320,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               filter: drone.state === 'attack' ? `drop-shadow(0 0 8px ${DREADNOUGHT_SCOUT_COLOR})` : 'drop-shadow(0 0 5px #7dd3fc)',
             }}>
               <div style={{ transform: 'translate(-50%, -50%)' }}>
-                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(24, cell * 0.56)} />
+                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(22, cell * 0.50)} />
               </div>
             </div>
           ))}
