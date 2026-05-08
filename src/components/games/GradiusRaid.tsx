@@ -193,8 +193,6 @@ const FORCE_FIELD_ARMOR = 5
 const NORMAL_POWER_DROP_COOLDOWN = 5.5
 const POWER_PITY_KILLS = 20
 const RENDER_INTERVAL_MS = 16
-const MAX_PLAYER_SHOTS = 80
-const MAX_ENEMY_SHOTS = 44
 const MAX_SPARKS = 45
 const MAX_RIPPLES = 10
 
@@ -627,9 +625,6 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   }, [startRaidBgm, syncSnapshot])
 
   const pushShot = useCallback((shot: Omit<Shot, 'id'>) => {
-    if (shotsRef.current.length >= MAX_PLAYER_SHOTS) {
-      shotsRef.current = shotsRef.current.slice(-(MAX_PLAYER_SHOTS - 1))
-    }
     shotsRef.current.push({ ...shot, id: shotId++ })
   }, [])
 
@@ -955,9 +950,6 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: kind === 'serpent' || kind === 'mantis' ? 'blade' : kind === 'super' ? 'superShot' : kind === 'hydra' ? 'voidShot' : 'boss', radius: 2 })
       }
       playGameSound('rocket')
-      if (enemyShotsRef.current.length > MAX_ENEMY_SHOTS) {
-        enemyShotsRef.current = enemyShotsRef.current.slice(-MAX_ENEMY_SHOTS)
-      }
       return
     }
 
@@ -1029,12 +1021,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       spawnTimerRef.current = Math.max(0.42, 1.25 - waveRef.current * 0.045)
     }
 
-    shotsRef.current = shotsRef.current
-      .map((shot) => {
-        if (shot.kind !== 'homing') {
-          return { ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt }
-        }
-
+    const liveShots: Shot[] = []
+    for (const shot of shotsRef.current) {
+      if (shot.kind === 'homing') {
         let target: Enemy | null = null
         let bestScore = Number.POSITIVE_INFINITY
         for (const enemy of enemiesRef.current) {
@@ -1049,28 +1038,33 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           }
         }
 
-        if (!target) {
-          return { ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt }
+        if (target) {
+          const aimX = target.x - shot.x
+          const aimY = target.y - shot.y
+          const mag = Math.hypot(aimX, aimY) || 1
+          const speed = Math.max(62, Math.hypot(shot.vx, shot.vy))
+          const turn = Math.min(1, (shot.turn ?? 8) * dt)
+          shot.vx += ((aimX / mag) * speed - shot.vx) * turn
+          shot.vy += ((aimY / mag) * speed - shot.vy) * turn
         }
+      }
+      shot.x += shot.vx * dt
+      shot.y += shot.vy * dt
+      if (shot.y > -10 && shot.y < HEIGHT + 10 && shot.x > -10 && shot.x < WIDTH + 10) {
+        liveShots.push(shot)
+      }
+    }
+    shotsRef.current = liveShots
 
-        const aimX = target.x - shot.x
-        const aimY = target.y - shot.y
-        const mag = Math.hypot(aimX, aimY) || 1
-        const speed = Math.max(62, Math.hypot(shot.vx, shot.vy))
-        const turn = Math.min(1, (shot.turn ?? 8) * dt)
-        const desiredVx = (aimX / mag) * speed
-        const desiredVy = (aimY / mag) * speed
-        const vx = shot.vx + (desiredVx - shot.vx) * turn
-        const vy = shot.vy + (desiredVy - shot.vy) * turn
-        return { ...shot, vx, vy, x: shot.x + vx * dt, y: shot.y + vy * dt }
-      })
-      .filter((shot) => shot.y > -10 && shot.y < HEIGHT + 10 && shot.x > -10 && shot.x < WIDTH + 10)
-      .slice(-MAX_PLAYER_SHOTS)
-
-    enemyShotsRef.current = enemyShotsRef.current
-      .map((shot) => ({ ...shot, x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt }))
-      .filter((shot) => shot.y > -12 && shot.y < HEIGHT + 12 && shot.x > -12 && shot.x < WIDTH + 12)
-      .slice(-MAX_ENEMY_SHOTS)
+    const liveEnemyShots: Shot[] = []
+    for (const shot of enemyShotsRef.current) {
+      shot.x += shot.vx * dt
+      shot.y += shot.vy * dt
+      if (shot.y > -12 && shot.y < HEIGHT + 12 && shot.x > -12 && shot.x < WIDTH + 12) {
+        liveEnemyShots.push(shot)
+      }
+    }
+    enemyShotsRef.current = liveEnemyShots
 
     enemiesRef.current = enemiesRef.current
       .map((enemy) => {
@@ -1179,7 +1173,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         damagePlayer(enemyShot.kind === 'boss' || enemyShot.kind === 'plasma' || enemyShot.kind === 'blade' || enemyShot.kind === 'orbShot' || enemyShot.kind === 'superShot' ? 1 : enemyShot.damage)
       }
     }
-    enemyShotsRef.current = enemyShotsRef.current.filter((shot) => shot.y < HEIGHT + 30).slice(-MAX_ENEMY_SHOTS)
+    enemyShotsRef.current = enemyShotsRef.current.filter((shot) => shot.y < HEIGHT + 30)
 
     for (const enemy of enemiesRef.current) {
       if (distSq(enemy, player) <= (enemy.radius + PLAYER_RADIUS) ** 2) {
