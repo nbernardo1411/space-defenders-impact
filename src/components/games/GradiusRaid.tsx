@@ -876,7 +876,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           radius: 7.5,   // thick kamehameha-style beam
           pierce: 4,     // pierces a few enemies only
         })
-        const salvoOffsets = [-5.4, -7.2]
+        const salvoOffsets = [-5.4, 5.4]
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
