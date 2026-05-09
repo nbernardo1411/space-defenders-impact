@@ -920,6 +920,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           radius: 3.2,
         })
 
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+          }
+
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
           fan.forEach((vx) =>
@@ -1117,7 +1123,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
       shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
       shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
-      shipKey === 'spaceEt' ? 0.072 :    // Space ET — fastest
+      shipKey === 'spaceEt' ? 0.005 :    // Space ET — fastest
       shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
       0.12                               // Black Comet — default
 
