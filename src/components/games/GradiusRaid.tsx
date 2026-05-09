@@ -1633,9 +1633,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           }
         }
         const nextFire = enemy.fireCooldown - dt
-        if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0) {
-          fireEnemy(enemy, player)
-        }
+const bossCycle = (performance.now() / 1000) % 6
+const bossInPause = enemy.isBoss && bossCycle > 3
+if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
+  fireEnemy(enemy, player)
+}
         return {
           ...enemy,
           x: enemy.isBoss ? clamp(bossX, bossKind === 'final' ? 14 : bossKind === 'super' ? 20 : 16, bossKind === 'final' ? 86 : bossKind === 'super' ? 80 : 84) : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96),
