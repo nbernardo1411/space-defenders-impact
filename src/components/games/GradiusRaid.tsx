@@ -1515,11 +1515,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       waveRef.current += 1
       player.rank = Math.min(20, player.rank + 1)
     }
-    if (canSpawnStageEnemies && formationTimerRef.current <= 0) {
+    if (canSpawnStageEnemies && !bossActive && formationTimerRef.current <= 0) {
       spawnFormation()
       formationTimerRef.current = Math.max(1.75, 4.6 - waveRef.current * 0.12)
     }
-    if (canSpawnStageEnemies && spawnTimerRef.current <= 0) {
+    if (canSpawnStageEnemies && !bossActive && spawnTimerRef.current <= 0) {
       spawnEnemyAt(10 + Math.random() * 80, -6, waveRef.current, Math.floor(Math.random() * 4))
       spawnTimerRef.current = Math.max(0.42, 1.25 - waveRef.current * 0.045)
     }
