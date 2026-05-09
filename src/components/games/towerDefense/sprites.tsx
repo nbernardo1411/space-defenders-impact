@@ -56,6 +56,135 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
     <ellipse cx="41" cy="57" rx="3.8" ry="5" fill={engine} opacity="0.88" />
   </>
 
+  const fighterSurfaceDetails = <>
+    <path d="M32 6 L32 55" stroke="#07111bcc" strokeWidth="0.9" opacity="0.42" />
+    <path d="M24 19 L32 15 L40 19 M22 30 L32 26 L42 30 M24 43 L32 39 L40 43" stroke="#ffffff70" strokeWidth="0.85" fill="none" strokeLinecap="round" opacity="0.58" />
+    <path d="M18 34 L27 31 M46 34 L37 31 M18 45 L27 40 M46 45 L37 40" stroke={core} strokeWidth="1.65" strokeLinecap="round" opacity="0.55" />
+    <path d="M22 24 L18 29 L20 34 L27 32 M42 24 L46 29 L44 34 L37 32" stroke="#07111b99" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <rect x="24" y="34" width="5" height="3" rx="0.7" fill={dark} opacity="0.58" />
+    <rect x="35" y="34" width="5" height="3" rx="0.7" fill={dark} opacity="0.58" />
+    <rect x="23" y="39" width="6" height="1.6" rx="0.7" fill="#07111bcc" opacity="0.7" />
+    <rect x="35" y="39" width="6" height="1.6" rx="0.7" fill="#07111bcc" opacity="0.7" />
+    <circle cx="25" cy="25" r="0.9" fill={metal} opacity="0.68" />
+    <circle cx="39" cy="25" r="0.9" fill={metal} opacity="0.68" />
+    <circle cx="22" cy="45" r="0.85" fill={metal} opacity="0.62" />
+    <circle cx="42" cy="45" r="0.85" fill={metal} opacity="0.62" />
+    <path d="M28 51 L32 55 L36 51" stroke={core} strokeWidth="1.2" fill="none" strokeLinecap="round" opacity="0.62" />
+    <path d="M14 50 L22 46 M50 50 L42 46" stroke="#ffffff55" strokeWidth="0.9" strokeLinecap="round" opacity="0.6" />
+  </>
+
+  if (tType === 'spaceEt') {
+    const fuseG = `space-et-fuse-${svgId}`
+    const wingGL = `space-et-wing-l-${svgId}`
+    const wingGR = `space-et-wing-r-${svgId}`
+    const tailGL = `space-et-tail-l-${svgId}`
+    const tailGR = `space-et-tail-r-${svgId}`
+    const flameG = `space-et-flame-${svgId}`
+    const canopyG = `space-et-canopy-${svgId}`
+    const noseG = `space-et-nose-${svgId}`
+
+    return (
+      <svg width={s} height={s} viewBox="0 0 680 766" style={{ filter: 'drop-shadow(0 8px 18px #000b)' }}>
+        <defs>
+          <linearGradient id={fuseG} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#0d141b" />
+            <stop offset="24%" stopColor="#334657" />
+            <stop offset="50%" stopColor="#b9cbd6" />
+            <stop offset="76%" stopColor="#334657" />
+            <stop offset="100%" stopColor="#0d141b" />
+          </linearGradient>
+          <linearGradient id={wingGL} x1="1" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#7897a9" />
+            <stop offset="46%" stopColor="#273944" />
+            <stop offset="100%" stopColor="#080d12" />
+          </linearGradient>
+          <linearGradient id={wingGR} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#7897a9" />
+            <stop offset="46%" stopColor="#273944" />
+            <stop offset="100%" stopColor="#080d12" />
+          </linearGradient>
+          <linearGradient id={tailGL} x1="1" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#6f899a" />
+            <stop offset="100%" stopColor="#101923" />
+          </linearGradient>
+          <linearGradient id={tailGR} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#6f899a" />
+            <stop offset="100%" stopColor="#101923" />
+          </linearGradient>
+          <linearGradient id={flameG} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
+            <stop offset="22%" stopColor="#ffe066" />
+            <stop offset="56%" stopColor={core} stopOpacity="0.85" />
+            <stop offset="100%" stopColor="#220500" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id={canopyG} x1="0.2" y1="0" x2="0.8" y2="1">
+            <stop offset="0%" stopColor="#a8e8ff" stopOpacity="0.9" />
+            <stop offset="48%" stopColor="#1a5577" stopOpacity="0.86" />
+            <stop offset="100%" stopColor="#04080c" stopOpacity="0.96" />
+          </linearGradient>
+          <linearGradient id={noseG} x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stopColor="#314b5a" />
+            <stop offset="100%" stopColor="#dceaf2" />
+          </linearGradient>
+        </defs>
+        <ellipse cx="316" cy="718" rx="13" ry="38" fill={`url(#${flameG})`} />
+        <ellipse cx="364" cy="718" rx="13" ry="38" fill={`url(#${flameG})`} />
+        <ellipse cx="316" cy="724" rx="4" ry="12" fill="#ffee88" opacity="0.86" />
+        <ellipse cx="364" cy="724" rx="4" ry="12" fill="#ffee88" opacity="0.86" />
+
+        <path d="M307 310 L80 510 L130 548 L313 528 Z" fill={`url(#${wingGL})`} stroke="#9ab8cc" strokeWidth="1" />
+        <path d="M373 310 L600 510 L550 548 L367 528 Z" fill={`url(#${wingGR})`} stroke="#9ab8cc" strokeWidth="1" />
+        <path d="M298 322 L118 506 L108 514 L288 334 Z M382 322 L562 506 L572 514 L392 334 Z" fill={core} opacity="0.58" />
+        <path d="M293 327 L112 510 L108 514 L283 338 Z M387 327 L568 510 L572 514 L397 338 Z" fill="#120407" opacity="0.52" />
+        <path d="M80 510 L307 310 M600 510 L373 310" stroke="#ddeeff" strokeWidth="1.2" opacity="0.5" />
+        <path d="M300 318 L108 510 M295 330 L118 518 M288 345 L130 524 M380 318 L572 510 M385 330 L562 518 M392 345 L550 524" stroke="#c8dce8" strokeWidth="0.7" opacity="0.25" />
+        <path d="M80 510 L130 548 L126 530 Z M600 510 L550 548 L554 530 Z" fill="#23323d" />
+
+        <path d="M316 590 L210 650 L248 672 L320 628 Z" fill={`url(#${tailGL})`} stroke="#8aabb8" strokeWidth="0.8" />
+        <path d="M364 590 L470 650 L432 672 L360 628 Z" fill={`url(#${tailGR})`} stroke="#8aabb8" strokeWidth="0.8" />
+        <path d="M212 650 L317 592 M468 650 L363 592" stroke={core} strokeWidth="1.6" opacity="0.72" />
+        <path d="M318 560 L288 618 L308 640 L324 590 Z M362 560 L392 618 L372 640 L356 590 Z" fill="#334959" stroke="#7a9aaa" strokeWidth="0.8" />
+
+        <path d="M340 65 L296 210 L304 310 L316 310 L318 190 Z" fill="#415f72" stroke="#9ab8cc" strokeWidth="0.6" opacity="0.9" />
+        <path d="M340 65 L384 210 L376 310 L364 310 L362 190 Z" fill="#415f72" stroke="#9ab8cc" strokeWidth="0.6" opacity="0.9" />
+        <path d="M340 68 C334 100 322 145 316 190 L306 310 L304 400 L308 500 L313 570 L316 650 L322 690 L358 690 L364 650 L367 570 L372 500 L376 400 L374 310 L364 190 C358 145 346 100 340 68 Z" fill={`url(#${fuseG})`} stroke="#aabfd0" strokeWidth="1.2" />
+        <path d="M340 90 L340 680 M316 250 H364 M310 340 H370 M308 430 H372 M312 510 H368 M315 560 H365" stroke="#16232d" strokeWidth="1" opacity="0.48" />
+        <path d="M324 355 H338 V364 H324 Z M342 355 H356 V364 H342 Z M324 440 H338 V449 H324 Z M342 440 H356 V449 H342 Z" fill="#101d26" stroke="#3a5060" strokeWidth="0.6" opacity="0.78" />
+        <path d="M322 378 H332 M322 384 H332 M322 390 H332 M348 378 H358 M348 384 H358 M348 390 H358" stroke="#07131a" strokeWidth="3" strokeLinecap="round" opacity="0.72" />
+        <path d="M324 460 H356 V490 H324 Z" fill="#101d26" stroke="#3a5060" strokeWidth="0.8" />
+        <path d="M340 460 V490" stroke="#2a3c4c" strokeWidth="0.7" />
+        <circle cx="332" cy="475" r="3" fill="#07131a" stroke="#2a4455" strokeWidth="0.7" />
+        <circle cx="348" cy="475" r="3" fill="#07131a" stroke="#2a4455" strokeWidth="0.7" />
+
+        <path d="M313 570 L308 640 L308 680 L328 690 L322 670 L318 640 L320 575 Z" fill="#1d2c38" stroke="#5a7888" strokeWidth="0.8" />
+        <path d="M367 570 L372 640 L372 680 L352 690 L358 670 L362 640 L360 575 Z" fill="#1d2c38" stroke="#5a7888" strokeWidth="0.8" />
+        <ellipse cx="316" cy="650" rx="10" ry="5" fill="#07131a" stroke={core} strokeWidth="1" />
+        <ellipse cx="364" cy="650" rx="10" ry="5" fill="#07131a" stroke={core} strokeWidth="1" />
+        <ellipse cx="316" cy="680" rx="9" ry="4.5" fill="#03070a" stroke={core} strokeWidth="1.4" />
+        <ellipse cx="364" cy="680" rx="9" ry="4.5" fill="#03070a" stroke={core} strokeWidth="1.4" />
+
+        <path d="M307 310 C298 325 292 345 292 365 L298 390 L307 395 L307 360 C307 345 308 328 313 318 Z" fill="#07131a" stroke="#4a6a7a" strokeWidth="0.8" />
+        <path d="M373 310 C382 325 388 345 388 365 L382 390 L373 395 L373 360 C373 345 372 328 367 318 Z" fill="#07131a" stroke="#4a6a7a" strokeWidth="0.8" />
+        <ellipse cx="295" cy="352" rx="5" ry="24" fill="#2a4352" stroke="#6a8899" strokeWidth="0.8" />
+        <ellipse cx="385" cy="352" rx="5" ry="24" fill="#2a4352" stroke="#6a8899" strokeWidth="0.8" />
+
+        <path d="M328 148 C325 158 322 175 322 192 C322 218 328 235 340 240 C352 235 358 218 358 192 C358 175 355 158 352 148 C347 142 333 142 328 148 Z" fill="#142532" stroke="#44aacc" strokeWidth="1.1" />
+        <path d="M330 152 C327 162 324 178 324 193 C324 215 330 230 340 234 C350 230 356 215 356 193 C356 178 353 162 350 152 C346 147 334 147 330 152 Z" fill={`url(#${canopyG})`} />
+        <path d="M340 148 V238 M322 193 H358" stroke="#1d4a60" strokeWidth="0.9" opacity="0.62" />
+        <path d="M330 155 C328 163 326 176 326 188 H335 C335 176 336 162 338 155 Z" fill="#ffffff" opacity="0.08" />
+
+        <path d="M318 190 L316 148 C322 110 330 80 340 65 C350 80 358 110 364 148 L362 190 Z" fill={`url(#${noseG})`} stroke="#aac8dc" strokeWidth="0.9" />
+        <circle cx="340" cy="68" r="4.5" fill="#07131a" stroke="#4499cc" strokeWidth="1.1" />
+        <circle cx="340" cy="68" r="2" fill="#00aaff" opacity="0.95" />
+        <path d="M340 63 V44" stroke="#88aabb" strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx="340" cy="44" r="2" fill="#bbddee" />
+        <path d="M340 68 L316 190 M340 68 L364 190" stroke="#c8dce8" strokeWidth="0.6" opacity="0.32" />
+        <path d="M336 82 C337 92 338 120 338 148 H342 C342 120 343 92 344 82 C342 78 338 78 336 82 Z" fill={core} opacity="0.54" />
+        <path d="M311 165 H318 V169 H311 Z M362 165 H369 V169 H362 Z" fill="#1d2c38" stroke="#4a6478" strokeWidth="0.5" />
+      </svg>
+    )
+  }
+
   const shapes: Record<string, React.ReactNode> = {
 
     // ── SCOUT: X-Wing quad interceptor ── 4 spread wings + 4 laser cannons ──
@@ -235,27 +364,24 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
 
     // ── ROCKET: Swept missile destroyer ── 4 visible pods + warhead tips ────
     rocket: <>
-      {/* Central fuselage */}
-      <path d="M30 5 L34 5 L36 14 L37 52 L32 62 L27 52 L28 14 Z" fill={hull} />
-      <path d="M30.5 8 L33.5 8 L35 15 L35.5 48 L32 56 L28.5 48 L29 15 Z" fill={paint} opacity="0.9" />
-      {/* Wide swept wings */}
-      <path d="M30 21 L28 46 L5 51 L2 43 L18 33 L27 25 Z" fill={hull} />
-      <path d="M34 21 L36 46 L59 51 L62 43 L46 33 L37 25 Z" fill={hull} />
-      {/* 4 missile pods (angular, NOT circles) */}
-      <path d="M4 27 L13 27 L13 46 L6 46 L3 38 Z" fill={dark} />
-      <path d="M15 32 L23 32 L23 48 L17 48 L14 41 Z" fill={dark} />
-      <path d="M51 27 L60 27 L61 38 L58 46 L51 46 Z" fill={dark} />
-      <path d="M41 32 L49 32 L50 41 L47 48 L41 48 Z" fill={dark} />
-      {/* Missile warhead tips */}
-      <path d="M6 27 L8.5 21 L11 27" fill={core} opacity="0.92" />
-      <path d="M17 32 L19.5 26 L22 32" fill={core} opacity="0.82" />
-      <path d="M53 27 L56 21 L59 27" fill={core} opacity="0.92" />
-      <path d="M43 32 L45.5 26 L48 32" fill={core} opacity="0.82" />
-      {/* Nose cannon */}
-      <rect x="30" y="1" width="4" height="16" rx="2" fill="#9bb0c5" />
-      {/* Cockpit */}
-      <path d="M29.5 9 L29 11 L29 20 L32 22 L35 20 L35 11 L34.5 9 Z" fill={glass} />
-      {eng2}
+      {/* Black Comet: predatory ET-style interceptor with layered armor */}
+      <path d="M32 4 L37 15 L37 32 L42 45 L37 52 L32 47 L27 52 L22 45 L27 32 L27 15 Z" fill={hull} />
+      <path d="M32 7 L35 17 L35 42 L32 49 L29 42 L29 17 Z" fill={paint} opacity="0.94" />
+      <path d="M24 28 L9 34 L2 54 L15 49 L25 39 Z" fill={hull} opacity="0.92" />
+      <path d="M40 28 L55 34 L62 54 L49 49 L39 39 Z" fill={hull} opacity="0.92" />
+      <path d="M12 31 L23 28 L21 35 L8 39 Z" fill={paint} opacity="0.76" />
+      <path d="M52 31 L41 28 L43 35 L56 39 Z" fill={paint} opacity="0.76" />
+      <path d="M8 53 L15 40 L18 49 Z M56 53 L49 40 L46 49 Z" fill={core} opacity="0.9" />
+      <path d="M30 6 L32 1 L34 6 L33.2 17 H30.8 Z" fill="#dce7f5" opacity="0.9" />
+      <path d="M28 14 C27 20 28 27 32 30 C36 27 37 20 36 14 C34 12 30 12 28 14 Z" fill={glass} opacity="0.95" />
+      <path d="M25 33 L32 29 L39 33 M27 43 L32 40 L37 43" stroke="#ffffff7a" strokeWidth="1.25" fill="none" strokeLinecap="round" />
+      <path d="M19 37 L12 43 M45 37 L52 43" stroke={core} strokeWidth="2.4" strokeLinecap="round" opacity="0.82" />
+      <rect x="12" y="46" width="8" height="4" rx="1.5" fill={metal} opacity="0.72" />
+      <rect x="44" y="46" width="8" height="4" rx="1.5" fill={metal} opacity="0.72" />
+      <ellipse cx="27" cy="57" rx="3.1" ry="5.8" fill={engine} opacity="0.9" />
+      <ellipse cx="37" cy="57" rx="3.1" ry="5.8" fill={engine} opacity="0.9" />
+      <ellipse cx="27" cy="57" rx="1.35" ry="2.7" fill="#ffffff" opacity="0.82" />
+      <ellipse cx="37" cy="57" rx="1.35" ry="2.7" fill="#ffffff" opacity="0.82" />
     </>,
 
     // ── LASER: Kite/diamond hull ── angular prism emitter, swept fins ────────
@@ -336,6 +462,7 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
     <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 4px 10px #000a)' }}>
       {defs}
       {shapes[tType] ?? shapes.fast}
+      {fighterSurfaceDetails}
     </svg>
   )
 }
@@ -374,6 +501,19 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
     </defs>
   )
 
+  const alienSurfaceDetails = <>
+    <path d="M32 8 L32 56" stroke="#020006aa" strokeWidth="1.05" opacity="0.5" />
+    <path d="M18 22 Q26 18 32 23 Q38 18 46 22 M17 34 Q26 30 32 35 Q38 30 47 34 M21 47 Q28 43 32 48 Q36 43 43 47" stroke="#ffffff55" strokeWidth="1" fill="none" strokeLinecap="round" opacity="0.48" />
+    <path d="M13 28 Q22 31 19 41 M51 28 Q42 31 45 41" stroke={c} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.5" />
+    <path d="M24 18 L20 25 L24 31 M40 18 L44 25 L40 31 M24 45 L20 52 M40 45 L44 52" stroke="#02000699" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="24" cy="27" r="1.15" fill={c} opacity="0.56" />
+    <circle cx="40" cy="27" r="1.15" fill={c} opacity="0.56" />
+    <circle cx="27" cy="42" r="0.9" fill="#fff4c7" opacity="0.5" />
+    <circle cx="37" cy="42" r="0.9" fill="#fff4c7" opacity="0.5" />
+    <path d="M29 13 L32 9 L35 13 M26 53 L32 58 L38 53" stroke={c} strokeWidth="1.45" fill="none" strokeLinecap="round" opacity="0.56" />
+    <path d="M9 38 Q17 36 23 39 M55 38 Q47 36 41 39" stroke="#ffffff35" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+  </>
+
   // ── FINAL BOSS: Biomechanical star fortress ──────────────────────────────
   if (isFinalBoss) {
     return (
@@ -401,6 +541,11 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
         {/* Weapon ring details */}
         <path d="M20 20 L32 16 L44 20" stroke="#ffffff66" strokeWidth="1.6" fill="none" strokeLinecap="round" />
         <path d="M20 44 L32 48 L44 44" stroke="#ffffff44" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+        <path d="M11 23 C20 20 25 25 27 31 C23 29 18 29 12 32 Z M53 23 C44 20 39 25 37 31 C41 29 46 29 52 32 Z" fill="#00000055" />
+        <path d="M13 43 C20 38 25 39 29 43 L25 49 L14 56 Z M51 43 C44 38 39 39 35 43 L39 49 L50 56 Z" fill={spine} />
+        <path d="M32 1 L35 15 H29 Z M63 21 L50 26 L48 20 Z M63 43 L49 39 L47 44 Z M32 63 L29 49 H35 Z M1 43 L17 39 L16 45 Z M1 21 L16 20 L14 27 Z" fill={c} opacity="0.68" />
+        <path d="M8 28 Q19 31 14 42 M56 28 Q45 31 50 42 M20 7 Q25 18 17 26 M44 7 Q39 18 47 26" stroke={c} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.58" />
+        {alienSurfaceDetails}
       </svg>
     )
   }
@@ -417,6 +562,10 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           <circle cx="32" cy="32" r="11" fill={dark} />
           <circle cx="32" cy="32" r="7" fill={eye} opacity="0.85" />
           <circle cx="32" cy="32" r="3.5" fill="#fff" />
+          <path d="M15 15 Q24 22 20 31 M49 15 Q40 22 44 31 M15 49 Q24 42 20 33 M49 49 Q40 42 44 33" stroke={c} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.72" />
+          <path d="M24 8 L32 18 L40 8 M24 56 L32 46 L40 56 M8 24 L18 32 L8 40 M56 24 L46 32 L56 40" stroke="#00000066" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M23 26 L32 21 L41 26 M23 38 L32 43 L41 38" stroke="#ffffff66" strokeWidth="1.25" fill="none" strokeLinecap="round" />
+          {alienSurfaceDetails}
         </svg>
       )
     }
@@ -431,6 +580,10 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           <path d="M20 18 L5 9 L8 26 L20 26 Z M44 18 L59 9 L56 26 L44 26 Z M20 44 L5 57 L10 39 L22 36 Z M44 44 L59 57 L54 39 L42 36 Z" fill={spine} />
           <ellipse cx="32" cy="22" rx="8" ry="6" fill={eye} opacity="0.78" />
           <circle cx="32" cy="22" r="3" fill="#fff" />
+          <path d="M14 24 Q25 33 18 43 M50 24 Q39 33 46 43 M23 42 Q32 50 41 42" stroke={c} strokeWidth="2.1" fill="none" strokeLinecap="round" opacity="0.72" />
+          <path d="M25 14 L32 9 L39 14 M25 28 L32 34 L39 28 M24 43 L32 38 L40 43" stroke="#ffffff55" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+          <path d="M11 10 L4 2 L7 16 M53 10 L60 2 L57 16 M9 55 L2 62 L15 57 M55 55 L62 62 L49 57" stroke={c} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.58" />
+          {alienSurfaceDetails}
         </svg>
       )
     }
@@ -444,6 +597,11 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           <path d="M23 20 L4 7 L7 25 L20 35 Z M41 20 L60 7 L57 25 L44 35 Z M18 35 L2 54 L15 50 L26 38 Z M46 35 L62 54 L49 50 L38 38 Z" fill={spine} />
           <path d="M5 8 L20 33 M59 8 L44 33" stroke={c} strokeWidth="2.4" strokeLinecap="round" opacity="0.75" />
           <ellipse cx="32" cy="25" rx="8" ry="6" fill={eye} opacity="0.76" />
+          <path d="M8 7 L2 1 L4 14 M56 7 L62 1 L60 14 M2 54 L10 45 M62 54 L54 45" stroke={c} strokeWidth="2.1" strokeLinecap="round" opacity="0.72" />
+          <path d="M16 27 L28 33 M48 27 L36 33 M23 43 L32 54 L41 43" stroke="#00000066" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M27 18 L32 12 L37 18 M28 35 L32 39 L36 35" stroke="#ffffff5e" strokeWidth="1.25" fill="none" strokeLinecap="round" />
+          <path d="M20 35 Q12 42 9 55 M44 35 Q52 42 55 55" stroke={c} strokeWidth="1.8" fill="none" strokeLinecap="round" opacity="0.54" />
+          {alienSurfaceDetails}
         </svg>
       )
     }
@@ -458,6 +616,11 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           <circle cx="32" cy="22" r="6" fill={eye} opacity="0.82" />
           <circle cx="46" cy="24" r="5" fill={eye} opacity="0.72" />
           <path d="M18 42 L26 55 H38 L46 42 L39 48 H25 Z" fill={spine} />
+          <path d="M13 31 Q4 36 3 50 M32 34 Q27 43 32 58 Q37 43 32 34 M51 31 Q60 36 61 50" stroke={c} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.7" />
+          <path d="M17 17 L12 7 L23 14 M32 16 L32 4 M47 17 L52 7 L41 14" stroke="#00000066" strokeWidth="3" strokeLinecap="round" />
+          <path d="M18 28 L25 34 M32 28 L32 38 M46 28 L39 34" stroke="#ffffff66" strokeWidth="1.15" strokeLinecap="round" />
+          <path d="M8 38 L2 44 L5 48 M56 38 L62 44 L59 48" stroke={c} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.62" />
+          {alienSurfaceDetails}
         </svg>
       )
     }
@@ -471,6 +634,11 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           <rect x="25" y="9" width="14" height="46" rx="3" fill={dark} />
           <circle cx="32" cy="32" r="11" fill={eye} opacity="0.7" />
           <circle cx="32" cy="32" r="5" fill="#fff" opacity="0.92" />
+          <path d="M8 9 L2 2 L5 18 M56 9 L62 2 L59 18 M8 55 L2 62 L5 46 M56 55 L62 62 L59 46" stroke={c} strokeWidth="2.2" fill="none" strokeLinecap="round" opacity="0.7" />
+          <path d="M14 20 H50 M14 44 H50 M18 15 L25 28 M46 15 L39 28 M18 49 L25 36 M46 49 L39 36" stroke="#00000066" strokeWidth="3" strokeLinecap="round" />
+          <path d="M22 25 L32 17 L42 25 M22 39 L32 47 L42 39" stroke="#ffffff55" strokeWidth="1.25" fill="none" strokeLinecap="round" />
+          <path d="M9 31 H2 M55 31 H62" stroke={c} strokeWidth="3" strokeLinecap="round" opacity="0.78" />
+          {alienSurfaceDetails}
         </svg>
       )
     }
@@ -503,6 +671,10 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
         <rect x="10" y="49" width="13" height="6" rx="3" fill="#5c3872" />
         <rect x="26" y="52" width="12" height="6" rx="3" fill="#5c3872" />
         <rect x="41" y="49" width="13" height="6" rx="3" fill="#5c3872" />
+        <path d="M9 18 L1 9 L4 27 M55 18 L63 9 L60 27 M13 47 L4 59 L18 53 M51 47 L60 59 L46 53" stroke={c} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.64" />
+        <path d="M19 20 L32 14 L45 20 M17 37 L32 44 L47 37" stroke="#ffffff55" strokeWidth="1.25" fill="none" strokeLinecap="round" />
+        <path d="M6 32 C17 26 22 29 26 34 M58 32 C47 26 42 29 38 34" stroke="#00000066" strokeWidth="3" fill="none" strokeLinecap="round" />
+        {alienSurfaceDetails}
       </svg>
     )
   }
@@ -529,6 +701,10 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           {/* Central eye */}
           <ellipse cx="32" cy="32" rx="9" ry="7" fill={eye} opacity="0.75" />
           <circle cx="32" cy="32" r="3.5" fill="#ffffff" opacity="0.9" />
+          <path d="M14 25 Q24 29 20 37 M50 25 Q40 29 44 37" stroke="#00000066" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M14 15 L4 5 M50 15 L60 5 M12 49 L2 61 M52 49 L62 61" stroke={c} strokeWidth="2" strokeLinecap="round" opacity="0.68" />
+          <path d="M22 26 L32 22 L42 26 M22 40 L32 44 L42 40" stroke="#ffffff55" strokeWidth="1.1" fill="none" strokeLinecap="round" />
+          {alienSurfaceDetails}
         </svg>
       )
 
@@ -554,6 +730,10 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           {/* Eye */}
           <ellipse cx="32" cy="30" rx="8" ry="6" fill={eye} opacity="0.72" />
           <circle cx="32" cy="30" r="3.2" fill="#ffffff" opacity="0.88" />
+          <path d="M8 39 L1 53 L13 45 M56 39 L63 53 L51 45" fill={dark} />
+          <path d="M9 15 Q23 21 24 34 M55 15 Q41 21 40 34" stroke="#00000066" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M15 19 L5 13 M49 19 L59 13 M22 42 L14 53 M42 42 L50 53" stroke={c} strokeWidth="1.8" strokeLinecap="round" opacity="0.7" />
+          {alienSurfaceDetails}
         </svg>
       )
 
@@ -576,6 +756,10 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           {/* Eye / sensor */}
           <circle cx="32" cy="30" r="5.5" fill={eye} opacity="0.8" />
           <circle cx="32" cy="30" r="2.5" fill="#ffffff" opacity="0.94" />
+          <path d="M13 29 Q22 34 15 45 M51 29 Q42 34 49 45" stroke="#00000066" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M10 12 L3 5 M54 12 L61 5 M8 47 L2 58 M56 47 L62 58" stroke={c} strokeWidth="2" strokeLinecap="round" opacity="0.66" />
+          <path d="M23 24 L32 18 L41 24 M24 42 L32 48 L40 42" stroke="#ffffff55" strokeWidth="1.1" fill="none" strokeLinecap="round" />
+          {alienSurfaceDetails}
         </svg>
       )
 
@@ -600,6 +784,10 @@ export function AlienShip({ variant, isBoss, isFinalBoss, bossKind, color, size 
           {/* Core eye */}
           <ellipse cx="32" cy="32" rx="7" ry="5.5" fill={eye} opacity="0.78" />
           <circle cx="32" cy="32" r="3" fill="#ffffff" opacity="0.88" />
+          <path d="M19 20 Q29 28 22 42 M45 20 Q35 28 42 42" stroke="#00000066" strokeWidth="2.8" fill="none" strokeLinecap="round" />
+          <path d="M10 12 L2 4 M54 12 L62 4 M10 52 L2 60 M54 52 L62 60" stroke={c} strokeWidth="1.9" strokeLinecap="round" opacity="0.72" />
+          <path d="M25 25 L32 20 L39 25 M25 39 L32 44 L39 39" stroke="#ffffff55" strokeWidth="1.05" fill="none" strokeLinecap="round" />
+          {alienSurfaceDetails}
         </svg>
       )
   }

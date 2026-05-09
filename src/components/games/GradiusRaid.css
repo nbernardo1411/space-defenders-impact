@@ -333,18 +333,18 @@
   position: absolute;
   bottom: -12px;
   left: 50%;
-  width: 30px;
-  height: 34px;
+  width: 18px;
+  height: 36px;
   transform: translateX(-50%);
   background:
-    radial-gradient(ellipse at 28% 0%, rgba(255, 255, 255, 0.95) 0 9%, rgba(103, 232, 249, 0.88) 10% 22%, rgba(239, 35, 60, 0.46) 34%, transparent 72%),
-    radial-gradient(ellipse at 72% 0%, rgba(255, 255, 255, 0.95) 0 9%, rgba(103, 232, 249, 0.88) 10% 22%, rgba(239, 35, 60, 0.46) 34%, transparent 72%),
-    radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.88) 0 7%, rgba(239, 35, 60, 0.54) 18%, transparent 68%);
-  clip-path: polygon(0 0, 100% 0, 82% 72%, 50% 100%, 18% 72%);
-  filter: blur(0.35px);
-  opacity: 0.92;
+    radial-gradient(ellipse at 34% 0%, rgba(255, 255, 255, 0.95) 0 8%, rgba(103, 232, 249, 0.84) 10% 23%, rgba(239, 35, 60, 0.4) 36%, transparent 72%),
+    radial-gradient(ellipse at 66% 0%, rgba(255, 255, 255, 0.95) 0 8%, rgba(103, 232, 249, 0.84) 10% 23%, rgba(239, 35, 60, 0.4) 36%, transparent 72%),
+    radial-gradient(ellipse at 50% 16%, rgba(255, 255, 255, 0.78) 0 6%, rgba(239, 35, 60, 0.44) 20%, transparent 70%);
+  clip-path: polygon(14% 0, 86% 0, 68% 74%, 50% 100%, 32% 74%);
+  filter: blur(0.28px);
+  opacity: 0.86;
   z-index: -1;
-  box-shadow: 0 0 16px rgba(239, 35, 60, 0.42), 0 0 18px rgba(103, 232, 249, 0.2);
+  box-shadow: 0 0 12px rgba(239, 35, 60, 0.36), 0 0 12px rgba(103, 232, 249, 0.16);
   animation: raidEngine 0.13s linear infinite alternate;
 }
 
@@ -1313,10 +1313,10 @@
 
   .raid__engine {
     bottom: -8px;
-    width: 24px;
-    height: 26px;
-    opacity: 0.88;
-    filter: blur(0.3px);
+    width: 14px;
+    height: 28px;
+    opacity: 0.82;
+    filter: blur(0.24px);
   }
 
   .raid__option {

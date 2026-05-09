@@ -150,6 +150,7 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'laser', name: 'Night Lance', role: 'Sharper beam control', speed: 1.03, hp: 5, fireRate: 1.12 },
   { key: 'dreadnought', name: 'Obsidian Ark', role: 'Heavy survival hull', speed: 0.82, hp: 8, fireRate: 0.86 },
   { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.12, hp: 5, fireRate: 1.14 },
+  { key: 'spaceEt', name: 'Space ET', role: 'Stealth raptor spacefighter', speed: 1.08, hp: 5, fireRate: 1.1 },
 ]
 
 const BRIEFING_PANELS = [
@@ -192,6 +193,13 @@ const EMPTY_WEAPON_TIMERS: Record<WeaponKey, number> = {
   scatter: 0,
   rocket: 0,
   homing: 0,
+}
+
+function getShipSpriteSize(shipKey: string, context: 'player' | 'option' | 'picker') {
+  if (shipKey === 'dreadnought') return context === 'player' ? 88 : context === 'option' ? 40 : 76
+  if (shipKey === 'spaceEt') return context === 'player' ? 84 : context === 'option' ? 38 : 72
+  if (shipKey === 'xwing') return context === 'player' ? 78 : context === 'option' ? 36 : 68
+  return context === 'player' ? 74 : context === 'option' ? 34 : 64
 }
 
 const WEAPON_STACK_CAPS: Record<WeaponKey, number> = {
@@ -1443,7 +1451,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const forcePips = Array.from({ length: FORCE_FIELD_ARMOR }, (_, index) => index < player.forceField)
   const weaponEntries = (Object.keys(player.weapons) as WeaponKey[]).filter((key) => player.weapons[key] > 0)
   const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
-  const optionShipSize = player.ship.key === 'dreadnought' ? 40 : player.ship.key === 'xwing' ? 36 : 34
+  const optionShipSize = getShipSpriteSize(player.ship.key, 'option')
   const briefing = BRIEFING_PANELS[briefingStep] ?? BRIEFING_PANELS[0]
   const stageClearProgress = snapshot.stageClear > 0 ? 1 - snapshot.stageClear / STAGE_CLEAR_SECONDS : 0
   const stageFlashOpacity =
@@ -1576,7 +1584,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           ].join(' ')}
           style={{ left: `${player.x}%`, top: `${player.y}%` }}
         >
-          <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={player.ship.key === 'dreadnought' ? 88 : player.ship.key === 'xwing' ? 78 : 74} />
+          <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={getShipSpriteSize(player.ship.key, 'player')} />
           <span className="raid__engine" />
         </div>
         {player.optionTimer > 0 && (
@@ -1687,7 +1695,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
                   className={selectedShipKey === ship.key ? 'raid__ship-card raid__ship-card--active' : 'raid__ship-card'}
                   onClick={() => chooseShip(ship)}
                 >
-                  <TowerShip tType={ship.key} color={PLAYER_COLOR} size={ship.key === 'dreadnought' ? 76 : ship.key === 'xwing' ? 68 : 64} />
+                  <TowerShip tType={ship.key} color={PLAYER_COLOR} size={getShipSpriteSize(ship.key, 'picker')} />
                   <span>{ship.name}</span>
                   <small>{ship.role}</small>
                 </button>
