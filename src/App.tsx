@@ -1,7 +1,7 @@
 import './App.css'
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed — kept for prop compatibility)
 const DEFAULT_COINS = [
@@ -41,6 +41,65 @@ function App() {
 
   const currentScene = useMemo(() => CUTSCENE_SCENES[cutsceneIndex], [cutsceneIndex])
 
+  // =========================
+  // MENU BGM CONTROL
+  // =========================
+  const bgmRef = useRef<HTMLAudioElement | null>(null)
+  const hasInteractedRef = useRef(false)
+
+  // init audio
+  useEffect(() => {
+    const audio = new Audio('/audio/bgm_shelter.wav')
+    audio.loop = true
+    audio.volume = 0.5
+
+    bgmRef.current = audio
+
+    return () => {
+      audio.pause()
+      bgmRef.current = null
+    }
+  }, [])
+
+  // detect first interaction (required by browser)
+  useEffect(() => {
+    const unlockAudio = () => {
+      hasInteractedRef.current = true
+
+      const bgm = bgmRef.current
+      if (bgm && screen === 'title') {
+        bgm.play().catch(() => {})
+      }
+
+      window.removeEventListener('click', unlockAudio)
+      window.removeEventListener('keydown', unlockAudio)
+    }
+
+    window.addEventListener('click', unlockAudio)
+    window.addEventListener('keydown', unlockAudio)
+
+    return () => {
+      window.removeEventListener('click', unlockAudio)
+      window.removeEventListener('keydown', unlockAudio)
+    }
+  }, [screen])
+
+  // control music when switching screens
+  useEffect(() => {
+    const bgm = bgmRef.current
+    if (!bgm) return
+
+    if (screen === 'title') {
+      if (hasInteractedRef.current) {
+        bgm.play().catch(() => {})
+      }
+    } else {
+      bgm.pause()
+    }
+  }, [screen])
+  // =========================
+  // CUTSCENE TIMER LOGIC
+  // =========================
   useEffect(() => {
     if (screen !== 'cutscene') return
 
@@ -101,12 +160,12 @@ function App() {
           <div className="start-screen__ship start-screen__ship--enemy" />
           <div className="start-screen__ship start-screen__ship--enemy2" />
         </div>
+
         <div className="start-screen__content">
           <div className="start-screen__eyebrow">Orbital Command Simulation</div>
           <h1>Space Impact Defense</h1>
-          <p>
-            Deploy warships. Defend Earth. Break alien fleets across shifting space lanes.
-          </p>
+          <p>Deploy warships. Defend Earth. Break alien fleets across shifting space lanes.</p>
+
           <div className="start-screen__actions">
             <button className="start-screen__button" onClick={startCutscene}>
               Normal Campaign
@@ -132,34 +191,45 @@ function App() {
         <div className="cutscene__hazard cutscene__hazard--one" />
         <div className="cutscene__hazard cutscene__hazard--two" />
         <div className="cutscene__hazard cutscene__hazard--three" />
+
         <div className="cutscene__fleet cutscene__fleet--allied">
           <div className="cutscene__vessel cutscene__vessel--capital" />
           <div className="cutscene__vessel cutscene__vessel--escort" />
         </div>
+
         <div className="cutscene__fleet cutscene__fleet--hostile">
           <div className="cutscene__vessel cutscene__vessel--raider" />
           <div className="cutscene__vessel cutscene__vessel--mothership" />
         </div>
+
         <div className="cutscene__hud">
           <div className="cutscene__tag">Command Feed</div>
           <button className="cutscene__skip" onClick={() => setScreen('game')}>
             Skip Briefing
           </button>
         </div>
+
         <div className="cutscene__content">
           <div className="cutscene__eyebrow">{currentScene.eyebrow}</div>
           <h2>{currentScene.title}</h2>
           <p>{currentScene.text}</p>
+
           <div className="cutscene__meta">
             <div className="cutscene__progress">
               {CUTSCENE_SCENES.map((scene, index) => (
                 <span
                   key={scene.title}
-                  className={index === cutsceneIndex ? 'cutscene__dot cutscene__dot--active' : 'cutscene__dot'}
+                  className={
+                    index === cutsceneIndex
+                      ? 'cutscene__dot cutscene__dot--active'
+                      : 'cutscene__dot'
+                  }
                 />
               ))}
             </div>
-            <div className="cutscene__hint">Press Enter, Space, or Esc to deploy immediately</div>
+            <div className="cutscene__hint">
+              Press Enter, Space, or Esc to deploy immediately
+            </div>
           </div>
         </div>
       </div>
