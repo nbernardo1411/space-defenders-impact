@@ -661,9 +661,19 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     }
   }, [])
 
-  const resetGame = useCallback((startStage = 1) => {
+  const resetGame = useCallback((startStage = 1, fullyBuffed = false) => {
     const stage = clamp(startStage, 1, MAX_RAID_STAGE)
     playerRef.current = getInitialPlayer(selectedShipRef.current)
+    if (fullyBuffed) {
+  const p = playerRef.current
+  ;(Object.keys(WEAPON_STACK_CAPS) as WeaponKey[]).forEach((key) => {
+    p.weapons[key] = WEAPON_STACK_CAPS[key]
+  })
+  p.optionTimer = 1
+  p.shield = 8
+  p.forceField = FORCE_FIELD_ARMOR
+  p.hp = p.maxHp
+    }
     shotsRef.current = []
     enemyShotsRef.current = []
     enemiesRef.current = []
@@ -2195,9 +2205,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             </div>
             <div className="raid__pause-actions">
               {(snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
-                <button type="button" className="raid__start" onClick={() => resetGame(checkpointStage)}>
-                  Continue Stage {checkpointStage}
-                </button>
+<button type="button" className="raid__start" onClick={() => resetGame(checkpointStage, true)}>
+  Continue Stage {checkpointStage}
+</button>
               )}
               <button
                 type="button"
