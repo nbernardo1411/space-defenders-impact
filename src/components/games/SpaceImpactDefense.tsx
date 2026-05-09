@@ -181,6 +181,8 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const coinsRef = useRef(availableCoins)
   useEffect(() => { coinsRef.current = availableCoins }, [availableCoins])
 
+  const isDesktop = window.innerWidth >= 1024;
+
   // ── Resize ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = () => {
@@ -721,7 +723,6 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               dead: false, leaked: false,
             })
           }
-          if (soundOn) playGameSound('whoosh')
         }
         e.destroyCooldown -= dt
         if (e.destroyCooldown > 0) continue
@@ -2333,24 +2334,43 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             )
           })}
 
-          {/* Dreadnought gatling drones */}
-          {uiScoutDrones.map(drone => (
-            <div key={drone.id} style={{
-              position: 'absolute',
-              left: drone.x * cell,
-              top: drone.y * cell,
-              width: 0,
-              height: 0,
-              pointerEvents: 'none',
-              zIndex: 5,
-              transform: `rotate(${drone.angle}deg)`,
-              filter: drone.state === 'attack' ? `drop-shadow(0 0 8px ${DREADNOUGHT_SCOUT_COLOR})` : 'drop-shadow(0 0 5px #7dd3fc)',
-            }}>
-              <div style={{ transform: 'translate(-50%, -50%)' }}>
-                <TowerShip tType="gatling" color={DREADNOUGHT_SCOUT_COLOR} size={Math.max(18, Math.min(22, cell * 0.46))} />
+                    {/* Dreadnought gatling drones */}
+          // Detect desktop size
+
+          {uiScoutDrones.map(drone => {
+            // Keep mobile look, enlarge only on PC
+            const droneSize = isDesktop
+              ? Math.max(26, Math.min(36, cell * 0.62))
+              : Math.max(18, Math.min(22, cell * 0.46));
+
+            return (
+              <div
+                key={drone.id}
+                style={{
+                  position: 'absolute',
+                  left: drone.x * cell,
+                  top: drone.y * cell,
+                  width: 0,
+                  height: 0,
+                  pointerEvents: 'none',
+                  zIndex: 5,
+                  transform: `rotate(${drone.angle}deg)`,
+                  filter:
+                    drone.state === 'attack'
+                      ? `drop-shadow(0 0 8px ${DREADNOUGHT_SCOUT_COLOR})`
+                      : 'drop-shadow(0 0 5px #7dd3fc)',
+                }}
+              >
+                <div style={{ transform: 'translate(-50%, -50%)' }}>
+                  <TowerShip
+                    tType="rocket"
+                    color={DREADNOUGHT_SCOUT_COLOR}
+                    size={droneSize}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Bullets */}
           {uiBullets.map(b => {

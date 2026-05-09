@@ -43,8 +43,8 @@ export type AudioMixSettings = {
 const DEFAULT_AUDIO_MIX: AudioMixSettings = {
   master: 1,
   bgm: 0.8,
-  explosion: 1,
-  beam: 1,
+  explosion: 0.62,
+  beam: 0.48,
   ui: 0.8,
 }
 
@@ -90,6 +90,14 @@ const recentSfxTimesMs: number[] = []
 const lastKindPlayMs: Partial<Record<GameSoundKind, number>> = {}
 
 const MAX_SFX_OUTPUT = 0.78
+const KIND_OUTPUT_GAIN: Partial<Record<GameSoundKind, number>> = {
+  laser: 0.45,
+  rocket: 0.58,
+  artillery: 0.5,
+  explosion: 0.68,
+  explosion_big: 0.6,
+  shoot: 0.78,
+}
 const RECENT_SFX_WINDOW_MS = 240
 const RAPID_FIRE_MIN_INTERVAL_MS: Partial<Record<GameSoundKind, number>> = {
   laser: 32,
@@ -210,11 +218,12 @@ export function setGameAudioMixSettings(settings: Partial<AudioMixSettings>) {
 
 function getKindBusGain(kind: GameSoundKind) {
   const mix = getGameAudioMixSettings()
+  const kindGain = KIND_OUTPUT_GAIN[kind] ?? 1
   if (kind === 'explosion' || kind === 'explosion_big' || kind === 'rocket' || kind === 'artillery') {
-    return mix.master * mix.explosion
+    return mix.master * mix.explosion * kindGain
   }
   if (kind === 'laser') {
-    return mix.master * mix.beam
+    return mix.master * mix.beam * kindGain
   }
   if (
     kind === 'select' ||
@@ -226,9 +235,9 @@ function getKindBusGain(kind: GameSoundKind) {
     kind === 'levelup' ||
     kind === 'gameover'
   ) {
-    return mix.master * mix.ui
+    return mix.master * mix.ui * kindGain
   }
-  return mix.master
+  return mix.master * kindGain
 }
 
 function loadSoundPackConfig(): SoundPackConfig {
@@ -436,63 +445,22 @@ function stopSynthBGM() {
   bgmOscillators = []
 }
 
-function startSynthBGM() {
-  const ctx = getAudioContext()
-  if (!ctx) return
-  stopSynthBGM()
-
-  // Layered sci-fi ambient: deep bass, mid drone, high shimmer.
-  const createBgmLayer = (freq: number, waveType: OscillatorType, volumeStart: number) => {
-    const osc = ctx.createOscillator()
-    osc.type = waveType
-    osc.frequency.setValueAtTime(freq, ctx.currentTime)
-
-    const gain = ctx.createGain()
-    gain.gain.setValueAtTime(volumeStart * 0.12, ctx.currentTime)
-
-    // Pulsing effect with slow LFO for a more cinematic ambience.
-    const lfo = ctx.createOscillator()
-    lfo.frequency.setValueAtTime(0.43, ctx.currentTime)
-    const lfoGain = ctx.createGain()
-    lfoGain.gain.setValueAtTime(volumeStart * 0.075, ctx.currentTime)
-
-    lfo.connect(lfoGain)
-    lfoGain.connect(gain.gain)
-
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-
-    osc.start()
-    lfo.start()
-
-    bgmOscillators.push(osc, lfo)
-  }
-
-  createBgmLayer(55, 'sine', 0.8)
-  createBgmLayer(110, 'triangle', 0.6)
-  createBgmLayer(220, 'sine', 0.5)
-  createBgmLayer(440, 'sine', 0.34)
-}
-
 export function startBGM() {
   if (!getGameSoundEnabled()) return
   try {
     stopBGM()
     const pack = getSoundPackConfig()
-    if (pack.bgm) {
-      const audio = new Audio(pack.bgm)
-      audio.loop = true
-      audio.preload = 'auto'
-      const mix = getGameAudioMixSettings()
-      audio.volume = clamp01((pack.bgmVolume ?? 0.32) * mix.master * mix.bgm)
-      bgmElement = audio
-      void audio.play().catch(() => {
-        // If remote/local BGM fails, fall back to synth BGM.
-        startSynthBGM()
-      })
-      return
-    }
-    startSynthBGM()
+    if (!pack.bgm) return
+
+    const audio = new Audio(pack.bgm)
+    audio.loop = true
+    audio.preload = 'auto'
+    const mix = getGameAudioMixSettings()
+    audio.volume = clamp01((pack.bgmVolume ?? 0.32) * mix.master * mix.bgm)
+    bgmElement = audio
+    void audio.play().catch(() => {
+      // If BGM cannot play, stay silent instead of using the synth fallback.
+    })
   } catch {
     // BGM should never break gameplay
   }

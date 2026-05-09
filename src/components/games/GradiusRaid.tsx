@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { playGameSound, stopBGM } from './sound'
+import { getGameAudioMixSettings, getGameSoundEnabled, playGameSound, stopBGM } from './sound'
 import { AlienShip, TowerShip } from './towerDefense/sprites'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
 type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair'
-type GamePhase = 'select' | 'briefing' | 'playing' | 'paused' | 'gameover'
+type GamePhase = 'select' | 'briefing' | 'playing' | 'paused' | 'gameover' | 'victory'
 type BossMessage = 'incoming' | 'clear' | null
-type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super'
+type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super' | 'final'
+type RaidBgmMode = 'cruise' | 'combat' | 'boss'
 
 type Vec = { x: number; y: number }
 
@@ -66,6 +67,10 @@ type Enemy = Vec & {
   amplitude: number
   trainSlot: number
   pathSpeed: number
+  chargeCooldown: number
+  chargeTimer: number
+  chargeLane: number
+  chargePattern: 'single' | 'scatter'
 }
 
 type FormationStyle = {
@@ -119,12 +124,17 @@ type Snapshot = {
   selectedShipKey: string
   pointer: Vec | null
   stageClear: number
+  unlockedStage: number
 }
 
 const WIDTH = 100
 const HEIGHT = 100
 const PLAYER_RADIUS = 3.2
+const MAX_RAID_STAGE = 15
+const RAID_CHECKPOINTS = [5, 10, 14] as const
 const STORAGE_KEY = 'gradiusRaidHighScore'
+const RAID_UNLOCK_STORAGE_KEY = 'gradiusRaidUnlockedStage'
+const RAID_CHECKPOINT_STORAGE_KEY = 'gradiusRaidCheckpointStage'
 const PLAYER_COLOR = '#ef233c'
 const DARK_ENEMY_COLORS = ['#4c1d95', '#581c87', '#7f1d1d', '#831843', '#312e81', '#164e63', '#3f1d2e', '#1f2937']
 const BOSS_COLORS: Record<BossKind, string> = {
@@ -135,13 +145,12 @@ const BOSS_COLORS: Record<BossKind, string> = {
   hydra: '#4c1d95',
   gate: '#0f172a',
   super: '#3f1d2e',
+  final: '#120617',
 }
-const RAID_BGM_THEMES = [
-  { bass: 55, mid: 110, lead: 220, gain: 0.045 },
-  { bass: 49, mid: 147, lead: 294, gain: 0.047 },
-  { bass: 62, mid: 124, lead: 247, gain: 0.046 },
-  { bass: 41, mid: 123, lead: 330, gain: 0.043 },
-]
+const RAID_DEFAULT_BGM_TRACK = '/audio/bgm_scifi_loop.ogg'
+const RAID_BOSS_BGM_TRACK = '/audio/sfx_boss_battle.wav'
+const RAID_BGM_STAGE_RATES = [0.92, 0.98, 1.04, 1.1]
+const RAID_BOSS_APPROACH_SILENCE_SECONDS = 5.5
 
 const SHIP_OPTIONS: ShipOption[] = [
   { key: 'rocket', name: 'Black Comet', role: 'Balanced missile frame', speed: 1, hp: 6, fireRate: 1 },
@@ -156,8 +165,8 @@ const SHIP_OPTIONS: ShipOption[] = [
 const BRIEFING_PANELS = [
   {
     title: 'Mission',
-    body: 'Break through the alien blockade, survive every stage, and destroy the boss guarding each sector.',
-    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Mobile follows above your finger so your hand does not cover the ship.', 'Every fifth stage is guarded by a larger super boss.'],
+    body: 'Break through the alien blockade, survive all 15 stages, and destroy the final fortress guarding Earth orbit.',
+    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Mobile follows above your finger so your hand does not cover the ship.', 'Stages 5, 10, and 15 are guarded by larger boss threats.'],
   },
   {
     title: 'Weapon Drops',
@@ -251,6 +260,28 @@ function getHighScore() {
 function saveHighScore(score: number) {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, String(score))
+  }
+}
+
+function getUnlockedStage() {
+  if (typeof window === 'undefined') return 1
+  return clamp(Number(localStorage.getItem(RAID_UNLOCK_STORAGE_KEY) || 1), 1, MAX_RAID_STAGE)
+}
+
+function saveUnlockedStage(stage: number) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(RAID_UNLOCK_STORAGE_KEY, String(clamp(stage, 1, MAX_RAID_STAGE)))
+  }
+}
+
+function getCheckpointStage() {
+  if (typeof window === 'undefined') return 1
+  return clamp(Number(localStorage.getItem(RAID_CHECKPOINT_STORAGE_KEY) || 1), 1, MAX_RAID_STAGE)
+}
+
+function saveCheckpointStage(stage: number) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(RAID_CHECKPOINT_STORAGE_KEY, String(clamp(stage, 1, MAX_RAID_STAGE)))
   }
 }
 
@@ -348,9 +379,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const bossMessageRef = useRef<BossMessage>(null)
   const stageClearRef = useRef(0)
   const highScoreRef = useRef(getHighScore())
-  const raidAudioContextRef = useRef<AudioContext | null>(null)
-  const raidBgmOscillatorsRef = useRef<OscillatorNode[]>([])
-  const raidBgmNodesRef = useRef<AudioNode[]>([])
+  const unlockedStageRef = useRef(getUnlockedStage())
+  const raidBgmElementRef = useRef<HTMLAudioElement | null>(null)
+  const raidBgmModeRef = useRef<RaidBgmMode | null>(null)
+  const raidBgmStageRef = useRef(0)
+  const raidBgmTrackRef = useRef<string | null>(null)
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [briefingStep, setBriefingStep] = useState(0)
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
@@ -370,6 +403,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     selectedShipKey: SHIP_OPTIONS[0].key,
     pointer: null,
     stageClear: 0,
+    unlockedStage: unlockedStageRef.current,
   }))
 
   const syncSnapshot = useCallback(() => {
@@ -395,6 +429,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       selectedShipKey: selectedShipRef.current.key,
       pointer: pointerVisualRef.current ? { ...pointerVisualRef.current } : null,
       stageClear: stageClearRef.current,
+      unlockedStage: unlockedStageRef.current,
     })
   }, [])
 
@@ -403,66 +438,61 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   }, [])
 
   const stopRaidBgm = useCallback(() => {
-    raidBgmOscillatorsRef.current.forEach((oscillator) => {
-      try {
-        oscillator.stop()
-      } catch {
-        // Already stopped.
-      }
-    })
-    raidBgmNodesRef.current.forEach((node) => node.disconnect())
-    raidBgmOscillatorsRef.current = []
-    raidBgmNodesRef.current = []
+    if (raidBgmElementRef.current) {
+      raidBgmElementRef.current.pause()
+      raidBgmElementRef.current.currentTime = 0
+      raidBgmElementRef.current = null
+    }
+    raidBgmModeRef.current = null
+    raidBgmStageRef.current = 0
+    raidBgmTrackRef.current = null
   }, [])
 
-  const startRaidBgm = useCallback((stage: number) => {
+  const startRaidBgm = useCallback((stage: number, mode: RaidBgmMode = 'cruise') => {
     if (typeof window === 'undefined') return
-    stopRaidBgm()
-
-    const Context = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!Context) return
-
-    const ctx = raidAudioContextRef.current ?? new Context()
-    raidAudioContextRef.current = ctx
-    if (ctx.state === 'suspended') {
-      void ctx.resume()
+    if (!getGameSoundEnabled()) {
+      stopRaidBgm()
+      return
     }
 
-    const theme = RAID_BGM_THEMES[(stage - 1) % RAID_BGM_THEMES.length]
-    const master = ctx.createGain()
-    master.gain.setValueAtTime(theme.gain, ctx.currentTime)
-    master.connect(ctx.destination)
-    raidBgmNodesRef.current.push(master)
+    const track = mode === 'boss' ? RAID_BOSS_BGM_TRACK : RAID_DEFAULT_BGM_TRACK
+    const trackChanged = raidBgmTrackRef.current !== track
+    if (raidBgmModeRef.current === mode && raidBgmStageRef.current === stage && raidBgmElementRef.current && !trackChanged) return
 
-    const pulse = ctx.createOscillator()
-    const pulseGain = ctx.createGain()
-    pulse.frequency.setValueAtTime(0.55 + (stage % 4) * 0.13, ctx.currentTime)
-    pulseGain.gain.setValueAtTime(theme.gain * 0.7, ctx.currentTime)
-    pulse.connect(pulseGain)
-    pulseGain.connect(master.gain)
-    pulse.start()
-
-    const makeLayer = (freq: number, type: OscillatorType, gainValue: number, detune = 0) => {
-      const oscillator = ctx.createOscillator()
-      const gain = ctx.createGain()
-      oscillator.type = type
-      oscillator.frequency.setValueAtTime(freq, ctx.currentTime)
-      oscillator.detune.setValueAtTime(detune, ctx.currentTime)
-      gain.gain.setValueAtTime(gainValue, ctx.currentTime)
-      oscillator.connect(gain)
-      gain.connect(master)
-      oscillator.start()
-      raidBgmOscillatorsRef.current.push(oscillator)
-      raidBgmNodesRef.current.push(gain)
+    if (trackChanged && raidBgmElementRef.current) {
+      raidBgmElementRef.current.pause()
+      raidBgmElementRef.current.currentTime = 0
+      raidBgmElementRef.current = null
     }
 
-    makeLayer(theme.bass, 'sawtooth', 0.45)
-    makeLayer(theme.mid, 'triangle', 0.2, -6)
-    makeLayer(theme.mid * 1.01, 'triangle', 0.16, 8)
-    makeLayer(theme.lead, 'square', 0.055)
+    const existing = raidBgmElementRef.current
+    const audio = existing ?? new Audio(track)
+    audio.loop = true
+    audio.preload = 'auto'
 
-    raidBgmOscillatorsRef.current.push(pulse)
-    raidBgmNodesRef.current.push(pulseGain)
+    const mix = getGameAudioMixSettings()
+    const modeVolume = mode === 'boss' ? 0.58 : mode === 'combat' ? 0.34 : 0.22
+    const stageRate = RAID_BGM_STAGE_RATES[(stage - 1) % RAID_BGM_STAGE_RATES.length]
+    audio.volume = Math.max(0, Math.min(1, modeVolume * mix.master * mix.bgm))
+    audio.playbackRate = mode === 'boss'
+      ? Math.max(0.95, Math.min(1.18, 1.02 + (stage % 5) * 0.025))
+      : Math.max(0.75, Math.min(1.25, stageRate + (mode === 'combat' ? 0.03 : -0.04)))
+
+    if (!existing) {
+      audio.currentTime = mode === 'boss' ? 0 : ((stage - 1) % 4) * 18
+      raidBgmElementRef.current = audio
+    } else if (raidBgmStageRef.current !== stage) {
+      audio.currentTime = mode === 'boss' ? 0 : ((stage - 1) % 4) * 18
+    }
+    raidBgmModeRef.current = mode
+    raidBgmStageRef.current = stage
+    raidBgmTrackRef.current = track
+
+    void audio.play().catch(() => {
+      raidBgmModeRef.current = null
+      raidBgmStageRef.current = 0
+      raidBgmTrackRef.current = null
+    })
   }, [stopRaidBgm])
 
   const drawFxCanvas = useCallback(() => {
@@ -631,7 +661,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     }
   }, [])
 
-  const resetGame = useCallback(() => {
+  const resetGame = useCallback((startStage = 1) => {
+    const stage = clamp(startStage, 1, MAX_RAID_STAGE)
     playerRef.current = getInitialPlayer(selectedShipRef.current)
     shotsRef.current = []
     enemyShotsRef.current = []
@@ -640,11 +671,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     sparksRef.current = []
     ripplesRef.current = []
     phaseRef.current = 'playing'
-    stageRef.current = 1
-    waveRef.current = 1
+    stageRef.current = stage
+    waveRef.current = stage
     spawnTimerRef.current = 1.25
     formationTimerRef.current = 3.4
-    bossTimerRef.current = 36
+    bossTimerRef.current = stage === MAX_RAID_STAGE ? 24 : 36
     spawnLockRef.current = 0
     powerDropCooldownRef.current = 0
     killsSincePowerRef.current = 0
@@ -652,8 +683,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     bossMessageRef.current = null
     stageClearRef.current = 0
     highScoreRef.current = getHighScore()
+    unlockedStageRef.current = getUnlockedStage()
     stopBGM()
-    startRaidBgm(stageRef.current)
+    startRaidBgm(stageRef.current, 'cruise')
     syncSnapshot()
   }, [startRaidBgm, syncSnapshot])
 
@@ -683,7 +715,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (phaseRef.current !== 'paused') return
     phaseRef.current = 'playing'
     lastTimeRef.current = performance.now()
-    startRaidBgm(stageRef.current)
+    startRaidBgm(
+      stageRef.current,
+      enemiesRef.current.some((enemy) => enemy.isBoss) ? 'boss' : enemiesRef.current.length > 0 ? 'combat' : 'cruise',
+    )
     syncSnapshot()
   }, [startRaidBgm, syncSnapshot])
 
@@ -699,11 +734,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
     const baseDamage = 1 + Math.floor(player.rank / 3)
     const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
+    const shipKey = player.ship.key
+
     const emitters = [{ x: player.x, y: player.y, scale: 1, main: true }]
-    const firingWeapons = (Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).reduce((ready, key) => {
-      ready[key] = stacks[key] > 0 && player.weaponCooldowns[key] <= 0
-      return ready
-    }, { ...EMPTY_WEAPON_FLAGS })
     if (player.optionTimer > 0) {
       emitters.push(
         { x: clamp(player.x - optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72, main: false },
@@ -711,53 +744,364 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       )
     }
 
+    const firingWeapons = (Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).reduce((ready, key) => {
+      ready[key] = stacks[key] > 0 && player.weaponCooldowns[key] <= 0
+      return ready
+    }, { ...EMPTY_WEAPON_FLAGS })
+
     emitters.forEach((emitter) => {
       const damage = Math.max(1, Math.ceil(baseDamage * emitter.scale))
-      pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -96, damage, kind: 'pulse', radius: 1.35 })
 
-      if (firingWeapons.spread) {
-        const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
-        fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
-      }
-
-      if (firingWeapons.laser) {
-        const side = stacks.laser >= 2 ? 1.6 : 0
-        pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
-        if (stacks.laser >= 3) {
-          pushShot({ x: emitter.x + side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.65, pierce: 2 })
+      // ── BLACK COMET: original default attack ──
+      if (shipKey === 'rocket') {
+        pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -96, damage, kind: 'pulse', radius: 1.35 })
+        if (firingWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
         }
-      }
-
-      if (firingWeapons.scatter) {
-        const count = Math.min(8, 2 + stacks.scatter * 2)
-        for (let i = 0; i < count; i += 1) {
-          const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
-          pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+        if (firingWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
+          if (stacks.laser >= 3) {
+            pushShot({ x: emitter.x + side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.65, pierce: 2 })
+          }
         }
-      }
-
-      if (firingWeapons.rocket) {
-        const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
-        offsets.forEach((offset) => {
-          pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
-        })
-      }
-
-      if (emitter.main && firingWeapons.homing) {
-        const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
-        salvoOffsets.forEach((offset, index) => {
-          const side = offset < 0 ? -1 : 1
-          pushShot({
-            x: emitter.x + offset,
-            y: emitter.y + (index < 2 ? -1.8 : 0.8),
-            vx: side * (28 + index * 4),
-            vy: -46 - index * 4,
-            damage: Math.ceil((baseDamage + 4) * emitter.scale),
-            kind: 'homing',
-            radius: 2.1,
-            turn: 5.2,
+        if (firingWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+          }
+        }
+        if (firingWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
           })
+        }
+        if (emitter.main && firingWeapons.homing) {
+          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+          })
+        }
+      }
+
+      // ── RED WRAITH: rapid twin needle streams ──
+      else if (shipKey === 'fast') {
+        pushShot({ x: emitter.x - 1.2, y: emitter.y - 3, vx: -3, vy: -110, damage, kind: 'needle' as any, radius: 1.1 })
+        pushShot({ x: emitter.x + 1.2, y: emitter.y - 3, vx: 3, vy: -110, damage, kind: 'needle' as any, radius: 1.1 })
+        if (firingWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
+        }
+        if (firingWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
+          if (stacks.laser >= 3) {
+            pushShot({ x: emitter.x + side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.65, pierce: 2 })
+          }
+        }
+        if (firingWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+          }
+        }
+        if (firingWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
+          })
+        }
+        if (emitter.main && firingWeapons.homing) {
+          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+          })
+        }
+      }
+
+      // ── CRIMSON SAW: dual side-by-side gatling cannons ──
+      else if (shipKey === 'gatling') {
+        // left cannon
+        pushShot({ x: emitter.x - 3.2, y: emitter.y - 3, vx: -2, vy: -98, damage, kind: 'pulse', radius: 1.25 })
+        // right cannon
+        pushShot({ x: emitter.x + 3.2, y: emitter.y - 3, vx: 2, vy: -98, damage, kind: 'pulse', radius: 1.25 })
+        if (firingWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
+        }
+        if (firingWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
+          if (stacks.laser >= 3) {
+            pushShot({ x: emitter.x + side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.65, pierce: 2 })
+          }
+        }
+        if (firingWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+          }
+        }
+        if (firingWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
+          })
+        }
+        if (emitter.main && firingWeapons.homing) {
+          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+          })
+        }
+      }
+
+      // ── NIGHT LANCE: single thick slow piercing laser ray ──
+      else if (shipKey === 'laser') {
+        pushShot({
+          x: emitter.x,
+          y: emitter.y - 4,
+          vx: 0,
+          vy: -55, // fast moving beam pulse
+          damage: Math.ceil((baseDamage + 8 + stacks.laser * 2) * emitter.scale),
+          kind: 'laser',
+          radius: 7.5,   // thick kamehameha-style beam
+          pierce: 4,     // pierces a few enemies only
         })
+        const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+          })
+        if (firingWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
+        }
+        if (firingWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
+          if (stacks.laser >= 3) {
+            pushShot({ x: emitter.x + side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.65, pierce: 2 })
+          }
+        }
+        if (firingWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+          }
+        }
+        if (firingWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
+          })
+        }
+      }
+
+      // ── OBSIDIAN ARK: slow heavy rocket core ──
+      else if (shipKey === 'dreadnought') {
+        // CORE WEAPON (this was missing)
+        pushShot({
+          x: emitter.x,
+          y: emitter.y - 4,
+          vx: 0,
+          vy: -72, // slow heavy missile feel
+          damage: Math.ceil((baseDamage + 6) * emitter.scale),
+          kind: 'rocket',
+          radius: 3.2,
+        })
+
+        if (firingWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) =>
+            pushShot({
+              x: emitter.x,
+              y: emitter.y - 2.8,
+              vx,
+              vy: -86,
+              damage,
+              kind: 'spread',
+              radius: 1.35
+            })
+          )
+        }
+
+        if (firingWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({
+            x: emitter.x - side,
+            y: emitter.y - 5,
+            vx: 0,
+            vy: -132,
+            damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale),
+            kind: 'laser',
+            radius: 1.85,
+            pierce: 1 + stacks.laser
+          })
+
+          if (stacks.laser >= 3) {
+            pushShot({
+              x: emitter.x + side,
+              y: emitter.y - 5,
+              vx: 0,
+              vy: -132,
+              damage: Math.ceil((baseDamage + 2) * emitter.scale),
+              kind: 'laser',
+              radius: 1.65,
+              pierce: 2
+            })
+          }
+        }
+
+        if (firingWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+
+            pushShot({
+              x: emitter.x,
+              y: emitter.y - 1.5,
+              vx: Math.cos(angle) * 82,
+              vy: Math.sin(angle) * 82,
+              damage,
+              kind: 'scatter',
+              radius: 1.2
+            })
+          }
+        }
+
+        if (firingWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
+
+          offsets.forEach((offset) => {
+            pushShot({
+              x: emitter.x + offset,
+              y: emitter.y - 1,
+              vx: offset * 1.2,
+              vy: -62,
+              damage: Math.ceil((baseDamage + 8 + stacks.rocket * 2) * emitter.scale),
+              kind: 'rocket',
+              radius: 3.8
+            })
+          })
+        }
+
+        if (emitter.main && firingWeapons.homing) {
+          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+
+            pushShot({
+              x: emitter.x + offset,
+              y: emitter.y + (index < 2 ? -1.8 : 0.8),
+              vx: side * (22 + index * 3),
+              vy: -40 - index * 3,
+              damage: Math.ceil((baseDamage + 4) * emitter.scale),
+              kind: 'homing',
+              radius: 2.1,
+              turn: 5.2
+            })
+          })
+        }
+      }
+      
+      // ── CROSSWING NOVA: tri-beam shotgun ──
+      else if (shipKey === 'xwing') {
+        const spread = stacks.spread >= 2 ? 0.32 : stacks.spread >= 1 ? 0.22 : 0.14
+        // three wide beams per shot
+        pushShot({ x: emitter.x, y: emitter.y - 4, vx: 0, vy: -106, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.2, pierce: 1 + stacks.laser })
+        pushShot({ x: emitter.x, y: emitter.y - 3, vx: -Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any,radius: 0.85})
+        pushShot({ x: emitter.x, y: emitter.y - 3, vx: Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any,radius: 0.85})
+        if (firingWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
+        }
+        if (firingWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
+          if (stacks.laser >= 3) {
+            pushShot({ x: emitter.x + side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.65, pierce: 2 })
+          }
+        }
+        if (firingWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+          }
+        }
+        if (firingWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
+          })
+        }
+        if (emitter.main && firingWeapons.homing) {
+          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+          })
+        }
+      }
+
+      // ── SPACE ET: single thin fast green laser line ──
+      else if (shipKey === 'spaceEt') {
+        pushShot({
+          x: emitter.x,
+          y: emitter.y - 3.6,
+          vx: 0,
+          vy: -168,  // fastest shot in the game
+          damage,
+          kind: 'needle' as any,
+          radius: 0.85,  // thin
+        })
+        if (firingWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
+        }
+        if (firingWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
+          if (stacks.laser >= 3) {
+            pushShot({ x: emitter.x + side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.65, pierce: 2 })
+          }
+        }
+        if (firingWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
+          }
+        }
+        if (firingWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-4.2, 4.2] : [0]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
+          })
+        }
+        if (emitter.main && firingWeapons.homing) {
+          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+          })
+        }
+      }
+      // ── FALLBACK ──
+      else {
+        pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -96, damage, kind: 'pulse', radius: 1.35 })
       }
     })
 
@@ -768,8 +1112,17 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       }
     })
 
-    player.fireCooldown = Math.max(0.052, (0.12 - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
-    playGameSound(stacks.laser > 0 ? 'laser' : 'shoot')
+    const baseInterval =
+      shipKey === 'fast' ? 0.072 :       // Red Wraith — very rapid
+      shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
+      shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
+      shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
+      shipKey === 'spaceEt' ? 0.072 :    // Space ET — fastest
+      shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
+      0.12                               // Black Comet — default
+
+    player.fireCooldown = Math.max(0.042, (baseInterval - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
+    playGameSound(stacks.laser > 0 || shipKey === 'laser' || shipKey === 'xwing' ? 'laser' : 'shoot')
   }, [pushShot])
 
   const spawnEnemyAt = useCallback((x: number, y: number, wave: number, pattern: number, trainSlot = 0, style?: FormationStyle) => {
@@ -798,6 +1151,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       amplitude: style?.amplitude ?? (8 + Math.random() * 14),
       trainSlot,
       pathSpeed: style?.pathSpeed ?? (0.06 + Math.random() * 0.035),
+      chargeCooldown: 999,
+      chargeTimer: 0,
+      chargeLane: 50,
+      chargePattern: 'single',
     })
   }, [])
 
@@ -830,8 +1187,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     const player = playerRef.current
     const powerScore = getPowerScore(playerRef.current)
     const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
-    const bossKind: BossKind = stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
+    const bossKind: BossKind = stage === MAX_RAID_STAGE ? 'final' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
+      bossKind === 'final' ? 8.8 :
       bossKind === 'super' ? 3.45 :
       bossKind === 'gate' ? 1.75 :
       bossKind === 'hydra' ? 1.62 :
@@ -840,8 +1198,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       bossKind === 'orb' ? 1.3 :
       1.16
     const stagePressure = Math.max(0, stage - 1)
-    const hp = Math.round((360 + wave * 74 + stagePressure * 135 + powerScore * 48) * hpMultiplier)
+    const hp = Math.round((1450 + wave * 180 + stagePressure * 320 + powerScore * 90) * hpMultiplier)
     const radius =
+      bossKind === 'final' ? 25 :
       bossKind === 'super' ? 21 :
       bossKind === 'gate' ? 15 :
       bossKind === 'hydra' ? 14 :
@@ -851,9 +1210,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     enemiesRef.current.push({
       id: enemyId++,
       x: 50,
-      y: bossKind === 'super' || bossKind === 'gate' ? -24 : -16,
+      y: bossKind === 'final' ? -30 : bossKind === 'super' || bossKind === 'gate' ? -24 : -16,
       vx: 0,
-      vy: bossKind === 'super' || bossKind === 'gate' ? 5.3 : 7,
+      vy: bossKind === 'final' ? 4.4 : bossKind === 'super' || bossKind === 'gate' ? 5.3 : 7,
       hp,
       maxHp: hp,
       radius,
@@ -862,21 +1221,26 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       fireCooldown: Math.max(0.75, 1 - stagePressure * 0.025),
       phase: Math.random() * Math.PI * 2,
       color: BOSS_COLORS[bossKind],
-      pattern: bossKind === 'super' ? 6 : bossCycle.indexOf(bossKind),
+      pattern: bossKind === 'final' ? 9 : bossKind === 'super' ? 6 : bossCycle.indexOf(bossKind),
       bossKind,
-      shieldTime: (bossKind === 'super' || bossKind === 'gate' ? 5.4 : 3.8) + Math.min(2.2, stagePressure * 0.18),
+      shieldTime: (bossKind === 'final' ? 7.4 : bossKind === 'super' || bossKind === 'gate' ? 5.4 : 3.8) + Math.min(2.2, stagePressure * 0.18),
       originX: 50,
-      amplitude: bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
+      amplitude: bossKind === 'final' ? 34 : bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
       trainSlot: 0,
       pathSpeed: 0.05,
+      chargeCooldown: bossKind === 'final' ? 3.2 : 999,
+      chargeTimer: 0,
+      chargeLane: 50,
+      chargePattern: 'single',
     })
     if (player.forceField > 0) {
       player.forceField = Math.min(FORCE_FIELD_ARMOR, player.forceField + 1)
     }
     bossAlertRef.current = 2.7
     bossMessageRef.current = 'incoming'
+    startRaidBgm(stage, 'boss')
     playGameSound('countdown')
-  }, [])
+  }, [startRaidBgm])
 
   const spawnPowerUp = useCallback((x: number, y: number, guaranteed = false) => {
     const player = playerRef.current
@@ -1019,11 +1383,19 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: Math.cos(angle) * 22, vy: Math.sin(angle) * 22 + 20, damage: 1, kind: 'orbShot', radius: 1.7 })
         }
       }
+      if (kind === 'final') {
+        const fan = [-42, -28, -14, 0, 14, 28, 42]
+        fan.forEach((vx, index) => enemyShotsRef.current.push({ id: shotId++, x: enemy.x + (index - 3) * 1.6, y: enemy.y + 11, vx, vy: 38, damage: 1, kind: 'superShot', radius: 2.15 }))
+        for (let i = 0; i < 10; i += 1) {
+          const angle = (i / 10) * Math.PI * 2 + performance.now() / 720
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: Math.cos(angle) * 28, vy: Math.sin(angle) * 24 + 24, damage: 1, kind: i % 3 === 0 ? 'voidShot' : 'orbShot', radius: 1.9 })
+        }
+      }
       const aimX = player.x - enemy.x
       const aimY = player.y - enemy.y
       const mag = Math.hypot(aimX, aimY) || 1
       if (kind !== 'orb' && kind !== 'gate') {
-        enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: kind === 'serpent' || kind === 'mantis' ? 'blade' : kind === 'super' ? 'superShot' : kind === 'hydra' ? 'voidShot' : 'boss', radius: 2 })
+        enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * (kind === 'final' ? 44 : 38), vy: (aimY / mag) * (kind === 'final' ? 44 : 38), damage: 1, kind: kind === 'serpent' || kind === 'mantis' ? 'blade' : kind === 'super' || kind === 'final' ? 'superShot' : kind === 'hydra' ? 'voidShot' : 'boss', radius: kind === 'final' ? 2.35 : 2 })
       }
       playGameSound('rocket')
       return
@@ -1111,6 +1483,13 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (!bossActive) {
       bossTimerRef.current = Math.max(0, bossTimerRef.current - dt)
     }
+    if (bossActive) {
+      startRaidBgm(stageRef.current, 'boss')
+    } else if (bossTimerRef.current <= RAID_BOSS_APPROACH_SILENCE_SECONDS) {
+      stopRaidBgm()
+    } else {
+      startRaidBgm(stageRef.current, enemiesRef.current.length > 0 ? 'combat' : 'cruise')
+    }
     powerDropCooldownRef.current = Math.max(0, powerDropCooldownRef.current - dt)
     bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
 
@@ -1185,8 +1564,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
           bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
           bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
+          bossKind === 'final' ? 50 + Math.sin(t * 0.36) * 31 + Math.sin(t * 1.45) * 7 :
           50 + Math.sin(t * 0.42) * 30
         const bossYTarget =
+          bossKind === 'final' ? 17 + Math.sin(t * 0.72) * 3 :
           bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
           bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
           bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
@@ -1200,18 +1581,57 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           enemy.pattern === 1 ? enemy.originX + Math.sin(trainT) * enemy.amplitude + Math.sin(trainT * 2.1) * 5 :
           enemy.pattern === 2 ? enemy.originX + Math.sin(trainT * 0.72) * enemy.amplitude * 0.7 :
           enemy.originX + Math.cos(trainT) * enemy.amplitude
+        let chargeCooldown = enemy.chargeCooldown
+        let chargeTimer = enemy.chargeTimer
+        let chargeLane = enemy.chargeLane
+        let chargePattern = enemy.chargePattern
+        if (enemy.isBoss && bossKind === 'final' && enemy.y >= bossYTarget - 0.5) {
+          if (chargeTimer > 0) {
+            const beforeCharge = chargeTimer
+            chargeTimer = Math.max(0, chargeTimer - dt)
+            if (beforeCharge > 0 && chargeTimer <= 0) {
+              const lanes = chargePattern === 'scatter'
+                ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
+                : [clamp(chargeLane, 10, 90)]
+              lanes.forEach((lane) => {
+                for (let i = 0; i < 7; i += 1) {
+                  enemyShotsRef.current.push({ id: shotId++, x: lane, y: enemy.y + 10 - i * 8, vx: 0, vy: 72, damage: 1, kind: 'beam', radius: chargePattern === 'scatter' ? 2.9 : 4.2 })
+                }
+                addRipple(lane, Math.max(18, enemy.y + 14), '#fbbf24', chargePattern === 'scatter' ? 11 : 18)
+              })
+              spawnSparks(enemy.x, enemy.y + 8, '#fbbf24', 70, 9)
+              playGameSound('laser')
+              chargeCooldown = 3.8 + Math.random() * 1.2
+            }
+          } else {
+            chargeCooldown = Math.max(0, chargeCooldown - dt)
+            if (chargeCooldown <= 0) {
+              chargeTimer = 1.45
+              chargeLane = clamp(player.x + (Math.random() - 0.5) * 12, 10, 90)
+              chargePattern = Math.random() < 0.42 ? 'scatter' : 'single'
+              chargeCooldown = 999
+              addRipple(chargeLane, 84, '#fbbf24', chargePattern === 'scatter' ? 14 : 20)
+              spawnSparks(enemy.x, enemy.y + 6, '#fbbf24', 46, 8)
+              playGameSound('countdown')
+            }
+          }
+        }
         const nextFire = enemy.fireCooldown - dt
-        if (nextFire <= 0 && enemy.y > 0) {
+        if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0) {
           fireEnemy(enemy, player)
         }
         return {
           ...enemy,
-          x: enemy.isBoss ? clamp(bossX, bossKind === 'super' ? 20 : 16, bossKind === 'super' ? 80 : 84) : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96),
+          x: enemy.isBoss ? clamp(bossX, bossKind === 'final' ? 14 : bossKind === 'super' ? 20 : 16, bossKind === 'final' ? 86 : bossKind === 'super' ? 80 : 84) : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96),
           y: enemy.isBoss ? (enemy.y < bossYTarget ? Math.min(bossYTarget, enemy.y + enemy.vy * dt) : bossYTarget) : enemy.y + enemy.vy * dt,
           shieldTime: Math.max(0, enemy.shieldTime - dt),
           fireCooldown: nextFire <= 0
-            ? (enemy.isBoss ? Math.max(0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
+            ? (enemy.isBoss ? Math.max(bossKind === 'final' ? 0.62 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
             : nextFire,
+          chargeCooldown,
+          chargeTimer,
+          chargeLane,
+          chargePattern,
         }
       })
       .filter((enemy) => enemy.y < HEIGHT + 14 && enemy.hp > 0)
@@ -1232,6 +1652,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
     let bossDefeatedThisFrame = false
     let preserveLoadoutForSuperBoss = false
+    let completedRun = false
     for (const shot of shotsRef.current) {
       for (const enemy of enemiesRef.current) {
         if (enemy.hp <= 0) continue
@@ -1263,12 +1684,27 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
             if (enemy.isBoss) {
               bossDefeatedThisFrame = true
-              const nextStage = stageRef.current + 1
-              preserveLoadoutForSuperBoss = nextStage % 5 === 0
-              stageRef.current = nextStage
-              bossAlertRef.current = 2.4
-              bossMessageRef.current = 'clear'
-              startRaidBgm(stageRef.current)
+              const clearedStage = stageRef.current
+              if (clearedStage >= MAX_RAID_STAGE) {
+                completedRun = true
+                phaseRef.current = 'victory'
+                unlockedStageRef.current = MAX_RAID_STAGE
+                saveUnlockedStage(MAX_RAID_STAGE)
+                saveCheckpointStage(14)
+                stopRaidBgm()
+              } else {
+                const nextStage = clearedStage + 1
+                preserveLoadoutForSuperBoss = nextStage % 5 === 0
+                stageRef.current = nextStage
+                unlockedStageRef.current = Math.max(unlockedStageRef.current, nextStage)
+                saveUnlockedStage(unlockedStageRef.current)
+                if ((RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
+                  saveCheckpointStage(nextStage)
+                }
+                bossAlertRef.current = 2.4
+                bossMessageRef.current = 'clear'
+                startRaidBgm(stageRef.current)
+              }
               playGameSound('levelup')
               playGameSound('combo')
               window.setTimeout(() => playGameSound('score'), 180)
@@ -1282,6 +1718,19 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     shotsRef.current = shotsRef.current.filter((shot) => shot.y > -50)
     if (bossDefeatedThisFrame) {
       const defeatedBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp <= 0)
+      if (completedRun) {
+        shotsRef.current = []
+        enemyShotsRef.current = []
+        enemiesRef.current = []
+        powerUpsRef.current = []
+        bossAlertRef.current = 3.4
+        bossMessageRef.current = 'clear'
+        if (player.score > highScoreRef.current) {
+          highScoreRef.current = player.score
+          saveHighScore(player.score)
+        }
+        return
+      }
       if (preserveLoadoutForSuperBoss) {
         extendLoadoutForSuperBoss(player)
       } else {
@@ -1367,7 +1816,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.score > highScoreRef.current) {
       highScoreRef.current = player.score
     }
-  }, [addRipple, damagePlayer, fireEnemy, firePlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnRepairPowerUp, spawnSparks, startRaidBgm])
+  }, [addRipple, damagePlayer, fireEnemy, firePlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnRepairPowerUp, spawnSparks, startRaidBgm, stopRaidBgm])
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -1458,6 +1907,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     stageClearProgress > 0.66 && stageClearProgress < 0.9
       ? Math.sin(((stageClearProgress - 0.66) / 0.24) * Math.PI)
       : 0
+  const completedCampaign = snapshot.unlockedStage >= MAX_RAID_STAGE
+  const checkpointStage = getCheckpointStage()
+  const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
 
   return (
     <div
@@ -1531,9 +1983,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
               enemy.isBoss ? 'raid__enemy--boss' : '',
               enemy.bossKind ? `raid__enemy--boss-${enemy.bossKind}` : '',
             ].join(' ')}
-            style={{ left: `${enemy.x}%`, top: `${enemy.y}%`, width: enemy.isBoss ? (enemy.bossKind === 'super' ? 'min(42vw, 380px)' : enemy.bossKind === 'gate' ? 'min(34vw, 310px)' : enemy.bossKind === 'hydra' ? 'min(30vw, 260px)' : 'min(24vw, 210px)') : 'min(8vw, 64px)' }}
+            style={{ left: `${enemy.x}%`, top: `${enemy.y}%`, width: enemy.isBoss ? (enemy.bossKind === 'final' ? 'min(52vw, 470px)' : enemy.bossKind === 'super' ? 'min(42vw, 380px)' : enemy.bossKind === 'gate' ? 'min(34vw, 310px)' : enemy.bossKind === 'hydra' ? 'min(30vw, 260px)' : 'min(24vw, 210px)') : 'min(8vw, 64px)' }}
           >
-            <AlienShip variant={enemy.variant} isBoss={enemy.isBoss} isFinalBoss={enemy.bossKind === 'super'} bossKind={enemy.bossKind ?? undefined} color={enemy.color} size={enemy.isBoss ? (enemy.bossKind === 'super' ? 280 : enemy.bossKind === 'gate' ? 220 : enemy.bossKind === 'hydra' ? 190 : 156) : 50} />
+            <AlienShip variant={enemy.variant} isBoss={enemy.isBoss} isFinalBoss={enemy.bossKind === 'final'} bossKind={enemy.bossKind ?? undefined} color={enemy.color} size={enemy.isBoss ? (enemy.bossKind === 'final' ? 330 : enemy.bossKind === 'super' ? 280 : enemy.bossKind === 'gate' ? 220 : enemy.bossKind === 'hydra' ? 190 : 156) : 50} />
             {enemy.isBoss && (
               <div className="raid__boss-aura">
                 <span />
@@ -1552,13 +2004,28 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             {enemy.isBoss && (
               <>
               {(enemy.shieldTime > 0 || enemy.y < 15) && <div className="raid__boss-shield" />}
-              <div className={enemy.bossKind === 'super' ? 'raid__boss-bar raid__boss-bar--super' : 'raid__boss-bar'}>
+              <div className={enemy.bossKind === 'super' || enemy.bossKind === 'final' ? 'raid__boss-bar raid__boss-bar--super' : 'raid__boss-bar'}>
                 <span style={{ width: `${Math.max(0, (enemy.hp / enemy.maxHp) * 100)}%` }} />
               </div>
               </>
             )}
           </div>
         ))}
+
+        {snapshot.enemies
+          .filter((enemy) => enemy.bossKind === 'final' && enemy.chargeTimer > 0)
+          .flatMap((enemy) => {
+            const lanes = enemy.chargePattern === 'scatter'
+              ? [-24, -12, 0, 12, 24].map((offset) => clamp(enemy.chargeLane + offset, 8, 92))
+              : [clamp(enemy.chargeLane, 10, 90)]
+            return lanes.map((lane, index) => (
+              <div
+                key={`${enemy.id}-${index}`}
+                className={enemy.chargePattern === 'scatter' ? 'raid__final-charge-line raid__final-charge-line--scatter' : 'raid__final-charge-line'}
+                style={{ left: `${lane}%`, opacity: Math.max(0.28, Math.min(1, enemy.chargeTimer / 1.45)) }}
+              />
+            ))
+          })}
 
         {snapshot.powerUps.map((powerUp) => (
           <div
@@ -1620,7 +2087,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             </div>
             <div className="raid__pause-actions">
               <button type="button" className="raid__start" onClick={resumeGame}>Continue</button>
-              <button type="button" className="raid__menu-button" onClick={resetGame}>Restart</button>
+              <button type="button" className="raid__menu-button" onClick={() => resetGame()}>Restart</button>
               <button type="button" className="raid__menu-button" onClick={onClose}>Exit</button>
             </div>
           </div>
@@ -1662,7 +2129,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
               >
                 Back
               </button>
-              <button type="button" className="raid__menu-button" onClick={resetGame}>Skip</button>
+              <button type="button" className="raid__menu-button" onClick={() => resetGame()}>Skip</button>
               <button
                 type="button"
                 className="raid__start"
@@ -1685,8 +2152,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       {snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && (
         <div className="raid__overlay">
           <div className="raid__panel">
-            <div className="raid__kicker">{snapshot.phase === 'gameover' ? 'Run Ended' : 'Choose Your Ship'}</div>
-            <h2>{snapshot.phase === 'gameover' ? 'Ship Destroyed' : 'Rocket Raid'}</h2>
+            <div className="raid__kicker">{snapshot.phase === 'victory' ? 'Campaign Complete' : snapshot.phase === 'gameover' ? 'Run Ended' : 'Choose Your Ship'}</div>
+            <h2>{snapshot.phase === 'victory' ? 'Earth Line Secured' : snapshot.phase === 'gameover' ? 'Ship Destroyed' : 'Rocket Raid'}</h2>
             <div className="raid__ship-grid">
               {SHIP_OPTIONS.map((ship) => (
                 <button
@@ -1701,14 +2168,39 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
                 </button>
               ))}
             </div>
+            {completedCampaign && (
+              <div className="raid__stage-select">
+                {stageSelectButtons.map((stage) => (
+                  <button
+                    key={stage}
+                    type="button"
+                    className={stage === MAX_RAID_STAGE ? 'raid__stage-button raid__stage-button--final' : 'raid__stage-button'}
+                    onClick={() => resetGame(stage)}
+                  >
+                    {stage}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="raid__records">
               <span>Best {snapshot.highScore.toLocaleString()}</span>
-              <span>PC follows cursor</span>
-              <span>Mobile follows above finger</span>
+              {snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>Checkpoint Stage {checkpointStage}</span> : <span>PC follows cursor</span>}
+              <span>{completedCampaign ? 'Stages 1-15 unlocked' : 'Mobile follows above finger'}</span>
             </div>
-            <button type="button" className="raid__start" onClick={snapshot.phase === 'gameover' ? resetGame : openBriefing}>
-              {snapshot.phase === 'gameover' ? 'Launch Again' : 'Start Raid'}
-            </button>
+            <div className="raid__pause-actions">
+              {(snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
+                <button type="button" className="raid__start" onClick={() => resetGame(checkpointStage)}>
+                  Continue Stage {checkpointStage}
+                </button>
+              )}
+              <button
+                type="button"
+                className={(snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
+                onClick={snapshot.phase === 'gameover' || snapshot.phase === 'victory' ? () => resetGame(1) : openBriefing}
+              >
+                {snapshot.phase === 'gameover' ? 'Restart Stage 1' : snapshot.phase === 'victory' ? 'New Run' : 'Start Raid'}
+              </button>
+            </div>
           </div>
         </div>
       )}
