@@ -612,10 +612,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     for (const shot of shotsRef.current) {
       if (shot.kind === 'laser') drawTrail(shot, 'rgba(103,232,249,0.9)', 70, 7)
       else if (shot.kind === 'spread') drawTrail(shot, 'rgba(251,191,36,0.85)', 36, 5)
-      else if (shot.kind === 'scatter') drawTrail(shot, 'rgba(251,113,133,0.8)', 28, 4.5)
-      else if (shot.kind === 'rocket') drawOrb(shot, 'rgba(249,115,22,0.9)', 12)
+      else if (shot.kind === 'scatter') drawTrail(shot, 'rgba(0, 255, 191, 0.8)', 28, 4.5)
+      else if (shot.kind === 'rocket') drawOrb(shot, 'rgb(249, 116, 22)', 12)
       else if (shot.kind === 'homing') drawMissile(shot)
-      else drawTrail(shot, 'rgba(239,35,60,0.86)', 36, 5)
+      else drawTrail(shot, 'rgba(34,197,94,0.86)', 36, 5)
     }
 
     for (const shot of enemyShotsRef.current) {
@@ -665,14 +665,14 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     const stage = clamp(startStage, 1, MAX_RAID_STAGE)
     playerRef.current = getInitialPlayer(selectedShipRef.current)
     if (fullyBuffed) {
-  const p = playerRef.current
-  ;(Object.keys(WEAPON_STACK_CAPS) as WeaponKey[]).forEach((key) => {
-    p.weapons[key] = WEAPON_STACK_CAPS[key]
-  })
-  p.optionTimer = 1
-  p.shield = 8
-  p.forceField = FORCE_FIELD_ARMOR
-  p.hp = p.maxHp
+      const p = playerRef.current
+        ; (Object.keys(WEAPON_STACK_CAPS) as WeaponKey[]).forEach((key) => {
+          p.weapons[key] = WEAPON_STACK_CAPS[key]
+        })
+      p.optionTimer = 1
+      p.shield = 8
+      p.forceField = FORCE_FIELD_ARMOR
+      p.hp = p.maxHp
     }
     shotsRef.current = []
     enemyShotsRef.current = []
@@ -764,7 +764,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
       // ── BLACK COMET: original default attack ──
       if (shipKey === 'rocket') {
-        pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -96, damage, kind: 'pulse', radius: 1.35 })
+        pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -108, damage: Math.ceil((baseDamage + 3) * emitter.scale), kind: 'pulse', radius: 1.8 })
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
           fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
@@ -880,17 +880,28 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           x: emitter.x,
           y: emitter.y - 4,
           vx: 0,
-          vy: -55, // fast moving beam pulse
-          damage: Math.ceil((baseDamage + 8 + stacks.laser * 2) * emitter.scale),
+          vy: -95, // was -55, now actually reaches enemies
+          damage: Math.ceil((baseDamage + 10 + stacks.laser * 3) * emitter.scale),
           kind: 'laser',
-          radius: 7.5,   // thick kamehameha-style beam
-          pierce: 4,     // pierces a few enemies only
+          radius: 7.5,
+          pierce: 6, // was 4
         })
-        const salvoOffsets = [-5.4, 5.4]
-          salvoOffsets.forEach((offset, index) => {
+        // always fires homing salvo — signature ability
+        // default 2 salvo — all emitters including scouts
+        const defaultSalvo = [-5.4, 5.4]
+        defaultSalvo.forEach((offset, index) => {
+          const side = offset < 0 ? -1 : 1
+          pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 3) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+        })
+
+        // pickup bonus — 4 extra salvos, main ship only, fires every shot like the default
+        if (emitter.main && stacks.homing > 0) {
+          const bonusSalvo = [-5.4, 5.4, -7.2, 7.2]
+          bonusSalvo.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
-            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
           })
+        }
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
           fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
@@ -929,12 +940,6 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           kind: 'rocket',
           radius: 3.2,
         })
-
-          const count = Math.min(8, 2 + stacks.scatter * 2)
-          for (let i = 0; i < count; i++) {
-            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
-            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage, kind: 'scatter', radius: 1.2 })
-          }
 
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
@@ -1031,14 +1036,14 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           })
         }
       }
-      
+
       // ── CROSSWING NOVA: tri-beam shotgun ──
       else if (shipKey === 'xwing') {
         const spread = stacks.spread >= 2 ? 0.32 : stacks.spread >= 1 ? 0.22 : 0.14
         // three wide beams per shot
         pushShot({ x: emitter.x, y: emitter.y - 4, vx: 0, vy: -106, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.2, pierce: 1 + stacks.laser })
-        pushShot({ x: emitter.x, y: emitter.y - 3, vx: -Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any,radius: 0.85})
-        pushShot({ x: emitter.x, y: emitter.y - 3, vx: Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any,radius: 0.85})
+        pushShot({ x: emitter.x, y: emitter.y - 3, vx: -Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any, radius: 0.85 })
+        pushShot({ x: emitter.x, y: emitter.y - 3, vx: Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any, radius: 0.85 })
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
           fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
@@ -1122,20 +1127,20 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     })
 
     if ((stacks.rocket > 0 || stacks.homing > 0) && Math.random() < 0.12) playGameSound('rocket')
-    ;(Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).forEach((key) => {
-      if (firingWeapons[key]) {
-        player.weaponCooldowns[key] = WEAPON_FIRE_INTERVALS[key]
-      }
-    })
+      ; (Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).forEach((key) => {
+        if (firingWeapons[key]) {
+          player.weaponCooldowns[key] = WEAPON_FIRE_INTERVALS[key]
+        }
+      })
 
     const baseInterval =
       shipKey === 'fast' ? 0.072 :       // Red Wraith — very rapid
-      shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
-      shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
-      shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
-      shipKey === 'spaceEt' ? 0.005 :    // Space ET — fastest
-      shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
-      0.12                               // Black Comet — default
+        shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
+          shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
+            shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
+              shipKey === 'spaceEt' ? 0.005 :    // Space ET — fastest
+                shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
+                  0.10                              // Black Comet — default
 
     player.fireCooldown = Math.max(0.042, (baseInterval - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
     playGameSound(stacks.laser > 0 || shipKey === 'laser' || shipKey === 'xwing' ? 'laser' : 'shoot')
@@ -1189,9 +1194,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     for (let i = 0; i < count; i += 1) {
       const x =
         pattern === 0 ? originX :
-        pattern === 1 ? originX + Math.sin(i * 0.42) * 5 :
-        pattern === 2 ? originX + (i % 2 === 0 ? -3 : 3) :
-        originX + Math.cos(i * 0.35) * 4
+          pattern === 1 ? originX + Math.sin(i * 0.42) * 5 :
+            pattern === 2 ? originX + (i % 2 === 0 ? -3 : 3) :
+              originX + Math.cos(i * 0.35) * 4
       const y = -6 - i * 6.2
       spawnEnemyAt(clamp(x, 6, 94), y, wave, pattern, i, formationStyle)
     }
@@ -1206,23 +1211,23 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     const bossKind: BossKind = stage === MAX_RAID_STAGE ? 'final' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
       bossKind === 'final' ? 8.8 :
-      bossKind === 'super' ? 3.45 :
-      bossKind === 'gate' ? 1.75 :
-      bossKind === 'hydra' ? 1.62 :
-      bossKind === 'serpent' ? 1.48 :
-      bossKind === 'mantis' ? 1.38 :
-      bossKind === 'orb' ? 1.3 :
-      1.16
+        bossKind === 'super' ? 3.45 :
+          bossKind === 'gate' ? 1.75 :
+            bossKind === 'hydra' ? 1.62 :
+              bossKind === 'serpent' ? 1.48 :
+                bossKind === 'mantis' ? 1.38 :
+                  bossKind === 'orb' ? 1.3 :
+                    1.16
     const stagePressure = Math.max(0, stage - 1)
     const hp = Math.round((1450 + wave * 180 + stagePressure * 320 + powerScore * 90) * hpMultiplier)
     const radius =
       bossKind === 'final' ? 25 :
-      bossKind === 'super' ? 21 :
-      bossKind === 'gate' ? 15 :
-      bossKind === 'hydra' ? 14 :
-      bossKind === 'serpent' ? 13.4 :
-      bossKind === 'mantis' ? 12.8 :
-      11.4
+        bossKind === 'super' ? 21 :
+          bossKind === 'gate' ? 15 :
+            bossKind === 'hydra' ? 14 :
+              bossKind === 'serpent' ? 13.4 :
+                bossKind === 'mantis' ? 12.8 :
+                  11.4
     enemiesRef.current.push({
       id: enemyId++,
       x: 50,
@@ -1268,8 +1273,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
       const pityBonus =
         killsSincePowerRef.current >= POWER_PITY_KILLS + 6 ? 0.5 :
-        killsSincePowerRef.current >= POWER_PITY_KILLS ? 0.25 :
-        0
+          killsSincePowerRef.current >= POWER_PITY_KILLS ? 0.25 :
+            0
       const lowHullBonus = player.hp <= Math.ceil(player.maxHp * 0.35) ? 0.06 : 0
       const chance = clamp(
         0.115 + waveRef.current * 0.004 + lowHullBonus + pityBonus - powerScore * 0.006,
@@ -1285,11 +1290,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.forceField <= 1) candidates.push('forcefield', 'forcefield')
     if (player.shield < 2.5) candidates.push('shield')
     if (player.optionTimer <= 0) candidates.push('option')
-    ;(['spread', 'laser', 'scatter', 'rocket', 'homing'] as WeaponKey[]).forEach((key) => {
-      const maxStack = WEAPON_STACK_CAPS[key]
-      const copies = player.weapons[key] === 0 ? 3 : player.weapons[key] >= maxStack ? 1 : 2
-      for (let i = 0; i < copies; i += 1) candidates.push(key)
-    })
+      ; (['spread', 'laser', 'scatter', 'rocket', 'homing'] as WeaponKey[]).forEach((key) => {
+        const maxStack = WEAPON_STACK_CAPS[key]
+        const copies = player.weapons[key] === 0 ? 3 : player.weapons[key] >= maxStack ? 1 : 2
+        for (let i = 0; i < copies; i += 1) candidates.push(key)
+      })
 
     const type = candidates[Math.floor(Math.random() * candidates.length)] ?? 'spread'
     killsSincePowerRef.current = 0
@@ -1361,16 +1366,16 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       }
       if (kind === 'serpent') {
         const lane = Math.sin(performance.now() / 280) * 18
-        ;[-1, 0, 1].forEach((offset) => {
-          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + offset * 8, y: enemy.y + 8, vx: offset * 10, vy: 38, damage: 1, kind: 'blade', radius: 1.9 })
-        })
+          ;[-1, 0, 1].forEach((offset) => {
+            enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + offset * 8, y: enemy.y + 8, vx: offset * 10, vy: 38, damage: 1, kind: 'blade', radius: 1.9 })
+          })
       }
       if (kind === 'mantis') {
         const sweep = Math.sin(performance.now() / 260) * 24
-        ;[-1, 1].forEach((side) => {
-          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 13, y: enemy.y + 5, vx: side * 24 + sweep * 0.24, vy: 40, damage: 1, kind: 'needle', radius: 1.55 })
-          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 6, y: enemy.y + 10, vx: side * -10, vy: 35, damage: 1, kind: 'blade', radius: 1.9 })
-        })
+          ;[-1, 1].forEach((side) => {
+            enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 13, y: enemy.y + 5, vx: side * 24 + sweep * 0.24, vy: 40, damage: 1, kind: 'needle', radius: 1.55 })
+            enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 6, y: enemy.y + 10, vx: side * -10, vy: 35, damage: 1, kind: 'blade', radius: 1.9 })
+          })
       }
       if (kind === 'hydra') {
         ;[-16, 0, 16].forEach((head, index) => {
@@ -1382,10 +1387,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       }
       if (kind === 'gate') {
         const phase = performance.now() / 380
-        ;[-24, -8, 8, 24].forEach((lane, index) => {
-          const drift = Math.sin(phase + index) * 4
-          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + drift, y: enemy.y + 12, vx: drift * 0.8, vy: 30 + index * 2, damage: 1, kind: index % 2 === 0 ? 'superShot' : 'needle', radius: 1.85 })
-        })
+          ;[-24, -8, 8, 24].forEach((lane, index) => {
+            const drift = Math.sin(phase + index) * 4
+            enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + drift, y: enemy.y + 12, vx: drift * 0.8, vy: 30 + index * 2, damage: 1, kind: index % 2 === 0 ? 'superShot' : 'needle', radius: 1.85 })
+          })
         const lane = Math.round((enemy.x + Math.sin(performance.now() / 520) * 16) / 10) * 10
         for (let i = 0; i < 6; i += 1) {
           enemyShotsRef.current.push({ id: shotId++, x: clamp(lane, 12, 88), y: enemy.y + 8 - i * 8, vx: 0, vy: 58, damage: 1, kind: 'beam', radius: 2.35 })
@@ -1484,9 +1489,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     player.x = clamp(player.x, 4, 96)
     player.y = clamp(player.y, 13, 93)
     player.fireCooldown = Math.max(0, player.fireCooldown - dt)
-    ;(Object.keys(player.weaponCooldowns) as WeaponKey[]).forEach((key) => {
-      player.weaponCooldowns[key] = Math.max(0, player.weaponCooldowns[key] - dt)
-    })
+      ; (Object.keys(player.weaponCooldowns) as WeaponKey[]).forEach((key) => {
+        player.weaponCooldowns[key] = Math.max(0, player.weaponCooldowns[key] - dt)
+      })
     player.invuln = Math.max(0, player.invuln - dt)
     player.shield = Math.max(0, player.shield - dt * 0.16)
     firePlayer()
@@ -1575,36 +1580,46 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         const bossKind = enemy.bossKind ?? 'carrier'
         const bossX =
           bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
-          bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
-          bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
-          bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
-          bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
-          bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
-          bossKind === 'final' ? 50 + Math.sin(t * 0.36) * 31 + Math.sin(t * 1.45) * 7 :
-          50 + Math.sin(t * 0.42) * 30
+            bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
+              bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
+                bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
+                  bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
+                    bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
+                      bossKind === 'final' ? 50 + Math.sin(t * 0.36) * 31 + Math.sin(t * 1.45) * 7 :
+                        50 + Math.sin(t * 0.42) * 30
         const bossYTarget =
           bossKind === 'final' ? 17 + Math.sin(t * 0.72) * 3 :
-          bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
-          bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
-          bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
-          bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
-          bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
-          bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
-          18
+            bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
+              bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
+                bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
+                  bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
+                    bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
+                      bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
+                        18
         const trainT = (enemy.y - enemy.trainSlot * 6.2) * enemy.pathSpeed + enemy.phase
         const trainX =
           enemy.pattern === 0 ? enemy.originX + Math.sin(trainT) * enemy.amplitude :
-          enemy.pattern === 1 ? enemy.originX + Math.sin(trainT) * enemy.amplitude + Math.sin(trainT * 2.1) * 5 :
-          enemy.pattern === 2 ? enemy.originX + Math.sin(trainT * 0.72) * enemy.amplitude * 0.7 :
-          enemy.originX + Math.cos(trainT) * enemy.amplitude
+            enemy.pattern === 1 ? enemy.originX + Math.sin(trainT) * enemy.amplitude + Math.sin(trainT * 2.1) * 5 :
+              enemy.pattern === 2 ? enemy.originX + Math.sin(trainT * 0.72) * enemy.amplitude * 0.7 :
+                enemy.originX + Math.cos(trainT) * enemy.amplitude
         let chargeCooldown = enemy.chargeCooldown
         let chargeTimer = enemy.chargeTimer
         let chargeLane = enemy.chargeLane
         let chargePattern = enemy.chargePattern
+        let fireCooldown = enemy.fireCooldown
         if (enemy.isBoss && bossKind === 'final' && enemy.y >= bossYTarget - 0.5) {
           if (chargeTimer > 0) {
             const beforeCharge = chargeTimer
             chargeTimer = Math.max(0, chargeTimer - dt)
+            if (enemy.bossKind === 'final' && chargeTimer > 0) {
+              const lanes = chargePattern === 'scatter'
+                ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
+                : [clamp(chargeLane, 10, 90)]
+              const warningWidth = chargePattern === 'scatter' ? 5 : 7
+              if (lanes.some((lane) => Math.abs(player.x - lane) < warningWidth)) {
+                damagePlayer(1)
+              }
+            }
             if (beforeCharge > 0 && chargeTimer <= 0) {
               const lanes = chargePattern === 'scatter'
                 ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
@@ -1618,6 +1633,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
               spawnSparks(enemy.x, enemy.y + 8, '#fbbf24', 70, 9)
               playGameSound('laser')
               chargeCooldown = 3.8 + Math.random() * 1.2
+              fireCooldown = 4.5
             }
           } else {
             chargeCooldown = Math.max(0, chargeCooldown - dt)
@@ -1633,17 +1649,17 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
           }
         }
         const nextFire = enemy.fireCooldown - dt
-const bossCycle = (performance.now() / 1000) % 6
-const bossInPause = enemy.isBoss && bossCycle > 3
-if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
-  fireEnemy(enemy, player)
-}
+        const bossCycle = (performance.now() / 1000) % 6
+        const bossInPause = enemy.isBoss && bossCycle > 3
+        if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
+          fireEnemy(enemy, player)
+        }
         return {
           ...enemy,
           x: enemy.isBoss ? clamp(bossX, bossKind === 'final' ? 14 : bossKind === 'super' ? 20 : 16, bossKind === 'final' ? 86 : bossKind === 'super' ? 80 : 84) : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96),
           y: enemy.isBoss ? (enemy.y < bossYTarget ? Math.min(bossYTarget, enemy.y + enemy.vy * dt) : bossYTarget) : enemy.y + enemy.vy * dt,
           shieldTime: Math.max(0, enemy.shieldTime - dt),
-          fireCooldown: nextFire <= 0
+          fireCooldown: fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
             ? (enemy.isBoss ? Math.max(bossKind === 'final' ? 0.62 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
             : nextFire,
           chargeCooldown,
@@ -1683,6 +1699,29 @@ if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
           if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
+            // rocket explosion + shrapnel
+          if (shot.kind === 'rocket') {
+            if (playerRef.current.ship.key === 'dreadnought') {
+              const shrapnelCount = 8
+              for (let s = 0; s < shrapnelCount; s++) {
+                const angle = (s / shrapnelCount) * Math.PI * 2
+                const speed = 38 + Math.random() * 28
+                shotsRef.current.push({
+                  id: shotId++,
+                  x: shot.x,
+                  y: shot.y,
+                  vx: Math.cos(angle) * speed,
+                  vy: Math.sin(angle) * speed,
+                  damage: Math.ceil(shot.damage * 0.45),
+                  kind: 'scatter',
+                  radius: 1.1,
+                })
+              }
+            }
+            spawnSparks(shot.x, shot.y, '#f97316', 28, 6)
+            addRipple(shot.x, shot.y, '#fb923c', 10)
+            playGameSound('explosion')
+          }
             shot.y = -999
           }
           if (bossShielded) {
@@ -1959,6 +1998,25 @@ if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
       <div className="raid__starfield raid__starfield--far" />
       <div className="raid__starfield raid__starfield--near" />
       <div className="raid__speedlines" />
+      <div className="raid__galaxy" />
+      <div className="raid__galaxy-2" />
+      <div className="raid__planet raid__planet--1" />
+      <div className="raid__planet raid__planet--2" />
+      <div className="raid__planet raid__planet--3" />
+      <div className="raid__asteroid raid__asteroid--a" />
+      <div className="raid__asteroid raid__asteroid--b" />
+      <div className="raid__asteroid raid__asteroid--c" />
+      <div className="raid__asteroid raid__asteroid--d" />
+      <div className="raid__asteroid raid__asteroid--e" />
+      <div className="raid__asteroid-cluster raid__asteroid-cluster--1" />
+      <div className="raid__asteroid-cluster raid__asteroid-cluster--2" />
+      <div className="raid__debris raid__debris--a" />
+      <div className="raid__debris raid__debris--b" />
+      <div className="raid__debris raid__debris--c" />
+      <div className="raid__bg-laser raid__bg-laser--1" />
+      <div className="raid__bg-laser raid__bg-laser--2" />
+      <div className="raid__bg-explosion raid__bg-explosion--1" />
+      <div className="raid__bg-explosion raid__bg-explosion--2" />
 
       <div className="raid__hud">
         <div className="raid__stat">
@@ -2021,10 +2079,10 @@ if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
             )}
             {enemy.isBoss && (
               <>
-              {(enemy.shieldTime > 0 || enemy.y < 15) && <div className="raid__boss-shield" />}
-              <div className={enemy.bossKind === 'super' || enemy.bossKind === 'final' ? 'raid__boss-bar raid__boss-bar--super' : 'raid__boss-bar'}>
-                <span style={{ width: `${Math.max(0, (enemy.hp / enemy.maxHp) * 100)}%` }} />
-              </div>
+                {(enemy.shieldTime > 0 || enemy.y < 15) && <div className="raid__boss-shield" />}
+                <div className={enemy.bossKind === 'super' || enemy.bossKind === 'final' ? 'raid__boss-bar raid__boss-bar--super' : 'raid__boss-bar'}>
+                  <span style={{ width: `${Math.max(0, (enemy.hp / enemy.maxHp) * 100)}%` }} />
+                </div>
               </>
             )}
           </div>
@@ -2207,9 +2265,9 @@ if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
             </div>
             <div className="raid__pause-actions">
               {(snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
-<button type="button" className="raid__start" onClick={() => resetGame(checkpointStage, true)}>
-  Continue Stage {checkpointStage}
-</button>
+                <button type="button" className="raid__start" onClick={() => resetGame(checkpointStage, true)}>
+                  Continue Stage {checkpointStage}
+                </button>
               )}
               <button
                 type="button"
