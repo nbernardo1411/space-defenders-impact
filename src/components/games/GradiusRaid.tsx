@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { getGameAudioMixSettings, getGameSoundEnabled, playGameSound, stopBGM } from './sound'
+import { getGameAudioMixSettings, getGameSoundEnabled, getPublicAssetUrl, playGameSound, stopBGM } from './sound'
 import { AlienShip, TowerShip } from './towerDefense/sprites'
 import './GradiusRaid.css'
 
@@ -161,8 +161,8 @@ const BOSS_COLORS: Record<BossKind, string> = {
   super: '#3f1d2e',
   final: '#120617',
 }
-const RAID_DEFAULT_BGM_TRACK = '/audio/bgm_scifi_loop.ogg'
-const RAID_BOSS_BGM_TRACK = '/audio/sfx_boss_battle.wav'
+const RAID_DEFAULT_BGM_TRACK = getPublicAssetUrl('audio/bgm_scifi_loop.ogg')
+const RAID_BOSS_BGM_TRACK = getPublicAssetUrl('audio/sfx_boss_battle.wav')
 const RAID_BGM_STAGE_RATES = [0.92, 0.98, 1.04, 1.1]
 const RAID_BOSS_APPROACH_SILENCE_SECONDS = 5.5
 

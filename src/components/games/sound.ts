@@ -48,30 +48,38 @@ const DEFAULT_AUDIO_MIX: AudioMixSettings = {
   ui: 0.8,
 }
 
+export function getPublicAssetUrl(path: string) {
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(path)) {
+    return path
+  }
+
+  return `${import.meta.env.BASE_URL}${path.replace(/^\.?\//, '')}`
+}
+
 const DEFAULT_AUDIO_PACK: SoundPackConfig = {
   // Bundled production assets served from public/audio.
-  bgm: '/audio/bgm_scifi_loop.ogg',
+  bgm: getPublicAssetUrl('audio/bgm_scifi_loop.ogg'),
   bgmVolume: 0.3,
   sfxVolume: 0.72,
   sfx: {
-    laser: '/audio/sfx_laser.wav',
-    rocket: '/audio/sfx_rocket.wav',
-    artillery: '/audio/sfx_cannon.wav',
-    explosion: '/audio/sfx_explosion_small.wav',
-    explosion_big: '/audio/sfx_explosion_big.wav',
-    shoot: '/audio/sfx_shoot.wav',
-    pop: '/audio/sfx_hit.wav',
-    combo: '/audio/sfx_combo.wav',
-    levelup: '/audio/sfx_levelup.wav',
-    gameover: '/audio/sfx_gameover.wav',
-    hit: '/audio/sfx_damage.wav',
-    select: '/audio/sfx_ui_select.wav',
-    select_tower: '/audio/sfx_ui_tower_select.wav',
-    swap: '/audio/sfx_ui_swap.wav',
-    clear: '/audio/sfx_ui_clear.wav',
-    countdown: '/audio/sfx_countdown.wav',
-    whoosh: '/audio/sfx_whoosh.wav',
-    score: '/audio/sfx_score.wav',
+    laser: getPublicAssetUrl('audio/sfx_laser.wav'),
+    rocket: getPublicAssetUrl('audio/sfx_rocket.wav'),
+    artillery: getPublicAssetUrl('audio/sfx_cannon.wav'),
+    explosion: getPublicAssetUrl('audio/sfx_explosion_small.wav'),
+    explosion_big: getPublicAssetUrl('audio/sfx_explosion_big.wav'),
+    shoot: getPublicAssetUrl('audio/sfx_shoot.wav'),
+    pop: getPublicAssetUrl('audio/sfx_hit.wav'),
+    combo: getPublicAssetUrl('audio/sfx_combo.wav'),
+    levelup: getPublicAssetUrl('audio/sfx_levelup.wav'),
+    gameover: getPublicAssetUrl('audio/sfx_gameover.wav'),
+    hit: getPublicAssetUrl('audio/sfx_damage.wav'),
+    select: getPublicAssetUrl('audio/sfx_ui_select.wav'),
+    select_tower: getPublicAssetUrl('audio/sfx_ui_tower_select.wav'),
+    swap: getPublicAssetUrl('audio/sfx_ui_swap.wav'),
+    clear: getPublicAssetUrl('audio/sfx_ui_clear.wav'),
+    countdown: getPublicAssetUrl('audio/sfx_countdown.wav'),
+    whoosh: getPublicAssetUrl('audio/sfx_whoosh.wav'),
+    score: getPublicAssetUrl('audio/sfx_score.wav'),
   },
 }
 
