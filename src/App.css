@@ -1157,9 +1157,11 @@ body {
 
   .start-screen__content {
     width: 100%;
-    max-height: 100vh;
-    max-height: 100dvh;
-    padding: 12px;
+    justify-content: flex-start;
+    max-height: calc(100vh - 12px);
+    max-height: calc(100dvh - 12px);
+    padding: max(44px, calc(env(safe-area-inset-top, 0px) + 16px)) 12px max(18px, calc(env(safe-area-inset-bottom, 0px) + 12px));
+    scroll-padding-top: max(44px, calc(env(safe-area-inset-top, 0px) + 16px));
   }
 
   .start-screen__command-panel {
