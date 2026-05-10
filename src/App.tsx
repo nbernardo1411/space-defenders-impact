@@ -1,6 +1,7 @@
 import './App.css'
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
+import { getPublicAssetUrl } from './components/games/sound'
 import { AlienShip, TowerShip } from './components/games/towerDefense/sprites'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
@@ -50,7 +51,7 @@ function App() {
 
   // init audio
   useEffect(() => {
-    const audio = new Audio('/audio/bgm_shelter.wav')
+    const audio = new Audio(getPublicAssetUrl('audio/bgm_shelter.wav'))
     audio.loop = true
     audio.volume = 0.5
 
