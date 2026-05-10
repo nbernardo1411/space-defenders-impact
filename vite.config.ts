@@ -77,9 +77,8 @@ export default defineConfig({
         skipWaiting: true,
 
         globPatterns: [
-          '**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,mp3,wav,ogg}',
+          '**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp}',
         ],
-
         runtimeCaching: [
           {
             urlPattern: ({ request }) =>
