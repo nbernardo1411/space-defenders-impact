@@ -3982,6 +3982,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       }
       if (key === 'escape') {
         if (phaseRef.current === 'playing') pauseGame()
+        else if (phaseRef.current === 'paused') resumeGame()
         else if (phaseRef.current === 'briefing') {
           phaseRef.current = 'select'
           syncSnapshot()
