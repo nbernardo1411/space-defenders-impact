@@ -110,6 +110,15 @@ type Ripple = Vec & {
   size: number
 }
 
+type NukeStrike = {
+  startX: number
+  startY: number
+  targetX: number
+  targetY: number
+  age: number
+  duration: number
+}
+
 type Snapshot = {
   phase: GamePhase
   player: Player
@@ -128,6 +137,8 @@ type Snapshot = {
   pointer: Vec | null
   stageClear: number
   unlockedStage: number
+  nukeCooldown: number
+  nukeFlash: number
 }
 
 const WIDTH = 100
@@ -169,7 +180,7 @@ const BRIEFING_PANELS = [
   {
     title: 'Mission',
     body: 'Break through the alien blockade, survive all 15 stages, and destroy the final fortress guarding Earth orbit.',
-    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Mobile follows above your finger so your hand does not cover the ship.', 'Stages 5, 10, and 15 are guarded by larger boss threats.'],
+    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Space or the NUKE icon launches a nuclear strike with a 60 second cooldown.', 'Mobile follows above your finger so your hand does not cover the ship.', 'Stages 5, 10, and 15 are guarded by larger boss threats.'],
   },
   {
     title: 'Weapon Drops',
@@ -263,6 +274,11 @@ const GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS = 50
 const IDLE_SNAPSHOT_INTERVAL_MS = 120
 const HOMING_RETARGET_SECONDS = 0.18
 const HOMING_RETARGET_STAGGER_SECONDS = 0.012
+const NUKE_COOLDOWN_SECONDS = 60
+const NUKE_MISSILE_SECONDS = 0.82
+const NUKE_FLASH_SECONDS = 1.15
+const NUKE_BOSS_DAMAGE_RATIO = 0.32
+const NUKE_BOSS_DAMAGE_FLOOR = 3200
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
 const MAX_SPARKS = 45
@@ -293,6 +309,7 @@ type RaidPalette = {
 
 const canvasSpriteCache = new Map<string, CanvasSpriteEntry>()
 const homingMissileSpriteCache = new Map<number, HTMLCanvasElement>()
+const honeycombShieldSpriteCache = new Map<number, HTMLCanvasElement>()
 
 const DEFAULT_RAID_PALETTE: RaidPalette = {
   bgA: 'rgba(239, 35, 60, 0.16)',
@@ -626,6 +643,7 @@ function powerColor(type: PowerKind) {
   if (type === 'rocket') return '#f97316'
   if (type === 'homing') return '#facc15'
   if (type === 'option') return '#e879f9'
+  if (type === 'shield') return '#fcd34d'
   if (type === 'forcefield') return '#22d3ee'
   if (type === 'repair') return '#86efac'
   return '#c4b5fd'
@@ -1169,6 +1187,187 @@ function drawPlayerOverlay(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.restore()
 }
 
+function drawInvulnerabilityShimmer(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number) {
+  const pulse = 0.96 + Math.sin(time / 520) * 0.045
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(pulse, pulse)
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = 'rgba(226,232,240,0.34)'
+  ctx.fillStyle = 'rgba(226,232,240,0.035)'
+  ctx.shadowBlur = 12
+  ctx.shadowColor = 'rgba(226,232,240,0.24)'
+  ctx.lineWidth = 1
+  ctx.setLineDash([size * 0.075, size * 0.055])
+  ctx.lineDashOffset = -time / 72
+  ctx.beginPath()
+  ctx.arc(0, 0, size * 0.48, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
+function getHoneycombShieldSprite(size: number) {
+  const spriteSize = Math.max(48, Math.round(size))
+  const cached = honeycombShieldSpriteCache.get(spriteSize)
+  if (cached) return cached
+
+  const radius = spriteSize * 0.53
+  const pad = Math.ceil(spriteSize * 0.18)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.ceil(radius * 2 + pad * 2)
+  canvas.height = canvas.width
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+
+  ctx.translate(canvas.width / 2, canvas.height / 2)
+  ctx.globalCompositeOperation = 'lighter'
+
+  const shell = ctx.createRadialGradient(0, 0, radius * 0.16, 0, 0, radius * 1.08)
+  shell.addColorStop(0, 'rgba(255,251,235,0.12)')
+  shell.addColorStop(0.54, 'rgba(252,211,77,0.11)')
+  shell.addColorStop(0.9, 'rgba(245,158,11,0.22)')
+  shell.addColorStop(1, 'rgba(245,158,11,0)')
+  ctx.fillStyle = shell
+  ctx.beginPath()
+  ctx.arc(0, 0, radius * 1.08, 0, Math.PI * 2)
+  ctx.fill()
+
+  const cell = spriteSize * 0.145
+  const hexRadius = cell * 0.54
+  const hexHeight = Math.sqrt(3) * cell
+  const cols = Math.ceil(radius / (cell * 1.5)) + 1
+  const rows = Math.ceil(radius / hexHeight) + 1
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(0, 0, radius, 0, Math.PI * 2)
+  ctx.clip()
+  ctx.strokeStyle = 'rgba(252,211,77,0.52)'
+  ctx.lineWidth = Math.max(0.8, spriteSize * 0.011)
+  for (let col = -cols; col <= cols; col += 1) {
+    for (let row = -rows; row <= rows; row += 1) {
+      const hx = col * cell * 1.5
+      const hy = (row + (Math.abs(col) % 2) * 0.5) * hexHeight
+      if (Math.hypot(hx, hy) > radius - hexRadius * 0.2) continue
+      ctx.save()
+      ctx.translate(hx, hy)
+      traceRegularPolygon(ctx, 6, hexRadius, Math.PI / 6)
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+  ctx.restore()
+
+  ctx.strokeStyle = 'rgba(255,251,235,0.68)'
+  ctx.lineWidth = Math.max(1.3, spriteSize * 0.018)
+  ctx.shadowBlur = 8
+  ctx.shadowColor = 'rgba(252,211,77,0.45)'
+  ctx.beginPath()
+  ctx.arc(0, 0, radius, 0, Math.PI * 2)
+  ctx.stroke()
+
+  honeycombShieldSpriteCache.set(spriteSize, canvas)
+  return canvas
+}
+
+function drawHoneycombShield(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, strength: number) {
+  const pulse = 0.985 + Math.sin(time / 620) * 0.025
+  const radius = size * 0.53
+  const sprite = getHoneycombShieldSprite(size)
+
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(pulse, pulse)
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = 0.66 + strength * 0.34
+  ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2)
+  ctx.globalAlpha = 1
+
+  ctx.lineCap = 'round'
+  ctx.lineWidth = Math.max(1.1, size * 0.016)
+  ctx.shadowBlur = 4
+  ctx.shadowColor = 'rgba(252,211,77,0.36)'
+  for (let index = 0; index < 3; index += 1) {
+    const angle = time / 740 + index * Math.PI * 0.42
+    ctx.strokeStyle = index % 2 === 0 ? 'rgba(255,255,255,0.5)' : 'rgba(251,191,36,0.58)'
+    ctx.beginPath()
+    ctx.arc(0, 0, radius * (0.88 + (index % 2) * 0.08), angle, angle + Math.PI * 0.16)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function tracePlasmaLoop(ctx: CanvasRenderingContext2D, radius: number, phase: number, wobble: number, segments = 48) {
+  ctx.beginPath()
+  for (let index = 0; index <= segments; index += 1) {
+    const angle = (index / segments) * Math.PI * 2
+    const wave =
+      Math.sin(angle * 5 + phase) * wobble +
+      Math.sin(angle * 9 - phase * 1.28) * wobble * 0.45 +
+      Math.sin(angle * 3 + phase * 0.72) * wobble * 0.32
+    const r = radius + wave
+    const px = Math.cos(angle) * r
+    const py = Math.sin(angle) * r
+    if (index === 0) ctx.moveTo(px, py)
+    else ctx.lineTo(px, py)
+  }
+  ctx.closePath()
+}
+
+function drawPlasmaForceField(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, charge: number) {
+  const phase = time / 310
+  const pulse = 0.96 + Math.sin(time / 260) * 0.055
+  const radius = size * (0.64 + charge * 0.035) * pulse
+  const wobble = size * (0.02 + charge * 0.007)
+
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.globalCompositeOperation = 'lighter'
+
+  const core = ctx.createRadialGradient(0, 0, radius * 0.14, 0, 0, radius * 1.24)
+  core.addColorStop(0, 'rgba(255,255,255,0.03)')
+  core.addColorStop(0.48, 'rgba(34,211,238,0.06)')
+  core.addColorStop(0.76, 'rgba(217,70,239,0.13)')
+  core.addColorStop(1, 'rgba(34,211,238,0)')
+  ctx.fillStyle = core
+  tracePlasmaLoop(ctx, radius * 1.08, phase * 0.8, wobble * 0.5, 40)
+  ctx.fill()
+
+  const colors = ['rgba(165,243,252,0.84)', 'rgba(217,70,239,0.5)']
+  for (let layer = 0; layer < 2; layer += 1) {
+    ctx.shadowBlur = 13 - layer * 3
+    ctx.shadowColor = layer === 1 ? 'rgba(217,70,239,0.52)' : 'rgba(34,211,238,0.72)'
+    ctx.strokeStyle = colors[layer]
+    ctx.lineWidth = Math.max(1, size * (0.024 - layer * 0.004))
+    tracePlasmaLoop(ctx, radius * (1 + layer * 0.075), phase * (layer % 2 ? -1.15 : 1), wobble * (1.1 - layer * 0.24), layer === 0 ? 46 : 38)
+    ctx.stroke()
+  }
+
+  ctx.lineCap = 'round'
+  ctx.shadowBlur = 6
+  for (let arc = 0; arc < 4; arc += 1) {
+    const angle = phase * 0.7 + arc * Math.PI * 0.58
+    const arcRadius = radius * (0.86 + (arc % 3) * 0.055)
+    ctx.strokeStyle = arc % 2 === 0 ? 'rgba(34,211,238,0.66)' : 'rgba(244,114,182,0.48)'
+    ctx.lineWidth = Math.max(1.2, size * 0.013)
+    ctx.beginPath()
+    ctx.arc(0, 0, arcRadius, angle, angle + Math.PI * (0.12 + (arc % 2) * 0.08))
+    ctx.stroke()
+  }
+
+  ctx.shadowBlur = 5
+  for (let spark = 0; spark < 4; spark += 1) {
+    const angle = phase * 1.35 + spark * Math.PI * 0.5
+    const sparkRadius = radius * (0.92 + Math.sin(phase + spark) * 0.08)
+    ctx.fillStyle = spark % 2 === 0 ? 'rgba(255,255,255,0.82)' : 'rgba(34,211,238,0.78)'
+    ctx.shadowColor = 'rgba(34,211,238,0.82)'
+    ctx.beginPath()
+    ctx.arc(Math.cos(angle) * sparkRadius, Math.sin(angle) * sparkRadius, Math.max(1.2, size * 0.018), 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
 function drawRaidPlayer(
   ctx: CanvasRenderingContext2D,
   player: Player,
@@ -1188,42 +1387,10 @@ function drawRaidPlayer(
 
   drawPlayerEngine(ctx, x, y, size, time)
 
-  if (player.invuln > 0 || player.shield > 0) {
-    const pulse = 0.98 + Math.sin(time / 720) * 0.08
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.scale(pulse, pulse)
-    ctx.strokeStyle = 'rgba(196,181,253,0.42)'
-    ctx.fillStyle = 'rgba(196,181,253,0.05)'
-    ctx.shadowBlur = 14
-    ctx.shadowColor = 'rgba(196,181,253,0.36)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.arc(0, 0, size * 0.48, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-    ctx.restore()
-  }
+  if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
+  else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
 
-  if (player.forceField > 0) {
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.rotate(time / 1000)
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.strokeStyle = 'rgba(165,243,252,0.76)'
-    ctx.fillStyle = 'rgba(34,211,238,0.08)'
-    ctx.shadowBlur = 28
-    ctx.shadowColor = 'rgba(34,211,238,0.58)'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.arc(0, 0, size * 0.64, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.arc(0, 0, size * 0.48, 0, Math.PI * 1.15)
-    ctx.stroke()
-    ctx.restore()
-  }
+  if (player.forceField > 0) drawPlasmaForceField(ctx, x, y, size, time, clamp(player.forceField / FORCE_FIELD_ARMOR, 0, 1))
 
   const sprite = getTowerCanvasSprite(player.ship.key, PLAYER_COLOR, getShipSpriteSize(player.ship.key, 'player'))
   drawSpriteGlow(
@@ -1231,7 +1398,7 @@ function drawRaidPlayer(
     x,
     y,
     size,
-    player.forceField > 0 ? 'rgba(34,211,238,0.3)' : player.invuln > 0 || player.shield > 0 ? 'rgba(196,181,253,0.22)' : 'rgba(239,35,60,0.22)',
+    player.forceField > 0 ? 'rgba(34,211,238,0.34)' : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : 'rgba(239,35,60,0.22)',
     1,
   )
   drawCanvasSprite(
@@ -1261,7 +1428,7 @@ function traceRegularPolygon(ctx: CanvasRenderingContext2D, sides: number, radiu
   ctx.closePath()
 }
 
-function drawPowerPickupIcon(ctx: CanvasRenderingContext2D, type: PowerKind, size: number, color: string) {
+function drawPowerPickupIcon(ctx: CanvasRenderingContext2D, type: PowerKind, size: number, color: string, phase = 0) {
   const r = size * 0.19
   ctx.save()
   ctx.lineCap = 'round'
@@ -1330,18 +1497,53 @@ function drawPowerPickupIcon(ctx: CanvasRenderingContext2D, type: PowerKind, siz
     ctx.lineTo(r * 0.24, 0)
     ctx.stroke()
   } else if (type === 'shield') {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.fillStyle = 'rgba(252,211,77,0.08)'
+    ctx.strokeStyle = 'rgba(252,211,77,0.96)'
+    ctx.lineWidth = Math.max(1.3, size * 0.038)
     ctx.beginPath()
-    ctx.moveTo(0, -r * 1.15)
-    ctx.quadraticCurveTo(r, -r * 0.72, r * 0.78, r * 0.2)
-    ctx.quadraticCurveTo(r * 0.56, r * 0.78, 0, r * 1.12)
-    ctx.quadraticCurveTo(-r * 0.56, r * 0.78, -r * 0.78, r * 0.2)
-    ctx.quadraticCurveTo(-r, -r * 0.72, 0, -r * 1.15)
+    ctx.arc(0, 0, r * 1.16, 0, Math.PI * 2)
+    ctx.fill()
     ctx.stroke()
+    ctx.lineWidth = Math.max(1, size * 0.026)
+    const cells: Array<[number, number, number]> = [
+      [0, 0, 0.52],
+      [-r * 0.46, -r * 0.28, 0.42],
+      [r * 0.46, -r * 0.28, 0.42],
+      [-r * 0.46, r * 0.28, 0.42],
+      [r * 0.46, r * 0.28, 0.42],
+      [0, -r * 0.58, 0.36],
+      [0, r * 0.58, 0.36],
+    ]
+    for (const [hx, hy, scale] of cells) {
+      ctx.save()
+      ctx.translate(hx, hy)
+      traceRegularPolygon(ctx, 6, r * scale, Math.PI / 6)
+      ctx.stroke()
+      ctx.restore()
+    }
+    ctx.restore()
   } else if (type === 'forcefield') {
-    ctx.beginPath()
-    ctx.arc(0, 0, r * 1.05, 0, Math.PI * 2)
-    ctx.arc(0, 0, r * 0.55, Math.PI * 0.18, Math.PI * 1.45)
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.lineWidth = Math.max(1.2, size * 0.033)
+    ctx.shadowBlur = 10
+    ctx.shadowColor = 'rgba(34,211,238,0.72)'
+    ctx.strokeStyle = 'rgba(165,243,252,0.92)'
+    tracePlasmaLoop(ctx, r * 1.08, phase * 1.35, r * 0.12, 52)
     ctx.stroke()
+    ctx.strokeStyle = 'rgba(244,114,182,0.62)'
+    ctx.lineWidth = Math.max(1, size * 0.023)
+    tracePlasmaLoop(ctx, r * 0.72, -phase * 1.7, r * 0.08, 44)
+    ctx.stroke()
+    for (let index = 0; index < 3; index += 1) {
+      const angle = phase + index * Math.PI * 0.72
+      ctx.beginPath()
+      ctx.arc(0, 0, r * (0.82 + index * 0.08), angle, angle + Math.PI * 0.22)
+      ctx.stroke()
+    }
+    ctx.restore()
   } else if (type === 'repair') {
     ctx.beginPath()
     ctx.moveTo(-r, 0)
@@ -1400,6 +1602,184 @@ function getHomingMissileSprite(visualScale: number) {
 
   homingMissileSpriteCache.set(spriteScale, canvas)
   return canvas
+}
+
+function getNukePathPoint(strike: NukeStrike, progress: number) {
+  const lift = 22 + Math.abs(strike.targetX - strike.startX) * 0.16
+  const side = strike.targetX >= strike.startX ? 1 : -1
+  const controlX = (strike.startX + strike.targetX) / 2 + side * 6
+  const controlY = Math.min(strike.startY, strike.targetY) - lift
+  const inv = 1 - progress
+  return {
+    x: inv * inv * strike.startX + 2 * inv * progress * controlX + progress * progress * strike.targetX,
+    y: inv * inv * strike.startY + 2 * inv * progress * controlY + progress * progress * strike.targetY,
+  }
+}
+
+function getNukePathDerivative(strike: NukeStrike, progress: number) {
+  const lift = 22 + Math.abs(strike.targetX - strike.startX) * 0.16
+  const side = strike.targetX >= strike.startX ? 1 : -1
+  const controlX = (strike.startX + strike.targetX) / 2 + side * 6
+  const controlY = Math.min(strike.startY, strike.targetY) - lift
+  return {
+    x: 2 * (1 - progress) * (controlX - strike.startX) + 2 * progress * (strike.targetX - controlX),
+    y: 2 * (1 - progress) * (controlY - strike.startY) + 2 * progress * (strike.targetY - controlY),
+  }
+}
+
+function drawNukeMissile(
+  ctx: CanvasRenderingContext2D,
+  strike: NukeStrike,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+) {
+  const rawProgress = clamp(strike.age / strike.duration, 0, 1)
+  const progress = 1 - Math.pow(1 - rawProgress, 2.2)
+  const point = getNukePathPoint(strike, progress)
+  const derivative = getNukePathDerivative(strike, progress)
+  const x = toX(point.x)
+  const y = toY(point.y)
+  const dx = toX(point.x + derivative.x * 0.01) - x
+  const dy = toY(point.y + derivative.y * 0.01) - y
+  const angle = Math.atan2(dy, dx) + Math.PI / 2
+  const missileLength = Math.max(24, Math.min(42, viewportWidth * 0.043))
+  const missileWidth = missileLength * 0.34
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+  for (let index = 0; index < 10; index += 1) {
+    const next = Math.max(0, progress - index * 0.032)
+    const prev = Math.max(0, progress - (index + 1) * 0.032)
+    if (next <= 0 || next === prev) continue
+    const a = getNukePathPoint(strike, prev)
+    const b = getNukePathPoint(strike, next)
+    const alpha = (1 - index / 10) * (0.5 + rawProgress * 0.35)
+    ctx.strokeStyle = index < 4 ? `rgba(255,255,255,${alpha * 0.72})` : `rgba(249,115,22,${alpha * 0.58})`
+    ctx.lineWidth = Math.max(1.5, missileWidth * (0.55 - index * 0.035))
+    ctx.beginPath()
+    ctx.moveTo(toX(a.x), toY(a.y))
+    ctx.lineTo(toX(b.x), toY(b.y))
+    ctx.stroke()
+  }
+
+  const targetX = toX(strike.targetX)
+  const targetY = toY(strike.targetY)
+  ctx.globalAlpha = Math.max(0, 1 - rawProgress * 0.9)
+  ctx.strokeStyle = 'rgba(251,191,36,0.62)'
+  ctx.lineWidth = 1.4
+  ctx.setLineDash([5, 5])
+  ctx.lineDashOffset = -time / 48
+  ctx.beginPath()
+  ctx.arc(targetX, targetY, 18 + Math.sin(time / 120) * 2, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.globalAlpha = 1
+
+  ctx.translate(x, y)
+  ctx.rotate(angle)
+  ctx.shadowBlur = 18
+  ctx.shadowColor = 'rgba(249,115,22,0.85)'
+
+  const flame = ctx.createLinearGradient(0, missileLength * 0.18, 0, missileLength * 0.86)
+  flame.addColorStop(0, 'rgba(255,255,255,0.95)')
+  flame.addColorStop(0.22, 'rgba(251,191,36,0.9)')
+  flame.addColorStop(0.58, 'rgba(239,35,60,0.82)')
+  flame.addColorStop(1, 'rgba(239,35,60,0)')
+  ctx.fillStyle = flame
+  ctx.beginPath()
+  ctx.moveTo(-missileWidth * 0.28, missileLength * 0.22)
+  ctx.quadraticCurveTo(0, missileLength * (0.72 + Math.sin(time / 70) * 0.08), missileWidth * 0.28, missileLength * 0.22)
+  ctx.closePath()
+  ctx.fill()
+
+  const body = ctx.createLinearGradient(-missileWidth * 0.6, 0, missileWidth * 0.6, 0)
+  body.addColorStop(0, '#7f1d1d')
+  body.addColorStop(0.32, '#f8fafc')
+  body.addColorStop(0.56, '#fca5a5')
+  body.addColorStop(1, '#1f2937')
+  ctx.fillStyle = body
+  ctx.strokeStyle = 'rgba(255,255,255,0.82)'
+  ctx.lineWidth = 1.1
+  ctx.beginPath()
+  ctx.moveTo(0, -missileLength * 0.56)
+  ctx.quadraticCurveTo(missileWidth * 0.48, -missileLength * 0.26, missileWidth * 0.42, missileLength * 0.24)
+  ctx.lineTo(missileWidth * 0.2, missileLength * 0.46)
+  ctx.lineTo(0, missileLength * 0.34)
+  ctx.lineTo(-missileWidth * 0.2, missileLength * 0.46)
+  ctx.lineTo(-missileWidth * 0.42, missileLength * 0.24)
+  ctx.quadraticCurveTo(-missileWidth * 0.48, -missileLength * 0.26, 0, -missileLength * 0.56)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.fillStyle = '#ef233c'
+  ctx.beginPath()
+  ctx.moveTo(-missileWidth * 0.48, missileLength * 0.12)
+  ctx.lineTo(-missileWidth * 0.98, missileLength * 0.4)
+  ctx.lineTo(-missileWidth * 0.32, missileLength * 0.34)
+  ctx.closePath()
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(missileWidth * 0.48, missileLength * 0.12)
+  ctx.lineTo(missileWidth * 0.98, missileLength * 0.4)
+  ctx.lineTo(missileWidth * 0.32, missileLength * 0.34)
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.restore()
+}
+
+function drawNukeBlast(ctx: CanvasRenderingContext2D, width: number, height: number, flashTime: number, time: number, originX?: number, originY?: number) {
+  const strength = clamp(flashTime / NUKE_FLASH_SECONDS, 0, 1)
+  if (strength <= 0) return
+
+  const expansion = 1 - strength
+  const centerX = (originX ?? width * 0.5) + Math.sin(time / 210) * width * 0.015
+  const centerY = originY ?? height * 0.46
+  const maxRadius = Math.max(width, height)
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'screen'
+  ctx.fillStyle = `rgba(255, 246, 220, ${0.08 + strength * 0.22})`
+  ctx.fillRect(0, 0, width, height)
+
+  drawRadialEllipse(ctx, centerX, centerY, maxRadius * (0.18 + expansion * 0.78), maxRadius * (0.14 + expansion * 0.62), [
+    [0, `rgba(255, 255, 255, ${0.86 * strength})`],
+    [0.18, `rgba(251, 191, 36, ${0.66 * strength})`],
+    [0.46, `rgba(239, 35, 60, ${0.36 * strength})`],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+  for (let index = 0; index < 3; index += 1) {
+    const ringProgress = clamp(expansion * 1.25 - index * 0.16, 0, 1)
+    if (ringProgress <= 0) continue
+    const radius = maxRadius * (0.12 + ringProgress * (0.42 + index * 0.1))
+    ctx.globalAlpha = (1 - ringProgress) * strength * (0.72 - index * 0.16)
+    ctx.strokeStyle = index === 0 ? '#ffffff' : index === 1 ? '#fbbf24' : '#fb7185'
+    ctx.lineWidth = Math.max(2, width * (0.004 + index * 0.001))
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  ctx.globalAlpha = Math.min(0.7, strength * 0.65)
+  ctx.strokeStyle = 'rgba(255,255,255,0.72)'
+  ctx.lineWidth = Math.max(1.5, width * 0.0025)
+  for (let ray = 0; ray < 10; ray += 1) {
+    const angle = (ray / 10) * Math.PI * 2 + time / 260
+    const inner = maxRadius * (0.05 + expansion * 0.22)
+    const outer = maxRadius * (0.34 + expansion * 0.54)
+    ctx.beginPath()
+    ctx.moveTo(centerX + Math.cos(angle) * inner, centerY + Math.sin(angle) * inner)
+    ctx.lineTo(centerX + Math.cos(angle) * outer, centerY + Math.sin(angle) * outer)
+    ctx.stroke()
+  }
+  ctx.restore()
 }
 
 function drawPowerUpCanvas(
@@ -1494,7 +1874,7 @@ function drawPowerUpCanvas(
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  drawPowerPickupIcon(ctx, powerUp.type, size, color)
+  drawPowerPickupIcon(ctx, powerUp.type, size, color, phase)
   ctx.restore()
 
   ctx.fillStyle = '#ffffff'
@@ -1663,6 +2043,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const bossAlertRef = useRef(0)
   const bossMessageRef = useRef<BossMessage>(null)
   const stageClearRef = useRef(0)
+  const nukeCooldownRef = useRef(0)
+  const nukeFlashRef = useRef(0)
+  const nukeStrikeRef = useRef<NukeStrike | null>(null)
+  const nukeBlastOriginRef = useRef<Vec>({ x: 50, y: 46 })
   const highScoreRef = useRef(getHighScore())
   const unlockedStageRef = useRef(getUnlockedStage())
   const raidBgmElementRef = useRef<HTMLAudioElement | null>(null)
@@ -1689,12 +2073,16 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     pointer: null,
     stageClear: 0,
     unlockedStage: unlockedStageRef.current,
+    nukeCooldown: 0,
+    nukeFlash: 0,
   }))
 
   const syncSnapshot = useCallback(() => {
     const player = playerRef.current
     const bossAlertBucket = bossAlertRef.current > 0 ? Math.ceil(bossAlertRef.current * 4) : 0
     const stageClearBucket = stageClearRef.current > 0 ? Math.ceil(stageClearRef.current * 30) : 0
+    const nukeCooldownBucket = nukeCooldownRef.current > 0 ? Math.ceil(nukeCooldownRef.current) : 0
+    const nukeFlashBucket = nukeFlashRef.current > 0 ? Math.ceil(nukeFlashRef.current * 10) : 0
     const snapshotKey = [
       phaseRef.current,
       stageRef.current,
@@ -1704,6 +2092,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       highScoreRef.current,
       selectedShipRef.current.key,
       stageClearBucket,
+      nukeCooldownBucket,
+      nukeFlashBucket,
       unlockedStageRef.current,
       player.hp,
       player.maxHp,
@@ -1740,6 +2130,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       pointer: null,
       stageClear: stageClearRef.current,
       unlockedStage: unlockedStageRef.current,
+      nukeCooldown: nukeCooldownRef.current,
+      nukeFlash: nukeFlashRef.current,
     })
   }, [])
 
@@ -1951,6 +2343,22 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (phaseRef.current === 'playing') {
       drawFingerGuide(ctx, pointerVisualRef.current, toX, toY)
     }
+
+    if (nukeStrikeRef.current) {
+      drawNukeMissile(ctx, nukeStrikeRef.current, toX, toY, cssWidth, time)
+    }
+
+    if (nukeFlashRef.current > 0) {
+      drawNukeBlast(
+        ctx,
+        cssWidth,
+        cssHeight,
+        nukeFlashRef.current,
+        time,
+        toX(nukeBlastOriginRef.current.x),
+        toY(nukeBlastOriginRef.current.y),
+      )
+    }
   }, [])
 
   const spawnSparks = useCallback((x: number, y: number, color: string, count: number, size = 5) => {
@@ -1972,6 +2380,102 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       })
     }
   }, [])
+
+  const detonateNuke = useCallback((targetX = 50, targetY = 46) => {
+    if (phaseRef.current !== 'playing') return
+    const player = playerRef.current
+    nukeBlastOriginRef.current = { x: targetX, y: targetY }
+    nukeFlashRef.current = NUKE_FLASH_SECONDS
+    player.invuln = Math.max(player.invuln, 0.75)
+    enemyShotsRef.current = []
+
+    let destroyed = 0
+    let markedExplosions = 0
+    const survivors: Enemy[] = []
+    for (const enemy of enemiesRef.current) {
+      if (enemy.hp <= 0) continue
+
+      const inBlast = enemy.y > -18 && enemy.y < HEIGHT + 16
+      if (!inBlast) {
+        survivors.push(enemy)
+        continue
+      }
+
+      if (enemy.isBoss) {
+        const damage = Math.max(NUKE_BOSS_DAMAGE_FLOOR, Math.round(enemy.maxHp * NUKE_BOSS_DAMAGE_RATIO))
+        enemy.shieldTime = 0
+        enemy.chargeTimer = 0
+        enemy.hp = Math.max(1, enemy.hp - damage)
+        survivors.push(enemy)
+        addRipple(enemy.x, enemy.y, '#fbbf24', enemy.bossKind === 'final' ? 26 : 20)
+        spawnSparks(enemy.x, enemy.y, '#fbbf24', 48, 9)
+        continue
+      }
+
+      destroyed += 1
+      player.score += 95 + waveRef.current * 14
+      if (markedExplosions < 10) {
+        markedExplosions += 1
+        addRipple(enemy.x, enemy.y, '#fb923c', 12)
+        spawnSparks(enemy.x, enemy.y, '#fb7185', 24, 6)
+      }
+    }
+
+    enemiesRef.current = survivors
+    killsSincePowerRef.current += destroyed
+    if (player.score > highScoreRef.current) {
+      highScoreRef.current = player.score
+    }
+
+    addRipple(targetX, targetY, '#fbbf24', 30)
+    addRipple(player.x, player.y, '#fef3c7', 14)
+    spawnSparks(targetX, targetY, '#fbbf24', 80, 9)
+    playGameSound('explosion_big')
+    if (destroyed >= 5) window.setTimeout(() => playGameSound('combo'), 120)
+    syncSnapshot()
+  }, [addRipple, spawnSparks, syncSnapshot])
+
+  const activateNuke = useCallback(() => {
+    if (phaseRef.current !== 'playing' || stageClearRef.current > 0 || nukeCooldownRef.current > 0 || nukeStrikeRef.current) return
+
+    const visibleEnemies = enemiesRef.current.filter((enemy) => (
+      enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16
+    ))
+    const hasTargets = enemyShotsRef.current.length > 0 || visibleEnemies.length > 0
+    if (!hasTargets) return
+
+    const player = playerRef.current
+    nukeCooldownRef.current = NUKE_COOLDOWN_SECONDS
+    player.invuln = Math.max(player.invuln, 1.15)
+
+    let targetX = 50
+    let targetY = 46
+    const priorityTarget = visibleEnemies.find((enemy) => enemy.isBoss)
+    if (priorityTarget) {
+      targetX = clamp(priorityTarget.x, 18, 82)
+      targetY = clamp(priorityTarget.y + 5, 18, 58)
+    } else if (visibleEnemies.length > 0) {
+      targetX = clamp(visibleEnemies.reduce((sum, enemy) => sum + enemy.x, 0) / visibleEnemies.length, 18, 82)
+      targetY = clamp(visibleEnemies.reduce((sum, enemy) => sum + enemy.y, 0) / visibleEnemies.length, 22, 58)
+    } else if (enemyShotsRef.current.length > 0) {
+      targetX = clamp(enemyShotsRef.current.reduce((sum, shot) => sum + shot.x, 0) / enemyShotsRef.current.length, 18, 82)
+      targetY = clamp(enemyShotsRef.current.reduce((sum, shot) => sum + shot.y, 0) / enemyShotsRef.current.length, 22, 58)
+    }
+
+    nukeBlastOriginRef.current = { x: targetX, y: targetY }
+    nukeStrikeRef.current = {
+      startX: player.x,
+      startY: player.y - 2.4,
+      targetX,
+      targetY,
+      age: 0,
+      duration: NUKE_MISSILE_SECONDS,
+    }
+    addRipple(player.x, player.y, '#fef3c7', 13)
+    spawnSparks(player.x, player.y, '#fb923c', 26, 6)
+    playGameSound('rocket')
+    syncSnapshot()
+  }, [addRipple, spawnSparks, syncSnapshot])
 
   const resetGame = useCallback((startStage = 1, fullyBuffed = false) => {
     const stage = clamp(startStage, 1, MAX_RAID_STAGE)
@@ -2004,6 +2508,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     bossAlertRef.current = 0
     bossMessageRef.current = null
     stageClearRef.current = 0
+    nukeCooldownRef.current = 0
+    nukeFlashRef.current = 0
+    nukeStrikeRef.current = null
+    nukeBlastOriginRef.current = { x: 50, y: 46 }
     highScoreRef.current = getHighScore()
     unlockedStageRef.current = getUnlockedStage()
     stopBGM()
@@ -2635,8 +3143,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.shield > 0) {
       player.shield = Math.max(0, player.shield - 1.2)
       player.invuln = 0.35
-      spawnSparks(player.x, player.y, '#c4b5fd', 20, 6)
-      addRipple(player.x, player.y, '#c4b5fd', 9)
+      spawnSparks(player.x, player.y, '#fcd34d', 20, 6)
+      addRipple(player.x, player.y, '#fcd34d', 9)
       playGameSound('hit')
       return
     }
@@ -2747,6 +3255,16 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (phaseRef.current !== 'playing') return
 
     const player = playerRef.current
+    nukeCooldownRef.current = Math.max(0, nukeCooldownRef.current - dt)
+    nukeFlashRef.current = Math.max(0, nukeFlashRef.current - dt)
+    if (nukeStrikeRef.current) {
+      const strike = nukeStrikeRef.current
+      strike.age = Math.min(strike.duration, strike.age + dt)
+      if (strike.age >= strike.duration) {
+        nukeStrikeRef.current = null
+        detonateNuke(strike.targetX, strike.targetY)
+      }
+    }
     if (stageClearRef.current > 0) {
       const before = stageClearRef.current
       stageClearRef.current = Math.max(0, stageClearRef.current - dt)
@@ -3218,7 +3736,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.score > highScoreRef.current) {
       highScoreRef.current = player.score
     }
-  }, [addRipple, damagePlayer, fireEnemy, firePlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnRepairPowerUp, spawnSparks, startRaidBgm, stopRaidBgm])
+  }, [addRipple, damagePlayer, detonateNuke, fireEnemy, firePlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnRepairPowerUp, spawnSparks, startRaidBgm, stopRaidBgm])
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -3257,6 +3775,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         }
         else onClose()
       }
+      if (event.code === 'Space' && phaseRef.current === 'playing') {
+        event.preventDefault()
+        if (!event.repeat) activateNuke()
+        return
+      }
       keysRef.current.add(key)
     }
     const up = (event: KeyboardEvent) => keysRef.current.delete(event.key.toLowerCase())
@@ -3266,7 +3789,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [onClose, pauseGame, resetGame, resumeGame, syncSnapshot])
+  }, [activateNuke, onClose, pauseGame, resetGame, resumeGame, syncSnapshot])
 
   useEffect(() => () => {
     stopBGM()
@@ -3313,6 +3836,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const completedCampaign = snapshot.unlockedStage >= MAX_RAID_STAGE
   const checkpointStage = getCheckpointStage()
   const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
+  const nukeCooldown = Math.ceil(snapshot.nukeCooldown)
+  const nukeStageLocked = snapshot.phase === 'playing' && snapshot.stageClear > 0
+  const nukeReady = snapshot.phase === 'playing' && !nukeStageLocked && snapshot.nukeCooldown <= 0
+  const nukeDisplay = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? `${nukeCooldown}s` : 'Nuke'
+  const nukeHint = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? 'Cooldown' : 'Space'
 
   return (
     <div
@@ -3363,6 +3891,23 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             <i key={`force-${index}`} className={filled ? 'raid__pip raid__pip--force raid__pip--filled' : 'raid__pip raid__pip--force'} />
           ))}
         </div>
+        <button
+          className={nukeReady ? 'raid__nuke raid__nuke--ready' : 'raid__nuke'}
+          type="button"
+          onClick={activateNuke}
+          disabled={!nukeReady}
+          aria-label={nukeReady ? 'Launch nuclear strike' : nukeStageLocked ? 'Nuclear strike unavailable during stage clear' : snapshot.phase === 'playing' ? `Nuclear strike cooling down ${nukeCooldown} seconds` : 'Nuclear strike available during combat'}
+        >
+          <span className="raid__nuke-mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="raid__nuke-text">
+            <b>{nukeDisplay}</b>
+            <small>{nukeHint}</small>
+          </span>
+        </button>
         <button className="raid__pause" type="button" onClick={pauseGame}>Pause</button>
         <button className="raid__exit" type="button" onClick={onClose}>Exit</button>
       </div>
