@@ -66,6 +66,10 @@ export default defineConfig({
       },
 
       workbox: {
+        // FIX FOR LARGE AUDIO FILES
+        maximumFileSizeToCacheInBytes:
+          20 * 1024 * 1024,
+
         cleanupOutdatedCaches: true,
 
         clientsClaim: true,
@@ -88,7 +92,8 @@ export default defineConfig({
 
               expiration: {
                 maxEntries: 200,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
+                maxAgeSeconds:
+                  60 * 60 * 24 * 30,
               },
             },
           },
@@ -104,15 +109,18 @@ export default defineConfig({
 
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
+                maxAgeSeconds:
+                  60 * 60 * 24 * 30,
               },
             },
           },
 
           {
             urlPattern: ({ request }) =>
-              request.destination === 'script' ||
-              request.destination === 'style',
+              request.destination ===
+                'script' ||
+              request.destination ===
+                'style',
 
             handler: 'StaleWhileRevalidate',
 
@@ -132,5 +140,9 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+  },
+
+  build: {
+    chunkSizeWarningLimit: 1000,
   },
 })
