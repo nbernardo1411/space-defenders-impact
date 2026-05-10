@@ -1468,6 +1468,147 @@
   box-shadow: 0 0 30px rgba(239, 35, 60, 0.38);
 }
 
+.raid__boss-warning {
+  position: absolute;
+  z-index: 34;
+  top: 16%;
+  left: 50%;
+  width: min(520px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  color: #fecdd3;
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: none;
+  filter: drop-shadow(0 0 22px rgba(239, 35, 60, 0.68));
+  animation: raidBossWarningPulse 0.62s ease-in-out infinite alternate;
+}
+
+.raid__boss-warning::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(239, 35, 60, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(239, 35, 60, 0.12), transparent 26%, transparent 72%, rgba(239, 35, 60, 0.1));
+  opacity: 0.76;
+  animation: raidBossWarningScreen 0.56s steps(2, end) infinite;
+}
+
+.raid__boss-warning::after {
+  content: '';
+  position: absolute;
+  inset: 2px 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.78), rgba(239, 35, 60, 0.9), transparent);
+  box-shadow: 0 0 14px rgba(239, 35, 60, 0.8);
+}
+
+.raid__boss-warning-panel {
+  position: relative;
+  overflow: hidden;
+  border: 2px solid #ef233c;
+  background:
+    linear-gradient(90deg, rgba(239, 35, 60, 0.2), rgba(17, 5, 9, 0.94) 20% 80%, rgba(239, 35, 60, 0.2)),
+    repeating-linear-gradient(135deg, rgba(239, 35, 60, 0.22) 0 12px, transparent 12px 24px);
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 0, 0, 0.68),
+    inset 0 0 20px rgba(239, 35, 60, 0.24),
+    0 0 18px rgba(239, 35, 60, 0.36);
+}
+
+.raid__boss-warning-panel::before,
+.raid__boss-warning-panel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22%;
+  background:
+    linear-gradient(135deg, transparent 0 28%, rgba(239, 35, 60, 0.82) 29% 42%, transparent 43% 56%, rgba(239, 35, 60, 0.62) 57% 70%, transparent 71%);
+  opacity: 0.74;
+}
+
+.raid__boss-warning-panel::before {
+  left: 0;
+}
+
+.raid__boss-warning-panel::after {
+  right: 0;
+  transform: scaleX(-1);
+}
+
+.raid__boss-warning-panel--top {
+  min-height: 50px;
+  display: grid;
+  place-items: center;
+  color: #fecdd3;
+  font-weight: 1000;
+  font-size: clamp(1rem, 2.5vw, 1.35rem);
+  letter-spacing: 0.16rem;
+}
+
+.raid__boss-warning-panel--main {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  align-items: center;
+  gap: 12px;
+  border-color: rgba(239, 35, 60, 0.72);
+  background:
+    linear-gradient(90deg, rgba(239, 35, 60, 0.12), rgba(7, 2, 5, 0.94) 18% 82%, rgba(239, 35, 60, 0.12)),
+    linear-gradient(180deg, rgba(239, 35, 60, 0.34), transparent 18% 82%, rgba(239, 35, 60, 0.34));
+}
+
+.raid__boss-warning-panel--main span {
+  color: #ef233c;
+  font-weight: 1000;
+  font-size: clamp(1rem, 2.8vw, 1.45rem);
+  letter-spacing: 0.13rem;
+  text-shadow: 0 0 12px rgba(239, 35, 60, 0.8);
+}
+
+.raid__boss-warning-panel--main i {
+  justify-self: center;
+  width: 29px;
+  aspect-ratio: 1;
+  border: 2px solid #ef233c;
+  border-radius: 50%;
+  position: relative;
+  box-shadow: 0 0 14px rgba(239, 35, 60, 0.62);
+}
+
+.raid__boss-warning-panel--main i::before {
+  content: '!';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fecdd3;
+  font-size: 1rem;
+  font-weight: 1000;
+}
+
+.raid__boss-warning-stripes {
+  height: 24px;
+  border: 1px solid rgba(239, 35, 60, 0.82);
+  background:
+    repeating-linear-gradient(135deg, #ef233c 0 12px, #1f0307 12px 22px);
+  box-shadow: 0 0 16px rgba(239, 35, 60, 0.36), inset 0 0 0 2px rgba(0, 0, 0, 0.62);
+  animation: raidBossWarningStripes 0.36s linear infinite;
+}
+
+.raid__boss-warning small {
+  color: #ffe4e6;
+  font-weight: 1000;
+  font-size: 0.68rem;
+  letter-spacing: 0.16rem;
+  text-shadow: 0 0 12px rgba(239, 35, 60, 0.82);
+}
+
 .raid__stage-flash {
   position: absolute;
   z-index: 38;
@@ -1857,6 +1998,29 @@
   to { transform: rotate(360deg) scale(1.04); }
 }
 
+@keyframes raidBossWarningPulse {
+  from {
+    opacity: 0.78;
+    transform: translateX(-50%) scale(0.985);
+    filter: drop-shadow(0 0 14px rgba(239, 35, 60, 0.5));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.02);
+    filter: drop-shadow(0 0 32px rgba(239, 35, 60, 0.86));
+  }
+}
+
+@keyframes raidBossWarningScreen {
+  0%, 100% { opacity: 0.38; }
+  50% { opacity: 0.82; }
+}
+
+@keyframes raidBossWarningStripes {
+  from { background-position: 0 0; }
+  to { background-position: 34px 0; }
+}
+
 @keyframes raidFinalCharge {
   from { filter: brightness(0.82); }
   to { filter: brightness(1.55); }
@@ -2030,6 +2194,43 @@
     top: 12%;
     padding: 7px 10px;
     font-size: 0.62rem;
+    letter-spacing: 0.08rem;
+  }
+
+  .raid__boss-warning {
+    top: 12%;
+    width: min(330px, calc(100vw - 18px));
+    gap: 5px;
+    padding: 7px 8px 9px;
+  }
+
+  .raid__boss-warning-panel--top {
+    min-height: 34px;
+    font-size: 0.84rem;
+    letter-spacing: 0.1rem;
+  }
+
+  .raid__boss-warning-panel--main {
+    min-height: 38px;
+    grid-template-columns: 28px 1fr 28px;
+    gap: 6px;
+  }
+
+  .raid__boss-warning-panel--main span {
+    font-size: 0.78rem;
+    letter-spacing: 0.06rem;
+  }
+
+  .raid__boss-warning-panel--main i {
+    width: 21px;
+  }
+
+  .raid__boss-warning-stripes {
+    height: 16px;
+  }
+
+  .raid__boss-warning small {
+    font-size: 0.5rem;
     letter-spacing: 0.08rem;
   }
 

@@ -289,6 +289,7 @@ let enemyId = 1
 let powerId = 1
 let sparkId = 1
 let rippleId = 1
+let lastPickupVoiceMs = 0
 
 const DEG = Math.PI / 180
 
@@ -659,6 +660,207 @@ function powerGlyph(type: PowerKind) {
   if (type === 'forcefield') return 'F'
   if (type === 'repair') return '+'
   return 'S'
+}
+
+//
+// ARCADE ANNOUNCER STYLE WEB SPEECH
+// This pushes browser TTS close to arcade energy.
+// Still limited by speechSynthesis itself,
+// but MUCH better than plain robotic speech.
+//
+
+window.speechSynthesis.onvoiceschanged = () => {
+  window.speechSynthesis.getVoices()
+}
+
+function pickupVoiceLine(type: PowerKind) {
+  if (type === 'rocket') return 'ROCKET ARMED!!!'
+  if (type === 'laser') return 'LAAASER UNLEASHED!!!'
+  if (type === 'spread') return 'SPREAD SHOT!!!'
+  if (type === 'scatter') return 'SCATTER BURST!!!'
+  if (type === 'homing') return 'HOMING LOCKED!!!'
+  if (type === 'option') return 'SCOUT SUPPORT!!!'
+  if (type === 'shield') return 'SHIELD UP!!!'
+  if (type === 'forcefield') return 'FORCE FIELD ONLINE!!!'
+  if (type === 'repair') return 'REPAIR BOOST!!!'
+
+  return 'POWER UUUUP!!!'
+}
+
+function getPickupVoice() {
+  const voices = window.speechSynthesis.getVoices()
+
+  // ONLY female voices
+  return (
+    voices.find(
+      (voice) =>
+        voice.lang.toLowerCase().startsWith('en') &&
+        /aria|zira|jenny|samantha|female|woman|google us english female/i.test(
+          voice.name.toLowerCase(),
+        ),
+    ) ??
+
+    // fallback: any english voice containing female keywords
+    voices.find(
+      (voice) =>
+        voice.lang.toLowerCase().startsWith('en') &&
+        /female|woman|zira|aria|jenny|samantha/i.test(
+          voice.name.toLowerCase(),
+        ),
+    ) ??
+
+    // final fallback: first english voice
+    voices.find((voice) =>
+      voice.lang.toLowerCase().startsWith('en'),
+    ) ??
+
+    null
+  )
+}
+
+function getPickupVoiceTuning(type: PowerKind) {
+  // Aggressive arcade tuning
+
+  if (type === 'rocket') {
+    return {
+      rate: 1.55,
+      pitch: 0.96,
+      emphasis: 'strong',
+    }
+  }
+
+  if (type === 'laser') {
+    return {
+      rate: 1.62,
+      pitch: 1.25,
+      emphasis: 'strong',
+    }
+  }
+
+  if (type === 'spread') {
+    return {
+      rate: 1.56,
+      pitch: 1.12,
+      emphasis: 'strong',
+    }
+  }
+
+  if (type === 'scatter') {
+    return {
+      rate: 1.58,
+      pitch: 1.16,
+      emphasis: 'strong',
+    }
+  }
+
+  if (type === 'homing') {
+    return {
+      rate: 1.48,
+      pitch: 1.02,
+      emphasis: 'moderate',
+    }
+  }
+
+  if (type === 'shield') {
+    return {
+      rate: 1.4,
+      pitch: 0.88,
+      emphasis: 'moderate',
+    }
+  }
+
+  return {
+    rate: 1.52,
+    pitch: 1.08,
+    emphasis: 'strong',
+  }
+}
+
+function createUtterance(
+  text: string,
+  volume: number,
+  rate: number,
+  pitch: number,
+) {
+  const utterance = new SpeechSynthesisUtterance(text)
+
+  utterance.volume = volume
+  utterance.rate = rate
+  utterance.pitch = pitch
+
+  const voice = getPickupVoice()
+
+  if (voice) {
+    utterance.voice = voice
+  }
+
+  return utterance
+}
+
+function playPickupVoiceLine(type: PowerKind) {
+  if (
+    typeof window === 'undefined' ||
+    !window.speechSynthesis ||
+    typeof SpeechSynthesisUtterance === 'undefined'
+  ) {
+    return
+  }
+
+  if (!getGameSoundEnabled()) {
+    return
+  }
+
+  const now =
+    typeof performance !== 'undefined'
+      ? performance.now()
+      : Date.now()
+
+  if (now - lastPickupVoiceMs < 60) {
+    return
+  }
+
+  lastPickupVoiceMs = now
+
+  try {
+    const tuning = getPickupVoiceTuning(type)
+
+    const mix = getGameAudioMixSettings()
+
+    const volume = clamp(
+      mix.master * mix.ui * 1.25,
+      0,
+      1,
+    )
+
+    // stronger phrasing
+    const line = pickupVoiceLine(type)
+      .replace(/ROCKET/g, 'RRRROCKET')
+      .replace(/LASER/g, 'LAAAASERRR')
+      .replace(/POWER/g, 'POWERRRR')
+      .replace(/SPREAD/g, 'SPREEEAD')
+      .replace(/SCATTER/g, 'SCATTTERRR')
+
+    window.speechSynthesis.cancel()
+
+    //
+    // MAIN VOICE
+    //
+
+    const main = createUtterance(
+      line,
+      volume,
+      tuning.rate * 0.75,
+      tuning.pitch * 1.1,
+    )
+    // make it punchier
+    main.pitch *= 1.08
+    main.rate *= 1.06
+
+    window.speechSynthesis.speak(main)
+
+  } catch {
+    // flavor only
+  }
 }
 
 function getPowerScore(player: Player) {
@@ -3078,7 +3280,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.forceField > 0) {
       player.forceField = Math.min(FORCE_FIELD_ARMOR, player.forceField + 1)
     }
-    bossAlertRef.current = 2.7
+    bossAlertRef.current = 1
     bossMessageRef.current = 'incoming'
     startRaidBgm(stage, 'boss')
     playGameSound('countdown')
@@ -3342,7 +3544,9 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       startRaidBgm(stageRef.current, desiredBgmMode)
     }
     powerDropCooldownRef.current = Math.max(0, powerDropCooldownRef.current - dt)
-    bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
+    if (bossMessageRef.current !== 'incoming') {
+      bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
+    }
 
     if (bossTimerRef.current <= 0 && !bossActive) {
       spawnBoss()
@@ -3496,6 +3700,14 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       enemy.y = enemy.isBoss
         ? (enemy.y < bossYTarget ? Math.min(bossYTarget, enemy.y + enemy.vy * dt) : bossYTarget)
         : enemy.y + enemy.vy * dt
+      if (enemy.isBoss && bossMessageRef.current === 'incoming') {
+        if (enemy.y >= Math.min(5, bossYTarget - 6)) {
+          bossAlertRef.current = 0
+          bossMessageRef.current = null
+        } else {
+          bossAlertRef.current = Math.max(bossAlertRef.current, 1)
+        }
+      }
       enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
       enemy.fireCooldown = fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
         ? (enemy.isBoss ? Math.max(bossKind === 'final' ? 0.62 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
@@ -3728,6 +3940,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         player.score += 120
         spawnSparks(powerUp.x, powerUp.y, powerColor(powerUp.type), 24, 6)
         addRipple(powerUp.x, powerUp.y, powerColor(powerUp.type), 11)
+        playPickupVoiceLine(powerUp.type)
         playGameSound('levelup')
       }
     }
@@ -3841,6 +4054,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const nukeReady = snapshot.phase === 'playing' && !nukeStageLocked && snapshot.nukeCooldown <= 0
   const nukeDisplay = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? `${nukeCooldown}s` : 'Nuke'
   const nukeHint = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? 'Cooldown' : 'Space'
+  const bossIncoming = snapshot.bossAlert > 0 && snapshot.bossMessage === 'incoming'
+  const bossClear = snapshot.bossAlert > 0 && snapshot.bossMessage === 'clear'
 
   return (
     <div
@@ -3916,9 +4131,24 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         <canvas ref={fxCanvasRef} className="raid__fx-canvas" />
       </div>
 
-      {snapshot.bossAlert > 0 && (
-        <div className="raid__boss-alert">
-          {snapshot.bossMessage === 'clear' ? 'Boss Destroyed' : 'Boss Vector Incoming'}
+      {bossIncoming && (
+        <div className="raid__boss-warning" role="alert" aria-live="assertive">
+          <div className="raid__boss-warning-panel raid__boss-warning-panel--top">
+            <span>Attention</span>
+          </div>
+          <div className="raid__boss-warning-panel raid__boss-warning-panel--main">
+            <i aria-hidden="true" />
+            <span>Security Alert</span>
+            <i aria-hidden="true" />
+          </div>
+          <div className="raid__boss-warning-stripes" aria-hidden="true" />
+          <small>Boss vector incoming</small>
+        </div>
+      )}
+
+      {bossClear && (
+        <div className="raid__boss-alert raid__boss-alert--clear">
+          Boss Destroyed
         </div>
       )}
 
