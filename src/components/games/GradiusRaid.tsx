@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { getGameAudioMixSettings, getGameSoundEnabled, playGameSound, stopBGM } from './sound'
 import { AlienShip, TowerShip } from './towerDefense/sprites'
 import './GradiusRaid.css'
@@ -46,6 +47,8 @@ type Shot = Vec & {
   radius: number
   pierce?: number
   turn?: number
+  homingTargetId?: number
+  retargetTime?: number
 }
 
 type Enemy = Vec & {
@@ -180,6 +183,30 @@ const BRIEFING_PANELS = [
   },
 ]
 
+const BRIEFING_PICKUP_TYPES: Record<string, PowerKind> = {
+  'V Spread': 'spread',
+  'L Laser': 'laser',
+  '* Scatter': 'scatter',
+  'R Rocket': 'rocket',
+  'H Homing': 'homing',
+  'O Scouts': 'option',
+  'S Shield': 'shield',
+  'F Force Field': 'forcefield',
+  '+ Repair': 'repair',
+}
+
+const PICKUP_PREVIEW_SEEDS: Record<PowerKind, number> = {
+  spread: 1,
+  laser: 2,
+  scatter: 3,
+  rocket: 4,
+  homing: 5,
+  option: 6,
+  shield: 7,
+  forcefield: 8,
+  repair: 9,
+}
+
 const EMPTY_WEAPONS: Record<WeaponKey, number> = {
   spread: 0,
   laser: 0,
@@ -227,10 +254,15 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
   homing: 6.5,
 }
 
+const WEAPON_KEYS: WeaponKey[] = ['spread', 'laser', 'scatter', 'rocket', 'homing']
 const FORCE_FIELD_ARMOR = 5
 const NORMAL_POWER_DROP_COOLDOWN = 3.8
 const POWER_PITY_KILLS = 12
-const RENDER_INTERVAL_MS = 16
+const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
+const GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS = 50
+const IDLE_SNAPSHOT_INTERVAL_MS = 120
+const HOMING_RETARGET_SECONDS = 0.18
+const HOMING_RETARGET_STAGGER_SECONDS = 0.012
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
 const MAX_SPARKS = 45
@@ -242,14 +274,296 @@ let powerId = 1
 let sparkId = 1
 let rippleId = 1
 
+const DEG = Math.PI / 180
+
+type CanvasSpriteEntry = {
+  image: HTMLImageElement
+  loaded: boolean
+  objectUrl?: string
+}
+
+type RaidPalette = {
+  bgA: string
+  bgB: string
+  nebulaA: string
+  nebulaB: string
+  starTint: string
+  streak: string
+}
+
+const canvasSpriteCache = new Map<string, CanvasSpriteEntry>()
+const homingMissileSpriteCache = new Map<number, HTMLCanvasElement>()
+
+const DEFAULT_RAID_PALETTE: RaidPalette = {
+  bgA: 'rgba(239, 35, 60, 0.16)',
+  bgB: 'rgba(14, 165, 233, 0.13)',
+  nebulaA: 'rgba(127, 29, 29, 0.3)',
+  nebulaB: 'rgba(8, 47, 73, 0.32)',
+  starTint: 'rgba(248, 113, 113, 0.64)',
+  streak: 'rgba(239, 35, 60, 0.5)',
+}
+
+const BACKGROUND_STARS = Array.from({ length: 220 }, (_, index) => ({
+  x: seededNoise(index, 1),
+  y: seededNoise(index, 2),
+  size: 0.75 + seededNoise(index, 3) * 1.35,
+  alpha: 0.34 + seededNoise(index, 4) * 0.56,
+  tint: seededNoise(index, 5),
+}))
+
+const BACKGROUND_ASTEROIDS = [
+  { x: 0.34, width: 22, height: 18, speed: 0.128, delay: -2, alpha: 0.52, spin: 180 },
+  { x: 0.62, width: 14, height: 11, speed: 0.082, delay: -6, alpha: 0.38, spin: -240 },
+  { x: 0.78, width: 32, height: 26, speed: 0.064, delay: -10, alpha: 0.44, spin: 120 },
+  { x: 0.18, width: 10, height: 8, speed: 0.105, delay: -4, alpha: 0.3, spin: 300 },
+  { x: 0.5, width: 18, height: 14, speed: 0.052, delay: -14, alpha: 0.35, spin: -160 },
+]
+
+const BACKGROUND_DEBRIS = [
+  { x: 0.28, width: 38, height: 28, speed: 0.034, delay: -12, alpha: 0.12, spin: 220 },
+  { x: 0.58, width: 24, height: 18, speed: 0.024, delay: -28, alpha: 0.12, spin: -180 },
+  { x: 0.82, width: 18, height: 14, speed: 0.03, delay: -8, alpha: 0.12, spin: 140 },
+]
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function seededNoise(index: number, salt: number) {
+  const value = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453123
+  return value - Math.floor(value)
+}
+
+function getCssVar(root: HTMLElement, name: string, fallback: string) {
+  return getComputedStyle(root).getPropertyValue(name).trim() || fallback
+}
+
+function readRaidPalette(root: HTMLElement): RaidPalette {
+  return {
+    bgA: getCssVar(root, '--raid-bg-a', DEFAULT_RAID_PALETTE.bgA),
+    bgB: getCssVar(root, '--raid-bg-b', DEFAULT_RAID_PALETTE.bgB),
+    nebulaA: getCssVar(root, '--raid-nebula-a', DEFAULT_RAID_PALETTE.nebulaA),
+    nebulaB: getCssVar(root, '--raid-nebula-b', DEFAULT_RAID_PALETTE.nebulaB),
+    starTint: getCssVar(root, '--raid-star-tint', DEFAULT_RAID_PALETTE.starTint),
+    streak: getCssVar(root, '--raid-streak', DEFAULT_RAID_PALETTE.streak),
+  }
+}
+
+function updateSparksInPlace(sparks: Spark[], dt: number) {
+  const start = Math.max(0, sparks.length - MAX_SPARKS)
+  let write = 0
+  for (let index = start; index < sparks.length; index += 1) {
+    const spark = sparks[index]
+    spark.x += spark.vx * dt
+    spark.y += spark.vy * dt
+    spark.life -= dt
+    if (spark.life > 0) {
+      sparks[write] = spark
+      write += 1
+    }
+  }
+  sparks.length = write
+}
+
+function updateRipplesInPlace(ripples: Ripple[], dt: number) {
+  const start = Math.max(0, ripples.length - MAX_RIPPLES)
+  let write = 0
+  for (let index = start; index < ripples.length; index += 1) {
+    const ripple = ripples[index]
+    ripple.life -= dt
+    if (ripple.life > 0) {
+      ripples[write] = ripple
+      write += 1
+    }
+  }
+  ripples.length = write
+}
+
+function traceRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + width - r, y)
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r)
+  ctx.lineTo(x + width, y + height - r)
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
+  ctx.lineTo(x + r, y + height)
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
+function drawRadialEllipse(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radiusX: number,
+  radiusY: number,
+  stops: Array<[number, string]>,
+) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(radiusX / radiusY, 1)
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusY)
+  stops.forEach(([offset, color]) => gradient.addColorStop(offset, color))
+  ctx.fillStyle = gradient
+  ctx.beginPath()
+  ctx.arc(0, 0, radiusY, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function makeCanvasSprite(cacheKey: string, markup: string) {
+  const existing = canvasSpriteCache.get(cacheKey)
+  if (existing) return existing
+
+  const image = new Image()
+  const entry: CanvasSpriteEntry = { image, loaded: false }
+  const markupWithoutSvgFilter = markup
+    .replace(/\sstyle="filter:[^"]*"/g, '')
+    .replace(/filter:\s*drop-shadow\([^)]*\);?/g, '')
+  const svgMarkup = markupWithoutSvgFilter.startsWith('<svg') && !markupWithoutSvgFilter.includes('xmlns=')
+    ? markupWithoutSvgFilter.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')
+    : markupWithoutSvgFilter
+  image.decoding = 'async'
+  image.onload = () => {
+    entry.loaded = true
+    if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl)
+  }
+  image.onerror = () => {
+    entry.loaded = false
+    if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl)
+  }
+  const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' })
+  entry.objectUrl = URL.createObjectURL(blob)
+  image.src = entry.objectUrl
+  canvasSpriteCache.set(cacheKey, entry)
+  return entry
+}
+
+function getTowerCanvasSprite(shipKey: string, color: string, size: number) {
+  const key = `tower:${shipKey}:${color}:${size}`
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeCanvasSprite(key, renderToStaticMarkup(<TowerShip tType={shipKey} color={color} size={size} />))
+}
+
+function getEnemySpriteMarkupSize(enemy: Enemy) {
+  if (!enemy.isBoss) return 50
+  if (enemy.bossKind === 'final') return 330
+  if (enemy.bossKind === 'super') return 280
+  if (enemy.bossKind === 'gate') return 220
+  if (enemy.bossKind === 'hydra') return 190
+  return 156
+}
+
+function getEnemyCanvasSprite(enemy: Enemy) {
+  const size = getEnemySpriteMarkupSize(enemy)
+  const bossKind = enemy.bossKind ?? 'none'
+  const key = `alien:${enemy.variant % 4}:${enemy.isBoss ? 1 : 0}:${bossKind}:${enemy.color}:${size}`
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeCanvasSprite(
+    key,
+    renderToStaticMarkup(
+      <AlienShip
+        variant={enemy.variant}
+        isBoss={enemy.isBoss}
+        isFinalBoss={enemy.bossKind === 'final'}
+        bossKind={enemy.bossKind ?? undefined}
+        color={enemy.color}
+        size={size}
+      />,
+    ),
+  )
+}
+
+function drawSpriteFallback(ctx: CanvasRenderingContext2D, size: number, color: string) {
+  ctx.fillStyle = color
+  ctx.strokeStyle = 'rgba(255,255,255,0.72)'
+  ctx.lineWidth = Math.max(1, size * 0.025)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.46)
+  ctx.lineTo(size * 0.34, size * 0.34)
+  ctx.lineTo(0, size * 0.18)
+  ctx.lineTo(-size * 0.34, size * 0.34)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+}
+
+function drawCanvasSprite(
+  ctx: CanvasRenderingContext2D,
+  sprite: CanvasSpriteEntry,
+  x: number,
+  y: number,
+  size: number,
+  filter: string,
+  alpha = 1,
+  rotation = 0,
+  scale = 1,
+  fallbackColor = PLAYER_COLOR,
+) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(rotation)
+  ctx.scale(scale, scale)
+  ctx.globalAlpha *= alpha
+  ctx.filter = filter
+  if (sprite.loaded && sprite.image.complete) {
+    ctx.drawImage(sprite.image, -size / 2, -size / 2, size, size)
+  } else {
+    drawSpriteFallback(ctx, size, fallbackColor)
+  }
+  ctx.restore()
+}
+
+function drawSpriteGlow(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string, alpha: number) {
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, x, y, size * 0.72, size * 0.62, [
+    [0, `rgba(255,255,255,${0.18 * alpha})`],
+    [0.34, color],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  ctx.restore()
+}
+
+function getEnemyCanvasSize(enemy: Enemy, viewportWidth: number) {
+  if (!enemy.isBoss) return Math.min(viewportWidth * 0.08, 64)
+  if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.52, 470)
+  if (enemy.bossKind === 'super') return Math.min(viewportWidth * 0.42, 380)
+  if (enemy.bossKind === 'gate') return Math.min(viewportWidth * 0.34, 310)
+  if (enemy.bossKind === 'hydra') return Math.min(viewportWidth * 0.3, 260)
+  return Math.min(viewportWidth * 0.24, 210)
 }
 
 function distSq(a: Vec, b: Vec) {
   const dx = a.x - b.x
   const dy = a.y - b.y
   return dx * dx + dy * dy
+}
+
+function acquireHomingTarget(shot: Shot, enemies: Enemy[]) {
+  let target: Enemy | null = null
+  let bestScore = Number.POSITIVE_INFINITY
+
+  for (const enemy of enemies) {
+    if (enemy.hp <= 0 || enemy.y < -10) continue
+    const dx = shot.x - enemy.x
+    const dy = shot.y - enemy.y
+    const distance = dx * dx + dy * dy
+    const forwardBias = enemy.y > shot.y + 18 ? 2400 : 0
+    const bossBias = enemy.isBoss ? -1400 : 0
+    const score = distance + forwardBias + bossBias
+    if (score < bestScore) {
+      bestScore = score
+      target = enemy
+    }
+  }
+
+  return target
 }
 
 function getHighScore() {
@@ -348,12 +662,983 @@ function extendLoadoutForSuperBoss(player: Player) {
   }
 }
 
+function drawAsteroidShape(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: number,
+  alpha: number,
+) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(rotation)
+  ctx.globalAlpha *= alpha
+  const gradient = ctx.createLinearGradient(-width / 2, -height / 2, width / 2, height / 2)
+  gradient.addColorStop(0, '#78716c')
+  gradient.addColorStop(0.52, '#292524')
+  gradient.addColorStop(1, '#1c1917')
+  ctx.fillStyle = gradient
+  ctx.strokeStyle = 'rgba(0,0,0,0.46)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(-width * 0.42, -height * 0.16)
+  ctx.quadraticCurveTo(-width * 0.28, -height * 0.58, width * 0.1, -height * 0.48)
+  ctx.quadraticCurveTo(width * 0.54, -height * 0.36, width * 0.44, height * 0.08)
+  ctx.quadraticCurveTo(width * 0.32, height * 0.58, -width * 0.12, height * 0.44)
+  ctx.quadraticCurveTo(-width * 0.56, height * 0.28, -width * 0.42, -height * 0.16)
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawDebrisShape(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: number,
+  alpha: number,
+) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(rotation)
+  ctx.globalAlpha *= alpha
+  ctx.fillStyle = '#475569'
+  ctx.strokeStyle = 'rgba(239,35,60,0.46)'
+  ctx.lineWidth = 1.2
+  ctx.beginPath()
+  ctx.moveTo(-width * 0.5, -height * 0.12)
+  ctx.lineTo(-width * 0.12, -height * 0.48)
+  ctx.lineTo(width * 0.5, height * 0.08)
+  ctx.lineTo(width * 0.12, height * 0.48)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.strokeStyle = 'rgba(125,211,252,0.36)'
+  ctx.beginPath()
+  ctx.moveTo(-width * 0.26, -height * 0.24)
+  ctx.lineTo(width * 0.24, height * 0.28)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number) {
+  const seconds = time / 1000
+  const { bgA, bgB, nebulaA, nebulaB, starTint, streak } = palette
+
+  const base = ctx.createLinearGradient(0, 0, 0, height)
+  base.addColorStop(0, '#020307')
+  base.addColorStop(0.45, '#060812')
+  base.addColorStop(1, '#070a10')
+  ctx.fillStyle = base
+  ctx.fillRect(0, 0, width, height)
+
+  drawRadialEllipse(ctx, width * 0.18, height * 0.16, width * 0.24, height * 0.24, [[0, bgA], [1, 'rgba(0,0,0,0)']])
+  drawRadialEllipse(ctx, width * 0.76, height * 0.38, width * 0.26, height * 0.26, [[0, bgB], [1, 'rgba(0,0,0,0)']])
+
+  ctx.save()
+  const nebulaDrift = Math.sin(seconds / 10)
+  ctx.translate(width * 0.012 * nebulaDrift, height * 0.006 * Math.cos(seconds / 8))
+  ctx.scale(1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5), 1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
+  drawRadialEllipse(ctx, width * 0.2, height * 0.72, width * 0.36, height * 0.24, [[0, nebulaA], [1, 'rgba(0,0,0,0)']])
+  drawRadialEllipse(ctx, width * 0.82, height * 0.24, width * 0.32, height * 0.22, [[0, nebulaB], [1, 'rgba(0,0,0,0)']])
+  ctx.restore()
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'screen'
+  drawRadialEllipse(ctx, width * 0.78, height * 0.18, width * 0.48, height * 0.25, [[0, 'rgba(139,92,246,0.2)'], [1, 'rgba(0,0,0,0)']])
+  drawRadialEllipse(ctx, width * 0.14, height * 0.68, width * 0.36, height * 0.42, [[0, 'rgba(59,130,246,0.16)'], [1, 'rgba(0,0,0,0)']])
+  drawRadialEllipse(ctx, width * 0.48, height * 0.42, width * 0.22, height * 0.18, [[0, 'rgba(236,72,153,0.11)'], [1, 'rgba(0,0,0,0)']])
+  drawRadialEllipse(ctx, width * 0.22, height * 0.22, width * 0.26, height * 0.15, [[0, 'rgba(251,191,36,0.05)'], [1, 'rgba(0,0,0,0)']])
+  drawRadialEllipse(ctx, width * 0.88, height * 0.72, width * 0.18, height * 0.32, [[0, 'rgba(34,211,238,0.06)'], [1, 'rgba(0,0,0,0)']])
+  ctx.restore()
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  for (const star of BACKGROUND_STARS) {
+    const farY = ((star.y * height * 1.26 + seconds * 15) % (height * 1.26)) - height * 0.13
+    const nearY = ((star.y * height * 1.38 + seconds * 72) % (height * 1.38)) - height * 0.19
+    const x = star.x * width
+    ctx.globalAlpha = star.alpha * 0.52
+    ctx.fillStyle = star.tint > 0.66 ? starTint : star.tint > 0.33 ? 'rgba(125,211,252,0.55)' : 'rgba(255,255,255,0.76)'
+    ctx.beginPath()
+    ctx.arc(x, farY, star.size * 0.62, 0, Math.PI * 2)
+    ctx.fill()
+
+    if (star.tint > 0.58) {
+      ctx.globalAlpha = star.alpha * 0.42
+      const trail = ctx.createLinearGradient(x, nearY - 18, x, nearY + 28)
+      trail.addColorStop(0, 'rgba(255,255,255,0)')
+      trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)')
+      trail.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.strokeStyle = trail
+      ctx.lineWidth = Math.max(1, star.size * 0.8)
+      ctx.beginPath()
+      ctx.moveTo(x, nearY - 18)
+      ctx.lineTo(x, nearY + 28)
+      ctx.stroke()
+    }
+  }
+
+  const speedLines = [
+    { x: 0.11, length: 170, width: 2, delay: -0.2, color: streak },
+    { x: 0.32, length: 120, width: 1, delay: -0.42, color: 'rgba(255,255,255,0.26)' },
+    { x: 0.63, length: 150, width: 2, delay: -0.16, color: 'rgba(239,35,60,0.42)' },
+    { x: 0.88, length: 135, width: 1, delay: -0.34, color: 'rgba(125,211,252,0.28)' },
+  ]
+  for (const line of speedLines) {
+    const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
+    const x = line.x * width
+    const gradient = ctx.createLinearGradient(x, y, x, y + line.length)
+    gradient.addColorStop(0, 'rgba(255,255,255,0)')
+    gradient.addColorStop(0.46, line.color)
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.globalAlpha = 0.58
+    ctx.strokeStyle = gradient
+    ctx.lineWidth = line.width
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x, y + line.length)
+    ctx.stroke()
+  }
+  ctx.restore()
+
+  const planetBase = height * 1.3
+  const planet1Y = ((seconds / 28 + 0.9) % 1) * planetBase - height * 0.1
+  const planet2Y = ((seconds / 42 + 0.64) % 1) * planetBase - height * 0.08
+  const planet3Y = ((seconds / 58 + 0.42) % 1) * planetBase - height * 0.06
+  const planet1R = Math.min(width * 0.09, 70)
+  const planet2R = Math.min(width * 0.045, 36)
+  const planet3R = Math.min(width * 0.03, 26)
+
+  ctx.save()
+  ctx.globalAlpha = 1
+  drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9a8d4'], [0.5, '#7c3aed'], [1, '#120617']])
+  ctx.strokeStyle = 'rgba(167,139,250,0.28)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.ellipse(width * 0.92, planet1Y, planet1R * 1.28, planet1R * 0.28, -8 * DEG, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.globalAlpha = 0.82
+  drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#fecaca'], [0.55, '#7f1d1d'], [1, '#1f0909']])
+  drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#a5f3fc'], [0.55, '#164e63'], [1, '#06151b']])
+  ctx.restore()
+
+  for (const asteroid of BACKGROUND_ASTEROIDS) {
+    const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
+    drawAsteroidShape(ctx, width * asteroid.x, y, asteroid.width, asteroid.height, seconds * asteroid.spin * DEG / 10, asteroid.alpha)
+  }
+  for (const debris of BACKGROUND_DEBRIS) {
+    const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
+    drawDebrisShape(ctx, width * debris.x, y, debris.width, debris.height, seconds * debris.spin * DEG / 12, debris.alpha)
+  }
+
+  const clusterY1 = ((seconds / 16 + 0.56) % 1) * height * 1.15 - height * 0.04
+  const clusterY2 = ((seconds / 24 + 0.25) % 1) * height * 1.15 - height * 0.04
+  drawAsteroidShape(ctx, width * 0.44, clusterY1, 16, 12, seconds * 0.3, 0.24)
+  drawAsteroidShape(ctx, width * 0.44 + 22, clusterY1 + 14, 10, 8, -seconds * 0.2, 0.2)
+  drawAsteroidShape(ctx, width * 0.72, clusterY2, 20, 16, -seconds * 0.18, 0.22)
+  drawAsteroidShape(ctx, width * 0.72 + 24, clusterY2 + 18, 12, 9, seconds * 0.18, 0.18)
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  const laserY1 = ((seconds / 6 + 0.67) % 1) * height * 1.15 - height * 0.08
+  const laserY2 = ((seconds / 9 + 0.32) % 1) * height * 1.15 - height * 0.06
+  const drawLaser = (x: number, y: number, length: number, rotation: number, color: string, widthPx: number) => {
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(rotation)
+    const gradient = ctx.createLinearGradient(0, -length / 2, 0, length / 2)
+    gradient.addColorStop(0, 'rgba(255,255,255,0)')
+    gradient.addColorStop(0.5, color)
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.strokeStyle = gradient
+    ctx.lineWidth = widthPx
+    ctx.shadowBlur = 10
+    ctx.shadowColor = color
+    ctx.beginPath()
+    ctx.moveTo(0, -length / 2)
+    ctx.lineTo(0, length / 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+  drawLaser(width * 0.38, laserY1, 80, -4 * DEG, 'rgba(239,35,60,0.72)', 2)
+  drawLaser(width * 0.66, laserY2, 56, 12 * DEG, 'rgba(34,211,238,0.52)', 1.5)
+
+  const drawExplosion = (x: number, y: number, period: number, offset: number, radius: number, alpha: number) => {
+    const cycle = ((seconds + offset) % period) / period
+    const pulse = cycle < 0.42 ? Math.sin((cycle / 0.42) * Math.PI) : 0
+    if (pulse <= 0) return
+    drawRadialEllipse(ctx, x, y, radius * (0.6 + pulse * 1.4), radius * (0.6 + pulse * 1.4), [
+      [0, `rgba(255,255,255,${0.45 * pulse * alpha})`],
+      [0.32, `rgba(251,191,36,${0.48 * pulse * alpha})`],
+      [0.64, `rgba(239,35,60,${0.32 * pulse * alpha})`],
+      [1, 'rgba(0,0,0,0)'],
+    ])
+  }
+  drawExplosion(width * 0.08, height * 0.18, 7, 4, 32, 0.9)
+  drawExplosion(width * 0.9, height * 0.44, 11, 2, 24, 0.75)
+  ctx.restore()
+}
+
+function drawBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: number, size: number, time: number) {
+  const seconds = time / 1000
+  const kind = enemy.bossKind ?? 'carrier'
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = 0.9
+  drawRadialEllipse(ctx, 0, 0, size * 0.72, size * 0.72, [
+    [0, 'rgba(239,35,60,0.22)'],
+    [0.52, 'rgba(239,35,60,0.08)'],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+
+  ctx.strokeStyle = 'rgba(239,35,60,0.3)'
+  ctx.lineWidth = Math.max(1, size * 0.01)
+  ctx.shadowBlur = size * 0.08
+  ctx.shadowColor = 'rgba(239,35,60,0.42)'
+
+  if (kind === 'carrier') {
+    ctx.fillStyle = 'rgba(127,29,29,0.34)'
+    ctx.beginPath()
+    ctx.moveTo(-size * 0.58, 0)
+    ctx.lineTo(-size * 0.14, -size * 0.16)
+    ctx.lineTo(-size * 0.24, size * 0.16)
+    ctx.closePath()
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(size * 0.58, 0)
+    ctx.lineTo(size * 0.14, -size * 0.16)
+    ctx.lineTo(size * 0.24, size * 0.16)
+    ctx.closePath()
+    ctx.fill()
+    drawRadialEllipse(ctx, 0, size * 0.42, size * 0.28, size * 0.08, [[0, 'rgba(239,35,60,0.28)'], [1, 'rgba(0,0,0,0)']])
+  } else if (kind === 'orb') {
+    for (let i = 0; i < 3; i += 1) {
+      ctx.save()
+      ctx.rotate(seconds * (i % 2 === 0 ? 0.9 : -0.65) + i * 0.8)
+      ctx.strokeStyle = i === 2 ? 'rgba(216,180,254,0.42)' : 'rgba(239,35,60,0.42)'
+      ctx.beginPath()
+      ctx.ellipse(0, 0, size * (0.3 + i * 0.1), size * (0.22 + i * 0.07), 0, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+  } else if (kind === 'serpent' || kind === 'mantis') {
+    ctx.fillStyle = kind === 'mantis' ? 'rgba(54,83,20,0.38)' : 'rgba(22,78,99,0.38)'
+    ctx.strokeStyle = kind === 'mantis' ? 'rgba(190,242,100,0.42)' : 'rgba(103,232,249,0.38)'
+    for (const side of [-1, 1]) {
+      ctx.beginPath()
+      ctx.moveTo(side * size * 0.42, -size * 0.32)
+      ctx.lineTo(side * size * 0.66, 0)
+      ctx.lineTo(side * size * 0.42, size * 0.34)
+      ctx.lineTo(side * size * 0.26, size * 0.08)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+  } else if (kind === 'hydra') {
+    for (const offset of [-0.28, 0, 0.28]) {
+      ctx.strokeStyle = 'rgba(168,85,247,0.44)'
+      drawRadialEllipse(ctx, size * offset, 0, size * 0.14, size * 0.42, [[0, 'rgba(76,29,149,0.24)'], [1, 'rgba(0,0,0,0)']])
+      ctx.beginPath()
+      ctx.ellipse(size * offset, 0, size * 0.14, size * 0.42, 0, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  } else if (kind === 'gate') {
+    ctx.save()
+    ctx.rotate(Math.PI / 4)
+    ctx.strokeStyle = 'rgba(248,113,113,0.46)'
+    traceRoundedRect(ctx, -size * 0.42, -size * 0.42, size * 0.84, size * 0.84, size * 0.06)
+    ctx.stroke()
+    ctx.restore()
+  } else {
+    const ringCount = kind === 'final' ? 3 : 2
+    for (let i = 0; i < ringCount; i += 1) {
+      ctx.save()
+      ctx.rotate(seconds * (i % 2 ? -0.8 : 0.55) + i * 0.65)
+      ctx.strokeStyle = i === 0 ? 'rgba(251,191,36,0.44)' : 'rgba(168,85,247,0.36)'
+      traceRoundedRect(ctx, -size * (0.45 + i * 0.06), -size * (0.45 + i * 0.06), size * (0.9 + i * 0.12), size * (0.9 + i * 0.12), kind === 'final' ? size * 0.12 : size * 0.04)
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+  ctx.restore()
+}
+
+function drawBossReticle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, isFinal: boolean) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(time / 2400)
+  ctx.globalAlpha = isFinal ? 0.56 : 0.44
+  ctx.strokeStyle = 'rgba(251,191,36,0.72)'
+  ctx.shadowBlur = 10
+  ctx.shadowColor = 'rgba(251,191,36,0.5)'
+  ctx.lineWidth = Math.max(1.5, size * 0.012)
+  const extent = size * (isFinal ? 0.74 : 0.64)
+  const corner = Math.min(22, size * 0.12)
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      ctx.beginPath()
+      ctx.moveTo(sx * extent, sy * (extent - corner))
+      ctx.lineTo(sx * extent, sy * extent)
+      ctx.lineTo(sx * (extent - corner), sy * extent)
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
+}
+
+function drawBossShield(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number) {
+  const pulse = 0.94 + Math.sin(time / 430) * 0.06
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(pulse, pulse)
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = 'rgba(251,191,36,0.72)'
+  ctx.fillStyle = 'rgba(251,191,36,0.08)'
+  ctx.shadowBlur = 26
+  ctx.shadowColor = 'rgba(251,191,36,0.48)'
+  ctx.lineWidth = Math.max(2, size * 0.012)
+  ctx.beginPath()
+  ctx.arc(0, 0, size * 0.56, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: number, size: number) {
+  const isSuper = enemy.bossKind === 'super' || enemy.bossKind === 'final'
+  const width = size * (isSuper ? 1.04 : 0.9)
+  const height = isSuper ? 13 : 10
+  const barX = x - width / 2
+  const barY = y + size * 0.5 + (isSuper ? 16 : 12)
+  const fill = clamp(enemy.hp / enemy.maxHp, 0, 1)
+
+  ctx.save()
+  traceRoundedRect(ctx, barX, barY, width, height, 999)
+  ctx.fillStyle = isSuper ? 'rgba(18,8,16,0.95)' : 'rgba(20,10,20,0.92)'
+  ctx.strokeStyle = isSuper ? 'rgba(251,191,36,0.65)' : 'rgba(255,255,255,0.2)'
+  ctx.lineWidth = 1
+  ctx.fill()
+  ctx.stroke()
+  ctx.clip()
+  const gradient = ctx.createLinearGradient(barX, 0, barX + width, 0)
+  if (isSuper) {
+    gradient.addColorStop(0, '#581c87')
+    gradient.addColorStop(0.46, '#ef233c')
+    gradient.addColorStop(1, '#fbbf24')
+  } else {
+    gradient.addColorStop(0, '#7f1d1d')
+    gradient.addColorStop(0.55, '#ef233c')
+    gradient.addColorStop(1, '#fca5a5')
+  }
+  ctx.fillStyle = gradient
+  ctx.shadowBlur = isSuper ? 18 : 14
+  ctx.shadowColor = isSuper ? 'rgba(251,191,36,0.82)' : 'rgba(239,35,60,0.8)'
+  ctx.fillRect(barX, barY, width * fill, height)
+  ctx.restore()
+}
+
+function getNormalEnemyFilter(time: number) {
+  const pulse = 0.88 + ((Math.sin(time / 700) + 1) / 2) * 0.3
+  return `brightness(${1.16 * pulse}) contrast(1.12) saturate(1.28)`
+}
+
+function drawRaidEnemy(
+  ctx: CanvasRenderingContext2D,
+  enemy: Enemy,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+  normalEnemyFilter: string,
+) {
+  const x = toX(enemy.x)
+  const y = toY(enemy.y)
+  const size = getEnemyCanvasSize(enemy, viewportWidth)
+  const sprite = getEnemyCanvasSprite(enemy)
+
+  if (enemy.isBoss) {
+    const floatScale = 1 + Math.sin(time / 1100) * 0.03
+    const rotation = Math.sin(time / 1100) * 0.5 * DEG
+    drawBossAura(ctx, enemy, x, y, size, time)
+    const bossFilter = enemy.bossKind === 'final'
+      ? 'brightness(1.14) contrast(1.18) saturate(1.34)'
+      : enemy.bossKind === 'super'
+        ? 'brightness(1.12) contrast(1.16) saturate(1.32)'
+        : 'brightness(1.16) contrast(1.16) saturate(1.32)'
+    drawCanvasSprite(ctx, sprite, x, y, size, bossFilter, 1, rotation, floatScale, enemy.color)
+    if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time)
+    drawBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
+    drawBossBar(ctx, enemy, x, y, size)
+    return
+  }
+
+  drawSpriteGlow(ctx, x, y, size, 'rgba(239,35,60,0.34)', 1)
+  drawCanvasSprite(ctx, sprite, x, y, size, normalEnemyFilter, 1, 0, 1, enemy.color)
+}
+
+function drawRaidOptions(
+  ctx: CanvasRenderingContext2D,
+  player: Player,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+) {
+  if (player.optionTimer <= 0) return
+  const optionOffset = viewportWidth < 640 ? 12 : 8.5
+  const optionShipSize = getShipSpriteSize(player.ship.key, 'option')
+  const optionBox = viewportWidth < 860 ? 30 : 38
+  const drawSize = Math.min(optionShipSize, optionBox)
+  const sprite = getTowerCanvasSprite(player.ship.key, PLAYER_COLOR, optionShipSize)
+
+  for (const side of [-1, 1]) {
+    const x = toX(clamp(player.x + optionOffset * side, 4, 96))
+    const y = toY(player.y + 1.8) + Math.sin(time / 900 + (side > 0 ? 0.18 : 0)) * 2.5
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = 'rgba(239,35,60,0.48)'
+    ctx.shadowBlur = 14
+    ctx.shadowColor = 'rgba(239,35,60,0.55)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.arc(0, 0, optionBox * 0.4, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+    drawCanvasSprite(
+      ctx,
+      sprite,
+      x,
+      y,
+      drawSize,
+      'brightness(1.12) contrast(1.12) saturate(1.24)',
+      1,
+      0,
+      1,
+      PLAYER_COLOR,
+    )
+  }
+}
+
+function drawPlayerEngine(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number) {
+  const flameHeight = size * (0.36 + Math.sin(time / 130) * 0.035)
+  const flameWidth = size * 0.18
+  const top = y + size * 0.32
+  const gradient = ctx.createRadialGradient(x, top, 1, x, top + flameHeight * 0.35, flameHeight)
+  gradient.addColorStop(0, 'rgba(255,255,255,0.95)')
+  gradient.addColorStop(0.16, 'rgba(103,232,249,0.84)')
+  gradient.addColorStop(0.42, 'rgba(239,35,60,0.42)')
+  gradient.addColorStop(1, 'rgba(239,35,60,0)')
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.fillStyle = gradient
+  ctx.shadowBlur = 12
+  ctx.shadowColor = 'rgba(239,35,60,0.36)'
+  ctx.beginPath()
+  ctx.moveTo(x - flameWidth * 0.5, top)
+  ctx.lineTo(x + flameWidth * 0.5, top)
+  ctx.lineTo(x, top + flameHeight)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawPlayerOverlay(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, rotation: number, scale: number) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(rotation)
+  ctx.scale(scale, scale)
+  ctx.globalAlpha = 0.24
+  ctx.globalCompositeOperation = 'multiply'
+  ctx.fillStyle = 'rgba(0,0,0,0.7)'
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.38)
+  ctx.lineTo(size * 0.32, -size * 0.1)
+  ctx.lineTo(size * 0.24, size * 0.34)
+  ctx.lineTo(0, size * 0.43)
+  ctx.lineTo(-size * 0.24, size * 0.34)
+  ctx.lineTo(-size * 0.32, -size * 0.1)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawRaidPlayer(
+  ctx: CanvasRenderingContext2D,
+  player: Player,
+  phase: GamePhase,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+) {
+  const x = toX(player.x)
+  const y = toY(player.y)
+  const size = viewportWidth < 860 ? 62 : 82
+  const isDown = phase === 'gameover'
+  const rotation = isDown ? 28 * DEG : 0
+  const scale = isDown ? 0.88 : 1
+  const alpha = isDown ? 0.3 : 1
+
+  drawPlayerEngine(ctx, x, y, size, time)
+
+  if (player.invuln > 0 || player.shield > 0) {
+    const pulse = 0.98 + Math.sin(time / 720) * 0.08
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.scale(pulse, pulse)
+    ctx.strokeStyle = 'rgba(196,181,253,0.42)'
+    ctx.fillStyle = 'rgba(196,181,253,0.05)'
+    ctx.shadowBlur = 14
+    ctx.shadowColor = 'rgba(196,181,253,0.36)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.arc(0, 0, size * 0.48, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  if (player.forceField > 0) {
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(time / 1000)
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = 'rgba(165,243,252,0.76)'
+    ctx.fillStyle = 'rgba(34,211,238,0.08)'
+    ctx.shadowBlur = 28
+    ctx.shadowColor = 'rgba(34,211,238,0.58)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(0, 0, size * 0.64, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(0, 0, size * 0.48, 0, Math.PI * 1.15)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  const sprite = getTowerCanvasSprite(player.ship.key, PLAYER_COLOR, getShipSpriteSize(player.ship.key, 'player'))
+  drawSpriteGlow(
+    ctx,
+    x,
+    y,
+    size,
+    player.forceField > 0 ? 'rgba(34,211,238,0.3)' : player.invuln > 0 || player.shield > 0 ? 'rgba(196,181,253,0.22)' : 'rgba(239,35,60,0.22)',
+    1,
+  )
+  drawCanvasSprite(
+    ctx,
+    sprite,
+    x,
+    y,
+    size,
+    'brightness(1.12) contrast(1.14) saturate(1.26)',
+    alpha,
+    rotation,
+    scale,
+    PLAYER_COLOR,
+  )
+  drawPlayerOverlay(ctx, x, y, size, rotation, scale)
+}
+
+function traceRegularPolygon(ctx: CanvasRenderingContext2D, sides: number, radius: number, rotation = -Math.PI / 2) {
+  ctx.beginPath()
+  for (let index = 0; index < sides; index += 1) {
+    const angle = rotation + (index / sides) * Math.PI * 2
+    const x = Math.cos(angle) * radius
+    const y = Math.sin(angle) * radius
+    if (index === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.closePath()
+}
+
+function drawPowerPickupIcon(ctx: CanvasRenderingContext2D, type: PowerKind, size: number, color: string) {
+  const r = size * 0.19
+  ctx.save()
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.lineWidth = Math.max(1.5, size * 0.045)
+  ctx.globalAlpha = 0.62
+
+  if (type === 'laser') {
+    ctx.beginPath()
+    ctx.moveTo(0, -r * 1.15)
+    ctx.lineTo(0, r * 1.15)
+    ctx.moveTo(-r * 0.45, -r * 0.45)
+    ctx.lineTo(r * 0.45, -r * 0.45)
+    ctx.moveTo(-r * 0.45, r * 0.45)
+    ctx.lineTo(r * 0.45, r * 0.45)
+    ctx.stroke()
+  } else if (type === 'spread') {
+    ctx.beginPath()
+    ctx.moveTo(0, r * 0.85)
+    ctx.lineTo(-r, -r * 0.9)
+    ctx.moveTo(0, r * 0.85)
+    ctx.lineTo(0, -r * 1.1)
+    ctx.moveTo(0, r * 0.85)
+    ctx.lineTo(r, -r * 0.9)
+    ctx.stroke()
+  } else if (type === 'scatter') {
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (index / 6) * Math.PI * 2
+      ctx.beginPath()
+      ctx.moveTo(Math.cos(angle) * r * 0.35, Math.sin(angle) * r * 0.35)
+      ctx.lineTo(Math.cos(angle) * r * 1.05, Math.sin(angle) * r * 1.05)
+      ctx.stroke()
+    }
+  } else if (type === 'rocket') {
+    ctx.beginPath()
+    ctx.moveTo(0, -r * 1.15)
+    ctx.lineTo(r * 0.72, r * 0.45)
+    ctx.lineTo(r * 0.24, r * 0.9)
+    ctx.lineTo(0, r * 0.62)
+    ctx.lineTo(-r * 0.24, r * 0.9)
+    ctx.lineTo(-r * 0.72, r * 0.45)
+    ctx.closePath()
+    ctx.stroke()
+  } else if (type === 'homing') {
+    ctx.beginPath()
+    ctx.arc(0, 0, r * 0.9, -0.25, Math.PI * 1.55)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(0, 0, r * 0.18, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(r * 0.55, -r * 0.95)
+    ctx.lineTo(r * 1.08, -r * 1)
+    ctx.lineTo(r * 0.86, -r * 0.5)
+    ctx.stroke()
+  } else if (type === 'option') {
+    for (const side of [-1, 1]) {
+      ctx.beginPath()
+      ctx.arc(side * r * 0.62, 0, r * 0.34, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.beginPath()
+    ctx.moveTo(-r * 0.24, 0)
+    ctx.lineTo(r * 0.24, 0)
+    ctx.stroke()
+  } else if (type === 'shield') {
+    ctx.beginPath()
+    ctx.moveTo(0, -r * 1.15)
+    ctx.quadraticCurveTo(r, -r * 0.72, r * 0.78, r * 0.2)
+    ctx.quadraticCurveTo(r * 0.56, r * 0.78, 0, r * 1.12)
+    ctx.quadraticCurveTo(-r * 0.56, r * 0.78, -r * 0.78, r * 0.2)
+    ctx.quadraticCurveTo(-r, -r * 0.72, 0, -r * 1.15)
+    ctx.stroke()
+  } else if (type === 'forcefield') {
+    ctx.beginPath()
+    ctx.arc(0, 0, r * 1.05, 0, Math.PI * 2)
+    ctx.arc(0, 0, r * 0.55, Math.PI * 0.18, Math.PI * 1.45)
+    ctx.stroke()
+  } else if (type === 'repair') {
+    ctx.beginPath()
+    ctx.moveTo(-r, 0)
+    ctx.lineTo(r, 0)
+    ctx.moveTo(0, -r)
+    ctx.lineTo(0, r)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+}
+
+function getHomingMissileSprite(visualScale: number) {
+  const spriteScale = Math.max(0.75, Math.min(1.55, Math.round(visualScale * 20) / 20))
+  const cached = homingMissileSpriteCache.get(spriteScale)
+  if (cached) return cached
+
+  const length = 22 * spriteScale
+  const widthPx = 8 * spriteScale
+  const pad = 18 * spriteScale
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.ceil(widthPx * 5 + pad * 2)
+  canvas.height = Math.ceil(length * 1.7 + pad * 2)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+
+  ctx.translate(canvas.width / 2, canvas.height / 2)
+  ctx.shadowBlur = 13 * spriteScale
+  ctx.shadowColor = 'rgba(250,204,21,0.9)'
+  ctx.fillStyle = 'rgba(20,8,8,0.95)'
+  ctx.strokeStyle = 'rgba(250,204,21,0.9)'
+  ctx.lineWidth = 1.5 * spriteScale
+  ctx.beginPath()
+  ctx.moveTo(0, -length * 0.56)
+  ctx.lineTo(widthPx * 0.55, length * 0.18)
+  ctx.lineTo(widthPx * 0.2, length * 0.48)
+  ctx.lineTo(0, length * 0.3)
+  ctx.lineTo(-widthPx * 0.2, length * 0.48)
+  ctx.lineTo(-widthPx * 0.55, length * 0.18)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  const flame = ctx.createLinearGradient(0, length * 0.22, 0, length * 0.88)
+  flame.addColorStop(0, 'rgba(255,255,255,0.9)')
+  flame.addColorStop(0.4, 'rgba(239,35,60,0.9)')
+  flame.addColorStop(1, 'rgba(249,115,22,0)')
+  ctx.shadowBlur = 10 * spriteScale
+  ctx.shadowColor = 'rgba(239,35,60,0.72)'
+  ctx.strokeStyle = flame
+  ctx.lineWidth = 4 * spriteScale
+  ctx.beginPath()
+  ctx.moveTo(0, length * 0.2)
+  ctx.lineTo(0, length * 0.86)
+  ctx.stroke()
+
+  homingMissileSpriteCache.set(spriteScale, canvas)
+  return canvas
+}
+
+function drawPowerUpCanvas(
+  ctx: CanvasRenderingContext2D,
+  powerUp: PowerUp,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+) {
+  const x = toX(powerUp.x)
+  const y = toY(powerUp.y) + Math.sin(time / 620 + powerUp.id) * 3
+  const size = viewportWidth < 860 ? 42 : 50
+  const color = powerColor(powerUp.type)
+  const phase = time / 1000 + powerUp.id * 0.37
+  const pulse = 0.92 + Math.sin(time / 240 + powerUp.id) * 0.08
+  const ringRadius = size * 0.54 * pulse
+
+  ctx.save()
+  ctx.translate(x, y)
+
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, 0, 0, size * 0.9, size * 0.74, [
+    [0, 'rgba(255,255,255,0.2)'],
+    [0.28, color],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+
+  for (let index = 0; index < 3; index += 1) {
+    const angle = phase * 1.8 + index * Math.PI * 2 / 3
+    const dotRadius = size * (0.035 + index * 0.004)
+    ctx.fillStyle = index === 0 ? '#ffffff' : color
+    ctx.globalAlpha = 0.78
+    ctx.shadowBlur = 12
+    ctx.shadowColor = color
+    ctx.beginPath()
+    ctx.arc(Math.cos(angle) * size * 0.58, Math.sin(angle) * size * 0.58, dotRadius, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  ctx.rotate(powerUp.spin * DEG * 0.42)
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = 1
+  ctx.shadowBlur = 20
+  ctx.shadowColor = color
+
+  const shell = ctx.createRadialGradient(-size * 0.15, -size * 0.22, size * 0.04, 0, 0, size * 0.55)
+  shell.addColorStop(0, 'rgba(255,255,255,0.98)')
+  shell.addColorStop(0.16, color)
+  shell.addColorStop(0.34, 'rgba(255,255,255,0.16)')
+  shell.addColorStop(0.42, 'rgba(5,8,14,0.94)')
+  shell.addColorStop(0.74, 'rgba(5,8,14,0.9)')
+  shell.addColorStop(0.82, color)
+  shell.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = shell
+  traceRegularPolygon(ctx, 6, size * 0.5, -Math.PI / 2 + Math.sin(phase) * 0.08)
+  ctx.fill()
+
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1.4
+  ctx.globalAlpha = 0.9
+  traceRegularPolygon(ctx, 6, size * 0.5, -Math.PI / 2 + Math.sin(phase) * 0.08)
+  ctx.stroke()
+
+  ctx.lineWidth = Math.max(2, size * 0.055)
+  ctx.lineCap = 'round'
+  for (let index = 0; index < 4; index += 1) {
+    const start = phase * 1.25 + index * Math.PI * 0.5
+    ctx.strokeStyle = index % 2 === 0 ? color : 'rgba(255,255,255,0.74)'
+    ctx.globalAlpha = index % 2 === 0 ? 0.86 : 0.56
+    ctx.beginPath()
+    ctx.arc(0, 0, ringRadius, start, start + Math.PI * 0.22)
+    ctx.stroke()
+  }
+
+  ctx.rotate(-powerUp.spin * DEG * 0.42)
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
+  const core = ctx.createRadialGradient(-size * 0.1, -size * 0.12, 1, 0, 0, size * 0.28)
+  core.addColorStop(0, 'rgba(255,255,255,0.92)')
+  core.addColorStop(0.2, color)
+  core.addColorStop(0.52, '#111827')
+  core.addColorStop(1, '#03050a')
+  ctx.fillStyle = core
+  ctx.strokeStyle = color
+  ctx.shadowBlur = 10
+  ctx.shadowColor = color
+  ctx.beginPath()
+  ctx.arc(0, 0, size * 0.29, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  drawPowerPickupIcon(ctx, powerUp.type, size, color)
+  ctx.restore()
+
+  ctx.fillStyle = '#ffffff'
+  ctx.shadowBlur = 8
+  ctx.shadowColor = color
+  ctx.font = `1000 ${Math.max(13, size * 0.32)}px system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(powerGlyph(powerUp.type), 0, size * 0.01)
+  ctx.restore()
+}
+
+function drawFinalChargeLines(
+  ctx: CanvasRenderingContext2D,
+  enemies: Enemy[],
+  toX: (value: number) => number,
+  viewportWidth: number,
+  viewportHeight: number,
+  time: number,
+) {
+  for (const enemy of enemies) {
+    if (enemy.bossKind !== 'final' || enemy.chargeTimer <= 0) continue
+    const lanes = enemy.chargePattern === 'scatter'
+      ? [-24, -12, 0, 12, 24].map((offset) => clamp(enemy.chargeLane + offset, 8, 92))
+      : [clamp(enemy.chargeLane, 10, 90)]
+    const alpha = Math.max(0.28, Math.min(1, enemy.chargeTimer / 1.45))
+    const lineWidth = enemy.chargePattern === 'scatter' ? Math.min(viewportWidth * 0.045, 42) : Math.min(viewportWidth * 0.08, 72)
+
+    for (const lane of lanes) {
+      const x = toX(lane)
+      ctx.save()
+      ctx.globalAlpha = alpha
+      ctx.globalCompositeOperation = 'lighter'
+      const gradient = ctx.createLinearGradient(x - lineWidth / 2, 0, x + lineWidth / 2, 0)
+      gradient.addColorStop(0, 'rgba(0,0,0,0)')
+      gradient.addColorStop(0.35, 'rgba(251,191,36,0.24)')
+      gradient.addColorStop(0.5, 'rgba(255,255,255,0.5)')
+      gradient.addColorStop(0.65, 'rgba(251,191,36,0.24)')
+      gradient.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = gradient
+      ctx.shadowBlur = 26
+      ctx.shadowColor = 'rgba(251,191,36,0.48)'
+      ctx.fillRect(x - lineWidth / 2, 0, lineWidth, viewportHeight)
+
+      ctx.strokeStyle = time % 360 < 180 ? 'rgba(251,191,36,0.72)' : 'rgba(255,255,255,0.58)'
+      ctx.lineWidth = 2
+      for (let y = -18; y < viewportHeight; y += 18) {
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x, y + 8)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+  }
+}
+
+function drawFingerGuide(ctx: CanvasRenderingContext2D, pointer: Vec | null, toX: (value: number) => number, toY: (value: number) => number) {
+  if (!pointer) return
+  const x = toX(pointer.x)
+  const y = toY(pointer.y)
+  ctx.save()
+  ctx.strokeStyle = 'rgba(248,113,113,0.28)'
+  ctx.fillStyle = 'rgba(248,113,113,0.16)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(x, y, 29, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  const gradient = ctx.createLinearGradient(x, y - 86, x, y - 8)
+  gradient.addColorStop(0, 'rgba(248,113,113,0.5)')
+  gradient.addColorStop(1, 'rgba(248,113,113,0)')
+  ctx.strokeStyle = gradient
+  ctx.beginPath()
+  ctx.moveTo(x, y - 86)
+  ctx.lineTo(x, y - 8)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function getBriefingPickupType(item: string) {
+  const label = item.split(':')[0]
+  return BRIEFING_PICKUP_TYPES[label] ?? null
+}
+
+function PickupPreviewCanvas({ type }: { type: PowerKind }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    let raf = 0
+    const seed = PICKUP_PREVIEW_SEEDS[type]
+    const draw = (time: number) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const rect = canvas.getBoundingClientRect()
+      const dpr = Math.min(2, window.devicePixelRatio || 1)
+      const width = Math.max(1, Math.floor(rect.width * dpr))
+      const height = Math.max(1, Math.floor(rect.height * dpr))
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width
+        canvas.height = height
+      }
+
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, rect.width, rect.height)
+      drawPowerUpCanvas(
+        ctx,
+        {
+          id: seed,
+          type,
+          x: 50,
+          y: 50,
+          vy: 0,
+          radius: 3,
+          spin: (time / 18 + seed * 28) % 360,
+        },
+        (value) => (value / WIDTH) * rect.width,
+        (value) => (value / HEIGHT) * rect.height,
+        rect.width < 70 ? 640 : 1000,
+        time,
+      )
+      raf = requestAnimationFrame(draw)
+    }
+
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [type])
+
+  return <canvas className="raid__pickup-preview" ref={canvasRef} aria-hidden="true" />
+}
+
 export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const fxCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const rafRef = useRef(0)
   const lastTimeRef = useRef(0)
   const lastRenderTimeRef = useRef(0)
+  const snapshotKeyRef = useRef('')
+  const paletteRef = useRef<RaidPalette>(DEFAULT_RAID_PALETTE)
+  const paletteClassRef = useRef('')
   const keysRef = useRef(new Set<string>())
   const pointerTargetRef = useRef<Vec | null>(null)
   const pointerVisualRef = useRef<Vec | null>(null)
@@ -407,18 +1692,43 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   }))
 
   const syncSnapshot = useCallback(() => {
+    const player = playerRef.current
+    const bossAlertBucket = bossAlertRef.current > 0 ? Math.ceil(bossAlertRef.current * 4) : 0
+    const stageClearBucket = stageClearRef.current > 0 ? Math.ceil(stageClearRef.current * 30) : 0
+    const snapshotKey = [
+      phaseRef.current,
+      stageRef.current,
+      waveRef.current,
+      bossAlertBucket,
+      bossMessageRef.current ?? '',
+      highScoreRef.current,
+      selectedShipRef.current.key,
+      stageClearBucket,
+      unlockedStageRef.current,
+      player.hp,
+      player.maxHp,
+      Math.ceil(player.shield * 10),
+      player.forceField,
+      player.score,
+      player.rank,
+      ...WEAPON_KEYS.map((key) => player.weapons[key]),
+    ].join('|')
+
+    if (snapshotKeyRef.current === snapshotKey) return
+    snapshotKeyRef.current = snapshotKey
+
     setSnapshot({
       phase: phaseRef.current,
       player: {
-        ...playerRef.current,
-        weapons: { ...playerRef.current.weapons },
-        weaponTimers: { ...playerRef.current.weaponTimers },
-        weaponCooldowns: { ...playerRef.current.weaponCooldowns },
+        ...player,
+        weapons: { ...player.weapons },
+        weaponTimers: { ...player.weaponTimers },
+        weaponCooldowns: { ...player.weaponCooldowns },
       },
       shots: [],
       enemyShots: [],
-      enemies: enemiesRef.current.map((enemy) => ({ ...enemy })),
-      powerUps: powerUpsRef.current.map((powerUp) => ({ ...powerUp })),
+      enemies: [],
+      powerUps: [],
       sparks: [],
       ripples: [],
       wave: waveRef.current,
@@ -427,7 +1737,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       bossMessage: bossMessageRef.current,
       highScore: highScoreRef.current,
       selectedShipKey: selectedShipRef.current.key,
-      pointer: pointerVisualRef.current ? { ...pointerVisualRef.current } : null,
+      pointer: null,
       stageClear: stageClearRef.current,
       unlockedStage: unlockedStageRef.current,
     })
@@ -495,15 +1805,16 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     })
   }, [stopRaidBgm])
 
-  const drawFxCanvas = useCallback(() => {
+  const drawFxCanvas = useCallback((time = performance.now()) => {
     const canvas = fxCanvasRef.current
     const root = rootRef.current
     if (!canvas || !root) return
 
-    const rect = root.getBoundingClientRect()
+    const cssWidth = Math.max(1, root.clientWidth || window.innerWidth || 1)
+    const cssHeight = Math.max(1, root.clientHeight || window.innerHeight || 1)
     const dpr = Math.min(2, window.devicePixelRatio || 1)
-    const width = Math.max(1, Math.floor(rect.width * dpr))
-    const height = Math.max(1, Math.floor(rect.height * dpr))
+    const width = Math.max(1, Math.floor(cssWidth * dpr))
+    const height = Math.max(1, Math.floor(cssHeight * dpr))
 
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width
@@ -513,11 +1824,18 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, rect.width, rect.height)
+    ctx.clearRect(0, 0, cssWidth, cssHeight)
 
-    const toX = (value: number) => (value / WIDTH) * rect.width
-    const toY = (value: number) => (value / HEIGHT) * rect.height
-    const visualScale = clamp(Math.min(rect.width, rect.height) / 520, 0.8, 1.45)
+    const toX = (value: number) => (value / WIDTH) * cssWidth
+    const toY = (value: number) => (value / HEIGHT) * cssHeight
+    const visualScale = clamp(Math.min(cssWidth, cssHeight) / 520, 0.8, 1.45)
+
+    if (paletteClassRef.current !== root.className) {
+      paletteClassRef.current = root.className
+      paletteRef.current = readRaidPalette(root)
+    }
+
+    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time)
 
     const drawTrail = (shot: Shot, color: string, length: number, widthPx: number) => {
       const x = toX(shot.x)
@@ -562,36 +1880,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       const x = toX(shot.x)
       const y = toY(shot.y)
       const angle = Math.atan2(shot.vy, shot.vx) + Math.PI / 2
-      const length = 22 * visualScale
-      const widthPx = 8 * visualScale
+      const sprite = getHomingMissileSprite(visualScale)
       ctx.save()
       ctx.translate(x, y)
       ctx.rotate(angle)
-      ctx.shadowBlur = 13 * visualScale
-      ctx.shadowColor = 'rgba(250,204,21,0.9)'
-      ctx.fillStyle = 'rgba(20,8,8,0.95)'
-      ctx.strokeStyle = 'rgba(250,204,21,0.9)'
-      ctx.lineWidth = 1.5 * visualScale
-      ctx.beginPath()
-      ctx.moveTo(0, -length * 0.56)
-      ctx.lineTo(widthPx * 0.55, length * 0.18)
-      ctx.lineTo(widthPx * 0.2, length * 0.48)
-      ctx.lineTo(0, length * 0.3)
-      ctx.lineTo(-widthPx * 0.2, length * 0.48)
-      ctx.lineTo(-widthPx * 0.55, length * 0.18)
-      ctx.closePath()
-      ctx.fill()
-      ctx.stroke()
-      const flame = ctx.createLinearGradient(0, length * 0.22, 0, length * 0.88)
-      flame.addColorStop(0, 'rgba(255,255,255,0.9)')
-      flame.addColorStop(0.4, 'rgba(239,35,60,0.9)')
-      flame.addColorStop(1, 'rgba(249,115,22,0)')
-      ctx.strokeStyle = flame
-      ctx.lineWidth = 4 * visualScale
-      ctx.beginPath()
-      ctx.moveTo(0, length * 0.2)
-      ctx.lineTo(0, length * 0.86)
-      ctx.stroke()
+      ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2)
       ctx.restore()
     }
 
@@ -639,6 +1932,25 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
     ctx.globalAlpha = 1
     ctx.globalCompositeOperation = 'source-over'
+    ctx.filter = 'none'
+
+    const normalEnemyFilter = getNormalEnemyFilter(time)
+    for (const enemy of enemiesRef.current) {
+      drawRaidEnemy(ctx, enemy, toX, toY, cssWidth, time, normalEnemyFilter)
+    }
+
+    drawRaidOptions(ctx, playerRef.current, toX, toY, cssWidth, time)
+    drawRaidPlayer(ctx, playerRef.current, phaseRef.current, toX, toY, cssWidth, time)
+
+    for (const powerUp of powerUpsRef.current) {
+      drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
+    }
+
+    drawFinalChargeLines(ctx, enemiesRef.current, toX, cssWidth, cssHeight, time)
+
+    if (phaseRef.current === 'playing') {
+      drawFingerGuide(ctx, pointerVisualRef.current, toX, toY)
+    }
   }, [])
 
   const spawnSparks = useCallback((x: number, y: number, color: string, count: number, size = 5) => {
@@ -666,7 +1978,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     playerRef.current = getInitialPlayer(selectedShipRef.current)
     if (fullyBuffed) {
       const p = playerRef.current
-        ; (Object.keys(WEAPON_STACK_CAPS) as WeaponKey[]).forEach((key) => {
+        ; WEAPON_KEYS.forEach((key) => {
           p.weapons[key] = WEAPON_STACK_CAPS[key]
         })
       p.optionTimer = 1
@@ -739,11 +2051,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const firePlayer = useCallback(() => {
     const player = playerRef.current
     const stacks = player.weapons
-    const totalStacks = Object.values(stacks).reduce((sum, value) => sum + value, 0)
+    let totalStacks = 0
+    for (const key of WEAPON_KEYS) totalStacks += stacks[key]
     if (player.fireCooldown > 0) return
 
     const baseDamage = 1 + Math.floor(player.rank / 3)
-    const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
+    const optionOffset = rootRef.current && rootRef.current.clientWidth < 640 ? 12 : 8.5
     const shipKey = player.ship.key
 
     const emitters = [{ x: player.x, y: player.y, scale: 1, main: true }]
@@ -754,10 +2067,10 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       )
     }
 
-    const firingWeapons = (Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).reduce((ready, key) => {
-      ready[key] = stacks[key] > 0 && player.weaponCooldowns[key] <= 0
-      return ready
-    }, { ...EMPTY_WEAPON_FLAGS })
+    const firingWeapons = { ...EMPTY_WEAPON_FLAGS }
+    for (const key of WEAPON_KEYS) {
+      firingWeapons[key] = stacks[key] > 0 && player.weaponCooldowns[key] <= 0
+    }
 
     emitters.forEach((emitter) => {
       const damage = Math.max(1, Math.ceil(baseDamage * emitter.scale))
@@ -1127,7 +2440,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     })
 
     if ((stacks.rocket > 0 || stacks.homing > 0) && Math.random() < 0.12) playGameSound('rocket')
-      ; (Object.keys(WEAPON_FIRE_INTERVALS) as WeaponKey[]).forEach((key) => {
+      ; WEAPON_KEYS.forEach((key) => {
         if (firingWeapons[key]) {
           player.weaponCooldowns[key] = WEAPON_FIRE_INTERVALS[key]
         }
@@ -1290,7 +2603,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (player.forceField <= 1) candidates.push('forcefield', 'forcefield')
     if (player.shield < 2.5) candidates.push('shield')
     if (player.optionTimer <= 0) candidates.push('option')
-      ; (['spread', 'laser', 'scatter', 'rocket', 'homing'] as WeaponKey[]).forEach((key) => {
+      ; WEAPON_KEYS.forEach((key) => {
         const maxStack = WEAPON_STACK_CAPS[key]
         const copies = player.weapons[key] === 0 ? 3 : player.weapons[key] >= maxStack ? 1 : 2
         for (let i = 0; i < copies; i += 1) candidates.push(key)
@@ -1346,7 +2659,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     }
   }, [addRipple, spawnSparks, stopRaidBgm])
 
-  const fireEnemy = useCallback((enemy: Enemy, player: Player) => {
+  const fireEnemy = useCallback((enemy: Enemy, player: Player, time = performance.now()) => {
     if (enemy.isBoss) {
       const kind = enemy.bossKind ?? 'carrier'
       if (kind === 'carrier') {
@@ -1355,7 +2668,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       }
       if (kind === 'orb') {
         for (let i = 0; i < 8; i += 1) {
-          const angle = (i / 8) * Math.PI * 2 + performance.now() / 900
+          const angle = (i / 8) * Math.PI * 2 + time / 900
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y, vx: Math.cos(angle) * 25, vy: Math.sin(angle) * 25 + 19, damage: 1, kind: 'orbShot', radius: 1.45 })
         }
         for (let i = 0; i < 10; i += 1) {
@@ -1365,13 +2678,13 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         }
       }
       if (kind === 'serpent') {
-        const lane = Math.sin(performance.now() / 280) * 18
+        const lane = Math.sin(time / 280) * 18
           ;[-1, 0, 1].forEach((offset) => {
             enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + offset * 8, y: enemy.y + 8, vx: offset * 10, vy: 38, damage: 1, kind: 'blade', radius: 1.9 })
           })
       }
       if (kind === 'mantis') {
-        const sweep = Math.sin(performance.now() / 260) * 24
+        const sweep = Math.sin(time / 260) * 24
           ;[-1, 1].forEach((side) => {
             enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 13, y: enemy.y + 5, vx: side * 24 + sweep * 0.24, vy: 40, damage: 1, kind: 'needle', radius: 1.55 })
             enemyShotsRef.current.push({ id: shotId++, x: enemy.x + side * 6, y: enemy.y + 10, vx: side * -10, vy: 35, damage: 1, kind: 'blade', radius: 1.9 })
@@ -1386,12 +2699,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         })
       }
       if (kind === 'gate') {
-        const phase = performance.now() / 380
+        const phase = time / 380
           ;[-24, -8, 8, 24].forEach((lane, index) => {
             const drift = Math.sin(phase + index) * 4
             enemyShotsRef.current.push({ id: shotId++, x: enemy.x + lane + drift, y: enemy.y + 12, vx: drift * 0.8, vy: 30 + index * 2, damage: 1, kind: index % 2 === 0 ? 'superShot' : 'needle', radius: 1.85 })
           })
-        const lane = Math.round((enemy.x + Math.sin(performance.now() / 520) * 16) / 10) * 10
+        const lane = Math.round((enemy.x + Math.sin(time / 520) * 16) / 10) * 10
         for (let i = 0; i < 6; i += 1) {
           enemyShotsRef.current.push({ id: shotId++, x: clamp(lane, 12, 88), y: enemy.y + 8 - i * 8, vx: 0, vy: 58, damage: 1, kind: 'beam', radius: 2.35 })
         }
@@ -1400,7 +2713,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         const fan = [-34, -17, 0, 17, 34]
         fan.forEach((vx) => enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 10, vx, vy: 34, damage: 1, kind: 'superShot', radius: 2 }))
         for (let i = 0; i < 6; i += 1) {
-          const angle = (i / 6) * Math.PI * 2 - performance.now() / 800
+          const angle = (i / 6) * Math.PI * 2 - time / 800
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: Math.cos(angle) * 22, vy: Math.sin(angle) * 22 + 20, damage: 1, kind: 'orbShot', radius: 1.7 })
         }
       }
@@ -1408,7 +2721,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         const fan = [-42, -28, -14, 0, 14, 28, 42]
         fan.forEach((vx, index) => enemyShotsRef.current.push({ id: shotId++, x: enemy.x + (index - 3) * 1.6, y: enemy.y + 11, vx, vy: 38, damage: 1, kind: 'superShot', radius: 2.15 }))
         for (let i = 0; i < 10; i += 1) {
-          const angle = (i / 10) * Math.PI * 2 + performance.now() / 720
+          const angle = (i / 10) * Math.PI * 2 + time / 720
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: Math.cos(angle) * 28, vy: Math.sin(angle) * 24 + 24, damage: 1, kind: i % 3 === 0 ? 'voidShot' : 'orbShot', radius: 1.9 })
         }
       }
@@ -1443,14 +2756,8 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       player.x += (50 - player.x) * Math.min(1, dt * 4.8)
       player.y = progress < 0.78 ? Math.max(4, player.y - dt * 31) : player.y
       player.invuln = Math.max(player.invuln, 0.45)
-      sparksRef.current = sparksRef.current
-        .map((spark) => ({ ...spark, x: spark.x + spark.vx * dt, y: spark.y + spark.vy * dt, life: spark.life - dt }))
-        .filter((spark) => spark.life > 0)
-        .slice(-MAX_SPARKS)
-      ripplesRef.current = ripplesRef.current
-        .map((ripple) => ({ ...ripple, life: ripple.life - dt }))
-        .filter((ripple) => ripple.life > 0)
-        .slice(-MAX_RIPPLES)
+      updateSparksInPlace(sparksRef.current, dt)
+      updateRipplesInPlace(ripplesRef.current, dt)
       if (before > 0 && stageClearRef.current <= 0) {
         player.x = 50
         player.y = 82
@@ -1489,7 +2796,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     player.x = clamp(player.x, 4, 96)
     player.y = clamp(player.y, 13, 93)
     player.fireCooldown = Math.max(0, player.fireCooldown - dt)
-      ; (Object.keys(player.weaponCooldowns) as WeaponKey[]).forEach((key) => {
+      ; WEAPON_KEYS.forEach((key) => {
         player.weaponCooldowns[key] = Math.max(0, player.weaponCooldowns[key] - dt)
       })
     player.invuln = Math.max(0, player.invuln - dt)
@@ -1504,12 +2811,17 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     if (!bossActive) {
       bossTimerRef.current = Math.max(0, bossTimerRef.current - dt)
     }
-    if (bossActive) {
-      startRaidBgm(stageRef.current, 'boss')
-    } else if (bossTimerRef.current <= RAID_BOSS_APPROACH_SILENCE_SECONDS) {
-      stopRaidBgm()
-    } else {
-      startRaidBgm(stageRef.current, enemiesRef.current.length > 0 ? 'combat' : 'cruise')
+    const desiredBgmMode: RaidBgmMode | null = bossActive
+      ? 'boss'
+      : bossTimerRef.current <= RAID_BOSS_APPROACH_SILENCE_SECONDS
+        ? null
+        : enemiesRef.current.length > 0 ? 'combat' : 'cruise'
+    if (!getGameSoundEnabled()) {
+      if (raidBgmElementRef.current) stopRaidBgm()
+    } else if (desiredBgmMode === null) {
+      if (raidBgmElementRef.current) stopRaidBgm()
+    } else if (raidBgmModeRef.current !== desiredBgmMode || raidBgmStageRef.current !== stageRef.current) {
+      startRaidBgm(stageRef.current, desiredBgmMode)
     }
     powerDropCooldownRef.current = Math.max(0, powerDropCooldownRef.current - dt)
     bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
@@ -1529,21 +2841,24 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       spawnTimerRef.current = Math.max(0.42, 1.25 - waveRef.current * 0.045)
     }
 
+    let homingTargets: Map<number, Enemy> | null = null
+    if (shotsRef.current.some((shot) => shot.kind === 'homing')) {
+      homingTargets = new Map()
+      for (const enemy of enemiesRef.current) {
+        if (enemy.hp > 0 && enemy.y >= -10) homingTargets.set(enemy.id, enemy)
+      }
+    }
+
     const liveShots: Shot[] = []
     for (const shot of shotsRef.current) {
       if (shot.kind === 'homing') {
-        let target: Enemy | null = null
-        let bestScore = Number.POSITIVE_INFINITY
-        for (const enemy of enemiesRef.current) {
-          if (enemy.hp <= 0 || enemy.y < -10) continue
-          const distance = distSq(shot, enemy)
-          const forwardBias = enemy.y > shot.y + 18 ? 2400 : 0
-          const bossBias = enemy.isBoss ? -1400 : 0
-          const score = distance + forwardBias + bossBias
-          if (score < bestScore) {
-            bestScore = score
-            target = enemy
-          }
+        shot.retargetTime = Math.max(0, (shot.retargetTime ?? 0) - dt)
+        let target = shot.homingTargetId && homingTargets ? homingTargets.get(shot.homingTargetId) ?? null : null
+
+        if (!target || shot.retargetTime <= 0) {
+          target = acquireHomingTarget(shot, enemiesRef.current)
+          shot.homingTargetId = target?.id
+          shot.retargetTime = HOMING_RETARGET_SECONDS + (shot.id % 7) * HOMING_RETARGET_STAGGER_SECONDS
         }
 
         if (target) {
@@ -1574,115 +2889,125 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     }
     enemyShotsRef.current = liveEnemyShots
 
-    enemiesRef.current = enemiesRef.current
-      .map((enemy) => {
-        const t = performance.now() / 1000 + enemy.phase
-        const bossKind = enemy.bossKind ?? 'carrier'
-        const bossX =
-          bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
-            bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
-              bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
-                bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
-                  bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
-                    bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
-                      bossKind === 'final' ? 50 + Math.sin(t * 0.36) * 31 + Math.sin(t * 1.45) * 7 :
-                        50 + Math.sin(t * 0.42) * 30
-        const bossYTarget =
-          bossKind === 'final' ? 17 + Math.sin(t * 0.72) * 3 :
-            bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
-              bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
-                bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
-                  bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
-                    bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
-                      bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
-                        18
-        const trainT = (enemy.y - enemy.trainSlot * 6.2) * enemy.pathSpeed + enemy.phase
-        const trainX =
-          enemy.pattern === 0 ? enemy.originX + Math.sin(trainT) * enemy.amplitude :
-            enemy.pattern === 1 ? enemy.originX + Math.sin(trainT) * enemy.amplitude + Math.sin(trainT * 2.1) * 5 :
-              enemy.pattern === 2 ? enemy.originX + Math.sin(trainT * 0.72) * enemy.amplitude * 0.7 :
-                enemy.originX + Math.cos(trainT) * enemy.amplitude
-        let chargeCooldown = enemy.chargeCooldown
-        let chargeTimer = enemy.chargeTimer
-        let chargeLane = enemy.chargeLane
-        let chargePattern = enemy.chargePattern
-        let fireCooldown = enemy.fireCooldown
-        if (enemy.isBoss && bossKind === 'final' && enemy.y >= bossYTarget - 0.5) {
-          if (chargeTimer > 0) {
-            const beforeCharge = chargeTimer
-            chargeTimer = Math.max(0, chargeTimer - dt)
-            if (enemy.bossKind === 'final' && chargeTimer > 0) {
-              const lanes = chargePattern === 'scatter'
-                ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
-                : [clamp(chargeLane, 10, 90)]
-              const warningWidth = chargePattern === 'scatter' ? 5 : 7
-              if (lanes.some((lane) => Math.abs(player.x - lane) < warningWidth)) {
-                damagePlayer(1)
-              }
-            }
-            if (beforeCharge > 0 && chargeTimer <= 0) {
-              const lanes = chargePattern === 'scatter'
-                ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
-                : [clamp(chargeLane, 10, 90)]
-              lanes.forEach((lane) => {
-                for (let i = 0; i < 7; i += 1) {
-                  enemyShotsRef.current.push({ id: shotId++, x: lane, y: enemy.y + 10 - i * 8, vx: 0, vy: 72, damage: 1, kind: 'beam', radius: chargePattern === 'scatter' ? 2.9 : 4.2 })
-                }
-                addRipple(lane, Math.max(18, enemy.y + 14), '#fbbf24', chargePattern === 'scatter' ? 11 : 18)
-              })
-              spawnSparks(enemy.x, enemy.y + 8, '#fbbf24', 70, 9)
-              playGameSound('laser')
-              chargeCooldown = 3.8 + Math.random() * 1.2
-              fireCooldown = 4.5
-            }
-          } else {
-            chargeCooldown = Math.max(0, chargeCooldown - dt)
-            if (chargeCooldown <= 0) {
-              chargeTimer = 1.45
-              chargeLane = clamp(player.x + (Math.random() - 0.5) * 12, 10, 90)
-              chargePattern = Math.random() < 0.42 ? 'scatter' : 'single'
-              chargeCooldown = 999
-              addRipple(chargeLane, 84, '#fbbf24', chargePattern === 'scatter' ? 14 : 20)
-              spawnSparks(enemy.x, enemy.y + 6, '#fbbf24', 46, 8)
-              playGameSound('countdown')
+    const now = performance.now()
+    const nowSeconds = now / 1000
+    const enemies = enemiesRef.current
+    let liveEnemyCount = 0
+    for (const enemy of enemies) {
+      const t = nowSeconds + enemy.phase
+      const bossKind = enemy.bossKind ?? 'carrier'
+      const bossX =
+        bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
+          bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
+            bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
+              bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
+                bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
+                  bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
+                    bossKind === 'final' ? 50 + Math.sin(t * 0.36) * 31 + Math.sin(t * 1.45) * 7 :
+                      50 + Math.sin(t * 0.42) * 30
+      const bossYTarget =
+        bossKind === 'final' ? 17 + Math.sin(t * 0.72) * 3 :
+          bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
+            bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
+              bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
+                bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
+                  bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
+                    bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
+                      18
+      const trainT = (enemy.y - enemy.trainSlot * 6.2) * enemy.pathSpeed + enemy.phase
+      const trainX =
+        enemy.pattern === 0 ? enemy.originX + Math.sin(trainT) * enemy.amplitude :
+          enemy.pattern === 1 ? enemy.originX + Math.sin(trainT) * enemy.amplitude + Math.sin(trainT * 2.1) * 5 :
+            enemy.pattern === 2 ? enemy.originX + Math.sin(trainT * 0.72) * enemy.amplitude * 0.7 :
+              enemy.originX + Math.cos(trainT) * enemy.amplitude
+      let chargeCooldown = enemy.chargeCooldown
+      let chargeTimer = enemy.chargeTimer
+      let chargeLane = enemy.chargeLane
+      let chargePattern = enemy.chargePattern
+      let fireCooldown = enemy.fireCooldown
+      if (enemy.isBoss && bossKind === 'final' && enemy.y >= bossYTarget - 0.5) {
+        if (chargeTimer > 0) {
+          const beforeCharge = chargeTimer
+          chargeTimer = Math.max(0, chargeTimer - dt)
+          if (enemy.bossKind === 'final' && chargeTimer > 0) {
+            const lanes = chargePattern === 'scatter'
+              ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
+              : [clamp(chargeLane, 10, 90)]
+            const warningWidth = chargePattern === 'scatter' ? 5 : 7
+            if (lanes.some((lane) => Math.abs(player.x - lane) < warningWidth)) {
+              damagePlayer(1)
             }
           }
+          if (beforeCharge > 0 && chargeTimer <= 0) {
+            const lanes = chargePattern === 'scatter'
+              ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
+              : [clamp(chargeLane, 10, 90)]
+            lanes.forEach((lane) => {
+              for (let i = 0; i < 7; i += 1) {
+                enemyShotsRef.current.push({ id: shotId++, x: lane, y: enemy.y + 10 - i * 8, vx: 0, vy: 72, damage: 1, kind: 'beam', radius: chargePattern === 'scatter' ? 2.9 : 4.2 })
+              }
+              addRipple(lane, Math.max(18, enemy.y + 14), '#fbbf24', chargePattern === 'scatter' ? 11 : 18)
+            })
+            spawnSparks(enemy.x, enemy.y + 8, '#fbbf24', 70, 9)
+            playGameSound('laser')
+            chargeCooldown = 3.8 + Math.random() * 1.2
+            fireCooldown = 4.5
+          }
+        } else {
+          chargeCooldown = Math.max(0, chargeCooldown - dt)
+          if (chargeCooldown <= 0) {
+            chargeTimer = 1.45
+            chargeLane = clamp(player.x + (Math.random() - 0.5) * 12, 10, 90)
+            chargePattern = Math.random() < 0.42 ? 'scatter' : 'single'
+            chargeCooldown = 999
+            addRipple(chargeLane, 84, '#fbbf24', chargePattern === 'scatter' ? 14 : 20)
+            spawnSparks(enemy.x, enemy.y + 6, '#fbbf24', 46, 8)
+            playGameSound('countdown')
+          }
         }
-        const nextFire = enemy.fireCooldown - dt
-        const bossCycle = (performance.now() / 1000) % 6
-        const bossInPause = enemy.isBoss && bossCycle > 3
-        if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
-          fireEnemy(enemy, player)
-        }
-        return {
-          ...enemy,
-          x: enemy.isBoss ? clamp(bossX, bossKind === 'final' ? 14 : bossKind === 'super' ? 20 : 16, bossKind === 'final' ? 86 : bossKind === 'super' ? 80 : 84) : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96),
-          y: enemy.isBoss ? (enemy.y < bossYTarget ? Math.min(bossYTarget, enemy.y + enemy.vy * dt) : bossYTarget) : enemy.y + enemy.vy * dt,
-          shieldTime: Math.max(0, enemy.shieldTime - dt),
-          fireCooldown: fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
-            ? (enemy.isBoss ? Math.max(bossKind === 'final' ? 0.62 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
-            : nextFire,
-          chargeCooldown,
-          chargeTimer,
-          chargeLane,
-          chargePattern,
-        }
-      })
-      .filter((enemy) => enemy.y < HEIGHT + 14 && enemy.hp > 0)
+      }
+      const nextFire = enemy.fireCooldown - dt
+      const bossInPause = enemy.isBoss && nowSeconds % 6 > 3
+      if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause) {
+        fireEnemy(enemy, player, now)
+      }
 
-    powerUpsRef.current = powerUpsRef.current
-      .map((powerUp) => ({ ...powerUp, y: powerUp.y + powerUp.vy * dt, spin: powerUp.spin + dt * 180 }))
-      .filter((powerUp) => powerUp.y < HEIGHT + 8)
+      enemy.x = enemy.isBoss
+        ? clamp(bossX, bossKind === 'final' ? 14 : bossKind === 'super' ? 20 : 16, bossKind === 'final' ? 86 : bossKind === 'super' ? 80 : 84)
+        : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96)
+      enemy.y = enemy.isBoss
+        ? (enemy.y < bossYTarget ? Math.min(bossYTarget, enemy.y + enemy.vy * dt) : bossYTarget)
+        : enemy.y + enemy.vy * dt
+      enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
+      enemy.fireCooldown = fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
+        ? (enemy.isBoss ? Math.max(bossKind === 'final' ? 0.62 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
+        : nextFire
+      enemy.chargeCooldown = chargeCooldown
+      enemy.chargeTimer = chargeTimer
+      enemy.chargeLane = chargeLane
+      enemy.chargePattern = chargePattern
 
-    sparksRef.current = sparksRef.current
-      .map((spark) => ({ ...spark, x: spark.x + spark.vx * dt, y: spark.y + spark.vy * dt, life: spark.life - dt }))
-      .filter((spark) => spark.life > 0)
-      .slice(-MAX_SPARKS)
+      if (enemy.y < HEIGHT + 14 && enemy.hp > 0) {
+        enemies[liveEnemyCount] = enemy
+        liveEnemyCount += 1
+      }
+    }
+    enemies.length = liveEnemyCount
 
-    ripplesRef.current = ripplesRef.current
-      .map((ripple) => ({ ...ripple, life: ripple.life - dt }))
-      .filter((ripple) => ripple.life > 0)
-      .slice(-MAX_RIPPLES)
+    const powerUps = powerUpsRef.current
+    let livePowerUpCount = 0
+    for (const powerUp of powerUps) {
+      powerUp.y += powerUp.vy * dt
+      powerUp.spin += dt * 180
+      if (powerUp.y < HEIGHT + 8) {
+        powerUps[livePowerUpCount] = powerUp
+        livePowerUpCount += 1
+      }
+    }
+    powerUps.length = livePowerUpCount
+
+    updateSparksInPlace(sparksRef.current, dt)
+    updateRipplesInPlace(ripplesRef.current, dt)
 
     let bossDefeatedThisFrame = false
     let preserveLoadoutForSuperBoss = false
@@ -1690,7 +3015,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     for (const shot of shotsRef.current) {
       for (const enemy of enemiesRef.current) {
         if (enemy.hp <= 0) continue
-        if (distSq(shot, enemy) <= (shot.radius + enemy.radius) ** 2) {
+        const hitRange = shot.radius + enemy.radius
+        if (
+          Math.abs(shot.x - enemy.x) <= hitRange &&
+          Math.abs(shot.y - enemy.y) <= hitRange &&
+          distSq(shot, enemy) <= hitRange * hitRange
+        ) {
           const bossShielded = enemy.isBoss && (enemy.shieldTime > 0 || enemy.y < 15)
           if (!bossShielded) {
             enemy.hp -= shot.damage
@@ -1813,7 +3143,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     }
 
     for (const enemyShot of enemyShotsRef.current) {
-      if (distSq(enemyShot, player) <= (enemyShot.radius + PLAYER_RADIUS) ** 2) {
+      const hitRange = enemyShot.radius + PLAYER_RADIUS
+      if (
+        Math.abs(enemyShot.x - player.x) <= hitRange &&
+        Math.abs(enemyShot.y - player.y) <= hitRange &&
+        distSq(enemyShot, player) <= hitRange * hitRange
+      ) {
         enemyShot.y = HEIGHT + 99
         damagePlayer(enemyShot.kind === 'boss' || enemyShot.kind === 'plasma' || enemyShot.kind === 'blade' || enemyShot.kind === 'orbShot' || enemyShot.kind === 'superShot' || enemyShot.kind === 'beam' || enemyShot.kind === 'scatterBoss' ? 1 : enemyShot.damage)
       }
@@ -1821,7 +3156,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     enemyShotsRef.current = enemyShotsRef.current.filter((shot) => shot.y < HEIGHT + 30)
 
     for (const enemy of enemiesRef.current) {
-      if (distSq(enemy, player) <= (enemy.radius + PLAYER_RADIUS) ** 2) {
+      const hitRange = enemy.radius + PLAYER_RADIUS
+      if (
+        Math.abs(enemy.x - player.x) <= hitRange &&
+        Math.abs(enemy.y - player.y) <= hitRange &&
+        distSq(enemy, player) <= hitRange * hitRange
+      ) {
         if (player.forceField > 0) {
           if (enemy.isBoss && player.invuln > 0) continue
           const armorCost = enemy.isBoss ? 2 : 1
@@ -1846,7 +3186,12 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
     }
 
     for (const powerUp of powerUpsRef.current) {
-      if (distSq(powerUp, player) <= (powerUp.radius + PLAYER_RADIUS + 1.8) ** 2) {
+      const hitRange = powerUp.radius + PLAYER_RADIUS + 1.8
+      if (
+        Math.abs(powerUp.x - player.x) <= hitRange &&
+        Math.abs(powerUp.y - player.y) <= hitRange &&
+        distSq(powerUp, player) <= hitRange * hitRange
+      ) {
         powerUp.y = HEIGHT + 99
         if (powerUp.type === 'repair') {
           player.hp = Math.min(player.maxHp, player.hp + 1)
@@ -1880,8 +3225,11 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       const dt = Math.min(0.033, (time - lastTimeRef.current) / 1000 || 0)
       lastTimeRef.current = time
       updateGame(dt)
-      drawFxCanvas()
-      if (time - lastRenderTimeRef.current >= RENDER_INTERVAL_MS || phaseRef.current !== 'playing') {
+      drawFxCanvas(time)
+      const renderInterval = phaseRef.current === 'playing'
+        ? (stageClearRef.current > 0 || bossAlertRef.current > 0 ? GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS : GAMEPLAY_SNAPSHOT_INTERVAL_MS)
+        : IDLE_SNAPSHOT_INTERVAL_MS
+      if (time - lastRenderTimeRef.current >= renderInterval) {
         lastRenderTimeRef.current = time
         syncSnapshot()
       }
@@ -1955,9 +3303,7 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
   const player = snapshot.player
   const hpPips = Array.from({ length: player.maxHp }, (_, index) => index < player.hp)
   const forcePips = Array.from({ length: FORCE_FIELD_ARMOR }, (_, index) => index < player.forceField)
-  const weaponEntries = (Object.keys(player.weapons) as WeaponKey[]).filter((key) => player.weapons[key] > 0)
-  const optionOffset = rootRef.current && rootRef.current.getBoundingClientRect().width < 640 ? 12 : 8.5
-  const optionShipSize = getShipSpriteSize(player.ship.key, 'option')
+  const weaponEntries = WEAPON_KEYS.filter((key) => player.weapons[key] > 0)
   const briefing = BRIEFING_PANELS[briefingStep] ?? BRIEFING_PANELS[0]
   const stageClearProgress = snapshot.stageClear > 0 ? 1 - snapshot.stageClear / STAGE_CLEAR_SECONDS : 0
   const stageFlashOpacity =
@@ -1994,30 +3340,6 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
         if (event.pointerType === 'mouse') clearPointer()
       }}
     >
-      <div className="raid__nebula" />
-      <div className="raid__starfield raid__starfield--far" />
-      <div className="raid__starfield raid__starfield--near" />
-      <div className="raid__speedlines" />
-      <div className="raid__galaxy" />
-      <div className="raid__galaxy-2" />
-      <div className="raid__planet raid__planet--1" />
-      <div className="raid__planet raid__planet--2" />
-      <div className="raid__planet raid__planet--3" />
-      <div className="raid__asteroid raid__asteroid--a" />
-      <div className="raid__asteroid raid__asteroid--b" />
-      <div className="raid__asteroid raid__asteroid--c" />
-      <div className="raid__asteroid raid__asteroid--d" />
-      <div className="raid__asteroid raid__asteroid--e" />
-      <div className="raid__asteroid-cluster raid__asteroid-cluster--1" />
-      <div className="raid__asteroid-cluster raid__asteroid-cluster--2" />
-      <div className="raid__debris raid__debris--a" />
-      <div className="raid__debris raid__debris--b" />
-      <div className="raid__debris raid__debris--c" />
-      <div className="raid__bg-laser raid__bg-laser--1" />
-      <div className="raid__bg-laser raid__bg-laser--2" />
-      <div className="raid__bg-explosion raid__bg-explosion--1" />
-      <div className="raid__bg-explosion raid__bg-explosion--2" />
-
       <div className="raid__hud">
         <div className="raid__stat">
           <span>Score</span>
@@ -2047,99 +3369,6 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
 
       <div className="raid__playfield">
         <canvas ref={fxCanvasRef} className="raid__fx-canvas" />
-        {snapshot.pointer && snapshot.phase === 'playing' && (
-          <div className="raid__finger-guide" style={{ left: `${snapshot.pointer.x}%`, top: `${snapshot.pointer.y}%` }} />
-        )}
-
-        {snapshot.enemies.map((enemy) => (
-          <div
-            key={enemy.id}
-            className={[
-              'raid__enemy',
-              enemy.isBoss ? 'raid__enemy--boss' : '',
-              enemy.bossKind ? `raid__enemy--boss-${enemy.bossKind}` : '',
-            ].join(' ')}
-            style={{ left: `${enemy.x}%`, top: `${enemy.y}%`, width: enemy.isBoss ? (enemy.bossKind === 'final' ? 'min(52vw, 470px)' : enemy.bossKind === 'super' ? 'min(42vw, 380px)' : enemy.bossKind === 'gate' ? 'min(34vw, 310px)' : enemy.bossKind === 'hydra' ? 'min(30vw, 260px)' : 'min(24vw, 210px)') : 'min(8vw, 64px)' }}
-          >
-            <AlienShip variant={enemy.variant} isBoss={enemy.isBoss} isFinalBoss={enemy.bossKind === 'final'} bossKind={enemy.bossKind ?? undefined} color={enemy.color} size={enemy.isBoss ? (enemy.bossKind === 'final' ? 330 : enemy.bossKind === 'super' ? 280 : enemy.bossKind === 'gate' ? 220 : enemy.bossKind === 'hydra' ? 190 : 156) : 50} />
-            {enemy.isBoss && (
-              <div className="raid__boss-aura">
-                <span />
-                <span />
-                <span />
-              </div>
-            )}
-            {enemy.isBoss && (
-              <div className="raid__boss-reticle">
-                <span />
-                <span />
-                <span />
-                <span />
-              </div>
-            )}
-            {enemy.isBoss && (
-              <>
-                {(enemy.shieldTime > 0 || enemy.y < 15) && <div className="raid__boss-shield" />}
-                <div className={enemy.bossKind === 'super' || enemy.bossKind === 'final' ? 'raid__boss-bar raid__boss-bar--super' : 'raid__boss-bar'}>
-                  <span style={{ width: `${Math.max(0, (enemy.hp / enemy.maxHp) * 100)}%` }} />
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-
-        {snapshot.enemies
-          .filter((enemy) => enemy.bossKind === 'final' && enemy.chargeTimer > 0)
-          .flatMap((enemy) => {
-            const lanes = enemy.chargePattern === 'scatter'
-              ? [-24, -12, 0, 12, 24].map((offset) => clamp(enemy.chargeLane + offset, 8, 92))
-              : [clamp(enemy.chargeLane, 10, 90)]
-            return lanes.map((lane, index) => (
-              <div
-                key={`${enemy.id}-${index}`}
-                className={enemy.chargePattern === 'scatter' ? 'raid__final-charge-line raid__final-charge-line--scatter' : 'raid__final-charge-line'}
-                style={{ left: `${lane}%`, opacity: Math.max(0.28, Math.min(1, enemy.chargeTimer / 1.45)) }}
-              />
-            ))
-          })}
-
-        {snapshot.powerUps.map((powerUp) => (
-          <div
-            key={powerUp.id}
-            className={`raid__power raid__power--${powerUp.type}`}
-            style={{
-              left: `${powerUp.x}%`,
-              top: `${powerUp.y}%`,
-              color: powerColor(powerUp.type),
-              transform: `translate(-50%, -50%) rotate(${powerUp.spin}deg)`,
-            }}
-          >
-            <span>{powerGlyph(powerUp.type)}</span>
-          </div>
-        ))}
-
-        <div
-          className={[
-            'raid__player',
-            player.invuln > 0 || player.shield > 0 ? 'raid__player--shielded' : '',
-            player.forceField > 0 ? 'raid__player--forcefield' : '',
-            snapshot.phase === 'gameover' ? 'raid__player--down' : '',
-          ].join(' ')}
-          style={{ left: `${player.x}%`, top: `${player.y}%` }}
-        >
-          <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={getShipSpriteSize(player.ship.key, 'player')} />
-          <span className="raid__engine" />
-        </div>
-        {player.optionTimer > 0 && (
-          <>
-            <div className="raid__option raid__option--left" style={{ left: `${clamp(player.x - optionOffset, 4, 96)}%`, top: `${player.y + 1.8}%` }}>
-              <TowerShip tType={player.ship.key} color="#ef233c" size={optionShipSize} />
-            </div>
-            <div className="raid__option raid__option--right" style={{ left: `${clamp(player.x + optionOffset, 4, 96)}%`, top: `${player.y + 1.8}%` }}>
-              <TowerShip tType={player.ship.key} color="#ef233c" size={optionShipSize} />
-            </div>
-          </>
-        )}
       </div>
 
       {snapshot.bossAlert > 0 && (
@@ -2177,11 +3406,24 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
             <h2>{briefing.title}</h2>
             <p className="raid__briefing-copy">{briefing.body}</p>
             <div className="raid__briefing-grid">
-              {briefing.items.map((item) => (
-                <div key={item} className="raid__briefing-card">
-                  {item}
-                </div>
-              ))}
+              {briefing.items.map((item) => {
+                const pickupType = getBriefingPickupType(item)
+                const [label, ...descriptionParts] = item.split(':')
+                const description = descriptionParts.join(':').trim()
+                return (
+                  <div key={item} className={pickupType ? 'raid__briefing-card raid__briefing-card--pickup' : 'raid__briefing-card'}>
+                    {pickupType && <PickupPreviewCanvas type={pickupType} />}
+                    <span className="raid__briefing-card-copy">
+                      {pickupType ? (
+                        <>
+                          <b>{label}</b>
+                          <span>{description}</span>
+                        </>
+                      ) : item}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
             <div className="raid__briefing-progress" aria-label="Briefing progress">
               {BRIEFING_PANELS.map((panel, index) => (

@@ -1,6 +1,7 @@
 import './App.css'
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
+import { AlienShip, TowerShip } from './components/games/towerDefense/sprites'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed — kept for prop compatibility)
@@ -155,27 +156,94 @@ function App() {
           <div className="start-screen__beam start-screen__beam--a" />
           <div className="start-screen__beam start-screen__beam--b" />
           <div className="start-screen__beam start-screen__beam--c" />
-          <div className="start-screen__ship start-screen__ship--frigate" />
-          <div className="start-screen__ship start-screen__ship--fighter" />
-          <div className="start-screen__ship start-screen__ship--enemy" />
-          <div className="start-screen__ship start-screen__ship--enemy2" />
+          <div className="start-screen__sprite-fleet" aria-hidden="true">
+            <div className="start-screen__sprite-ship start-screen__sprite-ship--rocket">
+              <TowerShip tType="rocket" color="#ef233c" size={132} />
+            </div>
+            <div className="start-screen__sprite-ship start-screen__sprite-ship--xwing">
+              <TowerShip tType="xwing" color="#38bdf8" size={108} />
+            </div>
+            <div className="start-screen__sprite-ship start-screen__sprite-ship--dreadnought">
+              <TowerShip tType="dreadnought" color="#f97316" size={150} />
+            </div>
+            <div className="start-screen__sprite-ship start-screen__sprite-ship--alien-a">
+              <AlienShip variant={1} isBoss={false} isFinalBoss={false} color="#a855f7" size={96} />
+            </div>
+            <div className="start-screen__sprite-ship start-screen__sprite-ship--alien-b">
+              <AlienShip variant={3} isBoss={true} isFinalBoss={false} bossKind="carrier" color="#ef4444" size={138} />
+            </div>
+          </div>
         </div>
 
         <div className="start-screen__content">
-          <div className="start-screen__eyebrow">Orbital Command Simulation</div>
-          <h1>Space Impact Defense</h1>
-          <p>Deploy warships. Defend Earth. Break alien fleets across shifting space lanes.</p>
+          <div className="start-screen__command-panel">
+            <div className="start-screen__brand">
+              <span className="start-screen__signal" />
+              <span>Orbital Command Simulation</span>
+              <span className="start-screen__version">V1.0</span>
+            </div>
 
-          <div className="start-screen__actions">
-            <button className="start-screen__button" onClick={startCutscene}>
-              Normal Campaign
-            </button>
-            <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
-              Endless Mode
-            </button>
-            <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
-              Rocket Raid
-            </button>
+            <div className="start-screen__title-lockup">
+              <div className="start-screen__eyebrow">Earth Defense Initiative</div>
+              <h1>Space Impact Defense</h1>
+              <p>Deploy warships. Defend Earth. Break alien fleets across shifting space lanes.</p>
+            </div>
+
+            <div className="start-screen__status-grid" aria-label="Command status">
+              <div className="start-screen__status">
+                <span>Sector</span>
+                <strong>Sol-3</strong>
+              </div>
+              <div className="start-screen__status">
+                <span>Threat</span>
+                <strong>Omega</strong>
+              </div>
+              <div className="start-screen__status">
+                <span>Fleet</span>
+                <strong>Ready</strong>
+              </div>
+            </div>
+
+            <div className="start-screen__hangar" aria-hidden="true">
+              <div className="start-screen__hangar-ship start-screen__hangar-ship--one">
+                <TowerShip tType="fast" color="#ef233c" size={58} />
+              </div>
+              <div className="start-screen__hangar-ship start-screen__hangar-ship--two">
+                <TowerShip tType="gatling" color="#f97316" size={60} />
+              </div>
+              <div className="start-screen__hangar-ship start-screen__hangar-ship--three">
+                <TowerShip tType="laser" color="#38bdf8" size={58} />
+              </div>
+              <div className="start-screen__hangar-ship start-screen__hangar-ship--four">
+                <TowerShip tType="spaceEt" color="#22c55e" size={64} />
+              </div>
+              <div className="start-screen__hangar-ship start-screen__hangar-ship--enemy">
+                <AlienShip variant={2} isBoss={false} isFinalBoss={false} color="#d946ef" size={54} />
+              </div>
+            </div>
+
+            <div className="start-screen__actions" aria-label="Game modes">
+              <button className="start-screen__button" onClick={startCutscene}>
+                <span className="start-screen__button-kicker">Story Briefing</span>
+                <span className="start-screen__button-title">Normal Campaign</span>
+                <span className="start-screen__button-copy">Hold the defense grid through escalating waves.</span>
+              </button>
+              <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
+                <span className="start-screen__button-kicker">Survival Run</span>
+                <span className="start-screen__button-title">Endless Mode</span>
+                <span className="start-screen__button-copy">Fight until the fleet is overwhelmed.</span>
+              </button>
+              <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
+                <span className="start-screen__button-kicker">Pilot Assault</span>
+                <span className="start-screen__button-title">Rocket Raid</span>
+                <span className="start-screen__button-copy">Launch into a direct side-scroll strike.</span>
+              </button>
+            </div>
+
+            <div className="start-screen__footer">
+              <span>(C) 2026 Zuki. All rights reserved.</span>
+              <span>Music credit: "Shelter" by Porter Robinson &amp; Madeon.</span>
+            </div>
           </div>
         </div>
       </div>

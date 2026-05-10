@@ -199,6 +199,68 @@ body {
   animation: shipFloatD 6.1s ease-in-out infinite;
 }
 
+.start-screen__sprite-fleet {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.start-screen__sprite-ship {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  opacity: 0.82;
+  transform-origin: center;
+  filter: drop-shadow(0 0 22px rgba(125, 211, 252, 0.24));
+}
+
+.start-screen__sprite-ship svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.start-screen__sprite-ship--rocket {
+  width: clamp(92px, 10vw, 132px);
+  left: 8%;
+  bottom: 10%;
+  animation: menuShipRocket 8s ease-in-out infinite;
+}
+
+.start-screen__sprite-ship--xwing {
+  width: clamp(76px, 8vw, 108px);
+  left: 25%;
+  top: 14%;
+  opacity: 0.7;
+  animation: menuShipXwing 6.8s ease-in-out infinite;
+}
+
+.start-screen__sprite-ship--dreadnought {
+  width: clamp(106px, 11vw, 150px);
+  right: 7%;
+  bottom: 13%;
+  opacity: 0.68;
+  animation: menuShipDreadnought 9.5s ease-in-out infinite;
+}
+
+.start-screen__sprite-ship--alien-a {
+  width: clamp(70px, 7vw, 96px);
+  right: 19%;
+  top: 14%;
+  opacity: 0.72;
+  filter: drop-shadow(0 0 24px rgba(217, 70, 239, 0.28));
+  animation: menuShipAlienA 7.2s ease-in-out infinite;
+}
+
+.start-screen__sprite-ship--alien-b {
+  width: clamp(96px, 10vw, 138px);
+  right: 5%;
+  top: 42%;
+  opacity: 0.58;
+  filter: drop-shadow(0 0 30px rgba(239, 68, 68, 0.24));
+  animation: menuShipAlienB 10.5s ease-in-out infinite;
+}
+
 .start-screen__content {
   position: relative;
   z-index: 2;
@@ -206,16 +268,96 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  width: min(94vw, 980px);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  gap: 0;
   text-align: center;
-  padding: 24px;
+  padding: 16px;
+  scrollbar-width: none;
+}
+
+.start-screen__content::-webkit-scrollbar {
+  display: none;
+}
+
+.start-screen__command-panel {
+  position: relative;
+  width: 100%;
+  display: grid;
+  gap: 22px;
+  padding: clamp(22px, 4vw, 42px);
+  border: 1px solid rgba(181, 232, 255, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(110, 245, 203, 0.12), transparent 18%, transparent 82%, rgba(147, 197, 253, 0.1)),
+    linear-gradient(180deg, rgba(6, 14, 28, 0.9), rgba(2, 7, 16, 0.7));
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+}
+
+.start-screen__command-panel::before,
+.start-screen__command-panel::after {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.start-screen__command-panel::after {
+  inset: auto 18px 18px 18px;
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, rgba(110, 245, 203, 0.5), rgba(147, 197, 253, 0.5), transparent);
+}
+
+.start-screen__brand {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  color: #b9d9e8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.2rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.start-screen__signal {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6ef5cb;
+  box-shadow: 0 0 16px rgba(110, 245, 203, 0.9);
+  animation: signalPulse 1.4s ease-in-out infinite;
+}
+
+.start-screen__version {
+  justify-self: end;
+  padding: 5px 8px;
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  border-radius: 4px;
+  color: #93c5fd;
+  background: rgba(11, 24, 44, 0.72);
+  letter-spacing: 0.14rem;
+}
+
+.start-screen__title-lockup {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
 }
 
 .start-screen__eyebrow {
-  color: #9cc3b3;
+  color: #6ef5cb;
   font-size: 0.8rem;
+  font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 0.28rem;
+  letter-spacing: 0.26rem;
 }
 
 .start-screen h1 {
@@ -236,47 +378,261 @@ body {
   line-height: 1.6;
 }
 
+.start-screen__status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.start-screen__status {
+  min-height: 70px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
+    rgba(7, 18, 34, 0.62);
+}
+
+.start-screen__status span {
+  color: #8aa6b9;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16rem;
+  text-transform: uppercase;
+}
+
+.start-screen__status strong {
+  color: #f4f7fb;
+  font-size: clamp(1rem, 2vw, 1.18rem);
+  letter-spacing: 0.08rem;
+  text-transform: uppercase;
+}
+
+.start-screen__hangar {
+  position: relative;
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(147, 197, 253, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(56, 189, 248, 0.08), transparent 26%, transparent 74%, rgba(217, 70, 239, 0.08)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 82px),
+    rgba(4, 12, 24, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.start-screen__hangar::before,
+.start-screen__hangar::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.45), transparent);
+  pointer-events: none;
+}
+
+.start-screen__hangar::before {
+  top: 14px;
+}
+
+.start-screen__hangar::after {
+  bottom: 14px;
+}
+
+.start-screen__hangar-ship {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  filter:
+    brightness(0.78)
+    contrast(1.45)
+    saturate(1.25)
+    drop-shadow(0 0 14px rgba(125, 211, 252, 0.26));
+  animation: hangarShipBob 2.8s ease-in-out infinite alternate;
+}
+
+.start-screen__hangar-ship svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.start-screen__hangar-ship--two {
+  animation-delay: -0.5s;
+}
+
+.start-screen__hangar-ship--three {
+  animation-delay: -0.95s;
+}
+
+.start-screen__hangar-ship--four {
+  animation-delay: -1.35s;
+}
+
+.start-screen__hangar-ship--enemy {
+  filter:
+    brightness(0.8)
+    contrast(1.35)
+    saturate(1.35)
+    drop-shadow(0 0 14px rgba(217, 70, 239, 0.28));
+  animation-delay: -1.8s;
+}
+
 .start-screen__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 10px;
 }
 
 .start-screen__button {
-  padding: 14px 34px;
-  border: 1px solid #6ef5cb;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #16c9ab, #0b6a66);
-  color: #031512;
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  position: relative;
+  min-height: 152px;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid rgba(110, 245, 203, 0.42);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(22, 201, 171, 0.26), rgba(11, 106, 102, 0.16)),
+    rgba(4, 16, 28, 0.76);
+  color: #eefcff;
+  text-align: left;
   cursor: pointer;
-  box-shadow: 0 12px 32px rgba(22, 201, 171, 0.26), inset 0 1px 0 rgba(255,255,255,0.3);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  box-shadow:
+    0 12px 32px rgba(22, 201, 171, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  overflow: hidden;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.start-screen__button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.14), transparent 32%),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 9px);
+  opacity: 0.46;
+  pointer-events: none;
+}
+
+.start-screen__button::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 34px;
+  height: 10px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  opacity: 0.38;
+}
+
+.start-screen__button-kicker,
+.start-screen__button-title,
+.start-screen__button-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.start-screen__button-kicker {
+  color: #8bf9d7;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.16rem;
+  text-transform: uppercase;
+}
+
+.start-screen__button-title {
+  color: #ffffff;
+  font-size: clamp(1.12rem, 2vw, 1.42rem);
+  font-weight: 900;
+  letter-spacing: 0.08rem;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.start-screen__button-copy {
+  max-width: 24ch;
+  color: #b8cbd7;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .start-screen__button--endless {
-  border-color: #ffbd73;
-  background: linear-gradient(180deg, #ff9f43, #7a4312);
-  color: #180b02;
-  box-shadow: 0 12px 32px rgba(255, 136, 0, 0.26), inset 0 1px 0 rgba(255,255,255,0.3);
+  border-color: rgba(255, 189, 115, 0.46);
+  background:
+    linear-gradient(135deg, rgba(255, 159, 67, 0.28), rgba(122, 67, 18, 0.16)),
+    rgba(4, 16, 28, 0.76);
+  box-shadow:
+    0 12px 32px rgba(255, 136, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13);
+}
+
+.start-screen__button--endless .start-screen__button-kicker {
+  color: #ffcf8a;
 }
 
 .start-screen__button--raid {
-  border-color: #93c5fd;
-  background: linear-gradient(180deg, #67e8f9, #2563eb);
-  color: #04111f;
-  box-shadow: 0 12px 32px rgba(56, 189, 248, 0.28), inset 0 1px 0 rgba(255,255,255,0.3);
+  border-color: rgba(147, 197, 253, 0.5);
+  background:
+    linear-gradient(135deg, rgba(103, 232, 249, 0.28), rgba(37, 99, 235, 0.18)),
+    rgba(4, 16, 28, 0.76);
+  box-shadow:
+    0 12px 32px rgba(56, 189, 248, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13);
+}
+
+.start-screen__button--raid .start-screen__button-kicker {
+  color: #9bdcff;
 }
 
 .start-screen__button:hover {
-  transform: translateY(-2px) scale(1.03);
-  filter: brightness(1.06);
-  box-shadow: 0 18px 42px rgba(22, 201, 171, 0.34), inset 0 1px 0 rgba(255,255,255,0.35);
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.72);
+  background:
+    linear-gradient(135deg, rgba(110, 245, 203, 0.32), rgba(57, 110, 255, 0.2)),
+    rgba(6, 20, 36, 0.88);
+  box-shadow:
+    0 18px 42px rgba(22, 201, 171, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.start-screen__button:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.82);
+  outline-offset: 3px;
+}
+
+.start-screen__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  color: #8096a8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04rem;
+  text-transform: uppercase;
 }
 
 .cutscene {
@@ -594,6 +950,47 @@ body {
   font-size: 0.88rem;
 }
 
+@keyframes signalPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+
+@keyframes menuShipRocket {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(18deg) scale(1); }
+  50% { transform: translate3d(24px, -20px, 0) rotate(23deg) scale(1.04); }
+}
+
+@keyframes menuShipXwing {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(36deg) scale(1); }
+  50% { transform: translate3d(18px, 16px, 0) rotate(30deg) scale(0.96); }
+}
+
+@keyframes menuShipDreadnought {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-22deg) scale(1); }
+  50% { transform: translate3d(-26px, -14px, 0) rotate(-27deg) scale(1.03); }
+}
+
+@keyframes menuShipAlienA {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(206deg) scale(1); }
+  50% { transform: translate3d(-18px, 22px, 0) rotate(212deg) scale(1.05); }
+}
+
+@keyframes menuShipAlienB {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(214deg) scale(1); }
+  50% { transform: translate3d(-34px, 18px, 0) rotate(208deg) scale(1.04); }
+}
+
+@keyframes hangarShipBob {
+  from { transform: translateY(3px); }
+  to { transform: translateY(-4px); }
+}
+
 @keyframes driftStars {
   from { transform: translateY(0); }
   to { transform: translateY(40px); }
@@ -695,9 +1092,149 @@ body {
   50% { opacity: 0.95; transform: rotate(-8deg) scaleX(1); }
 }
 
+@media (max-width: 900px) {
+  .start-screen__sprite-ship--dreadnought {
+    right: -2%;
+    opacity: 0.42;
+  }
+
+  .start-screen__sprite-ship--alien-b {
+    opacity: 0.38;
+  }
+
+  .start-screen__hangar {
+    min-height: 76px;
+    gap: 6px;
+  }
+
+  .start-screen__hangar-ship svg {
+    max-height: 58px;
+  }
+
+  .start-screen__command-panel {
+    gap: 18px;
+  }
+
+  .start-screen__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .start-screen__button {
+    min-height: 118px;
+  }
+
+  .start-screen__button-copy {
+    max-width: 100%;
+  }
+}
+
 @media (max-width: 700px) {
+  .start-screen__sprite-ship--xwing,
+  .start-screen__sprite-ship--alien-b {
+    display: none;
+  }
+
+  .start-screen__sprite-ship--rocket {
+    left: -10%;
+    bottom: 4%;
+    opacity: 0.34;
+  }
+
+  .start-screen__sprite-ship--dreadnought {
+    right: -16%;
+    bottom: 9%;
+    opacity: 0.28;
+  }
+
+  .start-screen__sprite-ship--alien-a {
+    right: -6%;
+    top: 10%;
+    opacity: 0.32;
+  }
+
   .start-screen__content {
-    padding: 20px 18px;
+    width: 100%;
+    max-height: 100vh;
+    padding: 12px;
+  }
+
+  .start-screen__command-panel {
+    padding: 18px 16px 22px;
+  }
+
+  .start-screen__brand {
+    grid-template-columns: auto 1fr;
+    font-size: 0.62rem;
+    letter-spacing: 0.12rem;
+  }
+
+  .start-screen__version {
+    display: none;
+  }
+
+  .start-screen__eyebrow {
+    font-size: 0.66rem;
+    letter-spacing: 0.16rem;
+  }
+
+  .start-screen h1 {
+    font-size: clamp(2.25rem, 13vw, 3.5rem);
+  }
+
+  .start-screen p {
+    font-size: 0.92rem;
+    line-height: 1.45;
+  }
+
+  .start-screen__status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .start-screen__status {
+    min-height: 54px;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    text-align: left;
+  }
+
+  .start-screen__hangar {
+    min-height: 60px;
+    gap: 3px;
+    padding: 7px 8px;
+  }
+
+  .start-screen__hangar::before {
+    top: 9px;
+  }
+
+  .start-screen__hangar::after {
+    bottom: 9px;
+  }
+
+  .start-screen__hangar-ship svg {
+    max-height: 42px;
+  }
+
+  .start-screen__hangar-ship--four svg {
+    max-height: 48px;
+  }
+
+  .start-screen__button {
+    min-height: 108px;
+    padding: 16px;
+  }
+
+  .start-screen__button-title {
+    font-size: 1.08rem;
+  }
+
+  .start-screen__button-copy {
+    font-size: 0.8rem;
+  }
+
+  .start-screen__footer {
+    font-size: 0.68rem;
+    line-height: 1.45;
   }
 
   .start-screen__ship--frigate {

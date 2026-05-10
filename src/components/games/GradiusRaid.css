@@ -1592,6 +1592,43 @@
   line-height: 1.35;
 }
 
+.raid__briefing-card--pickup {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 92px;
+  padding: 8px 14px 8px 8px;
+}
+
+.raid__pickup-preview {
+  display: block;
+  width: 78px;
+  height: 78px;
+}
+
+.raid__briefing-card-copy {
+  display: block;
+  min-width: 0;
+}
+
+.raid__briefing-card-copy b,
+.raid__briefing-card-copy span {
+  display: block;
+}
+
+.raid__briefing-card-copy b {
+  color: #ffffff;
+  font-size: 0.86rem;
+}
+
+.raid__briefing-card-copy span {
+  margin-top: 3px;
+  color: #d8dee8;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .raid__briefing-progress {
   display: flex;
   justify-content: center;
@@ -1892,6 +1929,28 @@
     min-height: 0;
     padding: 9px 10px;
     font-size: 0.72rem;
+  }
+
+  .raid__briefing-card--pickup {
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 72px;
+    padding: 6px 9px 6px 4px;
+    text-align: left;
+  }
+
+  .raid__pickup-preview {
+    width: 60px;
+    height: 60px;
+  }
+
+  .raid__briefing-card-copy b {
+    font-size: 0.72rem;
+  }
+
+  .raid__briefing-card-copy span {
+    font-size: 0.64rem;
+    line-height: 1.28;
   }
 
   .raid__briefing-dot {

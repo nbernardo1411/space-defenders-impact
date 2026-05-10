@@ -1,4 +1,4 @@
-# Crypto Tower Defense
+# Space Defender Impact
 
 A polished tower defense game built with React and TypeScript. Defend against waves of cryptocurrency-themed enemies by strategically placing towers.
 
