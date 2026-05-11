@@ -575,6 +575,77 @@
   color: #fca5a5;
 }
 
+.raid__connection {
+  position: absolute;
+  z-index: 21;
+  top: 70px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  max-width: min(210px, calc(100vw - 28px));
+  padding: 4px 8px;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  border-radius: 999px;
+  background: rgba(5, 8, 14, 0.48);
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.06rem;
+  line-height: 1;
+  text-transform: uppercase;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.12);
+}
+
+.raid__connection i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.85);
+}
+
+.raid__connection span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.raid__connection--ok {
+  border-color: rgba(251, 191, 36, 0.34);
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.1);
+}
+
+.raid__connection--ok i {
+  background: #fbbf24;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.8);
+}
+
+.raid__connection--poor {
+  border-color: rgba(249, 115, 22, 0.42);
+  color: rgba(255, 237, 213, 0.94);
+  box-shadow: 0 0 18px rgba(249, 115, 22, 0.12);
+}
+
+.raid__connection--poor i {
+  background: #fb923c;
+  box-shadow: 0 0 10px rgba(251, 146, 60, 0.86);
+}
+
+.raid__connection--offline {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: rgba(254, 226, 226, 0.96);
+  box-shadow: 0 0 18px rgba(248, 113, 113, 0.14);
+}
+
+.raid__connection--offline i {
+  background: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
+}
+
 .raid__hp {
   justify-self: end;
   display: flex;
@@ -2103,6 +2174,23 @@
     line-height: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .raid__connection {
+    top: calc(max(8px, env(safe-area-inset-top)) + 34px);
+    right: 8px;
+    min-height: 20px;
+    max-width: 138px;
+    padding: 3px 6px;
+    gap: 5px;
+    font-size: 0.46rem;
+    letter-spacing: 0.035rem;
+    background: rgba(5, 8, 14, 0.38);
+  }
+
+  .raid__connection i {
+    width: 5px;
+    height: 5px;
   }
 
   .raid__hp {
