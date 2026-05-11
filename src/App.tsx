@@ -1,4 +1,5 @@
 import './App.css'
+import { RaidMultiplayerLobby } from './components/RaidMultiplayerLobby'
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
@@ -31,7 +32,7 @@ const CUTSCENE_SCENES = [
   },
 ] as const
 
-type ScreenState = 'title' | 'cutscene' | 'game'
+type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidMultiplayer'
 type GameMode = 'normal' | 'endless'
 type ActiveGame = 'towerDefense' | 'rocketRaid'
 
@@ -143,6 +144,10 @@ function App() {
   }
 
   const startRocketRaid = () => {
+    setScreen('rocketMode')
+  }
+
+  const startRocketRaidSingle = () => {
     setActiveGame('rocketRaid')
     setScreen('game')
   }
@@ -303,6 +308,38 @@ function App() {
         </div>
       </div>
     )
+  }
+
+  if (screen === 'rocketMode') {
+    return (
+      <div className="mode-screen">
+        <div className="mode-screen__stars" />
+        <div className="mode-screen__panel">
+          <button className="mode-screen__back" onClick={() => setScreen('title')}>
+            Back
+          </button>
+
+          <div className="mode-screen__eyebrow">Pilot Assault</div>
+          <h1>Rocket Raid</h1>
+          <p>Launch solo now, or open a two-player room through the Render relay.</p>
+
+          <div className="mode-screen__actions">
+            <button className="mode-screen__button" onClick={startRocketRaidSingle}>
+              <span>Single Player</span>
+              <strong>Start Raid</strong>
+            </button>
+            <button className="mode-screen__button mode-screen__button--accent" onClick={() => setScreen('raidMultiplayer')}>
+              <span>Two Players</span>
+              <strong>Multiplayer</strong>
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (screen === 'raidMultiplayer') {
+    return <RaidMultiplayerLobby onBack={() => setScreen('rocketMode')} />
   }
 
   return (

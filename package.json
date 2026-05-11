@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "relay": "node server/raid-relay.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: space-raid-relay
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run relay
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
