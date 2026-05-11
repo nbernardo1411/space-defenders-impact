@@ -4628,17 +4628,6 @@ export function GradiusRaid({
         if (chargeTimer > 0) {
           const beforeCharge = chargeTimer
           chargeTimer = Math.max(0, chargeTimer - dt)
-          if (enemy.bossKind === 'final' && chargeTimer > 0) {
-            const lanes = chargePattern === 'scatter'
-              ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
-              : [clamp(chargeLane, 10, 90)]
-            const warningWidth = chargePattern === 'scatter' ? 5 : 7
-            getLivingPlayers().forEach((targetPlayer) => {
-              if (lanes.some((lane) => Math.abs(targetPlayer.x - lane) < warningWidth)) {
-                damagePlayer(1, targetPlayer)
-              }
-            })
-          }
           if (beforeCharge > 0 && chargeTimer <= 0) {
             const lanes = chargePattern === 'scatter'
               ? [-24, -12, 0, 12, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
