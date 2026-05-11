@@ -1,5 +1,5 @@
 import './App.css'
-import { RaidMultiplayerLobby } from './components/RaidMultiplayerLobby'
+import { RaidMultiplayerLobby, type RaidMultiplayerSession } from './components/RaidMultiplayerLobby'
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
@@ -40,6 +40,7 @@ function App() {
   const [screen, setScreen] = useState<ScreenState>('title')
   const [gameMode, setGameMode] = useState<GameMode>('normal')
   const [activeGame, setActiveGame] = useState<ActiveGame>('towerDefense')
+  const [raidMultiplayerSession, setRaidMultiplayerSession] = useState<RaidMultiplayerSession | null>(null)
   const [cutsceneIndex, setCutsceneIndex] = useState(0)
 
   const currentScene = useMemo(() => CUTSCENE_SCENES[cutsceneIndex], [cutsceneIndex])
@@ -148,8 +149,15 @@ function App() {
   }
 
   const startRocketRaidSingle = () => {
+    setRaidMultiplayerSession(null)
     setActiveGame('rocketRaid')
     setScreen('game')
+  }
+
+  const closeGame = () => {
+    raidMultiplayerSession?.socket.close()
+    setRaidMultiplayerSession(null)
+    setScreen('title')
   }
 
   if (screen === 'title') {
@@ -339,17 +347,26 @@ function App() {
   }
 
   if (screen === 'raidMultiplayer') {
-    return <RaidMultiplayerLobby onBack={() => setScreen('rocketMode')} />
+    return (
+      <RaidMultiplayerLobby
+        onBack={() => setScreen('rocketMode')}
+        onStart={(session) => {
+          setRaidMultiplayerSession(session)
+          setActiveGame('rocketRaid')
+          setScreen('game')
+        }}
+      />
+    )
   }
 
   return (
     <div className="app">
       {activeGame === 'rocketRaid' ? (
-        <GradiusRaid onClose={() => setScreen('title')} />
+        <GradiusRaid onClose={closeGame} multiplayerSession={raidMultiplayerSession} />
       ) : (
         <SpaceImpactDefense
           availableCoins={DEFAULT_COINS}
-          onClose={() => setScreen('title')}
+          onClose={closeGame}
           initialMode={gameMode}
         />
       )}

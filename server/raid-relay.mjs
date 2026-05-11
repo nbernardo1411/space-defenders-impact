@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { randomBytes, createHash } from 'node:crypto'
 
 const PORT = Number(process.env.PORT || 8787)
-const MAX_PAYLOAD_BYTES = 64 * 1024
+const MAX_PAYLOAD_BYTES = 256 * 1024
 
 /** @type {Map<string, { code: string, hostId: string, peers: Set<string> }>} */
 const rooms = new Map()
@@ -152,6 +152,41 @@ function handleMessage(id, message) {
       break
     }
 
+    case 'start-game': {
+      if (!peer.roomCode) {
+        send(id, { type: 'error', message: 'Create or join a room first.' })
+        return
+      }
+
+      const room = rooms.get(peer.roomCode)
+      if (!room || room.hostId !== id) {
+        send(id, { type: 'error', message: 'Only the host can start co-op.' })
+        return
+      }
+
+      const players = [...room.peers].map((peerId) => peers.get(peerId)).filter(Boolean)
+      if (players.length < 2 || players.some((roomPeer) => !roomPeer.ready)) {
+        send(id, { type: 'error', message: 'Both pilots must be ready.' })
+        return
+      }
+
+      broadcast(room.code, { type: 'game-started', room: snapshotRoom(room.code) })
+      break
+    }
+
+    case 'game-message': {
+      if (!peer.roomCode) return
+      const room = rooms.get(peer.roomCode)
+      if (!room || !room.peers.has(id)) return
+
+      broadcast(room.code, {
+        type: 'game-message',
+        from: id,
+        payload: message.payload ?? null,
+      }, id)
+      break
+    }
+
     case 'leave-room': {
       const previousCode = peer.roomCode
       leaveRoom(peer)
@@ -207,8 +242,15 @@ function broadcastRoom(code) {
   if (!room) return
 
   const snapshot = snapshotRoom(code)
+  broadcast(code, { type: 'room-update', room: snapshot })
+}
+
+function broadcast(code, message, exceptPeerId = null) {
+  const room = rooms.get(code)
+  if (!room) return
+
   for (const peerId of room.peers) {
-    send(peerId, { type: 'room-update', room: snapshot })
+    if (peerId !== exceptPeerId) send(peerId, message)
   }
 }
 

@@ -15,12 +15,23 @@ type RoomSnapshot = {
 type RelayMessage =
   | { type: 'hello'; peerId: string }
   | { type: 'room-created' | 'room-joined' | 'room-update'; room: RoomSnapshot | null }
+  | { type: 'game-started'; room: RoomSnapshot | null }
+  | { type: 'game-message'; from: string; payload: unknown }
   | { type: 'left-room' }
   | { type: 'error'; message: string }
   | { type: 'pong'; at: number }
 
+export type RaidMultiplayerSession = {
+  socket: WebSocket
+  peerId: string
+  roomCode: string
+  isHost: boolean
+  players: RoomPlayer[]
+}
+
 type RaidMultiplayerLobbyProps = {
   onBack: () => void
+  onStart: (session: RaidMultiplayerSession) => void
 }
 
 const getDefaultRelayUrl = () => {
@@ -45,8 +56,11 @@ const normalizeRelayUrl = (value: string) => {
   return `wss://${trimmed}`
 }
 
-export function RaidMultiplayerLobby({ onBack }: RaidMultiplayerLobbyProps) {
+export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyProps) {
   const socketRef = useRef<WebSocket | null>(null)
+  const handoffRef = useRef(false)
+  const roomRef = useRef<RoomSnapshot | null>(null)
+  const peerIdRef = useRef<string | null>(null)
   const [playerName, setPlayerName] = useState('Pilot')
   const [relayUrl, setRelayUrl] = useState(getDefaultRelayUrl)
   const [joinCode, setJoinCode] = useState('')
@@ -63,9 +77,19 @@ export function RaidMultiplayerLobby({ onBack }: RaidMultiplayerLobbyProps) {
   const canStart = Boolean(room && room.players.length === 2 && room.players.every((player) => player.ready))
 
   useEffect(() => {
+    roomRef.current = room
+  }, [room])
+
+  useEffect(() => {
+    peerIdRef.current = peerId
+  }, [peerId])
+
+  useEffect(() => {
     return () => {
-      socketRef.current?.close()
-      socketRef.current = null
+      if (!handoffRef.current) {
+        socketRef.current?.close()
+        socketRef.current = null
+      }
     }
   }, [])
 
@@ -146,6 +170,26 @@ export function RaidMultiplayerLobby({ onBack }: RaidMultiplayerLobbyProps) {
       return
     }
 
+    if (message.type === 'game-started') {
+      const startedRoom = message.room ?? roomRef.current
+      const currentPeerId = peerIdRef.current
+      const socket = socketRef.current
+      if (!startedRoom || !currentPeerId || !socket) return
+
+      const ownPlayer = startedRoom.players.find((player) => player.id === currentPeerId)
+      if (!ownPlayer) return
+
+      handoffRef.current = true
+      onStart({
+        socket,
+        peerId: currentPeerId,
+        roomCode: startedRoom.code,
+        isHost: ownPlayer.host,
+        players: startedRoom.players,
+      })
+      return
+    }
+
     if (message.type === 'left-room') {
       setRoom(null)
       setStatus('Left room.')
@@ -177,6 +221,10 @@ export function RaidMultiplayerLobby({ onBack }: RaidMultiplayerLobbyProps) {
 
   const toggleReady = () => {
     send(socketRef.current, { type: 'set-ready', ready: !ownPlayer?.ready })
+  }
+
+  const startCoop = () => {
+    send(socketRef.current, { type: 'start-game' })
   }
 
   const leaveRoom = () => {
@@ -256,6 +304,9 @@ export function RaidMultiplayerLobby({ onBack }: RaidMultiplayerLobbyProps) {
 
             <div className="raid-lobby__room-actions">
               <button onClick={toggleReady}>{ownPlayer?.ready ? 'Cancel Ready' : 'Ready'}</button>
+              {canStart && ownPlayer?.host ? (
+                <button onClick={startCoop}>Start Co-op</button>
+              ) : null}
               <button className="raid-lobby__secondary" onClick={leaveRoom}>
                 Leave
               </button>
@@ -263,7 +314,7 @@ export function RaidMultiplayerLobby({ onBack }: RaidMultiplayerLobbyProps) {
 
             {canStart ? (
               <div className="raid-lobby__ready">
-                Both pilots are linked. Co-op gameplay sync is the next patch.
+                Both pilots are linked. Host can launch co-op.
               </div>
             ) : null}
           </div>
