@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { TowerShip } from './games/towerDefense/sprites'
 
 type RoomPlayer = {
   id: string
@@ -68,6 +69,14 @@ const SHIP_OPTIONS = [
 ]
 
 const getShipName = (shipKey: string) => SHIP_OPTIONS.find((ship) => ship.key === shipKey)?.name ?? 'Black Comet'
+const RAID_PLAYER_COLOR = '#ef233c'
+
+const getLobbyShipSize = (shipKey: string) => {
+  if (shipKey === 'dreadnought') return 52
+  if (shipKey === 'spaceEt') return 54
+  if (shipKey === 'xwing') return 50
+  return 48
+}
 
 export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyProps) {
   const socketRef = useRef<WebSocket | null>(null)
@@ -289,7 +298,9 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
               onClick={() => chooseShip(ship.key)}
               disabled={Boolean(ownPlayer?.ready)}
             >
-              <span className="raid-lobby__ship-art" aria-hidden="true" />
+              <span className="raid-lobby__ship-art" aria-hidden="true">
+                <TowerShip tType={ship.key} color={RAID_PLAYER_COLOR} size={getLobbyShipSize(ship.key)} />
+              </span>
               <span className="raid-lobby__ship-name">{ship.name}</span>
             </button>
           ))}
