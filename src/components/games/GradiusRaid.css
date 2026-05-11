@@ -725,6 +725,10 @@
   letter-spacing: 0.09rem;
 }
 
+.raid__nuke-quick {
+  display: none;
+}
+
 .raid__pause {
   min-height: 42px;
   padding: 8px 14px;
@@ -2056,6 +2060,12 @@
   to { transform: translate(-50%, -50%) scale(1.65); opacity: 0; }
 }
 
+@keyframes raidQuickNukePing {
+  0% { opacity: 0; transform: scale(0.86); }
+  18% { opacity: 0.72; }
+  100% { opacity: 0; transform: scale(1.22); }
+}
+
 @media (max-width: 860px) {
   .raid__speedlines,
   .raid__playfield::after {
@@ -2164,6 +2174,109 @@
 
   .raid__nuke-text small {
     display: none;
+  }
+
+  .raid__nuke-quick {
+    position: absolute;
+    z-index: 24;
+    left: 50%;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 74px;
+    min-height: 38px;
+    padding: 6px 10px;
+    overflow: hidden;
+    isolation: isolate;
+    border: 1px solid rgba(254, 243, 199, 0.78);
+    border-radius: 999px;
+    background:
+      radial-gradient(circle at 32% 18%, rgba(254, 243, 199, 0.34), transparent 24%),
+      linear-gradient(135deg, rgba(69, 10, 10, 0.9), rgba(154, 52, 18, 0.84) 58%, rgba(69, 10, 10, 0.86));
+    color: #fff7ed;
+    font-size: 0.58rem;
+    font-weight: 1000;
+    letter-spacing: 0.08rem;
+    text-transform: uppercase;
+    text-shadow: 0 0 8px rgba(254, 243, 199, 0.42);
+    box-shadow: 0 0 18px rgba(251, 191, 36, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    transform: translateX(-50%);
+    pointer-events: auto;
+    user-select: none;
+    touch-action: manipulation;
+    transition: transform 90ms ease, border-color 120ms ease;
+  }
+
+  .raid__nuke-quick::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    z-index: -1;
+    border: 1px solid rgba(251, 191, 36, 0.62);
+    border-radius: inherit;
+    opacity: 0;
+    transform: scale(0.86);
+    animation: raidQuickNukePing 1.8s ease-out infinite;
+    pointer-events: none;
+  }
+
+  .raid__nuke-quick:active {
+    transform: translateX(-50%) translateY(1px) scale(0.98);
+    border-color: rgba(255, 255, 255, 0.92);
+  }
+
+  .raid__nuke-quick-mark {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 19px;
+    height: 19px;
+    border: 1px solid rgba(254, 243, 199, 0.62);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(254, 243, 199, 0.24), rgba(69, 10, 10, 0.86) 62%, rgba(15, 23, 42, 0.94));
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
+  }
+
+  .raid__nuke-quick-mark::before {
+    content: '';
+    position: relative;
+    z-index: 2;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #fef3c7;
+  }
+
+  .raid__nuke-quick-mark i {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 8px;
+    background: linear-gradient(180deg, #fff7ed, #f97316 48%, #7f1d1d);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    transform-origin: 50% 9px;
+  }
+
+  .raid__nuke-quick-mark i:nth-child(1) {
+    transform: translate(-50%, -9px) rotate(0deg);
+  }
+
+  .raid__nuke-quick-mark i:nth-child(2) {
+    transform: translate(-50%, -9px) rotate(120deg);
+  }
+
+  .raid__nuke-quick-mark i:nth-child(3) {
+    transform: translate(-50%, -9px) rotate(240deg);
+  }
+
+  .raid__nuke-quick-text {
+    position: relative;
+    z-index: 1;
+    line-height: 1;
   }
 
   .raid__player {

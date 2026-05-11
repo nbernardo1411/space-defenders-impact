@@ -669,8 +669,47 @@ function powerGlyph(type: PowerKind) {
 // but MUCH better than plain robotic speech.
 //
 
-window.speechSynthesis.onvoiceschanged = () => {
-  window.speechSynthesis.getVoices()
+let cachedPickupVoices: SpeechSynthesisVoice[] = []
+let pickupSampleAudio: HTMLAudioElement | null = null
+
+const PICKUP_VOICE_SAMPLE_URLS: Record<PowerKind, string> = {
+  rocket: getPublicAssetUrl('audio/pickups/pickup_rocket.wav'),
+  laser: getPublicAssetUrl('audio/pickups/pickup_laser.wav'),
+  spread: getPublicAssetUrl('audio/pickups/pickup_spread.wav'),
+  scatter: getPublicAssetUrl('audio/pickups/pickup_scatter.wav'),
+  homing: getPublicAssetUrl('audio/pickups/pickup_homing.wav'),
+  option: getPublicAssetUrl('audio/pickups/pickup_option.wav'),
+  shield: getPublicAssetUrl('audio/pickups/pickup_shield.wav'),
+  forcefield: getPublicAssetUrl('audio/pickups/pickup_forcefield.wav'),
+  repair: getPublicAssetUrl('audio/pickups/pickup_repair.wav'),
+}
+
+const DEFAULT_PICKUP_VOICE_SAMPLE_URL = getPublicAssetUrl('audio/pickups/pickup_default.wav')
+
+function getPickupSpeechSynthesis() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return null
+  return window.speechSynthesis
+}
+
+function refreshPickupVoices() {
+  const synth = getPickupSpeechSynthesis()
+  if (!synth) return []
+
+  try {
+    const voices = synth.getVoices()
+    if (voices.length > 0) cachedPickupVoices = voices
+    return voices.length > 0 ? voices : cachedPickupVoices
+  } catch {
+    return cachedPickupVoices
+  }
+}
+
+const pickupSpeechSynthesis = getPickupSpeechSynthesis()
+if (pickupSpeechSynthesis) {
+  pickupSpeechSynthesis.onvoiceschanged = () => {
+    refreshPickupVoices()
+  }
+  refreshPickupVoices()
 }
 
 function pickupVoiceLine(type: PowerKind) {
@@ -688,7 +727,7 @@ function pickupVoiceLine(type: PowerKind) {
 }
 
 function getPickupVoice() {
-  const voices = window.speechSynthesis.getVoices()
+  const voices = refreshPickupVoices()
 
   // ONLY female voices
   return (
@@ -797,40 +836,19 @@ function createUtterance(
   return utterance
 }
 
-function playPickupVoiceLine(type: PowerKind) {
+function playPickupSpeechSynthesisLine(type: PowerKind, volume: number) {
+  const synth = getPickupSpeechSynthesis()
+
   if (
     typeof window === 'undefined' ||
-    !window.speechSynthesis ||
+    !synth ||
     typeof SpeechSynthesisUtterance === 'undefined'
   ) {
-    return
+    return false
   }
-
-  if (!getGameSoundEnabled()) {
-    return
-  }
-
-  const now =
-    typeof performance !== 'undefined'
-      ? performance.now()
-      : Date.now()
-
-  if (now - lastPickupVoiceMs < 60) {
-    return
-  }
-
-  lastPickupVoiceMs = now
 
   try {
     const tuning = getPickupVoiceTuning(type)
-
-    const mix = getGameAudioMixSettings()
-
-    const volume = clamp(
-      mix.master * mix.ui * 1.25,
-      0,
-      1,
-    )
 
     // stronger phrasing
     const line = pickupVoiceLine(type)
@@ -840,7 +858,7 @@ function playPickupVoiceLine(type: PowerKind) {
       .replace(/SPREAD/g, 'SPREEEAD')
       .replace(/SCATTER/g, 'SCATTTERRR')
 
-    window.speechSynthesis.cancel()
+    synth.cancel()
 
     //
     // MAIN VOICE
@@ -856,10 +874,74 @@ function playPickupVoiceLine(type: PowerKind) {
     main.pitch *= 1.08
     main.rate *= 1.06
 
-    window.speechSynthesis.speak(main)
-
+    synth.speak(main)
+    return true
   } catch {
-    // flavor only
+    return false
+  }
+}
+
+function getPickupVoiceSampleUrl(type: PowerKind) {
+  return PICKUP_VOICE_SAMPLE_URLS[type] ?? DEFAULT_PICKUP_VOICE_SAMPLE_URL
+}
+
+function tryPlayPickupVoiceSample(type: PowerKind, volume: number) {
+  if (typeof window === 'undefined') return false
+  try {
+    if (pickupSampleAudio) {
+      pickupSampleAudio.pause()
+      pickupSampleAudio.currentTime = 0
+    }
+
+    const audio = new Audio(getPickupVoiceSampleUrl(type))
+    audio.preload = 'auto'
+    audio.volume = volume
+    pickupSampleAudio = audio
+
+    audio.onended = () => {
+      if (pickupSampleAudio === audio) {
+        pickupSampleAudio = null
+      }
+    }
+
+    void audio.play().catch(() => {
+      if (pickupSampleAudio === audio) {
+        pickupSampleAudio = null
+      }
+      playPickupSpeechSynthesisLine(type, volume)
+    })
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+function playPickupVoiceLine(type: PowerKind) {
+  if (!getGameSoundEnabled()) {
+    return
+  }
+
+  const now =
+    typeof performance !== 'undefined'
+      ? performance.now()
+      : Date.now()
+
+  if (now - lastPickupVoiceMs < 60) {
+    return
+  }
+
+  lastPickupVoiceMs = now
+
+  const mix = getGameAudioMixSettings()
+  const volume = clamp(
+    mix.master * mix.ui * 1.25,
+    0,
+    1,
+  )
+
+  if (!tryPlayPickupVoiceSample(type, volume)) {
+    playPickupSpeechSynthesisLine(type, volume)
   }
 }
 
@@ -4131,6 +4213,22 @@ export function GradiusRaid({ onClose }: { onClose: () => void }) {
       <div className="raid__playfield">
         <canvas ref={fxCanvasRef} className="raid__fx-canvas" />
       </div>
+
+      {nukeReady && (
+        <button
+          className="raid__nuke-quick"
+          type="button"
+          onClick={activateNuke}
+          aria-label="Launch nuclear strike"
+        >
+          <span className="raid__nuke-quick-mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="raid__nuke-quick-text">Nuke</span>
+        </button>
+      )}
 
       {bossIncoming && (
         <div className="raid__boss-warning" role="alert" aria-live="assertive">
