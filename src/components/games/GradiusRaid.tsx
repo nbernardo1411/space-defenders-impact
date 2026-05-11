@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { getGameAudioMixSettings, getGameSoundEnabled, getPublicAssetUrl, playGameSound, stopBGM } from './sound'
 import { AlienShip, TowerShip } from './towerDefense/sprites'
@@ -9,7 +10,7 @@ type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair'
 type GamePhase = 'select' | 'briefing' | 'playing' | 'paused' | 'gameover' | 'victory'
 type BossMessage = 'incoming' | 'clear' | null
 type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super' | 'final'
-type RaidBgmMode = 'cruise' | 'combat' | 'boss'
+type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
 
 type Vec = { x: number; y: number }
@@ -124,6 +125,7 @@ type NukeStrike = {
 type Snapshot = {
   phase: GamePhase
   player: Player
+  allyPlayer: Player | null
   shots: Shot[]
   enemyShots: Shot[]
   enemies: Enemy[]
@@ -209,6 +211,7 @@ const BOSS_COLORS: Record<BossKind, string> = {
 }
 const RAID_DEFAULT_BGM_TRACK = getPublicAssetUrl('audio/bgm_scifi_loop.ogg')
 const RAID_BOSS_BGM_TRACK = getPublicAssetUrl('audio/sfx_boss_battle.wav')
+const RAID_ENDING_BGM_TRACK = getPublicAssetUrl('audio/bgm_shelter.wav')
 const RAID_BGM_STAGE_RATES = [0.92, 0.98, 1.04, 1.1]
 const RAID_BOSS_APPROACH_SILENCE_SECONDS = 5.5
 
@@ -251,6 +254,12 @@ const BRIEFING_PICKUP_TYPES: Record<string, PowerKind> = {
   'F Force Field': 'forcefield',
   '+ Repair': 'repair',
 }
+
+const ENDING_DEBRIEF_LINES = [
+  'You broke the alien blockade across fifteen combat zones.',
+  'The final fortress is gone, and Earth orbit is open again.',
+  'Survivors below watched your signal return through the atmosphere.',
+]
 
 const PICKUP_PREVIEW_SEEDS: Record<PowerKind, number> = {
   spread: 1,
@@ -2707,6 +2716,7 @@ export function GradiusRaid({
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
     phase: 'select',
     player: getInitialPlayer(),
+    allyPlayer: null,
     shots: [],
     enemyShots: [],
     enemies: [],
@@ -2738,6 +2748,7 @@ export function GradiusRaid({
 
   const syncSnapshot = useCallback(() => {
     const player = playerRef.current
+    const remotePlayer = remotePlayerRef.current
     const bossAlertBucket = bossAlertRef.current > 0 ? Math.ceil(bossAlertRef.current * 4) : 0
     const stageClearBucket = stageClearRef.current > 0 ? Math.ceil(stageClearRef.current * 30) : 0
     const nukeCooldownBucket = nukeCooldownRef.current > 0 ? Math.ceil(nukeCooldownRef.current) : 0
@@ -2760,6 +2771,9 @@ export function GradiusRaid({
       player.forceField,
       player.score,
       player.rank,
+      remotePlayer?.ship.key ?? '',
+      remotePlayer?.score ?? 0,
+      remotePlayer?.hp ?? 0,
       ...WEAPON_KEYS.map((key) => player.weapons[key]),
     ].join('|')
 
@@ -2774,6 +2788,7 @@ export function GradiusRaid({
         weaponTimers: { ...player.weaponTimers },
         weaponCooldowns: { ...player.weaponCooldowns },
       },
+      allyPlayer: remotePlayer ? clonePlayer(remotePlayer) : null,
       shots: [],
       enemyShots: [],
       enemies: [],
@@ -2933,12 +2948,14 @@ export function GradiusRaid({
     remotePointerVisualRef.current = cloneVec(state.guestPointer)
 
     const ownPlayer = session?.isHost ? state.hostPlayer : state.guestPlayer ?? state.hostPlayer
+    const allyPlayer = session?.isHost ? state.guestPlayer : state.hostPlayer
     if (now - multiplayerLastSnapshotApplyRef.current < GAMEPLAY_SNAPSHOT_INTERVAL_MS && state.phase === 'playing') return
     multiplayerLastSnapshotApplyRef.current = now
 
     setSnapshot({
       phase: state.phase,
       player: clonePlayer(ownPlayer),
+      allyPlayer: allyPlayer ? clonePlayer(allyPlayer) : null,
       shots: [],
       enemyShots: [],
       enemies: [],
@@ -3229,7 +3246,10 @@ export function GradiusRaid({
       return
     }
 
-    const track = mode === 'boss' ? RAID_BOSS_BGM_TRACK : RAID_DEFAULT_BGM_TRACK
+    const track =
+      mode === 'ending' ? RAID_ENDING_BGM_TRACK :
+        mode === 'boss' ? RAID_BOSS_BGM_TRACK :
+          RAID_DEFAULT_BGM_TRACK
     const trackChanged = raidBgmTrackRef.current !== track
     if (raidBgmModeRef.current === mode && raidBgmStageRef.current === stage && raidBgmElementRef.current && !trackChanged) return
 
@@ -3245,18 +3265,20 @@ export function GradiusRaid({
     audio.preload = 'auto'
 
     const mix = getGameAudioMixSettings()
-    const modeVolume = mode === 'boss' ? 0.58 : mode === 'combat' ? 0.34 : 0.22
+    const modeVolume = mode === 'ending' ? 0.42 : mode === 'boss' ? 0.58 : mode === 'combat' ? 0.34 : 0.22
     const stageRate = RAID_BGM_STAGE_RATES[(stage - 1) % RAID_BGM_STAGE_RATES.length]
     audio.volume = Math.max(0, Math.min(1, modeVolume * mix.master * mix.bgm))
-    audio.playbackRate = mode === 'boss'
+    audio.playbackRate = mode === 'ending'
+      ? 1
+      : mode === 'boss'
       ? Math.max(0.95, Math.min(1.18, 1.02 + (stage % 5) * 0.025))
       : Math.max(0.75, Math.min(1.25, stageRate + (mode === 'combat' ? 0.03 : -0.04)))
 
     if (!existing) {
-      audio.currentTime = mode === 'boss' ? 0 : ((stage - 1) % 4) * 18
+      audio.currentTime = mode === 'boss' || mode === 'ending' ? 0 : ((stage - 1) % 4) * 18
       raidBgmElementRef.current = audio
     } else if (raidBgmStageRef.current !== stage) {
-      audio.currentTime = mode === 'boss' ? 0 : ((stage - 1) % 4) * 18
+      audio.currentTime = mode === 'boss' || mode === 'ending' ? 0 : ((stage - 1) % 4) * 18
     }
     raidBgmModeRef.current = mode
     raidBgmStageRef.current = stage
@@ -4782,7 +4804,7 @@ export function GradiusRaid({
                   saveUnlockedStage(MAX_RAID_STAGE)
                   saveCheckpointStage(14)
                 }
-                stopRaidBgm()
+                startRaidBgm(MAX_RAID_STAGE, 'ending')
               } else {
                 const nextStage = clearedStage + 1
                 preserveLoadoutForSuperBoss = nextStage % 5 === 0
@@ -4983,7 +5005,7 @@ export function GradiusRaid({
       const key = event.key.toLowerCase()
       if (key === 'enter' && phaseRef.current === 'paused') resumeGame()
       else if (key === 'enter' && phaseRef.current === 'briefing') resetGame()
-      else if (key === 'enter' && phaseRef.current !== 'playing') resetGame()
+      else if (key === 'enter' && phaseRef.current !== 'playing' && phaseRef.current !== 'victory') resetGame()
       if (key === 'p') {
         if (phaseRef.current === 'playing') pauseGame()
         else if (phaseRef.current === 'paused') resumeGame()
@@ -5068,6 +5090,9 @@ export function GradiusRaid({
   const isMultiplayer = Boolean(multiplayerSession)
   const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
   const connectionClass = `raid__connection raid__connection--${multiplayerConnection.quality}`
+  const finalScore = Math.max(player.score, snapshot.allyPlayer?.score ?? 0)
+  const finaleShipSize = getShipSpriteSize(player.ship.key, 'picker') + 22
+  const finaleAllyShipSize = snapshot.allyPlayer ? getShipSpriteSize(snapshot.allyPlayer.ship.key, 'picker') + 10 : 0
 
   return (
     <div
@@ -5181,7 +5206,7 @@ export function GradiusRaid({
         </div>
       )}
 
-      {bossClear && (
+      {bossClear && snapshot.phase !== 'victory' && (
         <div className="raid__boss-alert raid__boss-alert--clear">
           Boss Destroyed
         </div>
@@ -5277,11 +5302,65 @@ export function GradiusRaid({
         </div>
       )}
 
-      {snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && (
+      {snapshot.phase === 'victory' && (
+        <div className="raid__ending" role="dialog" aria-modal="true" aria-labelledby="raid-ending-title">
+          <div className="raid__ending-scene" aria-hidden="true">
+            <div className="raid__ending-stars raid__ending-stars--far" />
+            <div className="raid__ending-stars raid__ending-stars--near" />
+            <div className="raid__ending-sun" />
+            <div className="raid__ending-earth">
+              <span />
+            </div>
+            <div className="raid__ending-wake raid__ending-wake--host" />
+            <div className="raid__ending-ship raid__ending-ship--host">
+              <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={finaleShipSize} />
+            </div>
+            {snapshot.allyPlayer ? (
+              <>
+                <div className="raid__ending-wake raid__ending-wake--ally" />
+                <div className="raid__ending-ship raid__ending-ship--ally">
+                  <TowerShip tType={snapshot.allyPlayer.ship.key} color={ALLY_PLAYER_COLOR} size={finaleAllyShipSize} />
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          <div className="raid__ending-panel">
+            <div className="raid__kicker">Mission Complete</div>
+            <h2 id="raid-ending-title">Earth Line Secured</h2>
+            <p>
+              Your ship burns through the quiet after the final blast, carrying the last combat signal home.
+            </p>
+            <div className="raid__ending-log" aria-label="Mission debrief">
+              {ENDING_DEBRIEF_LINES.map((line, index) => (
+                <span key={line} style={{ '--ending-line': index } as CSSProperties}>
+                  {line}
+                </span>
+              ))}
+            </div>
+            <div className="raid__ending-score">
+              <span>Final Score</span>
+              <strong>{finalScore.toLocaleString()}</strong>
+            </div>
+            <div className="raid__pause-actions raid__ending-actions">
+              {canControlOverlay ? (
+                <button type="button" className="raid__start" onClick={() => resetGame(1)}>
+                  Start New Launch
+                </button>
+              ) : null}
+              <button type="button" className="raid__menu-button" onClick={onClose}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
         <div className="raid__overlay">
           <div className="raid__panel">
-            <div className="raid__kicker">{snapshot.phase === 'victory' ? 'Campaign Complete' : snapshot.phase === 'gameover' ? 'Run Ended' : 'Choose Your Ship'}</div>
-            <h2>{snapshot.phase === 'victory' ? 'Earth Line Secured' : snapshot.phase === 'gameover' ? 'Ship Destroyed' : 'Rocket Raid'}</h2>
+            <div className="raid__kicker">{snapshot.phase === 'gameover' ? 'Run Ended' : 'Choose Your Ship'}</div>
+            <h2>{snapshot.phase === 'gameover' ? 'Ship Destroyed' : 'Rocket Raid'}</h2>
             <div className="raid__ship-grid">
               {SHIP_OPTIONS.map((ship) => (
                 <button
@@ -5325,9 +5404,9 @@ export function GradiusRaid({
                 <button
                   type="button"
                   className={!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
-                  onClick={snapshot.phase === 'gameover' || snapshot.phase === 'victory' ? () => resetGame(1) : openBriefing}
+                  onClick={snapshot.phase === 'gameover' ? () => resetGame(1) : openBriefing}
                 >
-                  {snapshot.phase === 'gameover' ? isMultiplayer ? 'Restart Co-op' : 'Restart Stage 1' : snapshot.phase === 'victory' ? 'New Run' : 'Start Raid'}
+                  {snapshot.phase === 'gameover' ? isMultiplayer ? 'Restart Co-op' : 'Restart Stage 1' : 'Start Raid'}
                 </button>
               ) : (
                 <button type="button" className="raid__start" onClick={onClose}>Exit Co-op</button>
