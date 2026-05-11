@@ -1886,16 +1886,16 @@ function drawPlasmaForceField(ctx: CanvasRenderingContext2D, x: number, y: numbe
 
 function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, charge: number) {
   const pulse = 0.96 + Math.sin(time / 180) * 0.045
-  const radiusX = size * (0.62 + charge * 0.035) * pulse
-  const radiusY = size * (0.36 + charge * 0.02) * pulse
-  const tail = size * (0.58 + charge * 0.08)
+  const radiusX = size * (0.38 + charge * 0.025) * pulse
+  const radiusY = size * (0.58 + charge * 0.035) * pulse
+  const tail = size * (0.68 + charge * 0.1)
   const streakPhase = time / 95
 
   ctx.save()
   ctx.translate(x, y)
   ctx.globalCompositeOperation = 'lighter'
 
-  const tailGradient = ctx.createLinearGradient(-tail, 0, radiusX * 0.9, 0)
+  const tailGradient = ctx.createLinearGradient(0, tail, 0, -radiusY * 0.9)
   tailGradient.addColorStop(0, 'rgba(34,197,94,0)')
   tailGradient.addColorStop(0.24, 'rgba(34,197,94,0.14)')
   tailGradient.addColorStop(0.58, 'rgba(16,185,129,0.26)')
@@ -1904,10 +1904,10 @@ function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.shadowBlur = 18
   ctx.shadowColor = 'rgba(34,197,94,0.55)'
   ctx.beginPath()
-  ctx.ellipse(-tail * 0.28, 0, tail, radiusY * 0.92, 0, 0, Math.PI * 2)
+  ctx.ellipse(0, tail * 0.22, radiusX * 0.92, tail, 0, 0, Math.PI * 2)
   ctx.fill()
 
-  const shell = ctx.createRadialGradient(radiusX * 0.08, 0, radiusY * 0.18, 0, 0, radiusX * 1.2)
+  const shell = ctx.createRadialGradient(0, -radiusY * 0.12, radiusX * 0.16, 0, 0, radiusY * 1.12)
   shell.addColorStop(0, 'rgba(240,253,244,0.12)')
   shell.addColorStop(0.44, 'rgba(74,222,128,0.18)')
   shell.addColorStop(0.74, 'rgba(34,197,94,0.22)')
@@ -1920,13 +1920,14 @@ function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.lineCap = 'round'
   for (let index = 0; index < 5; index += 1) {
     const offset = ((streakPhase + index * 0.23) % 1) * tail
-    const yOffset = Math.sin(streakPhase + index * 1.9) * radiusY * 0.55
+    const xOffset = Math.sin(streakPhase + index * 1.9) * radiusX * 0.55
+    const yOffset = tail * 0.72 - offset
     const alpha = 0.24 + (index % 2) * 0.16
     ctx.strokeStyle = index % 2 === 0 ? `rgba(187,247,208,${alpha})` : `rgba(34,197,94,${alpha})`
     ctx.lineWidth = Math.max(1.2, size * (0.012 + index * 0.001))
     ctx.beginPath()
-    ctx.moveTo(-tail + offset * 0.42, yOffset)
-    ctx.lineTo(-tail * 0.12 + offset * 0.18, yOffset * 0.28)
+    ctx.moveTo(xOffset, yOffset + tail * 0.18)
+    ctx.lineTo(xOffset * 0.28, yOffset - tail * 0.18)
     ctx.stroke()
   }
 
@@ -1935,7 +1936,7 @@ function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.shadowBlur = 8
   ctx.shadowColor = 'rgba(74,222,128,0.75)'
   ctx.beginPath()
-  ctx.ellipse(0, 0, radiusX * 0.9, radiusY * 0.9, 0, Math.PI * 1.72, Math.PI * 0.34)
+  ctx.ellipse(0, 0, radiusX * 0.9, radiusY * 0.9, 0, Math.PI * 1.12, Math.PI * 1.88)
   ctx.stroke()
 
   ctx.restore()
