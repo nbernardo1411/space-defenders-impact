@@ -316,10 +316,14 @@ const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
 const GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS = 50
 const IDLE_SNAPSHOT_INTERVAL_MS = 120
 const MULTIPLAYER_STATE_INTERVAL_MS = 50
-const MULTIPLAYER_MAX_SHOTS = 180
-const MULTIPLAYER_MAX_ENEMY_SHOTS = 180
-const MULTIPLAYER_MAX_ENEMIES = 48
-const MULTIPLAYER_MAX_SPARKS = 24
+const MULTIPLAYER_MAX_BUFFERED_BYTES = 512 * 1024
+const MULTIPLAYER_MAX_SHOTS = 120
+const MULTIPLAYER_MAX_ENEMY_SHOTS = 140
+const MULTIPLAYER_MAX_ENEMIES = 40
+const MULTIPLAYER_MAX_POWERUPS = 16
+const MULTIPLAYER_MAX_SPARKS = 16
+const MULTIPLAYER_MAX_RIPPLES = 12
+const MULTIPLAYER_ENTITY_MARGIN = 22
 const HOMING_RETARGET_SECONDS = 0.18
 const HOMING_RETARGET_STAGGER_SECONDS = 0.012
 const NUKE_COOLDOWN_SECONDS = 60
@@ -769,6 +773,36 @@ function getShipByKey(shipKey: string | undefined, fallback = SHIP_OPTIONS[0]) {
 
 function cloneVec(value: Vec | null | undefined): Vec | null {
   return value ? { x: value.x, y: value.y } : null
+}
+
+function roundNetworkNumber(value: number) {
+  return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0
+}
+
+function compactVec<T extends Vec>(value: T): T {
+  return {
+    ...value,
+    x: roundNetworkNumber(value.x),
+    y: roundNetworkNumber(value.y),
+  }
+}
+
+function compactPlayer(player: Player): Player {
+  return {
+    ...clonePlayer(player),
+    x: roundNetworkNumber(player.x),
+    y: roundNetworkNumber(player.y),
+    invuln: roundNetworkNumber(player.invuln),
+    optionTimer: roundNetworkNumber(player.optionTimer),
+    fireCooldown: roundNetworkNumber(player.fireCooldown),
+  }
+}
+
+function isNetworkVisible(value: Vec) {
+  return value.x > -MULTIPLAYER_ENTITY_MARGIN &&
+    value.x < WIDTH + MULTIPLAYER_ENTITY_MARGIN &&
+    value.y > -MULTIPLAYER_ENTITY_MARGIN &&
+    value.y < HEIGHT + MULTIPLAYER_ENTITY_MARGIN
 }
 
 function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | null, keys: Set<string>) {
@@ -2445,7 +2479,9 @@ export function GradiusRaid({
   const multiplayerSessionRef = useRef<RaidMultiplayerSession | null>(multiplayerSession ?? null)
   const multiplayerStartedRef = useRef(false)
   const multiplayerStateSeqRef = useRef(0)
+  const multiplayerLastAppliedSeqRef = useRef(0)
   const multiplayerLastSendRef = useRef(0)
+  const multiplayerLastSnapshotApplyRef = useRef(0)
   const multiplayerLocalNukeRef = useRef(0)
   const multiplayerRemoteNukeRef = useRef(0)
   const multiplayerHandledRemoteNukeRef = useRef(0)
@@ -2598,20 +2634,42 @@ export function GradiusRaid({
     const session = multiplayerSessionRef.current
     if (!session || session.socket.readyState !== WebSocket.OPEN) return
 
-    session.socket.send(JSON.stringify({ type: 'game-message', payload }))
+    try {
+      session.socket.send(JSON.stringify({ type: 'game-message', payload }))
+    } catch {
+      multiplayerSessionRef.current = null
+    }
   }, [])
 
   const buildMultiplayerState = useCallback((): MultiplayerHostState => ({
     seq: ++multiplayerStateSeqRef.current,
     phase: phaseRef.current,
-    hostPlayer: clonePlayer(playerRef.current),
-    guestPlayer: remotePlayerRef.current ? clonePlayer(remotePlayerRef.current) : null,
-    shots: shotsRef.current.slice(-MULTIPLAYER_MAX_SHOTS).map((shot) => ({ ...shot })),
-    enemyShots: enemyShotsRef.current.slice(-MULTIPLAYER_MAX_ENEMY_SHOTS).map((shot) => ({ ...shot })),
-    enemies: enemiesRef.current.slice(-MULTIPLAYER_MAX_ENEMIES).map((enemy) => ({ ...enemy })),
-    powerUps: powerUpsRef.current.map((powerUp) => ({ ...powerUp })),
-    sparks: sparksRef.current.slice(-MULTIPLAYER_MAX_SPARKS).map((spark) => ({ ...spark })),
-    ripples: ripplesRef.current.map((ripple) => ({ ...ripple })),
+    hostPlayer: compactPlayer(playerRef.current),
+    guestPlayer: remotePlayerRef.current ? compactPlayer(remotePlayerRef.current) : null,
+    shots: shotsRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_SHOTS)
+      .map((shot) => compactVec(shot)),
+    enemyShots: enemyShotsRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_ENEMY_SHOTS)
+      .map((shot) => compactVec(shot)),
+    enemies: enemiesRef.current
+      .filter((enemy) => enemy.isBoss || isNetworkVisible(enemy))
+      .slice(-MULTIPLAYER_MAX_ENEMIES)
+      .map((enemy) => compactVec(enemy)),
+    powerUps: powerUpsRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_POWERUPS)
+      .map((powerUp) => compactVec(powerUp)),
+    sparks: sparksRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_SPARKS)
+      .map((spark) => compactVec(spark)),
+    ripples: ripplesRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_RIPPLES)
+      .map((ripple) => compactVec(ripple)),
     wave: waveRef.current,
     stageTheme: stageRef.current,
     bossAlert: bossAlertRef.current,
@@ -2629,6 +2687,9 @@ export function GradiusRaid({
   }), [])
 
   const applyMultiplayerState = useCallback((state: MultiplayerHostState) => {
+    if (state.seq <= multiplayerLastAppliedSeqRef.current) return
+    multiplayerLastAppliedSeqRef.current = state.seq
+
     playerRef.current = clonePlayer(state.hostPlayer)
     remotePlayerRef.current = state.guestPlayer ? clonePlayer(state.guestPlayer) : null
     shotsRef.current = state.shots.map((shot) => ({ ...shot }))
@@ -2643,7 +2704,13 @@ export function GradiusRaid({
     bossAlertRef.current = state.bossAlert
     bossMessageRef.current = state.bossMessage
     highScoreRef.current = state.highScore
-    selectedShipRef.current = SHIP_OPTIONS.find((ship) => ship.key === state.selectedShipKey) ?? selectedShipRef.current
+    const nextShip = SHIP_OPTIONS.find((ship) => ship.key === state.selectedShipKey) ?? selectedShipRef.current
+    if (selectedShipRef.current.key !== nextShip.key) {
+      selectedShipRef.current = nextShip
+      setSelectedShipKey(nextShip.key)
+    } else {
+      selectedShipRef.current = nextShip
+    }
     stageClearRef.current = state.stageClear
     unlockedStageRef.current = state.unlockedStage
     nukeCooldownRef.current = state.nukeCooldown
@@ -2651,9 +2718,12 @@ export function GradiusRaid({
     nukeStrikeRef.current = state.nukeStrike ? { ...state.nukeStrike } : null
     nukeBlastOriginRef.current = { ...state.nukeBlastOrigin }
     remotePointerVisualRef.current = cloneVec(state.guestPointer)
-    setSelectedShipKey(state.selectedShipKey)
 
     const ownPlayer = multiplayerSessionRef.current?.isHost ? state.hostPlayer : state.guestPlayer ?? state.hostPlayer
+    const now = performance.now()
+    if (now - multiplayerLastSnapshotApplyRef.current < GAMEPLAY_SNAPSHOT_INTERVAL_MS && state.phase === 'playing') return
+    multiplayerLastSnapshotApplyRef.current = now
+
     setSnapshot({
       phase: state.phase,
       player: clonePlayer(ownPlayer),
@@ -2697,6 +2767,7 @@ export function GradiusRaid({
   const sendMultiplayerState = useCallback((time: number) => {
     const session = multiplayerSessionRef.current
     if (!session || !session.isHost || time - multiplayerLastSendRef.current < MULTIPLAYER_STATE_INTERVAL_MS) return
+    if (session.socket.bufferedAmount > MULTIPLAYER_MAX_BUFFERED_BYTES) return
     multiplayerLastSendRef.current = time
     sendGamePayload({ type: 'state', state: buildMultiplayerState() })
   }, [buildMultiplayerState, sendGamePayload])
@@ -3191,6 +3262,9 @@ export function GradiusRaid({
     remotePointerTargetRef.current = null
     remotePointerVisualRef.current = null
     remoteKeysRef.current = new Set()
+    multiplayerStateSeqRef.current = 0
+    multiplayerLastAppliedSeqRef.current = 0
+    multiplayerLastSnapshotApplyRef.current = 0
     multiplayerHandledRemoteNukeRef.current = 0
     multiplayerRemoteNukeRef.current = 0
     highScoreRef.current = getHighScore()
@@ -3211,6 +3285,8 @@ export function GradiusRaid({
       setSelectedShipKey(hostShip.key)
       resetGame(1)
     } else {
+      multiplayerLastAppliedSeqRef.current = 0
+      multiplayerLastSnapshotApplyRef.current = 0
       phaseRef.current = 'playing'
       stopBGM()
       syncSnapshot()

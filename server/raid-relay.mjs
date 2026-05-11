@@ -59,6 +59,7 @@ server.on('upgrade', (req, socket) => {
   send(id, { type: 'hello', peerId: id })
 
   let buffer = Buffer.alloc(0)
+  let fragmentedMessage = null
 
   socket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk])
@@ -81,17 +82,34 @@ server.on('upgrade', (req, socket) => {
           continue
         }
 
-        if (result.opcode !== 0x1) continue
+        if (result.opcode === 0x0) {
+          if (!fragmentedMessage) continue
 
-        let message
-        try {
-          message = JSON.parse(result.payload.toString('utf8'))
-        } catch {
-          send(id, { type: 'error', message: 'Invalid message.' })
+          fragmentedMessage.payloads.push(result.payload)
+          fragmentedMessage.totalBytes += result.payload.length
+          if (fragmentedMessage.totalBytes > MAX_PAYLOAD_BYTES) {
+            throw new Error('Payload too large')
+          }
+
+          if (!result.fin) continue
+
+          const payload = Buffer.concat(fragmentedMessage.payloads, fragmentedMessage.totalBytes)
+          fragmentedMessage = null
+          handleTextPayload(id, payload)
           continue
         }
 
-        handleMessage(id, message)
+        if (result.opcode !== 0x1) continue
+
+        if (!result.fin) {
+          fragmentedMessage = {
+            payloads: [result.payload],
+            totalBytes: result.payload.length,
+          }
+          continue
+        }
+
+        handleTextPayload(id, result.payload)
       }
     } catch {
       send(id, { type: 'error', message: 'Message too large.' })
@@ -107,6 +125,18 @@ server.on('upgrade', (req, socket) => {
 server.listen(PORT, () => {
   console.log(`Space Raid relay listening on ${PORT}`)
 })
+
+function handleTextPayload(id, payload) {
+  let message
+  try {
+    message = JSON.parse(payload.toString('utf8'))
+  } catch {
+    send(id, { type: 'error', message: 'Invalid message.' })
+    return
+  }
+
+  handleMessage(id, message)
+}
 
 function handleMessage(id, message) {
   const peer = peers.get(id)
@@ -301,6 +331,7 @@ function readFrame(buffer) {
 
   const first = buffer[0]
   const second = buffer[1]
+  const fin = (first & 0x80) === 0x80
   const opcode = first & 0x0f
   const masked = (second & 0x80) === 0x80
   let payloadLength = second & 0x7f
@@ -338,6 +369,7 @@ function readFrame(buffer) {
   }
 
   return {
+    fin,
     opcode,
     payload,
     bytesRead: offset + payloadLength,
