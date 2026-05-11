@@ -76,7 +76,7 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
   const peerIdRef = useRef<string | null>(null)
   const [playerName, setPlayerName] = useState('Pilot')
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
-  const [relayUrl, setRelayUrl] = useState(getDefaultRelayUrl)
+  const relayUrl = useMemo(getDefaultRelayUrl, [])
   const [joinCode, setJoinCode] = useState('')
   const [room, setRoom] = useState<RoomSnapshot | null>(null)
   const [peerId, setPeerId] = useState<string | null>(null)
@@ -114,13 +114,13 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
   const connect = (onOpen: (socket: WebSocket) => void) => {
     const url = normalizeRelayUrl(relayUrl)
     if (!url) {
-      setError('Add the Render relay WebSocket URL first.')
+      setError('Multiplayer service is not configured for this deployment.')
       return
     }
 
     setError('')
     setConnecting(true)
-    setStatus('Connecting to relay...')
+    setStatus('Connecting to multiplayer service...')
 
     socketRef.current?.close()
     const socket = new WebSocket(url)
@@ -128,7 +128,7 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
 
     socket.onopen = () => {
       setConnecting(false)
-      setStatus('Connected to relay.')
+      setStatus('Connected to multiplayer service.')
       onOpen(socket)
     }
 
@@ -137,13 +137,13 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
         const message = JSON.parse(event.data) as RelayMessage
         handleRelayMessage(message)
       } catch {
-        setError('Relay sent an unreadable message.')
+        setError('Multiplayer service sent an unreadable message.')
       }
     }
 
     socket.onerror = () => {
       setConnecting(false)
-      setError('Could not reach the relay. Check the URL and Render service status.')
+      setError('Could not reach the multiplayer service. Try again in a moment.')
     }
 
     socket.onclose = () => {
@@ -155,7 +155,7 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
 
   const send = (socket: WebSocket | null, payload: Record<string, unknown>) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setError('Relay is not connected.')
+      setError('Multiplayer service is not connected.')
       return
     }
 
@@ -269,7 +269,7 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
         <div className="mode-screen__eyebrow">Rocket Raid Link</div>
         <h1>Multiplayer</h1>
         <p>
-          Host a two-player room through the Render relay, then share the room code with the second pilot.
+          Host a two-player room online, then share the room code with the second pilot.
         </p>
 
         <div className="raid-lobby__grid">
@@ -277,27 +277,20 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
             <span>Pilot name</span>
             <input value={playerName} maxLength={18} onChange={(event) => setPlayerName(event.target.value)} />
           </label>
-
-          <label className="raid-lobby__field">
-            <span>Relay URL</span>
-            <input
-              value={relayUrl}
-              placeholder="wss://space-raid-relay.onrender.com"
-              onChange={(event) => setRelayUrl(event.target.value)}
-            />
-          </label>
         </div>
 
         <div className="raid-lobby__ships" aria-label="Choose ship">
           {SHIP_OPTIONS.map((ship) => (
             <button
               key={ship.key}
+              data-ship={ship.key}
               className={selectedShipKey === ship.key ? 'raid-lobby__ship raid-lobby__ship--active' : 'raid-lobby__ship'}
               type="button"
               onClick={() => chooseShip(ship.key)}
               disabled={Boolean(ownPlayer?.ready)}
             >
-              <span>{ship.name}</span>
+              <span className="raid-lobby__ship-art" aria-hidden="true" />
+              <span className="raid-lobby__ship-name">{ship.name}</span>
             </button>
           ))}
         </div>

@@ -329,7 +329,7 @@ function App() {
 
           <div className="mode-screen__eyebrow">Pilot Assault</div>
           <h1>Rocket Raid</h1>
-          <p>Launch solo now, or open a two-player room through the Render relay.</p>
+          <p>Launch solo now, or open an online two-player room.</p>
 
           <div className="mode-screen__actions">
             <button className="mode-screen__button" onClick={startRocketRaidSingle}>
