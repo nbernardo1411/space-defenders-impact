@@ -29,6 +29,7 @@ type Player = Vec & {
   invuln: number
   shield: number
   forceField: number
+  passiveForceFieldRegen: number
   optionTimer: number
   fireCooldown: number
   weaponCooldowns: Record<WeaponKey, number>
@@ -217,8 +218,8 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'gatling', name: 'Crimson Saw', role: 'Rapid assault striker', speed: 0.96, hp: 6, fireRate: 1.18 },
   { key: 'laser', name: 'Night Lance', role: 'Sharper beam control', speed: 1.03, hp: 5, fireRate: 1.12 },
   { key: 'dreadnought', name: 'Obsidian Ark', role: 'Heavy survival hull', speed: 0.82, hp: 8, fireRate: 0.86 },
-  { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.12, hp: 5, fireRate: 1.14 },
-  { key: 'spaceEt', name: 'Space ET', role: 'Stealth raptor spacefighter', speed: 1.08, hp: 5, fireRate: 1.1 },
+  { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.14, hp: 5, fireRate: 1.18 },
+  { key: 'spaceEt', name: 'Space ET', role: 'Speed demon microfighter', speed: 1.24, hp: 3, fireRate: 1.28 },
 ]
 
 const BRIEFING_PANELS = [
@@ -312,6 +313,8 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
 
 const WEAPON_KEYS: WeaponKey[] = ['spread', 'laser', 'scatter', 'rocket', 'homing']
 const FORCE_FIELD_ARMOR = 5
+const SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES = 3
+const SPACE_ET_FORCE_FIELD_REGEN_SECONDS = 20
 const NORMAL_POWER_DROP_COOLDOWN = 3.8
 const POWER_PITY_KILLS = 12
 const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
@@ -339,11 +342,14 @@ const MULTIPLAYER_REMOTE_CORRECTION_BLEND = 0.08
 const MULTIPLAYER_OWN_CORRECTION_BLEND = 0.04
 const HOMING_RETARGET_SECONDS = 0.18
 const HOMING_RETARGET_STAGGER_SECONDS = 0.012
-const NUKE_COOLDOWN_SECONDS = 60
+const NUKE_MIN_COOLDOWN_SECONDS = 25
+const NUKE_MAX_COOLDOWN_SECONDS = 50
 const NUKE_MISSILE_SECONDS = 0.82
 const NUKE_FLASH_SECONDS = 1.15
-const NUKE_BOSS_DAMAGE_RATIO = 0.32
-const NUKE_BOSS_DAMAGE_FLOOR = 3200
+const NUKE_BOSS_DAMAGE_MIN_RATIO = 0.16
+const NUKE_BOSS_DAMAGE_MAX_RATIO = 0.38
+const NUKE_BOSS_DAMAGE_MIN_FLOOR = 550
+const NUKE_BOSS_DAMAGE_MAX_FLOOR = 2400
 const MULTIPLAYER_BOSS_HP_MULTIPLIER = 4
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
@@ -684,6 +690,7 @@ function saveCheckpointStage(stage: number) {
 }
 
 function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
+  const passiveForceField = ship.key === 'spaceEt' ? SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES : 0
   return {
     x: 50,
     y: 82,
@@ -691,7 +698,8 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     maxHp: ship.hp,
     invuln: 1.8,
     shield: 0,
-    forceField: 0,
+    forceField: passiveForceField,
+    passiveForceFieldRegen: 0,
     optionTimer: 0,
     fireCooldown: 0,
     weaponCooldowns: { ...EMPTY_WEAPON_TIMERS },
@@ -856,6 +864,22 @@ function reconcilePlayerVisual(current: Player | null, authoritative: Player | n
   return nextPlayer
 }
 
+function getNukeStageScale(stage: number) {
+  return clamp((stage - 1) / Math.max(1, MAX_RAID_STAGE - 1), 0, 1)
+}
+
+function getNukeCooldownSeconds(stage: number) {
+  const scale = getNukeStageScale(stage)
+  return Math.round(NUKE_MIN_COOLDOWN_SECONDS + (NUKE_MAX_COOLDOWN_SECONDS - NUKE_MIN_COOLDOWN_SECONDS) * scale)
+}
+
+function getNukeBossDamage(enemy: Enemy, stage: number) {
+  const scale = getNukeStageScale(stage)
+  const ratio = NUKE_BOSS_DAMAGE_MIN_RATIO + (NUKE_BOSS_DAMAGE_MAX_RATIO - NUKE_BOSS_DAMAGE_MIN_RATIO) * scale
+  const floor = NUKE_BOSS_DAMAGE_MIN_FLOOR + (NUKE_BOSS_DAMAGE_MAX_FLOOR - NUKE_BOSS_DAMAGE_MIN_FLOOR) * scale
+  return Math.max(Math.round(floor), Math.round(enemy.maxHp * ratio))
+}
+
 function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | null, keys: Set<string>) {
   let dx = 0
   let dy = 0
@@ -886,6 +910,16 @@ function updatePlayerTimers(player: Player, dt: number) {
   })
   player.invuln = Math.max(0, player.invuln - dt)
   player.shield = Math.max(0, player.shield - dt * 0.16)
+
+  if (player.ship.key === 'spaceEt' && player.hp > 0 && player.forceField < SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES) {
+    player.passiveForceFieldRegen += dt
+    while (player.passiveForceFieldRegen >= SPACE_ET_FORCE_FIELD_REGEN_SECONDS && player.forceField < SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES) {
+      player.passiveForceFieldRegen -= SPACE_ET_FORCE_FIELD_REGEN_SECONDS
+      player.forceField += 1
+    }
+  } else {
+    player.passiveForceFieldRegen = 0
+  }
 }
 
 function revivePlayerForBossClear(player: Player, x: number) {
@@ -1850,6 +1884,63 @@ function drawPlasmaForceField(ctx: CanvasRenderingContext2D, x: number, y: numbe
   ctx.restore()
 }
 
+function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, charge: number) {
+  const pulse = 0.96 + Math.sin(time / 180) * 0.045
+  const radiusX = size * (0.62 + charge * 0.035) * pulse
+  const radiusY = size * (0.36 + charge * 0.02) * pulse
+  const tail = size * (0.58 + charge * 0.08)
+  const streakPhase = time / 95
+
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.globalCompositeOperation = 'lighter'
+
+  const tailGradient = ctx.createLinearGradient(-tail, 0, radiusX * 0.9, 0)
+  tailGradient.addColorStop(0, 'rgba(34,197,94,0)')
+  tailGradient.addColorStop(0.24, 'rgba(34,197,94,0.14)')
+  tailGradient.addColorStop(0.58, 'rgba(16,185,129,0.26)')
+  tailGradient.addColorStop(1, 'rgba(187,247,208,0.08)')
+  ctx.fillStyle = tailGradient
+  ctx.shadowBlur = 18
+  ctx.shadowColor = 'rgba(34,197,94,0.55)'
+  ctx.beginPath()
+  ctx.ellipse(-tail * 0.28, 0, tail, radiusY * 0.92, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  const shell = ctx.createRadialGradient(radiusX * 0.08, 0, radiusY * 0.18, 0, 0, radiusX * 1.2)
+  shell.addColorStop(0, 'rgba(240,253,244,0.12)')
+  shell.addColorStop(0.44, 'rgba(74,222,128,0.18)')
+  shell.addColorStop(0.74, 'rgba(34,197,94,0.22)')
+  shell.addColorStop(1, 'rgba(21,128,61,0)')
+  ctx.fillStyle = shell
+  ctx.beginPath()
+  ctx.ellipse(0, 0, radiusX, radiusY, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.lineCap = 'round'
+  for (let index = 0; index < 5; index += 1) {
+    const offset = ((streakPhase + index * 0.23) % 1) * tail
+    const yOffset = Math.sin(streakPhase + index * 1.9) * radiusY * 0.55
+    const alpha = 0.24 + (index % 2) * 0.16
+    ctx.strokeStyle = index % 2 === 0 ? `rgba(187,247,208,${alpha})` : `rgba(34,197,94,${alpha})`
+    ctx.lineWidth = Math.max(1.2, size * (0.012 + index * 0.001))
+    ctx.beginPath()
+    ctx.moveTo(-tail + offset * 0.42, yOffset)
+    ctx.lineTo(-tail * 0.12 + offset * 0.18, yOffset * 0.28)
+    ctx.stroke()
+  }
+
+  ctx.strokeStyle = 'rgba(220,252,231,0.58)'
+  ctx.lineWidth = Math.max(1.1, size * 0.014)
+  ctx.shadowBlur = 8
+  ctx.shadowColor = 'rgba(74,222,128,0.75)'
+  ctx.beginPath()
+  ctx.ellipse(0, 0, radiusX * 0.9, radiusY * 0.9, 0, Math.PI * 1.72, Math.PI * 0.34)
+  ctx.stroke()
+
+  ctx.restore()
+}
+
 function drawRaidPlayer(
   ctx: CanvasRenderingContext2D,
   player: Player,
@@ -1873,7 +1964,11 @@ function drawRaidPlayer(
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
   else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
 
-  if (player.forceField > 0) drawPlasmaForceField(ctx, x, y, size, time, clamp(player.forceField / FORCE_FIELD_ARMOR, 0, 1))
+  if (player.forceField > 0) {
+    const forceCharge = clamp(player.forceField / FORCE_FIELD_ARMOR, 0, 1)
+    if (player.ship.key === 'spaceEt') drawCometForceField(ctx, x, y, size, time, forceCharge)
+    else drawPlasmaForceField(ctx, x, y, size, time, forceCharge)
+  }
 
   const sprite = getTowerCanvasSprite(player.ship.key, color, getShipSpriteSize(player.ship.key, 'player'))
   drawSpriteGlow(
@@ -1881,7 +1976,7 @@ function drawRaidPlayer(
     x,
     y,
     size,
-    player.forceField > 0 ? 'rgba(34,211,238,0.34)' : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : color,
+    player.forceField > 0 ? player.ship.key === 'spaceEt' ? 'rgba(74,222,128,0.38)' : 'rgba(34,211,238,0.34)' : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : color,
     1,
   )
   drawCanvasSprite(
@@ -3355,7 +3450,7 @@ export function GradiusRaid({
       }
 
       if (enemy.isBoss) {
-        const damage = Math.max(NUKE_BOSS_DAMAGE_FLOOR, Math.round(enemy.maxHp * NUKE_BOSS_DAMAGE_RATIO))
+        const damage = getNukeBossDamage(enemy, stageRef.current)
         enemy.shieldTime = 0
         enemy.chargeTimer = 0
         enemy.hp = Math.max(1, enemy.hp - damage)
@@ -3409,7 +3504,7 @@ export function GradiusRaid({
     if (!hasTargets) return
 
     const player = sourcePlayer
-    nukeCooldownRef.current = NUKE_COOLDOWN_SECONDS
+    nukeCooldownRef.current = getNukeCooldownSeconds(stageRef.current)
     player.invuln = Math.max(player.invuln, 1.15)
 
     let targetX = 50
@@ -3897,11 +3992,13 @@ export function GradiusRaid({
 
       // ── CROSSWING NOVA: tri-beam shotgun ──
       else if (shipKey === 'xwing') {
-        const spread = stacks.spread >= 2 ? 0.32 : stacks.spread >= 1 ? 0.22 : 0.14
+        const spread = stacks.spread >= 2 ? 0.34 : stacks.spread >= 1 ? 0.24 : 0.16
+        const wingOffset = emitter.main ? 3.4 : 2.2
         // three wide beams per shot
-        pushShot({ x: emitter.x, y: emitter.y - 4, vx: 0, vy: -106, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.2, pierce: 1 + stacks.laser })
-        pushShot({ x: emitter.x, y: emitter.y - 3, vx: -Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any, radius: 0.85 })
-        pushShot({ x: emitter.x, y: emitter.y - 3, vx: Math.sin(spread) * 106, vy: -Math.cos(spread) * 106, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any, radius: 0.85 })
+        pushShot({ x: emitter.x - wingOffset, y: emitter.y - 3.7, vx: -Math.sin(spread) * 112, vy: -Math.cos(spread) * 112, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.35, pierce: 1 + Math.floor(stacks.laser / 2) })
+        pushShot({ x: emitter.x + wingOffset, y: emitter.y - 3.7, vx: Math.sin(spread) * 112, vy: -Math.cos(spread) * 112, damage: Math.ceil((baseDamage + 2) * emitter.scale), kind: 'laser', radius: 1.35, pierce: 1 + Math.floor(stacks.laser / 2) })
+        pushShot({ x: emitter.x - wingOffset * 0.5, y: emitter.y - 5, vx: -5, vy: -126, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any, radius: 0.95 })
+        pushShot({ x: emitter.x + wingOffset * 0.5, y: emitter.y - 5, vx: 5, vy: -126, damage: Math.ceil((baseDamage + 1) * emitter.scale), kind: 'needle' as any, radius: 0.95 })
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
           fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
@@ -3937,14 +4034,15 @@ export function GradiusRaid({
 
       // ── SPACE ET: single thin fast green laser line ──
       else if (shipKey === 'spaceEt') {
+        const phaseDrift = (shotId % 3) - 1
         pushShot({
-          x: emitter.x,
+          x: emitter.x + phaseDrift * 0.55,
           y: emitter.y - 3.6,
-          vx: 0,
-          vy: -168,  // fastest shot in the game
+          vx: phaseDrift * 3.2,
+          vy: -188,  // fastest shot in the game
           damage,
           kind: 'needle' as any,
-          radius: 0.85,  // thin
+          radius: 0.72,  // thin
         })
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
@@ -4000,7 +4098,9 @@ export function GradiusRaid({
                 shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
                   0.10                              // Black Comet — default
 
-    player.fireCooldown = Math.max(0.042, (baseInterval - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
+    const tunedBaseInterval = shipKey === 'spaceEt' ? 0.002 : shipKey === 'xwing' ? 0.34 : baseInterval
+    const minFireCooldown = shipKey === 'spaceEt' ? 0.032 : 0.042
+    player.fireCooldown = Math.max(minFireCooldown, (tunedBaseInterval - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
     playGameSound(stacks.laser > 0 || shipKey === 'laser' || shipKey === 'xwing' ? 'laser' : 'shoot')
   }, [pushShot])
 
@@ -4805,7 +4905,9 @@ export function GradiusRaid({
             targetPlayer.shield = Math.min(8, targetPlayer.shield + 3)
             targetPlayer.invuln = Math.max(targetPlayer.invuln, 0.8)
           } else if (powerUp.type === 'forcefield') {
-            targetPlayer.forceField = FORCE_FIELD_ARMOR
+            targetPlayer.forceField = targetPlayer.ship.key === 'spaceEt'
+              ? Math.min(SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES + FORCE_FIELD_ARMOR, targetPlayer.forceField + FORCE_FIELD_ARMOR)
+              : FORCE_FIELD_ARMOR
             targetPlayer.invuln = Math.max(targetPlayer.invuln, 0.9)
           } else if (powerUp.type === 'option') {
             targetPlayer.optionTimer = 1
@@ -4928,7 +5030,7 @@ export function GradiusRaid({
 
   const player = snapshot.player
   const hpPips = Array.from({ length: player.maxHp }, (_, index) => index < player.hp)
-  const forcePips = Array.from({ length: FORCE_FIELD_ARMOR }, (_, index) => index < player.forceField)
+  const forcePips = Array.from({ length: Math.max(FORCE_FIELD_ARMOR, Math.ceil(player.forceField)) }, (_, index) => index < player.forceField)
   const weaponEntries = WEAPON_KEYS.filter((key) => player.weapons[key] > 0)
   const briefing = BRIEFING_PANELS[briefingStep] ?? BRIEFING_PANELS[0]
   const stageClearProgress = snapshot.stageClear > 0 ? 1 - snapshot.stageClear / STAGE_CLEAR_SECONDS : 0
