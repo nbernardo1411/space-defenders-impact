@@ -922,6 +922,16 @@ function updatePlayerTimers(player: Player, dt: number) {
   }
 }
 
+function restorePassiveForceField(player: Player) {
+  if (player.ship.key !== 'spaceEt') {
+    player.passiveForceFieldRegen = 0
+    return
+  }
+
+  player.forceField = Math.max(player.forceField, SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES)
+  player.passiveForceFieldRegen = 0
+}
+
 function revivePlayerForBossClear(player: Player, x: number) {
   if (player.hp > 0) return false
 
@@ -931,6 +941,7 @@ function revivePlayerForBossClear(player: Player, x: number) {
   player.invuln = 3.2
   player.shield = Math.max(player.shield, 3)
   player.forceField = 0
+  restorePassiveForceField(player)
   player.fireCooldown = 0
   return true
 }
@@ -1186,7 +1197,23 @@ function resetStageLoadout(player: Player) {
   player.optionTimer = 0
   player.shield = 0
   player.forceField = 0
+  restorePassiveForceField(player)
   player.weaponCooldowns = { ...EMPTY_WEAPON_TIMERS }
+}
+
+function getFormationEnemyCount(wave: number) {
+  const lateStageTrim = wave > 10 ? Math.ceil((wave - 10) / 2) : 0
+  return Math.min(8, Math.max(4, 3 + Math.floor(wave / 2) - lateStageTrim))
+}
+
+function getFormationSpawnSeconds(wave: number) {
+  const lateStageBreathingRoom = Math.max(0, wave - 10) * 0.16
+  return Math.max(2.15, 4.6 - wave * 0.12 + lateStageBreathingRoom)
+}
+
+function getSingleEnemySpawnSeconds(wave: number) {
+  const lateStageBreathingRoom = Math.max(0, wave - 10) * 0.05
+  return Math.max(0.62, 1.25 - wave * 0.045 + lateStageBreathingRoom)
 }
 
 function extendLoadoutForSuperBoss(player: Player) {
@@ -4095,7 +4122,7 @@ export function GradiusRaid({
         shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
           shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
             shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
-              shipKey === 'spaceEt' ? 0.005 :    // Space ET — fastest
+              shipKey === 'spaceEt' ? 0.001 :    // Space ET — fastest
                 shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
                   0.10                              // Black Comet — default
 
@@ -4141,7 +4168,7 @@ export function GradiusRaid({
   const spawnFormation = useCallback(() => {
     const wave = waveRef.current
     const pattern = Math.floor(Math.random() * 4)
-    const count = Math.min(10, 3 + Math.floor(wave / 2))
+    const count = getFormationEnemyCount(wave)
     const originX = 18 + Math.random() * 64
     const formationStyle: FormationStyle = {
       color: DARK_ENEMY_COLORS[Math.floor(Math.random() * DARK_ENEMY_COLORS.length)],
@@ -4506,11 +4533,11 @@ export function GradiusRaid({
     }
     if (canSpawnStageEnemies && !bossActive && formationTimerRef.current <= 0) {
       spawnFormation()
-      formationTimerRef.current = Math.max(1.75, 4.6 - waveRef.current * 0.12)
+      formationTimerRef.current = getFormationSpawnSeconds(waveRef.current)
     }
     if (canSpawnStageEnemies && !bossActive && spawnTimerRef.current <= 0) {
       spawnEnemyAt(10 + Math.random() * 80, -6, waveRef.current, Math.floor(Math.random() * 4))
-      spawnTimerRef.current = Math.max(0.42, 1.25 - waveRef.current * 0.045)
+      spawnTimerRef.current = getSingleEnemySpawnSeconds(waveRef.current)
     }
 
     let homingTargets: Map<number, Enemy> | null = null
