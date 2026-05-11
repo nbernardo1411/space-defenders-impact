@@ -179,6 +179,8 @@ type MultiplayerHostState = {
 type RelayGameMessage =
   | { type: 'game-message'; from: string; payload: { type: 'input'; input: MultiplayerInput } }
   | { type: 'game-message'; from: string; payload: { type: 'state'; state: MultiplayerHostState } }
+  | { type: 'room-update'; room: { players: RaidMultiplayerSession['players'] } | null }
+  | { type: 'left-room' }
   | { type: string; [key: string]: unknown }
 
 const WIDTH = 100
@@ -313,6 +315,11 @@ const POWER_PITY_KILLS = 12
 const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
 const GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS = 50
 const IDLE_SNAPSHOT_INTERVAL_MS = 120
+const MULTIPLAYER_STATE_INTERVAL_MS = 50
+const MULTIPLAYER_MAX_SHOTS = 180
+const MULTIPLAYER_MAX_ENEMY_SHOTS = 180
+const MULTIPLAYER_MAX_ENEMIES = 48
+const MULTIPLAYER_MAX_SPARKS = 24
 const HOMING_RETARGET_SECONDS = 0.18
 const HOMING_RETARGET_STAGGER_SECONDS = 0.012
 const NUKE_COOLDOWN_SECONDS = 60
@@ -756,6 +763,10 @@ function clonePlayer(player: Player): Player {
   }
 }
 
+function getShipByKey(shipKey: string | undefined, fallback = SHIP_OPTIONS[0]) {
+  return SHIP_OPTIONS.find((ship) => ship.key === shipKey) ?? fallback
+}
+
 function cloneVec(value: Vec | null | undefined): Vec | null {
   return value ? { x: value.x, y: value.y } : null
 }
@@ -790,6 +801,19 @@ function updatePlayerTimers(player: Player, dt: number) {
   })
   player.invuln = Math.max(0, player.invuln - dt)
   player.shield = Math.max(0, player.shield - dt * 0.16)
+}
+
+function revivePlayerForBossClear(player: Player, x: number) {
+  if (player.hp > 0) return false
+
+  player.hp = Math.max(1, Math.ceil(player.maxHp * 0.5))
+  player.x = x
+  player.y = 84
+  player.invuln = 3.2
+  player.shield = Math.max(player.shield, 3)
+  player.forceField = 0
+  player.fireCooldown = 0
+  return true
 }
 
 const pickupSpeechSynthesis = getPickupSpeechSynthesis()
@@ -1754,12 +1778,12 @@ function drawRaidPlayer(
   const x = toX(player.x)
   const y = toY(player.y)
   const size = viewportWidth < 860 ? 62 : 82
-  const isDown = phase === 'gameover'
+  const isDown = phase === 'gameover' || player.hp <= 0
   const rotation = isDown ? 28 * DEG : 0
   const scale = isDown ? 0.88 : 1
   const alpha = isDown ? 0.3 : 1
 
-  drawPlayerEngine(ctx, x, y, size, time)
+  if (!isDown) drawPlayerEngine(ctx, x, y, size, time)
 
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
   else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
@@ -2394,6 +2418,7 @@ type RaidMultiplayerSession = {
     name: string
     ready: boolean
     host: boolean
+    shipKey: string
   }>
 }
 
@@ -2424,6 +2449,7 @@ export function GradiusRaid({
   const multiplayerLocalNukeRef = useRef(0)
   const multiplayerRemoteNukeRef = useRef(0)
   const multiplayerHandledRemoteNukeRef = useRef(0)
+  const coOpRunRef = useRef(Boolean(multiplayerSession))
   const remoteKeysRef = useRef(new Set<string>())
   const remotePointerTargetRef = useRef<Vec | null>(null)
   const remotePointerVisualRef = useRef<Vec | null>(null)
@@ -2483,6 +2509,7 @@ export function GradiusRaid({
 
   useEffect(() => {
     multiplayerSessionRef.current = multiplayerSession ?? null
+    if (multiplayerSession) coOpRunRef.current = true
   }, [multiplayerSession])
 
   const syncSnapshot = useCallback(() => {
@@ -2579,11 +2606,11 @@ export function GradiusRaid({
     phase: phaseRef.current,
     hostPlayer: clonePlayer(playerRef.current),
     guestPlayer: remotePlayerRef.current ? clonePlayer(remotePlayerRef.current) : null,
-    shots: shotsRef.current.map((shot) => ({ ...shot })),
-    enemyShots: enemyShotsRef.current.map((shot) => ({ ...shot })),
-    enemies: enemiesRef.current.map((enemy) => ({ ...enemy })),
+    shots: shotsRef.current.slice(-MULTIPLAYER_MAX_SHOTS).map((shot) => ({ ...shot })),
+    enemyShots: enemyShotsRef.current.slice(-MULTIPLAYER_MAX_ENEMY_SHOTS).map((shot) => ({ ...shot })),
+    enemies: enemiesRef.current.slice(-MULTIPLAYER_MAX_ENEMIES).map((enemy) => ({ ...enemy })),
     powerUps: powerUpsRef.current.map((powerUp) => ({ ...powerUp })),
-    sparks: sparksRef.current.map((spark) => ({ ...spark })),
+    sparks: sparksRef.current.slice(-MULTIPLAYER_MAX_SPARKS).map((spark) => ({ ...spark })),
     ripples: ripplesRef.current.map((ripple) => ({ ...ripple })),
     wave: waveRef.current,
     stageTheme: stageRef.current,
@@ -2669,7 +2696,7 @@ export function GradiusRaid({
 
   const sendMultiplayerState = useCallback((time: number) => {
     const session = multiplayerSessionRef.current
-    if (!session || !session.isHost || time - multiplayerLastSendRef.current < 80) return
+    if (!session || !session.isHost || time - multiplayerLastSendRef.current < MULTIPLAYER_STATE_INTERVAL_MS) return
     multiplayerLastSendRef.current = time
     sendGamePayload({ type: 'state', state: buildMultiplayerState() })
   }, [buildMultiplayerState, sendGamePayload])
@@ -2681,11 +2708,44 @@ export function GradiusRaid({
     multiplayerSessionRef.current = session
     const socket = session.socket
 
-    socket.onmessage = (event) => {
+    socket.onmessage = null
+
+    const handleSocketMessage = (event: MessageEvent) => {
       let message: RelayGameMessage
       try {
         message = JSON.parse(event.data) as RelayGameMessage
       } catch {
+        return
+      }
+
+      if (message.type === 'room-update') {
+        const room = 'room' in message
+          ? message.room as { players?: RaidMultiplayerSession['players'] } | null
+          : null
+        const players = room?.players ?? []
+        const otherPlayerStillConnected = players.some((player) => player.id !== session.peerId)
+        if (!otherPlayerStillConnected) {
+          if (session.isHost) {
+            remotePlayerRef.current = null
+            remotePointerTargetRef.current = null
+            remotePointerVisualRef.current = null
+            remoteKeysRef.current = new Set()
+            multiplayerSessionRef.current = null
+            syncSnapshot()
+          } else {
+            multiplayerSessionRef.current = null
+            socket.close()
+            if (raidBgmElementRef.current) {
+              raidBgmElementRef.current.pause()
+              raidBgmElementRef.current.currentTime = 0
+              raidBgmElementRef.current = null
+            }
+            stopBGM()
+            onClose()
+          }
+        } else {
+          session.players = players
+        }
         return
       }
 
@@ -2711,7 +2771,13 @@ export function GradiusRaid({
     socket.onclose = () => {
       multiplayerSessionRef.current = null
     }
-  }, [applyMultiplayerState, multiplayerSession])
+
+    socket.addEventListener('message', handleSocketMessage)
+
+    return () => {
+      socket.removeEventListener('message', handleSocketMessage)
+    }
+  }, [applyMultiplayerState, multiplayerSession, onClose, syncSnapshot])
 
   const addRipple = useCallback((x: number, y: number, color: string, size: number) => {
     ripplesRef.current.push({ id: rippleId++, x, y, color, size, life: 0.5, maxLife: 0.5 })
@@ -2994,7 +3060,11 @@ export function GradiusRaid({
       }
 
       destroyed += 1
-      player.score += 95 + waveRef.current * 14
+      const scoreValue = 95 + waveRef.current * 14
+      player.score += scoreValue
+      if (remotePlayerRef.current) {
+        remotePlayerRef.current.score += scoreValue
+      }
       if (markedExplosions < 10) {
         markedExplosions += 1
         addRipple(enemy.x, enemy.y, '#fb923c', 12)
@@ -3070,9 +3140,19 @@ export function GradiusRaid({
     if (session && !session.isHost) return
 
     const stage = clamp(startStage, 1, MAX_RAID_STAGE)
-    playerRef.current = getInitialPlayer(selectedShipRef.current)
+    const hostRoomPlayer = session?.players.find((roomPlayer) => roomPlayer.host)
+    const guestRoomPlayer = session?.players.find((roomPlayer) => !roomPlayer.host)
+    const hostShip = getShipByKey(hostRoomPlayer?.shipKey, selectedShipRef.current)
+    const guestShip = getShipByKey(guestRoomPlayer?.shipKey, SHIP_OPTIONS[1])
+
     if (session?.isHost) {
-      remotePlayerRef.current = getInitialPlayer(SHIP_OPTIONS[1])
+      selectedShipRef.current = hostShip
+      setSelectedShipKey(hostShip.key)
+    }
+
+    playerRef.current = getInitialPlayer(session?.isHost ? hostShip : selectedShipRef.current)
+    if (session?.isHost) {
+      remotePlayerRef.current = getInitialPlayer(guestShip)
       remotePlayerRef.current.x = 58
       remotePlayerRef.current.y = 84
     }
@@ -3126,8 +3206,9 @@ export function GradiusRaid({
 
     multiplayerStartedRef.current = true
     if (session.isHost) {
-      selectedShipRef.current = SHIP_OPTIONS[0]
-      setSelectedShipKey(SHIP_OPTIONS[0].key)
+      const hostShip = getShipByKey(session.players.find((roomPlayer) => roomPlayer.host)?.shipKey)
+      selectedShipRef.current = hostShip
+      setSelectedShipKey(hostShip.key)
       resetGame(1)
     } else {
       phaseRef.current = 'playing'
@@ -3780,6 +3861,7 @@ export function GradiusRaid({
     addRipple(player.x, player.y, '#ef4444', 10)
     playGameSound('hit')
     if (player.hp <= 0) {
+      player.hp = 0
       playGameSound('gameover')
       spawnSparks(player.x, player.y, '#fb7185', 62, 8)
       addRipple(player.x, player.y, '#fb7185', 18)
@@ -3795,7 +3877,7 @@ export function GradiusRaid({
       phaseRef.current = 'gameover'
       stopBGM()
       stopRaidBgm()
-      if (player.score > highScoreRef.current) {
+      if (!coOpRunRef.current && player.score > highScoreRef.current) {
         highScoreRef.current = player.score
         saveHighScore(player.score)
       }
@@ -4233,7 +4315,11 @@ export function GradiusRaid({
             addRipple(enemy.x, enemy.y, '#facc15', 7)
           }
           if (enemy.hp <= 0) {
-            player.score += enemy.isBoss ? 2800 + waveRef.current * 220 : 95 + waveRef.current * 14
+            const scoreValue = enemy.isBoss ? 2800 + waveRef.current * 220 : 95 + waveRef.current * 14
+            player.score += scoreValue
+            if (remotePlayerRef.current) {
+              remotePlayerRef.current.score += scoreValue
+            }
             spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fda4af' : '#fb7185', enemy.isBoss ? 60 : 18, enemy.isBoss ? 8 : 5)
             addRipple(enemy.x, enemy.y, enemy.isBoss ? '#fb7185' : '#f97316', enemy.isBoss ? 18 : 9)
             if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
@@ -4244,16 +4330,18 @@ export function GradiusRaid({
                 completedRun = true
                 phaseRef.current = 'victory'
                 unlockedStageRef.current = MAX_RAID_STAGE
-                saveUnlockedStage(MAX_RAID_STAGE)
-                saveCheckpointStage(14)
+                if (!coOpRunRef.current) {
+                  saveUnlockedStage(MAX_RAID_STAGE)
+                  saveCheckpointStage(14)
+                }
                 stopRaidBgm()
               } else {
                 const nextStage = clearedStage + 1
                 preserveLoadoutForSuperBoss = nextStage % 5 === 0
                 stageRef.current = nextStage
                 unlockedStageRef.current = Math.max(unlockedStageRef.current, nextStage)
-                saveUnlockedStage(unlockedStageRef.current)
-                if ((RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
+                if (!coOpRunRef.current) saveUnlockedStage(unlockedStageRef.current)
+                if (!coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
                   saveCheckpointStage(nextStage)
                 }
                 bossAlertRef.current = 2.4
@@ -4280,7 +4368,7 @@ export function GradiusRaid({
         powerUpsRef.current = []
         bossAlertRef.current = 3.4
         bossMessageRef.current = 'clear'
-        if (player.score > highScoreRef.current) {
+        if (!coOpRunRef.current && player.score > highScoreRef.current) {
           highScoreRef.current = player.score
           saveHighScore(player.score)
         }
@@ -4288,8 +4376,20 @@ export function GradiusRaid({
       }
       if (preserveLoadoutForSuperBoss) {
         extendLoadoutForSuperBoss(player)
+        if (remotePlayerRef.current) extendLoadoutForSuperBoss(remotePlayerRef.current)
       } else {
         resetStageLoadout(player)
+        if (remotePlayerRef.current) resetStageLoadout(remotePlayerRef.current)
+      }
+      const revivedHost = revivePlayerForBossClear(player, 42)
+      const revivedGuest = remotePlayerRef.current ? revivePlayerForBossClear(remotePlayerRef.current, 58) : false
+      if (revivedHost) {
+        spawnSparks(player.x, player.y, '#86efac', 34, 7)
+        addRipple(player.x, player.y, '#86efac', 15)
+      }
+      if (revivedGuest && remotePlayerRef.current) {
+        spawnSparks(remotePlayerRef.current.x, remotePlayerRef.current.y, '#86efac', 34, 7)
+        addRipple(remotePlayerRef.current.x, remotePlayerRef.current.y, '#86efac', 15)
       }
       bossTimerRef.current = BOSS_RESPAWN_SECONDS
       stageClearRef.current = STAGE_CLEAR_SECONDS
@@ -4510,6 +4610,8 @@ export function GradiusRaid({
   const nukeHint = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? 'Cooldown' : 'Space'
   const bossIncoming = snapshot.bossAlert > 0 && snapshot.bossMessage === 'incoming'
   const bossClear = snapshot.bossAlert > 0 && snapshot.bossMessage === 'clear'
+  const isMultiplayer = Boolean(multiplayerSession)
+  const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
 
   return (
     <div
@@ -4636,8 +4738,8 @@ export function GradiusRaid({
               <span>Score {player.score.toLocaleString()}</span>
             </div>
             <div className="raid__pause-actions">
-              <button type="button" className="raid__start" onClick={resumeGame}>Continue</button>
-              <button type="button" className="raid__menu-button" onClick={() => resetGame()}>Restart</button>
+              {canControlOverlay ? <button type="button" className="raid__start" onClick={resumeGame}>Continue</button> : null}
+              {canControlOverlay ? <button type="button" className="raid__menu-button" onClick={() => resetGame()}>Restart</button> : null}
               <button type="button" className="raid__menu-button" onClick={onClose}>Exit</button>
             </div>
           </div>
@@ -4731,7 +4833,7 @@ export function GradiusRaid({
                 </button>
               ))}
             </div>
-            {completedCampaign && (
+            {!isMultiplayer && completedCampaign && (
               <div className="raid__stage-select">
                 {stageSelectButtons.map((stage) => (
                   <button
@@ -4747,22 +4849,26 @@ export function GradiusRaid({
             )}
             <div className="raid__records">
               <span>Best {snapshot.highScore.toLocaleString()}</span>
-              {snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>Checkpoint Stage {checkpointStage}</span> : <span>PC follows cursor</span>}
-              <span>{completedCampaign ? 'Stages 1-15 unlocked' : 'Mobile follows above finger'}</span>
+              {!isMultiplayer && snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>Checkpoint Stage {checkpointStage}</span> : <span>{isMultiplayer ? 'Co-op run' : 'PC follows cursor'}</span>}
+              <span>{isMultiplayer ? 'Both pilots must fall' : completedCampaign ? 'Stages 1-15 unlocked' : 'Mobile follows above finger'}</span>
             </div>
             <div className="raid__pause-actions">
-              {(snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
+              {!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
                 <button type="button" className="raid__start" onClick={() => resetGame(checkpointStage, true)}>
                   Continue Stage {checkpointStage}
                 </button>
               )}
-              <button
-                type="button"
-                className={(snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
-                onClick={snapshot.phase === 'gameover' || snapshot.phase === 'victory' ? () => resetGame(1) : openBriefing}
-              >
-                {snapshot.phase === 'gameover' ? 'Restart Stage 1' : snapshot.phase === 'victory' ? 'New Run' : 'Start Raid'}
-              </button>
+              {canControlOverlay ? (
+                <button
+                  type="button"
+                  className={!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
+                  onClick={snapshot.phase === 'gameover' || snapshot.phase === 'victory' ? () => resetGame(1) : openBriefing}
+                >
+                  {snapshot.phase === 'gameover' ? isMultiplayer ? 'Restart Co-op' : 'Restart Stage 1' : snapshot.phase === 'victory' ? 'New Run' : 'Start Raid'}
+                </button>
+              ) : (
+                <button type="button" className="raid__start" onClick={onClose}>Exit Co-op</button>
+              )}
             </div>
           </div>
         </div>

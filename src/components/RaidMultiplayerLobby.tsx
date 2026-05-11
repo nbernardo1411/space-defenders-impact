@@ -5,6 +5,7 @@ type RoomPlayer = {
   name: string
   ready: boolean
   host: boolean
+  shipKey: string
 }
 
 type RoomSnapshot = {
@@ -56,12 +57,25 @@ const normalizeRelayUrl = (value: string) => {
   return `wss://${trimmed}`
 }
 
+const SHIP_OPTIONS = [
+  { key: 'rocket', name: 'Black Comet' },
+  { key: 'fast', name: 'Red Wraith' },
+  { key: 'gatling', name: 'Crimson Saw' },
+  { key: 'laser', name: 'Night Lance' },
+  { key: 'dreadnought', name: 'Obsidian Ark' },
+  { key: 'xwing', name: 'Crosswing Nova' },
+  { key: 'spaceEt', name: 'Space ET' },
+]
+
+const getShipName = (shipKey: string) => SHIP_OPTIONS.find((ship) => ship.key === shipKey)?.name ?? 'Black Comet'
+
 export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyProps) {
   const socketRef = useRef<WebSocket | null>(null)
   const handoffRef = useRef(false)
   const roomRef = useRef<RoomSnapshot | null>(null)
   const peerIdRef = useRef<string | null>(null)
   const [playerName, setPlayerName] = useState('Pilot')
+  const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [relayUrl, setRelayUrl] = useState(getDefaultRelayUrl)
   const [joinCode, setJoinCode] = useState('')
   const [room, setRoom] = useState<RoomSnapshot | null>(null)
@@ -83,6 +97,10 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
   useEffect(() => {
     peerIdRef.current = peerId
   }, [peerId])
+
+  useEffect(() => {
+    if (ownPlayer?.shipKey) setSelectedShipKey(ownPlayer.shipKey)
+  }, [ownPlayer?.shipKey])
 
   useEffect(() => {
     return () => {
@@ -203,7 +221,7 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
 
   const hostRoom = () => {
     connect((socket) => {
-      send(socket, { type: 'create-room', name: playerName })
+      send(socket, { type: 'create-room', name: playerName, shipKey: selectedShipKey })
     })
   }
 
@@ -215,8 +233,15 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
     }
 
     connect((socket) => {
-      send(socket, { type: 'join-room', name: playerName, roomCode: code })
+      send(socket, { type: 'join-room', name: playerName, roomCode: code, shipKey: selectedShipKey })
     })
+  }
+
+  const chooseShip = (shipKey: string) => {
+    setSelectedShipKey(shipKey)
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      send(socketRef.current, { type: 'set-ship', shipKey })
+    }
   }
 
   const toggleReady = () => {
@@ -263,6 +288,20 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
           </label>
         </div>
 
+        <div className="raid-lobby__ships" aria-label="Choose ship">
+          {SHIP_OPTIONS.map((ship) => (
+            <button
+              key={ship.key}
+              className={selectedShipKey === ship.key ? 'raid-lobby__ship raid-lobby__ship--active' : 'raid-lobby__ship'}
+              type="button"
+              onClick={() => chooseShip(ship.key)}
+              disabled={Boolean(ownPlayer?.ready)}
+            >
+              <span>{ship.name}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="raid-lobby__actions">
           <button disabled={connecting} onClick={hostRoom}>
             Host Room
@@ -296,7 +335,7 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
                 <div className="raid-lobby__player" key={player.id}>
                   <span>{player.name}</span>
                   <strong>
-                    {player.host ? 'Host' : 'Guest'} - {player.ready ? 'Ready' : 'Waiting'}
+                    {player.host ? 'Host' : 'Guest'} - {getShipName(player.shipKey)} - {player.ready ? 'Ready' : 'Waiting'}
                   </strong>
                 </div>
               ))}

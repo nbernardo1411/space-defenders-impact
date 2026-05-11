@@ -6,7 +6,7 @@ const MAX_PAYLOAD_BYTES = 256 * 1024
 
 /** @type {Map<string, { code: string, hostId: string, peers: Set<string> }>} */
 const rooms = new Map()
-/** @type {Map<string, { id: string, socket: import('node:net').Socket, roomCode: string | null, name: string, ready: boolean, isHost: boolean }>} */
+/** @type {Map<string, { id: string, socket: import('node:net').Socket, roomCode: string | null, name: string, ready: boolean, isHost: boolean, shipKey: string }>} */
 const peers = new Map()
 
 const server = createServer((req, res) => {
@@ -53,6 +53,7 @@ server.on('upgrade', (req, socket) => {
     name: 'Pilot',
     ready: false,
     isHost: false,
+    shipKey: 'rocket',
   })
 
   send(id, { type: 'hello', peerId: id })
@@ -62,34 +63,40 @@ server.on('upgrade', (req, socket) => {
   socket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk])
 
-    while (buffer.length > 0) {
-      const result = readFrame(buffer)
-      if (!result) break
+    try {
+      while (buffer.length > 0) {
+        const result = readFrame(buffer)
+        if (!result) break
 
-      buffer = buffer.subarray(result.bytesRead)
+        buffer = buffer.subarray(result.bytesRead)
 
-      if (result.opcode === 0x8) {
-        cleanupPeer(id)
-        socket.end()
-        return
+        if (result.opcode === 0x8) {
+          cleanupPeer(id)
+          socket.end()
+          return
+        }
+
+        if (result.opcode === 0x9) {
+          writeFrame(socket, result.payload, 0xA)
+          continue
+        }
+
+        if (result.opcode !== 0x1) continue
+
+        let message
+        try {
+          message = JSON.parse(result.payload.toString('utf8'))
+        } catch {
+          send(id, { type: 'error', message: 'Invalid message.' })
+          continue
+        }
+
+        handleMessage(id, message)
       }
-
-      if (result.opcode === 0x9) {
-        writeFrame(socket, result.payload, 0xA)
-        continue
-      }
-
-      if (result.opcode !== 0x1) continue
-
-      let message
-      try {
-        message = JSON.parse(result.payload.toString('utf8'))
-      } catch {
-        send(id, { type: 'error', message: 'Invalid message.' })
-        continue
-      }
-
-      handleMessage(id, message)
+    } catch {
+      send(id, { type: 'error', message: 'Message too large.' })
+      cleanupPeer(id)
+      socket.destroy()
     }
   })
 
@@ -109,6 +116,7 @@ function handleMessage(id, message) {
     case 'create-room': {
       leaveRoom(peer)
       peer.name = cleanName(message.name)
+      peer.shipKey = cleanShipKey(message.shipKey)
       peer.ready = false
       peer.isHost = true
 
@@ -136,6 +144,7 @@ function handleMessage(id, message) {
 
       leaveRoom(peer)
       peer.name = cleanName(message.name)
+      peer.shipKey = cleanShipKey(message.shipKey)
       peer.ready = false
       peer.isHost = room.hostId === id
       peer.roomCode = code
@@ -148,6 +157,13 @@ function handleMessage(id, message) {
 
     case 'set-ready': {
       peer.ready = Boolean(message.ready)
+      if (peer.roomCode) broadcastRoom(peer.roomCode)
+      break
+    }
+
+    case 'set-ship': {
+      peer.shipKey = cleanShipKey(message.shipKey)
+      peer.ready = false
       if (peer.roomCode) broadcastRoom(peer.roomCode)
       break
     }
@@ -267,6 +283,7 @@ function snapshotRoom(code) {
         name: peer?.name || 'Pilot',
         ready: Boolean(peer?.ready),
         host: room.hostId === peerId,
+        shipKey: peer?.shipKey || 'rocket',
       }
     }),
   }
@@ -372,6 +389,12 @@ function cleanName(value) {
     .slice(0, 18)
 
   return name || 'Pilot'
+}
+
+function cleanShipKey(value) {
+  const shipKey = String(value || '').trim()
+  const allowedShipKeys = new Set(['rocket', 'fast', 'gatling', 'laser', 'dreadnought', 'xwing', 'spaceEt'])
+  return allowedShipKeys.has(shipKey) ? shipKey : 'rocket'
 }
 
 function randomId() {

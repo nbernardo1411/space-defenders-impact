@@ -1125,6 +1125,29 @@ body {
   margin-top: 14px;
 }
 
+.raid-lobby__ships {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.raid-lobby__ship {
+  min-height: 46px;
+  padding: 10px !important;
+  font-size: 0.78rem;
+}
+
+.raid-lobby__ship--active {
+  border-color: rgba(251, 191, 36, 0.78) !important;
+  background: rgba(251, 191, 36, 0.13) !important;
+}
+
+.raid-lobby__ship:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
 .raid-lobby__join {
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -1235,6 +1258,10 @@ body {
   .raid-lobby__actions,
   .raid-lobby__join {
     grid-template-columns: 1fr;
+  }
+
+  .raid-lobby__ships {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mode-screen__back {
