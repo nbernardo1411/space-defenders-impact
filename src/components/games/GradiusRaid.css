@@ -584,7 +584,7 @@
   align-items: center;
   gap: 6px;
   min-height: 24px;
-  max-width: min(210px, calc(100vw - 28px));
+  max-width: min(180px, calc(100vw - 28px));
   padding: 4px 8px;
   border: 1px solid rgba(125, 211, 252, 0.3);
   border-radius: 999px;
@@ -2180,7 +2180,7 @@
     top: calc(max(8px, env(safe-area-inset-top)) + 34px);
     right: 8px;
     min-height: 20px;
-    max-width: 138px;
+    max-width: 118px;
     padding: 3px 6px;
     gap: 5px;
     font-size: 0.46rem;

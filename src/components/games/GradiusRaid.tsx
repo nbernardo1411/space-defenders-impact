@@ -318,12 +318,10 @@ const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
 const GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS = 50
 const IDLE_SNAPSHOT_INTERVAL_MS = 120
 const MULTIPLAYER_STATE_INTERVAL_MS = 50
-const MULTIPLAYER_STATE_INTERVAL_OK_MS = 66
-const MULTIPLAYER_STATE_INTERVAL_POOR_MS = 100
 const MULTIPLAYER_INPUT_INTERVAL_MS = 50
-const MULTIPLAYER_INPUT_INTERVAL_POOR_MS = 66
 const MULTIPLAYER_HEARTBEAT_INTERVAL_MS = 1800
 const MULTIPLAYER_HEARTBEAT_TIMEOUT_MS = 5200
+const MULTIPLAYER_CONNECTION_CHECK_MS = 250
 const MULTIPLAYER_STATE_STALE_MS = 1400
 const MULTIPLAYER_STATE_LOST_MS = 3600
 const MULTIPLAYER_GUEST_STALE_MS = 2200
@@ -827,6 +825,17 @@ function getConnectionLabel(quality: MultiplayerConnectionQuality, rtt: number |
   if (quality === 'ok') return `Link ok${latency}`
   if (quality === 'poor') return `Link unstable${latency}`
   return 'Reconnecting'
+}
+
+function keepNetworkVisibleInPlace<T extends Vec>(items: T[], keepItem?: (item: T) => boolean) {
+  let write = 0
+  for (const item of items) {
+    if (isNetworkVisible(item) || keepItem?.(item)) {
+      items[write] = item
+      write += 1
+    }
+  }
+  items.length = write
 }
 
 function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | null, keys: Set<string>) {
@@ -2511,6 +2520,7 @@ export function GradiusRaid({
   const multiplayerHostVisualVelocityRef = useRef<Vec>({ x: 0, y: 0 })
   const multiplayerLastHeartbeatRef = useRef(0)
   const multiplayerHeartbeatSentAtRef = useRef(0)
+  const multiplayerLastConnectionCheckRef = useRef(0)
   const multiplayerRttRef = useRef<number | null>(null)
   const multiplayerLastGuestInputAtRef = useRef(0)
   const multiplayerConnectionQualityRef = useRef<MultiplayerConnectionQuality>('good')
@@ -2803,10 +2813,7 @@ export function GradiusRaid({
 
   const sendMultiplayerInput = useCallback((time: number) => {
     const session = multiplayerSessionRef.current
-    const inputInterval = multiplayerConnectionQualityRef.current === 'poor'
-      ? MULTIPLAYER_INPUT_INTERVAL_POOR_MS
-      : MULTIPLAYER_INPUT_INTERVAL_MS
-    if (!session || session.isHost || time - multiplayerLastSendRef.current < inputInterval) return
+    if (!session || session.isHost || time - multiplayerLastSendRef.current < MULTIPLAYER_INPUT_INTERVAL_MS) return
     multiplayerLastSendRef.current = time
 
     sendGamePayload({
@@ -2823,13 +2830,7 @@ export function GradiusRaid({
 
   const sendMultiplayerState = useCallback((time: number) => {
     const session = multiplayerSessionRef.current
-    const quality = multiplayerConnectionQualityRef.current
-    const stateInterval = quality === 'poor'
-      ? MULTIPLAYER_STATE_INTERVAL_POOR_MS
-      : quality === 'ok'
-        ? MULTIPLAYER_STATE_INTERVAL_OK_MS
-        : MULTIPLAYER_STATE_INTERVAL_MS
-    if (!session || !session.isHost || time - multiplayerLastSendRef.current < stateInterval) return
+    if (!session || !session.isHost || time - multiplayerLastSendRef.current < MULTIPLAYER_STATE_INTERVAL_MS) return
     if (session.socket.bufferedAmount > MULTIPLAYER_MAX_BUFFERED_BYTES) return
     multiplayerLastSendRef.current = time
     sendGamePayload({ type: 'state', state: buildMultiplayerState() })
@@ -2861,13 +2862,13 @@ export function GradiusRaid({
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
     }
-    shotsRef.current = shotsRef.current.filter(isNetworkVisible)
+    keepNetworkVisibleInPlace(shotsRef.current)
 
     for (const shot of enemyShotsRef.current) {
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
     }
-    enemyShotsRef.current = enemyShotsRef.current.filter(isNetworkVisible)
+    keepNetworkVisibleInPlace(enemyShotsRef.current)
 
     for (const enemy of enemiesRef.current) {
       enemy.phase += dt
@@ -2880,13 +2881,13 @@ export function GradiusRaid({
         enemy.y += enemy.vy * dt
       }
     }
-    enemiesRef.current = enemiesRef.current.filter((enemy) => enemy.isBoss || isNetworkVisible(enemy))
+    keepNetworkVisibleInPlace(enemiesRef.current, (enemy) => enemy.isBoss)
 
     for (const powerUp of powerUpsRef.current) {
       powerUp.y += powerUp.vy * dt
       powerUp.spin += dt * 180
     }
-    powerUpsRef.current = powerUpsRef.current.filter(isNetworkVisible)
+    keepNetworkVisibleInPlace(powerUpsRef.current)
 
     updateSparksInPlace(sparksRef.current, dt)
     updateRipplesInPlace(ripplesRef.current, dt)
@@ -2902,6 +2903,8 @@ export function GradiusRaid({
   const updateMultiplayerConnection = useCallback((time: number) => {
     const session = multiplayerSessionRef.current
     if (!session) return
+    if (time - multiplayerLastConnectionCheckRef.current < MULTIPLAYER_CONNECTION_CHECK_MS) return
+    multiplayerLastConnectionCheckRef.current = time
 
     const socket = session.socket
     let quality: MultiplayerConnectionQuality = 'good'
@@ -2956,8 +2959,8 @@ export function GradiusRaid({
     const rtt = multiplayerRttRef.current
     const label = getConnectionLabel(quality, rtt)
     setMultiplayerConnection((current) => {
-      const currentBucket = current.rtt === null ? null : Math.round(current.rtt / 40)
-      const nextBucket = rtt === null ? null : Math.round(rtt / 40)
+      const currentBucket = current.rtt === null ? null : Math.round(current.rtt / 50)
+      const nextBucket = rtt === null ? null : Math.round(rtt / 50)
       if (current.quality === quality && current.label === label && currentBucket === nextBucket) return current
       return { quality, label, rtt }
     })
@@ -3125,7 +3128,8 @@ export function GradiusRaid({
 
     const cssWidth = Math.max(1, root.clientWidth || window.innerWidth || 1)
     const cssHeight = Math.max(1, root.clientHeight || window.innerHeight || 1)
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const maxDpr = multiplayerSessionRef.current ? 1.35 : 2
+    const dpr = Math.min(maxDpr, window.devicePixelRatio || 1)
     const width = Math.max(1, Math.floor(cssWidth * dpr))
     const height = Math.max(1, Math.floor(cssHeight * dpr))
 
@@ -3476,6 +3480,7 @@ export function GradiusRaid({
     multiplayerHostVisualVelocityRef.current = { x: 0, y: 0 }
     multiplayerLastHeartbeatRef.current = 0
     multiplayerHeartbeatSentAtRef.current = 0
+    multiplayerLastConnectionCheckRef.current = 0
     multiplayerRttRef.current = null
     multiplayerLastGuestInputAtRef.current = 0
     multiplayerConnectionQualityRef.current = 'good'
@@ -3507,6 +3512,7 @@ export function GradiusRaid({
       multiplayerHostVisualVelocityRef.current = { x: 0, y: 0 }
       multiplayerLastHeartbeatRef.current = 0
       multiplayerHeartbeatSentAtRef.current = 0
+      multiplayerLastConnectionCheckRef.current = 0
       multiplayerRttRef.current = null
       multiplayerLastGuestInputAtRef.current = 0
       multiplayerConnectionQualityRef.current = 'good'
