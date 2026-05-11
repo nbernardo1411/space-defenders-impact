@@ -334,6 +334,9 @@ const MULTIPLAYER_MAX_SPARKS = 16
 const MULTIPLAYER_MAX_RIPPLES = 12
 const MULTIPLAYER_ENTITY_MARGIN = 22
 const MULTIPLAYER_MAX_VISUAL_VELOCITY = 130
+const MULTIPLAYER_SOFT_CORRECTION_DISTANCE_SQ = 900
+const MULTIPLAYER_REMOTE_CORRECTION_BLEND = 0.08
+const MULTIPLAYER_OWN_CORRECTION_BLEND = 0.04
 const HOMING_RETARGET_SECONDS = 0.18
 const HOMING_RETARGET_STAGGER_SECONDS = 0.012
 const NUKE_COOLDOWN_SECONDS = 60
@@ -836,6 +839,21 @@ function keepNetworkVisibleInPlace<T extends Vec>(items: T[], keepItem?: (item: 
     }
   }
   items.length = write
+}
+
+function reconcilePlayerVisual(current: Player | null, authoritative: Player | null, blend: number) {
+  if (!authoritative) return null
+
+  const nextPlayer = clonePlayer(authoritative)
+  if (!current || current.hp <= 0 || authoritative.hp <= 0) return nextPlayer
+
+  const correctionDistance = distSq(current, authoritative)
+  if (correctionDistance < MULTIPLAYER_SOFT_CORRECTION_DISTANCE_SQ) {
+    nextPlayer.x = current.x + (authoritative.x - current.x) * blend
+    nextPlayer.y = current.y + (authoritative.y - current.y) * blend
+  }
+
+  return nextPlayer
 }
 
 function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | null, keys: Set<string>) {
@@ -2755,8 +2773,15 @@ export function GradiusRaid({
       multiplayerLastHostPacketTimeRef.current = now
     }
 
-    playerRef.current = clonePlayer(state.hostPlayer)
-    remotePlayerRef.current = state.guestPlayer ? clonePlayer(state.guestPlayer) : null
+    playerRef.current = session && !session.isHost
+      ? reconcilePlayerVisual(playerRef.current, state.hostPlayer, MULTIPLAYER_REMOTE_CORRECTION_BLEND) ?? clonePlayer(state.hostPlayer)
+      : clonePlayer(state.hostPlayer)
+    const nextGuestPlayer = state.guestPlayer ? clonePlayer(state.guestPlayer) : null
+    if (session && !session.isHost) {
+      remotePlayerRef.current = reconcilePlayerVisual(remotePlayerRef.current, nextGuestPlayer, MULTIPLAYER_OWN_CORRECTION_BLEND)
+    } else {
+      remotePlayerRef.current = nextGuestPlayer
+    }
     shotsRef.current = state.shots.map((shot) => ({ ...shot }))
     enemyShotsRef.current = state.enemyShots.map((shot) => ({ ...shot }))
     enemiesRef.current = state.enemies.map((enemy) => ({ ...enemy }))
