@@ -382,6 +382,7 @@ const NUKE_BOSS_DAMAGE_MAX_FLOOR = 2400
 const MULTIPLAYER_BOSS_HP_MULTIPLIER = 4
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
+const VICTORY_BLACKOUT_SECONDS = 0.55
 const MAX_SPARKS = 45
 const MAX_RIPPLES = 10
 
@@ -2764,6 +2765,8 @@ export function GradiusRaid({
   const guestLocalShotsRef = useRef<Array<Shot & { spawnedAt: number }>>([])
   // When non-null, pushShot writes to this array instead of shotsRef (used for local prediction capture)
   const fireCaptureRef = useRef<Shot[] | null>(null)
+  const victoryPendingRef = useRef(false)
+  const victoryBlackoutRef = useRef(0)
   // Local fire cooldowns for guest prediction — independent from network-synced player cooldowns
   const guestLocalFireCooldownRef = useRef(0)
   const guestLocalWeaponCooldownsRef = useRef<Record<WeaponKey, number>>({ ...EMPTY_WEAPON_TIMERS })
@@ -3082,7 +3085,13 @@ export function GradiusRaid({
     powerUpsRef.current = state.powerUps.map((powerUp) => ({ ...powerUp }))
     sparksRef.current = state.sparks.map((spark) => ({ ...spark }))
     ripplesRef.current = state.ripples.map((ripple) => ({ ...ripple }))
+    const prevPhase = phaseRef.current
     phaseRef.current = state.phase
+    // Guest: when host transitions to victory, trigger the local blackout fade so the
+    // cutscene fades in smoothly rather than appearing instantly.
+    if (!multiplayerSessionRef.current?.isHost && prevPhase !== 'victory' && state.phase === 'victory') {
+      victoryBlackoutRef.current = VICTORY_BLACKOUT_SECONDS
+    }
     waveRef.current = state.wave
     stageRef.current = state.stageTheme
     bossAlertRef.current = state.bossAlert
@@ -3135,6 +3144,7 @@ export function GradiusRaid({
   const sendMultiplayerInput = useCallback((time: number) => {
     const session = multiplayerSessionRef.current
     if (!session || session.isHost || time - multiplayerLastSendRef.current < MULTIPLAYER_INPUT_INTERVAL_MS) return
+    if (session.socket.bufferedAmount > MULTIPLAYER_MAX_BUFFERED_BYTES) return
     multiplayerLastSendRef.current = time
 
     sendGamePayload({
@@ -3666,11 +3676,15 @@ export function GradiusRaid({
       drawRaidEnemy(ctx, enemy, toX, toY, cssWidth, time, normalEnemyFilter)
     }
 
-    const allyPlayer = remotePlayerRef.current
-    drawRaidOptions(ctx, playerRef.current, toX, toY, cssWidth, time, PLAYER_COLOR)
-    if (allyPlayer) drawRaidOptions(ctx, allyPlayer, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
-    drawRaidPlayer(ctx, playerRef.current, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR)
-    if (allyPlayer) drawRaidPlayer(ctx, allyPlayer, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
+    // On the guest's screen playerRef = interpolated host, remotePlayerRef = own (guest) ship.
+    // Always draw the player's OWN ship in PLAYER_COLOR (red) and the ally in ALLY_PLAYER_COLOR (cyan).
+    const isGuestView = Boolean(multiplayerSessionRef.current && !multiplayerSessionRef.current.isHost)
+    const ownShipRef = isGuestView ? remotePlayerRef.current : playerRef.current
+    const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
+    if (ownShipRef) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR)
+    if (allyShipRef) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
+    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR)
+    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
 
     for (const powerUp of powerUpsRef.current) {
       drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
@@ -3696,6 +3710,15 @@ export function GradiusRaid({
         toX(nukeBlastOriginRef.current.x),
         toY(nukeBlastOriginRef.current.y),
       )
+    }
+
+    // Victory blackout: black full-screen fade-out after the fly-forward, before/during cutscene
+    if (victoryBlackoutRef.current > 0) {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = victoryBlackoutRef.current / VICTORY_BLACKOUT_SECONDS
+      ctx.fillStyle = '#000'
+      ctx.fillRect(0, 0, cssWidth, cssHeight)
+      ctx.globalAlpha = 1
     }
   }, [])
 
@@ -3883,7 +3906,10 @@ export function GradiusRaid({
     remotePointerVisualRef.current = null
     remoteKeysRef.current = new Set()
     resetGuestPredictionState()
-    multiplayerStateSeqRef.current = 0
+    victoryPendingRef.current = false
+    victoryBlackoutRef.current = 0
+    // Do NOT reset multiplayerStateSeqRef here — the guest rejects packets with seq <= its last seen.
+    // Keeping seq monotonically increasing ensures the guest accepts the first post-restart packet.
     multiplayerLastAppliedSeqRef.current = 0
     multiplayerLastSnapshotApplyRef.current = 0
     multiplayerLastHostStateRef.current = null
@@ -3933,7 +3959,7 @@ export function GradiusRaid({
       stopBGM()
       syncSnapshot()
     }
-  }, [resetGame, resetGuestPredictionState, syncSnapshot])
+  }, [multiplayerSession, resetGame, resetGuestPredictionState, syncSnapshot])
 
   const openBriefing = useCallback(() => {
     const session = multiplayerSessionRef.current
@@ -4727,6 +4753,14 @@ export function GradiusRaid({
       updateSparksInPlace(sparksRef.current, dt)
       updateRipplesInPlace(ripplesRef.current, dt)
       if (before > 0 && stageClearRef.current <= 0) {
+        if (victoryPendingRef.current) {
+          // Victory transition: fly-forward done — fade to black then show cutscene
+          victoryPendingRef.current = false
+          phaseRef.current = 'victory'
+          victoryBlackoutRef.current = VICTORY_BLACKOUT_SECONDS
+          startRaidBgm(MAX_RAID_STAGE, 'ending')
+          return
+        }
         player.x = 50
         player.y = 82
         enemiesRef.current = []
@@ -5044,13 +5078,14 @@ export function GradiusRaid({
               const clearedStage = stageRef.current
               if (clearedStage >= MAX_RAID_STAGE) {
                 completedRun = true
-                phaseRef.current = 'victory'
+                victoryPendingRef.current = true
                 unlockedStageRef.current = MAX_RAID_STAGE
                 if (!coOpRunRef.current) {
                   saveUnlockedStage(MAX_RAID_STAGE)
                   saveCheckpointStage(14)
                 }
-                startRaidBgm(MAX_RAID_STAGE, 'ending')
+                bossAlertRef.current = 2.4
+                bossMessageRef.current = 'clear'
               } else {
                 const nextStage = clearedStage + 1
                 preserveLoadoutForSuperBoss = nextStage % 5 === 0
@@ -5082,8 +5117,9 @@ export function GradiusRaid({
         enemyShotsRef.current = []
         enemiesRef.current = []
         powerUpsRef.current = []
-        bossAlertRef.current = 3.4
-        bossMessageRef.current = 'clear'
+        // Start the fly-forward animation like a normal stage clear
+        stageClearRef.current = STAGE_CLEAR_SECONDS
+        spawnLockRef.current = STAGE_CLEAR_SECONDS + 1.2
         if (!coOpRunRef.current && player.score > highScoreRef.current) {
           highScoreRef.current = player.score
           saveHighScore(player.score)
@@ -5225,6 +5261,10 @@ export function GradiusRaid({
       lastTimeRef.current = time
       const session = multiplayerSessionRef.current
       if (!session || session.isHost) updateGame(dt)
+      // Tick the victory blackout on every client (host sets it in updateGame, guest in applyMultiplayerState)
+      if (victoryBlackoutRef.current > 0) {
+        victoryBlackoutRef.current = Math.max(0, victoryBlackoutRef.current - dt)
+      }
       if (session?.isHost) sendMultiplayerState(time)
       else if (session) {
         predictGuestPlayer(dt)
@@ -5459,7 +5499,13 @@ export function GradiusRaid({
       )}
 
       {snapshot.stageClear > 0 && (
-        <div className="raid__stage-flash" style={{ opacity: stageFlashOpacity }} />
+        snapshot.stageTheme >= MAX_RAID_STAGE
+          // Final-stage fly-through: black fade instead of white flash — leads into ending cutscene
+          ? <div className="raid__stage-flash" style={{
+              opacity: stageClearProgress > 0.58 ? Math.min(1, (stageClearProgress - 0.58) / 0.32) : 0,
+              background: '#000',
+            }} />
+          : <div className="raid__stage-flash" style={{ opacity: stageFlashOpacity }} />
       )}
 
       {snapshot.phase !== 'playing' && snapshot.phase === 'paused' && (
