@@ -20,6 +20,7 @@ The game loads these automatically at runtime:
 - sfx_countdown.wav
 - sfx_whoosh.wav
 - sfx_score.wav
+- pickups/pickup_levelup.wav
 
 If any file is missing or fails to play, the game falls back to procedural synth audio for that sound.
 

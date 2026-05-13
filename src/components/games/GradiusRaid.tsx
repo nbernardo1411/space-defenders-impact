@@ -7,7 +7,7 @@ import { AlienShip, TowerShip } from './towerDefense/sprites'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
-type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair'
+type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair' | 'levelup'
 type GamePhase = 'select' | 'briefing' | 'playing' | 'paused' | 'gameover' | 'victory'
 type BossMessage = 'incoming' | 'clear' | null
 type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super' | 'final'
@@ -246,7 +246,7 @@ const BRIEFING_PANELS = [
   {
     title: 'Support Buffs',
     body: 'Support pickups keep a run alive when the screen gets busy. Normal boss clears reset buffs, but the stage before a super boss preserves them.',
-    items: ['O Scouts: two side escorts copy your selected ship and fire with you.', 'S Shield: absorbs hits before hull damage.', 'F Force Field: five temporary armor bars and safe enemy ramming.', '+ Repair: restores hull by one bar.'],
+    items: ['O Scouts: two side escorts copy your selected ship and fire with you.', 'S Shield: absorbs hits before hull damage.', 'F Force Field: five temporary armor bars and safe enemy ramming.', '+ Repair: restores hull by one bar.', 'LV Level Up: boss-only pickup that raises ship level and base ATK, then repairs 1 hull.'],
   },
 ]
 
@@ -260,6 +260,7 @@ const BRIEFING_PICKUP_TYPES: Record<string, PowerKind> = {
   'S Shield': 'shield',
   'F Force Field': 'forcefield',
   '+ Repair': 'repair',
+  'LV Level Up': 'levelup',
 }
 
 const ENDING_DEBRIEF_LINES = [
@@ -278,6 +279,7 @@ const PICKUP_PREVIEW_SEEDS: Record<PowerKind, number> = {
   shield: 7,
   forcefield: 8,
   repair: 9,
+  levelup: 10,
 }
 
 const EMPTY_WEAPONS: Record<WeaponKey, number> = {
@@ -329,6 +331,10 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
 
 const WEAPON_KEYS: WeaponKey[] = ['spread', 'laser', 'scatter', 'rocket', 'homing']
 const FORCE_FIELD_ARMOR = 5
+const PLAYER_MAX_RANK = 20
+const PLAYER_BASE_ATTACK_PER_LEVEL = 0.65
+const LEVEL_UP_HEAL = 1
+const FINAL_BOSS_NUKE_DAMAGE_MULTIPLIER = 0.68
 const SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES = 3
 const SPACE_ET_FORCE_FIELD_REGEN_SECONDS = 20
 const NORMAL_POWER_DROP_COOLDOWN = 3.8
@@ -752,6 +758,7 @@ function powerColor(type: PowerKind) {
   if (type === 'shield') return '#fcd34d'
   if (type === 'forcefield') return '#22d3ee'
   if (type === 'repair') return '#86efac'
+  if (type === 'levelup') return '#a7f3d0'
   return '#c4b5fd'
 }
 
@@ -764,6 +771,7 @@ function powerGlyph(type: PowerKind) {
   if (type === 'option') return 'O'
   if (type === 'forcefield') return 'F'
   if (type === 'repair') return '+'
+  if (type === 'levelup') return 'LV'
   return 'S'
 }
 
@@ -787,6 +795,7 @@ const PICKUP_VOICE_SAMPLE_URLS: Record<PowerKind, string> = {
   shield: getPublicAssetUrl('audio/pickups/pickup_shield.wav'),
   forcefield: getPublicAssetUrl('audio/pickups/pickup_forcefield.wav'),
   repair: getPublicAssetUrl('audio/pickups/pickup_repair.wav'),
+  levelup: getPublicAssetUrl('audio/pickups/pickup_levelup.wav'),
 }
 
 const DEFAULT_PICKUP_VOICE_SAMPLE_URL = getPublicAssetUrl('audio/pickups/pickup_default.wav')
@@ -963,7 +972,25 @@ function getNukeBossDamage(enemy: Enemy, stage: number) {
   const scale = getNukeStageScale(stage)
   const ratio = NUKE_BOSS_DAMAGE_MIN_RATIO + (NUKE_BOSS_DAMAGE_MAX_RATIO - NUKE_BOSS_DAMAGE_MIN_RATIO) * scale
   const floor = NUKE_BOSS_DAMAGE_MIN_FLOOR + (NUKE_BOSS_DAMAGE_MAX_FLOOR - NUKE_BOSS_DAMAGE_MIN_FLOOR) * scale
-  return Math.max(Math.round(floor), Math.round(enemy.maxHp * ratio))
+  const damage = Math.max(Math.round(floor), Math.round(enemy.maxHp * ratio))
+  return enemy.bossKind === 'final'
+    ? Math.max(Math.round(floor), Math.round(damage * FINAL_BOSS_NUKE_DAMAGE_MULTIPLIER))
+    : damage
+}
+
+function getPlayerBaseAttack(player: Player) {
+  return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL
+}
+
+function levelUpPlayer(player: Player) {
+  const previousRank = player.rank
+  player.rank = Math.min(PLAYER_MAX_RANK, player.rank + 1)
+  player.hp = Math.min(player.maxHp, player.hp + LEVEL_UP_HEAL)
+  return player.rank > previousRank
+}
+
+function applyStartingStageLevel(player: Player, stage: number) {
+  player.rank = clamp(stage, 1, PLAYER_MAX_RANK)
 }
 
 function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | null, keys: Set<string>) {
@@ -1050,6 +1077,7 @@ function pickupVoiceLine(type: PowerKind) {
   if (type === 'shield') return 'SHIELD UP!!!'
   if (type === 'forcefield') return 'FORCE FIELD ONLINE!!!'
   if (type === 'repair') return 'REPAIR BOOST!!!'
+  if (type === 'levelup') return 'LEVEL UP!!!'
 
   return 'POWER UUUUP!!!'
 }
@@ -1133,6 +1161,14 @@ function getPickupVoiceTuning(type: PowerKind) {
       rate: 1.4,
       pitch: 0.88,
       emphasis: 'moderate',
+    }
+  }
+
+  if (type === 'levelup') {
+    return {
+      rate: 1.42,
+      pitch: 1.2,
+      emphasis: 'strong',
     }
   }
 
@@ -2270,6 +2306,17 @@ function drawPowerPickupIcon(ctx: CanvasRenderingContext2D, type: PowerKind, siz
     ctx.lineTo(r, 0)
     ctx.moveTo(0, -r)
     ctx.lineTo(0, r)
+    ctx.stroke()
+  } else if (type === 'levelup') {
+    ctx.beginPath()
+    ctx.moveTo(0, -r * 1.15)
+    ctx.lineTo(r * 0.82, -r * 0.18)
+    ctx.lineTo(r * 0.32, -r * 0.18)
+    ctx.lineTo(r * 0.32, r * 0.86)
+    ctx.lineTo(-r * 0.32, r * 0.86)
+    ctx.lineTo(-r * 0.32, -r * 0.18)
+    ctx.lineTo(-r * 0.82, -r * 0.18)
+    ctx.closePath()
     ctx.stroke()
   }
 
@@ -3904,8 +3951,10 @@ export function GradiusRaid({
     }
 
     playerRef.current = getInitialPlayer(session?.isHost ? hostShip : selectedShipRef.current)
+    applyStartingStageLevel(playerRef.current, stage)
     if (session?.isHost) {
       remotePlayerRef.current = getInitialPlayer(guestShip)
+      applyStartingStageLevel(remotePlayerRef.current, stage)
       remotePlayerRef.current.x = 58
       remotePlayerRef.current.y = 84
     }
@@ -4054,7 +4103,7 @@ export function GradiusRaid({
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
     if (player.fireCooldown > 0) return
 
-    const baseDamage = 1 + Math.floor(player.rank / 3)
+    const baseDamage = getPlayerBaseAttack(player)
     const optionOffset = rootRef.current && rootRef.current.clientWidth < 640 ? 12 : 8.5
     const shipKey = player.ship.key
 
@@ -4622,10 +4671,10 @@ export function GradiusRaid({
     powerUpsRef.current.push({ id: powerId++, type, x, y, vy: 11, radius: 3, spin: Math.random() * 360 })
   }, [])
 
-  const spawnRepairPowerUp = useCallback((x: number, y: number) => {
+  const spawnLevelUpPowerUp = useCallback((x: number, y: number) => {
     killsSincePowerRef.current = 0
     powerDropCooldownRef.current = NORMAL_POWER_DROP_COOLDOWN * 0.45
-    powerUpsRef.current.push({ id: powerId++, type: 'repair', x, y, vy: 11, radius: 3, spin: Math.random() * 360 })
+    powerUpsRef.current.push({ id: powerId++, type: 'levelup', x, y, vy: 8.5, radius: 4.2, spin: Math.random() * 360 })
   }, [])
 
   const damagePlayer = useCallback((amount: number, targetPlayer = playerRef.current) => {
@@ -4867,10 +4916,6 @@ export function GradiusRaid({
       spawnBoss()
       bossTimerRef.current = 0
       waveRef.current += 1
-      player.rank = Math.min(20, player.rank + 1)
-      if (remotePlayerRef.current) {
-        remotePlayerRef.current.rank = Math.min(20, remotePlayerRef.current.rank + 1)
-      }
     }
     if (canSpawnStageEnemies && !bossActive && formationTimerRef.current <= 0) {
       spawnFormation()
@@ -5036,7 +5081,13 @@ export function GradiusRaid({
     const powerUps = powerUpsRef.current
     let livePowerUpCount = 0
     for (const powerUp of powerUps) {
-      powerUp.y += powerUp.vy * dt
+      if (powerUp.type === 'levelup') {
+        const targetPlayer = getNearestLivingPlayer(powerUp)
+        powerUp.x += (targetPlayer.x - powerUp.x) * Math.min(1, dt * 3.2)
+        powerUp.y += powerUp.vy * dt + (targetPlayer.y - powerUp.y) * Math.min(1, dt * 0.8)
+      } else {
+        powerUp.y += powerUp.vy * dt
+      }
       powerUp.spin += dt * 180
       if (powerUp.y < HEIGHT + 8) {
         powerUps[livePowerUpCount] = powerUp
@@ -5196,7 +5247,7 @@ export function GradiusRaid({
             addRipple(defeatedBoss.x, defeatedBoss.y, index % 2 === 0 ? '#fb7185' : '#fbbf24', 12 + index * 2)
           }, delay)
         })
-        spawnRepairPowerUp(defeatedBoss.x, defeatedBoss.y)
+        spawnLevelUpPowerUp(defeatedBoss.x, defeatedBoss.y)
       }
       addRipple(player.x, player.y, '#fca5a5', 12)
     }
@@ -5251,7 +5302,8 @@ export function GradiusRaid({
     }
 
     for (const powerUp of powerUpsRef.current) {
-      const hitRange = powerUp.radius + PLAYER_RADIUS + 1.8
+      const pickupAssist = powerUp.type === 'levelup' ? 4.2 : 1.8
+      const hitRange = powerUp.radius + PLAYER_RADIUS + pickupAssist
       for (const targetPlayer of getLivingPlayers()) {
         if (
           Math.abs(powerUp.x - targetPlayer.x) <= hitRange &&
@@ -5259,7 +5311,9 @@ export function GradiusRaid({
           distSq(powerUp, targetPlayer) <= hitRange * hitRange
         ) {
           powerUp.y = HEIGHT + 99
-          if (powerUp.type === 'repair') {
+          if (powerUp.type === 'levelup') {
+            levelUpPlayer(targetPlayer)
+          } else if (powerUp.type === 'repair') {
             targetPlayer.hp = Math.min(targetPlayer.maxHp, targetPlayer.hp + 1)
           } else if (powerUp.type === 'shield') {
             targetPlayer.shield = Math.min(8, targetPlayer.shield + 3)
@@ -5292,7 +5346,7 @@ export function GradiusRaid({
     if (remotePlayerRef.current && remotePlayerRef.current.score > highScoreRef.current) {
       highScoreRef.current = remotePlayerRef.current.score
     }
-  }, [activateNuke, addRipple, damagePlayer, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnRepairPowerUp, spawnSparks, startRaidBgm, stopRaidBgm])
+  }, [activateNuke, addRipple, damagePlayer, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, stopRaidBgm])
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -5393,6 +5447,7 @@ export function GradiusRaid({
   )
 
   const player = snapshot.player
+  const playerBaseAttack = getPlayerBaseAttack(player)
   const hpPips = Array.from({ length: player.maxHp }, (_, index) => index < player.hp)
   const forcePips = Array.from({ length: Math.max(FORCE_FIELD_ARMOR, Math.ceil(player.forceField)) }, (_, index) => index < player.forceField)
   const weaponEntries = WEAPON_KEYS.filter((key) => player.weapons[key] > 0)
@@ -5455,6 +5510,10 @@ export function GradiusRaid({
         <div className="raid__stat">
           <span>Stage</span>
           <b>{snapshot.stageTheme}</b>
+        </div>
+        <div className="raid__stat raid__stat--level">
+          <span>Level</span>
+          <b>LV {player.rank} ATK {playerBaseAttack.toFixed(1)}</b>
         </div>
         <div className="raid__stat raid__stat--weapon">
           <span>Stack</span>

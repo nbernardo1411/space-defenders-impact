@@ -531,7 +531,7 @@
   z-index: 20;
   inset: 14px 14px auto 14px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(94px, auto)) minmax(120px, 1fr) auto auto auto;
+  grid-template-columns: repeat(4, minmax(88px, auto)) minmax(116px, 1fr) auto auto auto;
   align-items: center;
   gap: 10px;
   pointer-events: none;
@@ -573,6 +573,10 @@
 
 .raid__stat--weapon b {
   color: #fca5a5;
+}
+
+.raid__stat--level b {
+  color: #a7f3d0;
 }
 
 .raid__connection {
@@ -2435,7 +2439,7 @@
   .raid__planet--3 { width: 32px; height: 32px; }
 
   .raid__hud {
-    grid-template-columns: minmax(40px, 0.78fr) minmax(34px, 0.56fr) minmax(46px, 0.84fr) minmax(58px, auto) auto auto auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     inset: max(8px, env(safe-area-inset-top)) 8px auto 8px;
     gap: 5px;
     align-items: start;
@@ -2465,7 +2469,7 @@
   }
 
   .raid__connection {
-    top: calc(max(8px, env(safe-area-inset-top)) + 34px);
+    top: calc(max(8px, env(safe-area-inset-top)) + 68px);
     right: 8px;
     min-height: 20px;
     max-width: 118px;
@@ -2483,11 +2487,11 @@
 
   .raid__hp {
     grid-column: auto;
-    justify-self: end;
+    justify-self: stretch;
     justify-content: center;
     gap: 3px;
     row-gap: 2px;
-    max-width: 74px;
+    max-width: none;
     min-height: 28px;
     padding: 6px 6px;
     border-radius: 5px;
@@ -2501,6 +2505,7 @@
 
   .raid__pause,
   .raid__exit {
+    width: 100%;
     min-height: 28px;
     padding: 4px 6px;
     border-radius: 5px;
@@ -2508,6 +2513,7 @@
   }
 
   .raid__nuke {
+    width: 100%;
     min-width: 50px;
     min-height: 28px;
     padding: 4px 6px;
