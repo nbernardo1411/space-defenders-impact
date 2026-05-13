@@ -148,6 +148,7 @@ type Snapshot = {
 type MultiplayerInput = {
   target: Vec | null
   pointer: Vec | null
+  position: Vec | null
   keys: string[]
   nuke: number
   at: number
@@ -178,6 +179,11 @@ type MultiplayerHostState = {
   nukeFlash: number
   nukeStrike: NukeStrike | null
   nukeBlastOrigin: Vec
+}
+
+type MultiplayerPlayerSnapshot = {
+  at: number
+  player: Player
 }
 
 type RelayGameMessage =
@@ -349,6 +355,20 @@ const MULTIPLAYER_MAX_VISUAL_VELOCITY = 130
 const MULTIPLAYER_SOFT_CORRECTION_DISTANCE_SQ = 900
 const MULTIPLAYER_REMOTE_CORRECTION_BLEND = 0.08
 const MULTIPLAYER_OWN_CORRECTION_BLEND = 0.04
+// Client-side prediction: only snap guest's own position at extreme divergence (50 units)
+const MULTIPLAYER_GUEST_SNAP_DISTANCE_SQ = 2500
+// Drain the accumulated position correction at this rate (fraction drained per second)
+const MULTIPLAYER_CORRECTION_DRAIN_RATE = 8
+const MULTIPLAYER_MAX_GUEST_CORRECTION = 12
+const MULTIPLAYER_REMOTE_INPUT_BLEND = 0.35
+const MULTIPLAYER_REMOTE_INPUT_SNAP_DISTANCE_SQ = 1600
+const MULTIPLAYER_REMOTE_BUFFER_MAX = 8
+const MULTIPLAYER_REMOTE_INTERPOLATION_MIN_DELAY_MS = 100
+const MULTIPLAYER_REMOTE_INTERPOLATION_MAX_DELAY_MS = 170
+const MULTIPLAYER_REMOTE_EXTRAPOLATION_LIMIT_MS = 140
+const MULTIPLAYER_GUEST_SHOT_MIN_TTL_MS = 180
+const MULTIPLAYER_GUEST_SHOT_MAX_TTL_MS = 520
+const MULTIPLAYER_GUEST_SHOT_CONFIRM_MARGIN_MS = 120
 const HOMING_RETARGET_SECONDS = 0.18
 const HOMING_RETARGET_STAGGER_SECONDS = 0.012
 const NUKE_MIN_COOLDOWN_SECONDS = 25
@@ -847,6 +867,27 @@ function getConnectionLabel(quality: MultiplayerConnectionQuality, rtt: number |
   return 'Reconnecting'
 }
 
+function getGuestShotTtlMs(rtt: number | null) {
+  return clamp(
+    (rtt ?? 80) + MULTIPLAYER_GUEST_SHOT_CONFIRM_MARGIN_MS,
+    MULTIPLAYER_GUEST_SHOT_MIN_TTL_MS,
+    MULTIPLAYER_GUEST_SHOT_MAX_TTL_MS,
+  )
+}
+
+function getRemoteInterpolationDelayMs(rtt: number | null) {
+  return clamp(
+    90 + (rtt ?? 80) * 0.25,
+    MULTIPLAYER_REMOTE_INTERPOLATION_MIN_DELAY_MS,
+    MULTIPLAYER_REMOTE_INTERPOLATION_MAX_DELAY_MS,
+  )
+}
+
+function getOwnCorrectionBlend(rtt: number | null) {
+  if (rtt === null) return MULTIPLAYER_OWN_CORRECTION_BLEND
+  return clamp(MULTIPLAYER_OWN_CORRECTION_BLEND * (140 / Math.max(140, rtt)), 0.018, MULTIPLAYER_OWN_CORRECTION_BLEND)
+}
+
 function keepNetworkVisibleInPlace<T extends Vec>(items: T[], keepItem?: (item: T) => boolean) {
   let write = 0
   for (const item of items) {
@@ -871,6 +912,40 @@ function reconcilePlayerVisual(current: Player | null, authoritative: Player | n
   }
 
   return nextPlayer
+}
+
+function getBufferedPlayerVisual(buffer: MultiplayerPlayerSnapshot[], renderAt: number) {
+  if (buffer.length === 0) return null
+  if (buffer.length === 1) return clonePlayer(buffer[0].player)
+
+  if (renderAt <= buffer[0].at) return clonePlayer(buffer[0].player)
+
+  const latest = buffer[buffer.length - 1]
+  if (renderAt >= latest.at) {
+    const previous = buffer[buffer.length - 2]
+    const packetMs = Math.max(16, latest.at - previous.at)
+    const extrapolateMs = Math.min(renderAt - latest.at, MULTIPLAYER_REMOTE_EXTRAPOLATION_LIMIT_MS)
+    const extrapolateScale = extrapolateMs / packetMs
+    const visual = clonePlayer(latest.player)
+    visual.x = clamp(latest.player.x + (latest.player.x - previous.player.x) * extrapolateScale, 0, WIDTH)
+    visual.y = clamp(latest.player.y + (latest.player.y - previous.player.y) * extrapolateScale, 0, HEIGHT)
+    return visual
+  }
+
+  for (let index = 1; index < buffer.length; index += 1) {
+    const next = buffer[index]
+    if (next.at < renderAt) continue
+
+    const previous = buffer[index - 1]
+    const span = Math.max(1, next.at - previous.at)
+    const t = clamp((renderAt - previous.at) / span, 0, 1)
+    const visual = clonePlayer(next.player)
+    visual.x = previous.player.x + (next.player.x - previous.player.x) * t
+    visual.y = previous.player.y + (next.player.y - previous.player.y) * t
+    return visual
+  }
+
+  return clonePlayer(latest.player)
 }
 
 function getNukeStageScale(stage: number) {
@@ -2668,6 +2743,7 @@ export function GradiusRaid({
   const multiplayerLastHostStateRef = useRef<Player | null>(null)
   const multiplayerLastHostPacketTimeRef = useRef(0)
   const multiplayerHostVisualVelocityRef = useRef<Vec>({ x: 0, y: 0 })
+  const multiplayerHostSnapshotBufferRef = useRef<MultiplayerPlayerSnapshot[]>([])
   const multiplayerLastHeartbeatRef = useRef(0)
   const multiplayerHeartbeatSentAtRef = useRef(0)
   const multiplayerLastConnectionCheckRef = useRef(0)
@@ -2682,6 +2758,17 @@ export function GradiusRaid({
   const remotePointerTargetRef = useRef<Vec | null>(null)
   const remotePointerVisualRef = useRef<Vec | null>(null)
   const remotePlayerRef = useRef<Player | null>(null)
+  // Accumulated position error between local prediction and host state — drained gradually each frame
+  const guestPositionCorrectionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  // Locally predicted shots for the guest (shown immediately, cleared when host confirms them)
+  const guestLocalShotsRef = useRef<Array<Shot & { spawnedAt: number }>>([])
+  // When non-null, pushShot writes to this array instead of shotsRef (used for local prediction capture)
+  const fireCaptureRef = useRef<Shot[] | null>(null)
+  // Local fire cooldowns for guest prediction — independent from network-synced player cooldowns
+  const guestLocalFireCooldownRef = useRef(0)
+  const guestLocalWeaponCooldownsRef = useRef<Record<WeaponKey, number>>({ ...EMPTY_WEAPON_TIMERS })
+  // Stable ref to firePlayer so predictGuestPlayer can call it without a forward-declaration issue
+  const firePlayerRef = useRef<(player: Player) => void>((_p: Player) => {})
   const playerRef = useRef<Player>(getInitialPlayer())
   const shotsRef = useRef<Shot[]>([])
   const enemyShotsRef = useRef<Shot[]>([])
@@ -2745,6 +2832,15 @@ export function GradiusRaid({
     multiplayerSessionRef.current = multiplayerSession ?? null
     if (multiplayerSession) coOpRunRef.current = true
   }, [multiplayerSession])
+
+  const resetGuestPredictionState = useCallback(() => {
+    guestPositionCorrectionRef.current = { x: 0, y: 0 }
+    guestLocalShotsRef.current = []
+    fireCaptureRef.current = null
+    guestLocalFireCooldownRef.current = 0
+    guestLocalWeaponCooldownsRef.current = { ...EMPTY_WEAPON_TIMERS }
+    multiplayerHostSnapshotBufferRef.current = []
+  }, [])
 
   const syncSnapshot = useCallback(() => {
     const player = playerRef.current
@@ -2896,6 +2992,12 @@ export function GradiusRaid({
     const session = multiplayerSessionRef.current
     const now = performance.now()
     if (session && !session.isHost) {
+      const hostBuffer = multiplayerHostSnapshotBufferRef.current
+      hostBuffer.push({ at: now, player: clonePlayer(state.hostPlayer) })
+      if (hostBuffer.length > MULTIPLAYER_REMOTE_BUFFER_MAX) {
+        hostBuffer.splice(0, hostBuffer.length - MULTIPLAYER_REMOTE_BUFFER_MAX)
+      }
+
       const previousHost = multiplayerLastHostStateRef.current
       const previousTime = multiplayerLastHostPacketTimeRef.current
       if (previousHost && previousTime > 0) {
@@ -2916,7 +3018,61 @@ export function GradiusRaid({
       : clonePlayer(state.hostPlayer)
     const nextGuestPlayer = state.guestPlayer ? clonePlayer(state.guestPlayer) : null
     if (session && !session.isHost) {
-      remotePlayerRef.current = reconcilePlayerVisual(remotePlayerRef.current, nextGuestPlayer, MULTIPLAYER_OWN_CORRECTION_BLEND)
+      const current = remotePlayerRef.current
+      if (!nextGuestPlayer) {
+        remotePlayerRef.current = null
+        resetGuestPredictionState()
+      } else if (!current || current.hp <= 0 || nextGuestPlayer.hp <= 0) {
+        // Death / respawn: accept the authoritative position immediately
+        remotePlayerRef.current = clonePlayer(nextGuestPlayer)
+        resetGuestPredictionState()
+      } else {
+        // ── Client-side prediction reconciliation ──────────────────────────────────
+        // Do NOT pull position toward the host's stale value every packet —
+        // that would create a constant backward drag proportional to ping.
+        // Instead, measure the error and drain it invisibly over ~125 ms.
+        const errX = nextGuestPlayer.x - current.x
+        const errY = nextGuestPlayer.y - current.y
+        const errSq = errX * errX + errY * errY
+        const ownCorrectionBlend = getOwnCorrectionBlend(multiplayerRttRef.current)
+        if (errSq > MULTIPLAYER_GUEST_SNAP_DISTANCE_SQ) {
+          // Extreme divergence only: snap immediately
+          current.x = nextGuestPlayer.x
+          current.y = nextGuestPlayer.y
+          guestPositionCorrectionRef.current = { x: 0, y: 0 }
+        } else {
+          // Accumulate a small fraction of the error; predictGuestPlayer drains it
+          guestPositionCorrectionRef.current.x = clamp(
+            guestPositionCorrectionRef.current.x + errX * ownCorrectionBlend,
+            -MULTIPLAYER_MAX_GUEST_CORRECTION,
+            MULTIPLAYER_MAX_GUEST_CORRECTION,
+          )
+          guestPositionCorrectionRef.current.y = clamp(
+            guestPositionCorrectionRef.current.y + errY * ownCorrectionBlend,
+            -MULTIPLAYER_MAX_GUEST_CORRECTION,
+            MULTIPLAYER_MAX_GUEST_CORRECTION,
+          )
+        }
+        // Apply all non-positional attributes authoritatively and immediately
+        current.hp = nextGuestPlayer.hp
+        current.maxHp = nextGuestPlayer.maxHp
+        current.invuln = Math.max(current.invuln, nextGuestPlayer.invuln)
+        current.shield = nextGuestPlayer.shield
+        current.forceField = nextGuestPlayer.forceField
+        current.passiveForceFieldRegen = nextGuestPlayer.passiveForceFieldRegen
+        current.optionTimer = nextGuestPlayer.optionTimer
+        current.score = nextGuestPlayer.score
+        current.rank = nextGuestPlayer.rank
+        current.ship = nextGuestPlayer.ship
+        current.weapons = { ...nextGuestPlayer.weapons }
+        current.weaponTimers = { ...nextGuestPlayer.weaponTimers }
+        // fireCooldown and weaponCooldowns are kept local so prediction timing is unaffected
+      }
+      // Expire locally predicted shots — confirmed shots from host have arrived
+      if (guestLocalShotsRef.current.length > 0) {
+        const expiry = now - getGuestShotTtlMs(multiplayerRttRef.current)
+        guestLocalShotsRef.current = guestLocalShotsRef.current.filter((s) => s.spawnedAt > expiry)
+      }
     } else {
       remotePlayerRef.current = nextGuestPlayer
     }
@@ -2974,7 +3130,7 @@ export function GradiusRaid({
       nukeCooldown: state.nukeCooldown,
       nukeFlash: state.nukeFlash,
     })
-  }, [])
+  }, [resetGuestPredictionState])
 
   const sendMultiplayerInput = useCallback((time: number) => {
     const session = multiplayerSessionRef.current
@@ -2986,6 +3142,7 @@ export function GradiusRaid({
       input: {
         target: cloneVec(pointerTargetRef.current),
         pointer: cloneVec(pointerVisualRef.current),
+        position: remotePlayerRef.current ? compactVec(remotePlayerRef.current) : null,
         keys: [...keysRef.current],
         nuke: multiplayerLocalNukeRef.current,
         at: time,
@@ -3008,7 +3165,53 @@ export function GradiusRaid({
     const guestPlayer = remotePlayerRef.current
     if (!guestPlayer || guestPlayer.hp <= 0) return
 
+    // Move own ship locally — never wait for the network
     movePlayerWithInput(guestPlayer, dt, pointerTargetRef.current, keysRef.current)
+
+    // Drain accumulated position correction gradually so the fix is invisible
+    const corr = guestPositionCorrectionRef.current
+    if (corr.x !== 0 || corr.y !== 0) {
+      const rate = Math.min(1, dt * MULTIPLAYER_CORRECTION_DRAIN_RATE)
+      const applyX = corr.x * rate
+      const applyY = corr.y * rate
+      guestPlayer.x = clamp(guestPlayer.x + applyX, 4, 96)
+      guestPlayer.y = clamp(guestPlayer.y + applyY, 13, 93)
+      corr.x -= applyX
+      corr.y -= applyY
+      if (Math.abs(corr.x) < 0.001) corr.x = 0
+      if (Math.abs(corr.y) < 0.001) corr.y = 0
+    }
+
+    // Local bullet prediction: fire using local cooldowns so P2 sees bullets immediately
+    // This also plays the correct fire sound locally.
+    guestLocalFireCooldownRef.current = Math.max(0, guestLocalFireCooldownRef.current - dt)
+    const localWepCooldowns = guestLocalWeaponCooldownsRef.current
+    for (const key of WEAPON_KEYS) {
+      localWepCooldowns[key] = Math.max(0, localWepCooldowns[key] - dt)
+    }
+    // Temporarily swap player cooldowns so firePlayer uses local timing
+    const savedFireCooldown = guestPlayer.fireCooldown
+    const savedWeaponCooldowns = guestPlayer.weaponCooldowns
+    guestPlayer.fireCooldown = guestLocalFireCooldownRef.current
+    guestPlayer.weaponCooldowns = localWepCooldowns
+    const capturedShots: Shot[] = []
+    fireCaptureRef.current = capturedShots
+    try {
+      firePlayerRef.current(guestPlayer)
+    } finally {
+      fireCaptureRef.current = null
+    }
+    // Read back updated cooldowns, then restore the network-authoritative values
+    guestLocalFireCooldownRef.current = guestPlayer.fireCooldown
+    guestPlayer.fireCooldown = savedFireCooldown
+    guestPlayer.weaponCooldowns = savedWeaponCooldowns
+    if (capturedShots.length > 0) {
+      const now = performance.now()
+      for (const shot of capturedShots) {
+        guestLocalShotsRef.current.push({ ...shot, spawnedAt: now })
+      }
+    }
+
     remotePointerVisualRef.current = cloneVec(pointerVisualRef.current)
   }, [])
 
@@ -3017,7 +3220,13 @@ export function GradiusRaid({
     if (!session || session.isHost || phaseRef.current !== 'playing') return
 
     const hostPlayer = playerRef.current
-    if (hostPlayer.hp > 0) {
+    const bufferedHost = getBufferedPlayerVisual(
+      multiplayerHostSnapshotBufferRef.current,
+      performance.now() - getRemoteInterpolationDelayMs(multiplayerRttRef.current),
+    )
+    if (bufferedHost) {
+      playerRef.current = bufferedHost
+    } else if (hostPlayer.hp > 0) {
       const velocity = multiplayerHostVisualVelocityRef.current
       hostPlayer.x = clamp(hostPlayer.x + velocity.x * dt, 0, WIDTH)
       hostPlayer.y = clamp(hostPlayer.y + velocity.y * dt, 0, HEIGHT)
@@ -3063,6 +3272,20 @@ export function GradiusRaid({
     }
     nukeFlashRef.current = Math.max(0, nukeFlashRef.current - dt)
     bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
+
+    // Advance locally predicted shots and expire stale ones
+    const nowMs = performance.now()
+    const expiry = nowMs - getGuestShotTtlMs(multiplayerRttRef.current)
+    let localWrite = 0
+    for (const shot of guestLocalShotsRef.current) {
+      if (shot.spawnedAt > expiry) {
+        shot.x += shot.vx * dt
+        shot.y += shot.vy * dt
+        guestLocalShotsRef.current[localWrite] = shot
+        localWrite++
+      }
+    }
+    guestLocalShotsRef.current.length = localWrite
   }, [])
 
   const updateMultiplayerConnection = useCallback((time: number) => {
@@ -3206,6 +3429,20 @@ export function GradiusRaid({
         remotePointerVisualRef.current = cloneVec(input.pointer)
         remoteKeysRef.current = new Set(input.keys.map((key: string) => key.toLowerCase()))
         multiplayerRemoteNukeRef.current = input.nuke
+        const remotePlayer = remotePlayerRef.current
+        if (remotePlayer && remotePlayer.hp > 0 && input.position) {
+          const targetX = clamp(input.position.x, 4, 96)
+          const targetY = clamp(input.position.y, 13, 93)
+          const dx = targetX - remotePlayer.x
+          const dy = targetY - remotePlayer.y
+          if (dx * dx + dy * dy > MULTIPLAYER_REMOTE_INPUT_SNAP_DISTANCE_SQ) {
+            remotePlayer.x = targetX
+            remotePlayer.y = targetY
+          } else {
+            remotePlayer.x += dx * MULTIPLAYER_REMOTE_INPUT_BLEND
+            remotePlayer.y += dy * MULTIPLAYER_REMOTE_INPUT_BLEND
+          }
+        }
       } else if (!session.isHost && payload.type === 'state' && payload.state) {
         applyMultiplayerState(payload.state)
       }
@@ -3389,7 +3626,7 @@ export function GradiusRaid({
     }
     ctx.globalAlpha = 1
 
-    for (const shot of shotsRef.current) {
+    const drawPlayerShot = (shot: Shot) => {
       if (shot.kind === 'laser') drawTrail(shot, 'rgba(103,232,249,0.9)', 70, 7)
       else if (shot.kind === 'spread') drawTrail(shot, 'rgba(251,191,36,0.85)', 36, 5)
       else if (shot.kind === 'scatter') drawTrail(shot, 'rgba(0, 255, 191, 0.8)', 28, 4.5)
@@ -3397,6 +3634,9 @@ export function GradiusRaid({
       else if (shot.kind === 'homing') drawMissile(shot)
       else drawTrail(shot, 'rgba(34,197,94,0.86)', 36, 5)
     }
+    for (const shot of shotsRef.current) drawPlayerShot(shot)
+    // Guest client-side prediction: draw locally fired shots immediately without waiting for network
+    for (const shot of guestLocalShotsRef.current) drawPlayerShot(shot)
 
     for (const shot of enemyShotsRef.current) {
       if (shot.kind === 'orbShot') drawOrb(shot, 'rgba(168,85,247,0.92)', 12)
@@ -3642,6 +3882,7 @@ export function GradiusRaid({
     remotePointerTargetRef.current = null
     remotePointerVisualRef.current = null
     remoteKeysRef.current = new Set()
+    resetGuestPredictionState()
     multiplayerStateSeqRef.current = 0
     multiplayerLastAppliedSeqRef.current = 0
     multiplayerLastSnapshotApplyRef.current = 0
@@ -3662,7 +3903,7 @@ export function GradiusRaid({
     stopBGM()
     startRaidBgm(stageRef.current, 'cruise')
     syncSnapshot()
-  }, [startRaidBgm, syncSnapshot])
+  }, [resetGuestPredictionState, startRaidBgm, syncSnapshot])
 
   useEffect(() => {
     const session = multiplayerSessionRef.current
@@ -3687,11 +3928,12 @@ export function GradiusRaid({
       multiplayerLastGuestInputAtRef.current = 0
       multiplayerConnectionQualityRef.current = 'good'
       setMultiplayerConnection({ quality: 'good', label: 'Link good', rtt: null })
+      resetGuestPredictionState()
       phaseRef.current = 'playing'
       stopBGM()
       syncSnapshot()
     }
-  }, [resetGame, syncSnapshot])
+  }, [resetGame, resetGuestPredictionState, syncSnapshot])
 
   const openBriefing = useCallback(() => {
     const session = multiplayerSessionRef.current
@@ -3735,7 +3977,9 @@ export function GradiusRaid({
   }, [startRaidBgm, syncSnapshot])
 
   const pushShot = useCallback((shot: Omit<Shot, 'id'>) => {
-    shotsRef.current.push({ ...shot, id: shotId++ })
+    // In capture mode (local prediction), redirect to the capture buffer instead of the shared shot list
+    const target = fireCaptureRef.current ?? shotsRef.current
+    target.push({ ...shot, id: shotId++ })
   }, [])
 
   const firePlayer = useCallback((sourcePlayer = playerRef.current) => {
@@ -4153,6 +4397,8 @@ export function GradiusRaid({
     player.fireCooldown = Math.max(minFireCooldown, (tunedBaseInterval - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
     playGameSound(stacks.laser > 0 || shipKey === 'laser' || shipKey === 'xwing' ? 'laser' : 'shoot')
   }, [pushShot])
+  // Keep the stable ref current so predictGuestPlayer can call firePlayer without a forward-reference issue
+  firePlayerRef.current = firePlayer
 
   const spawnEnemyAt = useCallback((x: number, y: number, wave: number, pattern: number, trainSlot = 0, style?: FormationStyle) => {
     const powerPressure = getPowerScore(playerRef.current)
