@@ -3,6 +3,25 @@ let soundEnabledCache: boolean | null = null
 const SOUND_ENABLED_STORAGE_KEY = 'gameSoundEnabled'
 const AUDIO_PACK_STORAGE_KEY = 'spaceImpactAudioPack'
 const AUDIO_MIX_STORAGE_KEY = 'spaceImpactAudioMix'
+const GRAPHICS_QUALITY_STORAGE_KEY = 'raidGraphicsQuality'
+
+export type GraphicsQuality = 'low' | 'medium' | 'high' | 'max'
+let graphicsQualityCache: GraphicsQuality | null = null
+
+export function getGraphicsQuality(): GraphicsQuality {
+  if (graphicsQualityCache) return graphicsQualityCache
+  if (typeof window === 'undefined') return 'max'
+  const raw = localStorage.getItem(GRAPHICS_QUALITY_STORAGE_KEY)
+  graphicsQualityCache = (raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'max') ? raw : 'max'
+  return graphicsQualityCache
+}
+
+export function setGraphicsQuality(quality: GraphicsQuality) {
+  graphicsQualityCache = quality
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(GRAPHICS_QUALITY_STORAGE_KEY, quality)
+  }
+}
 
 export type GameSoundKind =
   | 'flap'

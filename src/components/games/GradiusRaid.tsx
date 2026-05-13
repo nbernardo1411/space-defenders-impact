@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { getGameAudioMixSettings, getGameSoundEnabled, getPublicAssetUrl, playGameSound, stopBGM } from './sound'
+import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM } from './sound'
+import type { GraphicsQuality } from './sound'
 import { AlienShip, TowerShip } from './towerDefense/sprites'
 import './GradiusRaid.css'
 
@@ -1370,9 +1371,12 @@ function drawDebrisShape(
   ctx.restore()
 }
 
-function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number) {
+function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max') {
   const seconds = time / 1000
   const { bgA, bgB, nebulaA, nebulaB, starTint, streak } = palette
+  const isLow = quality === 'low'
+  const isMedium = quality === 'medium'
+  const isHigh = quality === 'high'
 
   const base = ctx.createLinearGradient(0, 0, 0, height)
   base.addColorStop(0, '#020307')
@@ -1381,29 +1385,38 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   ctx.fillStyle = base
   ctx.fillRect(0, 0, width, height)
 
-  drawRadialEllipse(ctx, width * 0.18, height * 0.16, width * 0.24, height * 0.24, [[0, bgA], [1, 'rgba(0,0,0,0)']])
-  drawRadialEllipse(ctx, width * 0.76, height * 0.38, width * 0.26, height * 0.26, [[0, bgB], [1, 'rgba(0,0,0,0)']])
+  if (!isLow) {
+    drawRadialEllipse(ctx, width * 0.18, height * 0.16, width * 0.24, height * 0.24, [[0, bgA], [1, 'rgba(0,0,0,0)']])
+    drawRadialEllipse(ctx, width * 0.76, height * 0.38, width * 0.26, height * 0.26, [[0, bgB], [1, 'rgba(0,0,0,0)']])
+  }
 
-  ctx.save()
-  const nebulaDrift = Math.sin(seconds / 10)
-  ctx.translate(width * 0.012 * nebulaDrift, height * 0.006 * Math.cos(seconds / 8))
-  ctx.scale(1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5), 1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
-  drawRadialEllipse(ctx, width * 0.2, height * 0.72, width * 0.36, height * 0.24, [[0, nebulaA], [1, 'rgba(0,0,0,0)']])
-  drawRadialEllipse(ctx, width * 0.82, height * 0.24, width * 0.32, height * 0.22, [[0, nebulaB], [1, 'rgba(0,0,0,0)']])
-  ctx.restore()
+  if (!isLow) {
+    ctx.save()
+    const nebulaDrift = Math.sin(seconds / 10)
+    ctx.translate(width * 0.012 * nebulaDrift, height * 0.006 * Math.cos(seconds / 8))
+    ctx.scale(1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5), 1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
+    drawRadialEllipse(ctx, width * 0.2, height * 0.72, width * 0.36, height * 0.24, [[0, nebulaA], [1, 'rgba(0,0,0,0)']])
+    drawRadialEllipse(ctx, width * 0.82, height * 0.24, width * 0.32, height * 0.22, [[0, nebulaB], [1, 'rgba(0,0,0,0)']])
+    ctx.restore()
+  }
 
   ctx.save()
   ctx.globalCompositeOperation = 'screen'
-  drawRadialEllipse(ctx, width * 0.78, height * 0.18, width * 0.48, height * 0.25, [[0, 'rgba(139,92,246,0.2)'], [1, 'rgba(0,0,0,0)']])
-  drawRadialEllipse(ctx, width * 0.14, height * 0.68, width * 0.36, height * 0.42, [[0, 'rgba(59,130,246,0.16)'], [1, 'rgba(0,0,0,0)']])
-  drawRadialEllipse(ctx, width * 0.48, height * 0.42, width * 0.22, height * 0.18, [[0, 'rgba(236,72,153,0.11)'], [1, 'rgba(0,0,0,0)']])
-  drawRadialEllipse(ctx, width * 0.22, height * 0.22, width * 0.26, height * 0.15, [[0, 'rgba(251,191,36,0.05)'], [1, 'rgba(0,0,0,0)']])
-  drawRadialEllipse(ctx, width * 0.88, height * 0.72, width * 0.18, height * 0.32, [[0, 'rgba(34,211,238,0.06)'], [1, 'rgba(0,0,0,0)']])
+  if (!isLow) {
+    drawRadialEllipse(ctx, width * 0.78, height * 0.18, width * 0.48, height * 0.25, [[0, 'rgba(139,92,246,0.2)'], [1, 'rgba(0,0,0,0)']])
+    drawRadialEllipse(ctx, width * 0.14, height * 0.68, width * 0.36, height * 0.42, [[0, 'rgba(59,130,246,0.16)'], [1, 'rgba(0,0,0,0)']])
+    if (!isMedium) {
+      drawRadialEllipse(ctx, width * 0.48, height * 0.42, width * 0.22, height * 0.18, [[0, 'rgba(236,72,153,0.11)'], [1, 'rgba(0,0,0,0)']])
+      drawRadialEllipse(ctx, width * 0.22, height * 0.22, width * 0.26, height * 0.15, [[0, 'rgba(251,191,36,0.05)'], [1, 'rgba(0,0,0,0)']])
+      drawRadialEllipse(ctx, width * 0.88, height * 0.72, width * 0.18, height * 0.32, [[0, 'rgba(34,211,238,0.06)'], [1, 'rgba(0,0,0,0)']])
+    }
+  }
   ctx.restore()
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  for (const star of BACKGROUND_STARS) {
+  const starPool = isLow ? BACKGROUND_STARS.slice(0, 40) : isMedium ? BACKGROUND_STARS.slice(0, 100) : isHigh ? BACKGROUND_STARS.slice(0, 160) : BACKGROUND_STARS
+  for (const star of starPool) {
     const farY = ((star.y * height * 1.26 + seconds * 15) % (height * 1.26)) - height * 0.13
     const nearY = ((star.y * height * 1.38 + seconds * 72) % (height * 1.38)) - height * 0.19
     const x = star.x * width
@@ -1413,7 +1426,7 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     ctx.arc(x, farY, star.size * 0.62, 0, Math.PI * 2)
     ctx.fill()
 
-    if (star.tint > 0.58) {
+    if (!isLow && !isMedium && star.tint > 0.58) {
       ctx.globalAlpha = star.alpha * 0.42
       const trail = ctx.createLinearGradient(x, nearY - 18, x, nearY + 28)
       trail.addColorStop(0, 'rgba(255,255,255,0)')
@@ -1428,26 +1441,28 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     }
   }
 
-  const speedLines = [
-    { x: 0.11, length: 170, width: 2, delay: -0.2, color: streak },
-    { x: 0.32, length: 120, width: 1, delay: -0.42, color: 'rgba(255,255,255,0.26)' },
-    { x: 0.63, length: 150, width: 2, delay: -0.16, color: 'rgba(239,35,60,0.42)' },
-    { x: 0.88, length: 135, width: 1, delay: -0.34, color: 'rgba(125,211,252,0.28)' },
-  ]
-  for (const line of speedLines) {
-    const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
-    const x = line.x * width
-    const gradient = ctx.createLinearGradient(x, y, x, y + line.length)
-    gradient.addColorStop(0, 'rgba(255,255,255,0)')
-    gradient.addColorStop(0.46, line.color)
-    gradient.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.globalAlpha = 0.58
-    ctx.strokeStyle = gradient
-    ctx.lineWidth = line.width
-    ctx.beginPath()
-    ctx.moveTo(x, y)
-    ctx.lineTo(x, y + line.length)
-    ctx.stroke()
+  if (!isLow) {
+    const speedLines = [
+      { x: 0.11, length: 170, width: 2, delay: -0.2, color: streak },
+      { x: 0.32, length: 120, width: 1, delay: -0.42, color: 'rgba(255,255,255,0.26)' },
+      { x: 0.63, length: 150, width: 2, delay: -0.16, color: 'rgba(239,35,60,0.42)' },
+      { x: 0.88, length: 135, width: 1, delay: -0.34, color: 'rgba(125,211,252,0.28)' },
+    ]
+    for (const line of (isMedium ? speedLines.slice(0, 2) : speedLines)) {
+      const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
+      const x = line.x * width
+      const gradient = ctx.createLinearGradient(x, y, x, y + line.length)
+      gradient.addColorStop(0, 'rgba(255,255,255,0)')
+      gradient.addColorStop(0.46, line.color)
+      gradient.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.globalAlpha = 0.58
+      ctx.strokeStyle = gradient
+      ctx.lineWidth = line.width
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x, y + line.length)
+      ctx.stroke()
+    }
   }
   ctx.restore()
 
@@ -1459,73 +1474,87 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   const planet2R = Math.min(width * 0.045, 36)
   const planet3R = Math.min(width * 0.03, 26)
 
-  ctx.save()
-  ctx.globalAlpha = 1
-  drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9a8d4'], [0.5, '#7c3aed'], [1, '#120617']])
-  ctx.strokeStyle = 'rgba(167,139,250,0.28)'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.ellipse(width * 0.92, planet1Y, planet1R * 1.28, planet1R * 0.28, -8 * DEG, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.globalAlpha = 0.82
-  drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#fecaca'], [0.55, '#7f1d1d'], [1, '#1f0909']])
-  drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#a5f3fc'], [0.55, '#164e63'], [1, '#06151b']])
-  ctx.restore()
-
-  for (const asteroid of BACKGROUND_ASTEROIDS) {
-    const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
-    drawAsteroidShape(ctx, width * asteroid.x, y, asteroid.width, asteroid.height, seconds * asteroid.spin * DEG / 10, asteroid.alpha)
-  }
-  for (const debris of BACKGROUND_DEBRIS) {
-    const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
-    drawDebrisShape(ctx, width * debris.x, y, debris.width, debris.height, seconds * debris.spin * DEG / 12, debris.alpha)
+  if (!isLow) {
+    ctx.save()
+    ctx.globalAlpha = 1
+    drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9a8d4'], [0.5, '#7c3aed'], [1, '#120617']])
+    if (!isMedium) {
+      ctx.strokeStyle = 'rgba(167,139,250,0.28)'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.ellipse(width * 0.92, planet1Y, planet1R * 1.28, planet1R * 0.28, -8 * DEG, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 0.82
+    drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#fecaca'], [0.55, '#7f1d1d'], [1, '#1f0909']])
+    if (!isMedium) {
+      drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#a5f3fc'], [0.55, '#164e63'], [1, '#06151b']])
+    }
+    ctx.restore()
   }
 
-  const clusterY1 = ((seconds / 16 + 0.56) % 1) * height * 1.15 - height * 0.04
-  const clusterY2 = ((seconds / 24 + 0.25) % 1) * height * 1.15 - height * 0.04
-  drawAsteroidShape(ctx, width * 0.44, clusterY1, 16, 12, seconds * 0.3, 0.24)
-  drawAsteroidShape(ctx, width * 0.44 + 22, clusterY1 + 14, 10, 8, -seconds * 0.2, 0.2)
-  drawAsteroidShape(ctx, width * 0.72, clusterY2, 20, 16, -seconds * 0.18, 0.22)
-  drawAsteroidShape(ctx, width * 0.72 + 24, clusterY2 + 18, 12, 9, seconds * 0.18, 0.18)
+  if (!isLow) {
+    const asteroidPool = isMedium ? BACKGROUND_ASTEROIDS.slice(0, 3) : BACKGROUND_ASTEROIDS
+    const debrisPool = isMedium ? BACKGROUND_DEBRIS.slice(0, 3) : BACKGROUND_DEBRIS
+    for (const asteroid of asteroidPool) {
+      const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
+      drawAsteroidShape(ctx, width * asteroid.x, y, asteroid.width, asteroid.height, seconds * asteroid.spin * DEG / 10, asteroid.alpha)
+    }
+    for (const debris of debrisPool) {
+      const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
+      drawDebrisShape(ctx, width * debris.x, y, debris.width, debris.height, seconds * debris.spin * DEG / 12, debris.alpha)
+    }
+
+    if (!isMedium) {
+      const clusterY1 = ((seconds / 16 + 0.56) % 1) * height * 1.15 - height * 0.04
+      const clusterY2 = ((seconds / 24 + 0.25) % 1) * height * 1.15 - height * 0.04
+      drawAsteroidShape(ctx, width * 0.44, clusterY1, 16, 12, seconds * 0.3, 0.24)
+      drawAsteroidShape(ctx, width * 0.44 + 22, clusterY1 + 14, 10, 8, -seconds * 0.2, 0.2)
+      drawAsteroidShape(ctx, width * 0.72, clusterY2, 20, 16, -seconds * 0.18, 0.22)
+      drawAsteroidShape(ctx, width * 0.72 + 24, clusterY2 + 18, 12, 9, seconds * 0.18, 0.18)
+    }
+  }
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  const laserY1 = ((seconds / 6 + 0.67) % 1) * height * 1.15 - height * 0.08
-  const laserY2 = ((seconds / 9 + 0.32) % 1) * height * 1.15 - height * 0.06
-  const drawLaser = (x: number, y: number, length: number, rotation: number, color: string, widthPx: number) => {
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.rotate(rotation)
-    const gradient = ctx.createLinearGradient(0, -length / 2, 0, length / 2)
-    gradient.addColorStop(0, 'rgba(255,255,255,0)')
-    gradient.addColorStop(0.5, color)
-    gradient.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.strokeStyle = gradient
-    ctx.lineWidth = widthPx
-    ctx.shadowBlur = 10
-    ctx.shadowColor = color
-    ctx.beginPath()
-    ctx.moveTo(0, -length / 2)
-    ctx.lineTo(0, length / 2)
-    ctx.stroke()
-    ctx.restore()
-  }
-  drawLaser(width * 0.38, laserY1, 80, -4 * DEG, 'rgba(239,35,60,0.72)', 2)
-  drawLaser(width * 0.66, laserY2, 56, 12 * DEG, 'rgba(34,211,238,0.52)', 1.5)
+  if (!isLow && !isMedium) {
+    const laserY1 = ((seconds / 6 + 0.67) % 1) * height * 1.15 - height * 0.08
+    const laserY2 = ((seconds / 9 + 0.32) % 1) * height * 1.15 - height * 0.06
+    const drawLaser = (x: number, y: number, length: number, rotation: number, color: string, widthPx: number) => {
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(rotation)
+      const gradient = ctx.createLinearGradient(0, -length / 2, 0, length / 2)
+      gradient.addColorStop(0, 'rgba(255,255,255,0)')
+      gradient.addColorStop(0.5, color)
+      gradient.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.strokeStyle = gradient
+      ctx.lineWidth = widthPx
+      ctx.shadowBlur = 10
+      ctx.shadowColor = color
+      ctx.beginPath()
+      ctx.moveTo(0, -length / 2)
+      ctx.lineTo(0, length / 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+    drawLaser(width * 0.38, laserY1, 80, -4 * DEG, 'rgba(239,35,60,0.72)', 2)
+    drawLaser(width * 0.66, laserY2, 56, 12 * DEG, 'rgba(34,211,238,0.52)', 1.5)
 
-  const drawExplosion = (x: number, y: number, period: number, offset: number, radius: number, alpha: number) => {
-    const cycle = ((seconds + offset) % period) / period
-    const pulse = cycle < 0.42 ? Math.sin((cycle / 0.42) * Math.PI) : 0
-    if (pulse <= 0) return
-    drawRadialEllipse(ctx, x, y, radius * (0.6 + pulse * 1.4), radius * (0.6 + pulse * 1.4), [
-      [0, `rgba(255,255,255,${0.45 * pulse * alpha})`],
-      [0.32, `rgba(251,191,36,${0.48 * pulse * alpha})`],
-      [0.64, `rgba(239,35,60,${0.32 * pulse * alpha})`],
-      [1, 'rgba(0,0,0,0)'],
-    ])
+    const drawExplosion = (x: number, y: number, period: number, offset: number, radius: number, alpha: number) => {
+      const cycle = ((seconds + offset) % period) / period
+      const pulse = cycle < 0.42 ? Math.sin((cycle / 0.42) * Math.PI) : 0
+      if (pulse <= 0) return
+      drawRadialEllipse(ctx, x, y, radius * (0.6 + pulse * 1.4), radius * (0.6 + pulse * 1.4), [
+        [0, `rgba(255,255,255,${0.45 * pulse * alpha})`],
+        [0.32, `rgba(251,191,36,${0.48 * pulse * alpha})`],
+        [0.64, `rgba(239,35,60,${0.32 * pulse * alpha})`],
+        [1, 'rgba(0,0,0,0)'],
+      ])
+    }
+    drawExplosion(width * 0.08, height * 0.18, 7, 4, 32, 0.9)
+    drawExplosion(width * 0.9, height * 0.44, 11, 2, 24, 0.75)
   }
-  drawExplosion(width * 0.08, height * 0.18, 7, 4, 32, 0.9)
-  drawExplosion(width * 0.9, height * 0.44, 11, 2, 24, 0.75)
   ctx.restore()
 }
 
@@ -2586,41 +2615,49 @@ function drawFinalChargeLines(
   viewportHeight: number,
   time: number,
 ) {
-  for (const enemy of enemies) {
-    if (enemy.bossKind !== 'final' || enemy.chargeTimer <= 0) continue
+  // Performance: batch all lines in a single save/restore, no shadow, single path for dashes
+  const chargingEnemies = enemies.filter((e) => e.bossKind === 'final' && e.chargeTimer > 0)
+  if (chargingEnemies.length === 0) return
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+
+  for (const enemy of chargingEnemies) {
     const lanes = enemy.chargePattern === 'scatter'
       ? [-24, -12, 0, 12, 24].map((offset) => clamp(enemy.chargeLane + offset, 8, 92))
       : [clamp(enemy.chargeLane, 10, 90)]
     const alpha = Math.max(0.28, Math.min(1, enemy.chargeTimer / 1.45))
-    const lineWidth = enemy.chargePattern === 'scatter' ? Math.min(viewportWidth * 0.045, 42) : Math.min(viewportWidth * 0.08, 72)
+    const lineWidth = enemy.chargePattern === 'scatter'
+      ? Math.min(viewportWidth * 0.045, 42)
+      : Math.min(viewportWidth * 0.08, 72)
 
     for (const lane of lanes) {
       const x = toX(lane)
-      ctx.save()
-      ctx.globalAlpha = alpha
-      ctx.globalCompositeOperation = 'lighter'
-      const gradient = ctx.createLinearGradient(x - lineWidth / 2, 0, x + lineWidth / 2, 0)
-      gradient.addColorStop(0, 'rgba(0,0,0,0)')
-      gradient.addColorStop(0.35, 'rgba(251,191,36,0.24)')
-      gradient.addColorStop(0.5, 'rgba(255,255,255,0.5)')
-      gradient.addColorStop(0.65, 'rgba(251,191,36,0.24)')
-      gradient.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.fillStyle = gradient
-      ctx.shadowBlur = 26
-      ctx.shadowColor = 'rgba(251,191,36,0.48)'
+
+      // Glow rect — no shadowBlur, use a narrower solid fill instead (much cheaper)
+      ctx.globalAlpha = alpha * 0.45
+      ctx.fillStyle = 'rgba(255,220,60,1)'
+      ctx.fillRect(x - 1.5, 0, 3, viewportHeight)
+
+      // Soft halo — single wide translucent rect, no gradient object allocation
+      ctx.globalAlpha = alpha * 0.18
+      ctx.fillStyle = 'rgba(251,191,36,1)'
       ctx.fillRect(x - lineWidth / 2, 0, lineWidth, viewportHeight)
 
-      ctx.strokeStyle = time % 360 < 180 ? 'rgba(251,191,36,0.72)' : 'rgba(255,255,255,0.58)'
+      // Dashes — batch into a single path instead of one stroke per dash
+      ctx.globalAlpha = alpha * (time % 360 < 180 ? 0.72 : 0.58)
+      ctx.strokeStyle = time % 360 < 180 ? '#fbbf24' : '#fff'
       ctx.lineWidth = 2
-      for (let y = -18; y < viewportHeight; y += 18) {
-        ctx.beginPath()
-        ctx.moveTo(x, y)
-        ctx.lineTo(x, y + 8)
-        ctx.stroke()
-      }
-      ctx.restore()
+      ctx.setLineDash([8, 10])
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, viewportHeight)
+      ctx.stroke()
+      ctx.setLineDash([])
     }
   }
+
+  ctx.restore()
 }
 
 function drawFingerGuide(ctx: CanvasRenderingContext2D, pointer: Vec | null, toX: (value: number) => number, toY: (value: number) => number) {
@@ -3546,7 +3583,9 @@ export function GradiusRaid({
     const cssWidth = Math.max(1, root.clientWidth || window.innerWidth || 1)
     const cssHeight = Math.max(1, root.clientHeight || window.innerHeight || 1)
     const maxDpr = multiplayerSessionRef.current ? 1.35 : 2
-    const dpr = Math.min(maxDpr, window.devicePixelRatio || 1)
+    const gfxQuality = getGraphicsQuality()
+    const dprCap = gfxQuality === 'low' ? 1 : gfxQuality === 'medium' ? 1.25 : gfxQuality === 'high' ? 1.5 : maxDpr
+    const dpr = Math.min(dprCap, window.devicePixelRatio || 1)
     const width = Math.max(1, Math.floor(cssWidth * dpr))
     const height = Math.max(1, Math.floor(cssHeight * dpr))
 
@@ -3569,7 +3608,7 @@ export function GradiusRaid({
       paletteRef.current = readRaidPalette(root)
     }
 
-    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time)
+    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality)
 
     const drawTrail = (shot: Shot, color: string, length: number, widthPx: number) => {
       const x = toX(shot.x)
@@ -5375,6 +5414,8 @@ export function GradiusRaid({
   const bossClear = snapshot.bossAlert > 0 && snapshot.bossMessage === 'clear'
   const isMultiplayer = Boolean(multiplayerSession)
   const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
+  const [graphicsQuality, setGraphicsQualityState] = useState<GraphicsQuality>(() => getGraphicsQuality())
+  const applyGraphicsQuality = (q: GraphicsQuality) => { setGraphicsQuality(q); setGraphicsQualityState(q) }
   const connectionClass = `raid__connection raid__connection--${multiplayerConnection.quality}`
   const finalScore = Math.max(player.score, snapshot.allyPlayer?.score ?? 0)
   const finaleShipSize = getShipSpriteSize(player.ship.key, 'picker') + 22
@@ -5516,6 +5557,19 @@ export function GradiusRaid({
             <div className="raid__records">
               <span>Stage {snapshot.stageTheme}</span>
               <span>Score {player.score.toLocaleString()}</span>
+            </div>
+            <div className="raid__gfx-row">
+              <span className="raid__gfx-label">Graphics</span>
+              {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  className={graphicsQuality === q ? 'raid__gfx-btn raid__gfx-btn--active' : 'raid__gfx-btn'}
+                  onClick={() => applyGraphicsQuality(q)}
+                >
+                  {q[0].toUpperCase() + q.slice(1)}
+                </button>
+              ))}
             </div>
             <div className="raid__pause-actions">
               {canControlOverlay ? <button type="button" className="raid__start" onClick={resumeGame}>Continue</button> : null}
@@ -5685,6 +5739,19 @@ export function GradiusRaid({
               <span>Best {snapshot.highScore.toLocaleString()}</span>
               {!isMultiplayer && snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>Checkpoint Stage {checkpointStage}</span> : <span>{isMultiplayer ? 'Co-op run' : 'PC follows cursor'}</span>}
               <span>{isMultiplayer ? 'Both pilots must fall' : completedCampaign ? 'Stages 1-15 unlocked' : 'Mobile follows above finger'}</span>
+            </div>
+            <div className="raid__gfx-row">
+              <span className="raid__gfx-label">Graphics</span>
+              {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  className={graphicsQuality === q ? 'raid__gfx-btn raid__gfx-btn--active' : 'raid__gfx-btn'}
+                  onClick={() => applyGraphicsQuality(q)}
+                >
+                  {q[0].toUpperCase() + q.slice(1)}
+                </button>
+              ))}
             </div>
             <div className="raid__pause-actions">
               {!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
