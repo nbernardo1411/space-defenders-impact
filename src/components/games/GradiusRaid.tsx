@@ -187,6 +187,11 @@ type MultiplayerPlayerSnapshot = {
   player: Player
 }
 
+type MultiplayerEnemySnapshot = {
+  at: number
+  enemies: Enemy[]
+}
+
 type RelayGameMessage =
   | { type: 'game-message'; from: string; payload: { type: 'input'; input: MultiplayerInput } }
   | { type: 'game-message'; from: string; payload: { type: 'state'; state: MultiplayerHostState } }
@@ -836,6 +841,10 @@ function cloneVec(value: Vec | null | undefined): Vec | null {
   return value ? { x: value.x, y: value.y } : null
 }
 
+function cloneEnemy(enemy: Enemy): Enemy {
+  return { ...enemy }
+}
+
 function roundNetworkNumber(value: number) {
   return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0
 }
@@ -957,6 +966,56 @@ function getBufferedPlayerVisual(buffer: MultiplayerPlayerSnapshot[], renderAt: 
   }
 
   return clonePlayer(latest.player)
+}
+
+function interpolateEnemyVisual(previous: Enemy, next: Enemy, t: number) {
+  const visual = cloneEnemy(next)
+  visual.x = previous.x + (next.x - previous.x) * t
+  visual.y = previous.y + (next.y - previous.y) * t
+  visual.phase = previous.phase + (next.phase - previous.phase) * t
+  visual.shieldTime = Math.max(0, previous.shieldTime + (next.shieldTime - previous.shieldTime) * t)
+  visual.fireCooldown = Math.max(0, previous.fireCooldown + (next.fireCooldown - previous.fireCooldown) * t)
+  visual.chargeCooldown = Math.max(0, previous.chargeCooldown + (next.chargeCooldown - previous.chargeCooldown) * t)
+  visual.chargeTimer = Math.max(0, previous.chargeTimer + (next.chargeTimer - previous.chargeTimer) * t)
+  visual.chargeLane = previous.chargeLane + (next.chargeLane - previous.chargeLane) * t
+  return visual
+}
+
+function getBufferedEnemyVisuals(buffer: MultiplayerEnemySnapshot[], renderAt: number) {
+  if (buffer.length === 0) return null
+  if (buffer.length === 1) return buffer[0].enemies.map(cloneEnemy)
+
+  const first = buffer[0]
+  if (renderAt <= first.at) return first.enemies.map(cloneEnemy)
+
+  const latest = buffer[buffer.length - 1]
+  if (renderAt >= latest.at) {
+    const previous = buffer[buffer.length - 2]
+    const previousById = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]))
+    const packetMs = Math.max(16, latest.at - previous.at)
+    const extrapolateMs = Math.min(renderAt - latest.at, MULTIPLAYER_REMOTE_EXTRAPOLATION_LIMIT_MS)
+    const t = 1 + extrapolateMs / packetMs
+    return latest.enemies.map((enemy) => {
+      const previousEnemy = previousById.get(enemy.id)
+      return previousEnemy ? interpolateEnemyVisual(previousEnemy, enemy, t) : cloneEnemy(enemy)
+    })
+  }
+
+  for (let index = 1; index < buffer.length; index += 1) {
+    const next = buffer[index]
+    if (next.at < renderAt) continue
+
+    const previous = buffer[index - 1]
+    const previousById = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]))
+    const span = Math.max(1, next.at - previous.at)
+    const t = clamp((renderAt - previous.at) / span, 0, 1)
+    return next.enemies.map((enemy) => {
+      const previousEnemy = previousById.get(enemy.id)
+      return previousEnemy ? interpolateEnemyVisual(previousEnemy, enemy, t) : cloneEnemy(enemy)
+    })
+  }
+
+  return latest.enemies.map(cloneEnemy)
 }
 
 function getNukeStageScale(stage: number) {
@@ -2829,6 +2888,7 @@ export function GradiusRaid({
   const multiplayerLastHostPacketTimeRef = useRef(0)
   const multiplayerHostVisualVelocityRef = useRef<Vec>({ x: 0, y: 0 })
   const multiplayerHostSnapshotBufferRef = useRef<MultiplayerPlayerSnapshot[]>([])
+  const multiplayerEnemySnapshotBufferRef = useRef<MultiplayerEnemySnapshot[]>([])
   const multiplayerLastHeartbeatRef = useRef(0)
   const multiplayerHeartbeatSentAtRef = useRef(0)
   const multiplayerLastConnectionCheckRef = useRef(0)
@@ -2927,6 +2987,7 @@ export function GradiusRaid({
     guestLocalFireCooldownRef.current = 0
     guestLocalWeaponCooldownsRef.current = { ...EMPTY_WEAPON_TIMERS }
     multiplayerHostSnapshotBufferRef.current = []
+    multiplayerEnemySnapshotBufferRef.current = []
   }, [])
 
   const syncSnapshot = useCallback(() => {
@@ -3083,6 +3144,12 @@ export function GradiusRaid({
       hostBuffer.push({ at: now, player: clonePlayer(state.hostPlayer) })
       if (hostBuffer.length > MULTIPLAYER_REMOTE_BUFFER_MAX) {
         hostBuffer.splice(0, hostBuffer.length - MULTIPLAYER_REMOTE_BUFFER_MAX)
+      }
+
+      const enemyBuffer = multiplayerEnemySnapshotBufferRef.current
+      enemyBuffer.push({ at: now, enemies: state.enemies.map(cloneEnemy) })
+      if (enemyBuffer.length > MULTIPLAYER_REMOTE_BUFFER_MAX) {
+        enemyBuffer.splice(0, enemyBuffer.length - MULTIPLAYER_REMOTE_BUFFER_MAX)
       }
 
       const previousHost = multiplayerLastHostStateRef.current
@@ -3338,15 +3405,23 @@ export function GradiusRaid({
     }
     keepNetworkVisibleInPlace(enemyShotsRef.current)
 
-    for (const enemy of enemiesRef.current) {
-      enemy.phase += dt
-      enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
-      enemy.chargeTimer = Math.max(0, enemy.chargeTimer - dt)
-      if (enemy.isBoss) {
-        enemy.y = Math.min(enemy.y + Math.max(0, enemy.vy) * dt, 42)
-      } else {
-        enemy.x = clamp(enemy.x + enemy.vx * dt, -MULTIPLAYER_ENTITY_MARGIN, WIDTH + MULTIPLAYER_ENTITY_MARGIN)
-        enemy.y += enemy.vy * dt
+    const bufferedEnemies = getBufferedEnemyVisuals(
+      multiplayerEnemySnapshotBufferRef.current,
+      performance.now() - getRemoteInterpolationDelayMs(multiplayerRttRef.current),
+    )
+    if (bufferedEnemies) {
+      enemiesRef.current = bufferedEnemies
+    } else {
+      for (const enemy of enemiesRef.current) {
+        enemy.phase += dt
+        enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
+        enemy.chargeTimer = Math.max(0, enemy.chargeTimer - dt)
+        if (enemy.isBoss) {
+          enemy.y = Math.min(enemy.y + Math.max(0, enemy.vy) * dt, 42)
+        } else {
+          enemy.x = clamp(enemy.x + enemy.vx * dt, -MULTIPLAYER_ENTITY_MARGIN, WIDTH + MULTIPLAYER_ENTITY_MARGIN)
+          enemy.y += enemy.vy * dt
+        }
       }
     }
     keepNetworkVisibleInPlace(enemiesRef.current, (enemy) => enemy.isBoss)
