@@ -58,6 +58,8 @@ type Shot = Vec & {
   retargetTime?: number
   life?: number
   maxLife?: number
+  angle?: number
+  spin?: number
 }
 
 type Enemy = Vec & {
@@ -84,7 +86,7 @@ type Enemy = Vec & {
   chargeCooldown: number
   chargeTimer: number
   chargeLane: number
-  chargePattern: 'single' | 'pincer' | 'trident' | 'scatter'
+  chargePattern: 'single' | 'pincer' | 'trident' | 'scatter' | 'diagonal' | 'horizontal' | 'cross' | 'rotate'
 }
 
 type FormationStyle = {
@@ -1373,6 +1375,9 @@ function getNukeBossDamage(enemy: Enemy, stage: number) {
 }
 
 function getFinalBossBeamLanes(chargeLane: number, chargePattern: Enemy['chargePattern']) {
+  if (chargePattern === 'horizontal' || chargePattern === 'diagonal' || chargePattern === 'cross' || chargePattern === 'rotate') {
+    return [clamp(chargeLane, 9, 91)]
+  }
   if (chargePattern === 'scatter') {
     return [-31, -13, 13, 31].map((offset) => clamp(chargeLane + offset, 7, 93))
   }
@@ -1386,6 +1391,8 @@ function getFinalBossBeamLanes(chargeLane: number, chargePattern: Enemy['chargeP
 }
 
 function getFinalBossBeamRadius(chargePattern: Enemy['chargePattern']) {
+  if (chargePattern === 'rotate') return FINAL_BOSS_BEAM_TRIDENT_RADIUS
+  if (chargePattern === 'cross' || chargePattern === 'diagonal' || chargePattern === 'horizontal') return FINAL_BOSS_BEAM_PINCER_RADIUS
   if (chargePattern === 'scatter') return FINAL_BOSS_BEAM_SCATTER_RADIUS
   if (chargePattern === 'trident') return FINAL_BOSS_BEAM_TRIDENT_RADIUS
   if (chargePattern === 'pincer') return FINAL_BOSS_BEAM_PINCER_RADIUS
@@ -2909,9 +2916,12 @@ function drawReferenceSnakeBossPaintPass(ctx: CanvasRenderingContext2D, size: nu
     const wave = seconds * 2.25
     const a = p * Math.PI * 2.75 + Math.sin(wave + p * Math.PI * 5) * 0.19
     const radius = size * (0.37 - p * 0.18)
+    const headLock = clamp((p - 0.62) / 0.3, 0, 1)
+    const bodyX = Math.sin(a) * radius + Math.sin(p * Math.PI * 8.5 + wave * 1.18) * size * (0.048 - p * 0.018)
+    const bodyY = size * 0.58 - p * size * 0.82 + Math.cos(a + Math.sin(wave + p * 4) * 0.2) * size * (0.105 - p * 0.03)
     return {
-      x: Math.sin(a) * radius + Math.sin(p * Math.PI * 8.5 + wave * 1.18) * size * (0.048 - p * 0.018),
-      y: size * 0.58 - p * size * 0.82 + Math.cos(a + Math.sin(wave + p * 4) * 0.2) * size * (0.105 - p * 0.03),
+      x: bodyX * (1 - headLock),
+      y: bodyY - (bodyY - (size * 0.58 - p * size * 0.82)) * headLock,
     }
   }
 
@@ -3807,7 +3817,7 @@ function drawRaidEnemy(
     if (enemy.bossKind === 'squid' || enemy.bossKind === 'snake' || enemy.bossKind === 'final') {
       ctx.save()
       ctx.translate(x, y)
-      ctx.rotate(enemy.bossKind === 'snake' ? Math.sin(time / 520 + enemy.phase) * 0.12 : rotation * 0.45)
+      ctx.rotate(enemy.bossKind === 'snake' ? 0 : rotation * 0.45)
       ctx.scale(floatScale, floatScale)
       if (enemy.bossKind === 'squid') drawGalacticSquidBoss(ctx, size, time)
       else if (enemy.bossKind === 'snake') drawGalacticSnakeBoss(ctx, size, time)
@@ -5071,56 +5081,75 @@ function drawFinalChargeLines(
   viewportHeight: number,
   time: number,
 ) {
-  // Performance: batch all lines in a single save/restore, no shadow, single path for dashes
   const chargingEnemies = enemies.filter((e) => e.bossKind === 'final' && e.chargeTimer > 0)
   if (chargingEnemies.length === 0) return
+
+  const toViewportY = (value: number) => (value / HEIGHT) * viewportHeight
+  const drawWarningBeam = (x: number, y: number, angle: number, width: number, alpha: number, pulse: number) => {
+    const length = Math.hypot(viewportWidth, viewportHeight) * 1.45
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(angle)
+
+    ctx.globalAlpha = alpha * 0.22
+    ctx.fillStyle = 'rgba(34,211,238,1)'
+    ctx.fillRect(-length / 2, -width * 0.7, length, width * 1.4)
+
+    ctx.globalAlpha = alpha * 0.42
+    ctx.fillStyle = 'rgba(96,165,250,1)'
+    ctx.fillRect(-length / 2, -width / 2, length, width)
+
+    ctx.globalAlpha = alpha * 0.72 * pulse
+    ctx.fillStyle = 'rgba(255,255,255,1)'
+    ctx.fillRect(-length / 2, -2, length, 4)
+
+    ctx.globalAlpha = alpha * 0.86
+    ctx.strokeStyle = time % 220 < 110 ? '#7dd3fc' : '#eff6ff'
+    ctx.lineWidth = 2.5
+    ctx.setLineDash([8, 10])
+    ctx.beginPath()
+    ctx.moveTo(-length / 2, -width * 0.5)
+    ctx.lineTo(length / 2, -width * 0.5)
+    ctx.moveTo(-length / 2, width * 0.5)
+    ctx.lineTo(length / 2, width * 0.5)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.restore()
+  }
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
 
   for (const enemy of chargingEnemies) {
-    const lanes = getFinalBossBeamLanes(enemy.chargeLane, enemy.chargePattern)
     const chargeProgress = 1 - clamp(enemy.chargeTimer / FINAL_BOSS_BEAM_CHARGE_SECONDS, 0, 1)
     const alpha = 0.28 + chargeProgress * 0.72
     const radius = getFinalBossBeamRadius(enemy.chargePattern)
     const lineWidth = Math.max(32, Math.min(viewportWidth * 0.15, (radius / WIDTH) * viewportWidth * 2.45))
+    const warningPulse = 0.72 + Math.sin(time / 80 + enemy.chargeLane) * 0.2
 
-    for (const lane of lanes) {
-      const x = toX(lane)
-      const warningPulse = 0.72 + Math.sin(time / 80 + lane) * 0.2
+    if (enemy.chargePattern === 'horizontal') {
+      drawWarningBeam(viewportWidth * 0.5, toViewportY(enemy.chargeLane), 0, lineWidth, alpha, warningPulse)
+      continue
+    }
 
-      // Glow rect — no shadowBlur, use a narrower solid fill instead (much cheaper)
-      ctx.globalAlpha = alpha * 0.22
-      ctx.fillStyle = 'rgba(34,211,238,1)'
-      ctx.fillRect(x - lineWidth * 0.7, 0, lineWidth * 1.4, viewportHeight)
+    if (enemy.chargePattern === 'diagonal' || enemy.chargePattern === 'cross' || enemy.chargePattern === 'rotate') {
+      const baseAngle = enemy.chargePattern === 'rotate'
+        ? time / 1800 + enemy.phase
+        : enemy.chargeLane < 50 ? Math.PI / 4 : -Math.PI / 4
+      drawWarningBeam(viewportWidth * 0.5, viewportHeight * 0.5, baseAngle, lineWidth, alpha, warningPulse)
+      if (enemy.chargePattern === 'cross' || enemy.chargePattern === 'rotate') {
+        drawWarningBeam(viewportWidth * 0.5, viewportHeight * 0.5, baseAngle + Math.PI / 2, lineWidth, alpha * 0.92, warningPulse)
+      }
+      continue
+    }
 
-      // Soft halo — single wide translucent rect, no gradient object allocation
-      ctx.globalAlpha = alpha * 0.42
-      ctx.fillStyle = 'rgba(96,165,250,1)'
-      ctx.fillRect(x - lineWidth / 2, 0, lineWidth, viewportHeight)
-
-      ctx.globalAlpha = alpha * 0.72 * warningPulse
-      ctx.fillStyle = 'rgba(255,255,255,1)'
-      ctx.fillRect(x - 2, 0, 4, viewportHeight)
-
-      // Dashes — batch into a single path instead of one stroke per dash
-      ctx.globalAlpha = alpha * 0.86
-      ctx.strokeStyle = time % 220 < 110 ? '#7dd3fc' : '#eff6ff'
-      ctx.lineWidth = 2.5
-      ctx.setLineDash([8, 10])
-      ctx.beginPath()
-      ctx.moveTo(x - lineWidth * 0.5, 0)
-      ctx.lineTo(x - lineWidth * 0.5, viewportHeight)
-      ctx.moveTo(x + lineWidth * 0.5, 0)
-      ctx.lineTo(x + lineWidth * 0.5, viewportHeight)
-      ctx.stroke()
-      ctx.setLineDash([])
+    for (const lane of getFinalBossBeamLanes(enemy.chargeLane, enemy.chargePattern)) {
+      drawWarningBeam(toX(lane), viewportHeight * 0.5, Math.PI / 2, lineWidth, alpha, 0.72 + Math.sin(time / 80 + lane) * 0.2)
     }
   }
 
   ctx.restore()
 }
-
 function drawFingerGuide(ctx: CanvasRenderingContext2D, pointer: Vec | null, toX: (value: number) => number, toY: (value: number) => number) {
   if (!pointer) return
   const x = toX(pointer.x)
@@ -5816,12 +5845,18 @@ export function GradiusRaid({
     }
 
     for (const shot of shotsRef.current) {
+      if (shot.kind === 'beam' && shot.angle !== undefined && shot.spin) {
+        shot.angle += shot.spin * dt
+      }
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
     }
     keepNetworkVisibleInPlace(shotsRef.current)
 
     for (const shot of enemyShotsRef.current) {
+      if (shot.kind === 'beam' && shot.angle !== undefined && shot.spin) {
+        shot.angle += shot.spin * dt
+      }
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
     }
@@ -6352,36 +6387,60 @@ export function GradiusRaid({
     }
     const drawEnemyBeamColumn = (shot: Shot) => {
       const x = toX(shot.x)
+      const y = toY(shot.y)
       const life = shot.life ?? FINAL_BOSS_BEAM_LIFE_SECONDS
       const maxLife = shot.maxLife ?? FINAL_BOSS_BEAM_LIFE_SECONDS
       const lifeRatio = clamp(life / Math.max(0.01, maxLife), 0, 1)
       const alpha = Math.min(1, Math.sin(lifeRatio * Math.PI) * 1.25)
       const width = Math.max(42, (shot.radius / WIDTH) * cssWidth * 2.2)
       const coreWidth = Math.max(8, width * 0.22)
+      const length = Math.hypot(cssWidth, cssHeight) * 1.45
 
       ctx.save()
       ctx.globalCompositeOperation = 'lighter'
-      ctx.globalAlpha = 0.24 * alpha
-      ctx.fillStyle = 'rgba(14,165,233,1)'
-      ctx.fillRect(x - width * 0.72, 0, width * 1.44, cssHeight)
-      ctx.globalAlpha = 0.48 * alpha
-      ctx.fillStyle = 'rgba(56,189,248,1)'
-      ctx.fillRect(x - width * 0.5, 0, width, cssHeight)
-      ctx.globalAlpha = 0.86 * alpha
-      ctx.fillStyle = 'rgba(224,242,254,1)'
-      ctx.fillRect(x - coreWidth * 0.5, 0, coreWidth, cssHeight)
-      ctx.globalAlpha = 0.55 * alpha
-      ctx.strokeStyle = 'rgba(125,249,255,1)'
-      ctx.lineWidth = Math.max(2, visualScale * 2.4)
-      ctx.beginPath()
-      ctx.moveTo(x - width * 0.47, 0)
-      ctx.lineTo(x - width * 0.47, cssHeight)
-      ctx.moveTo(x + width * 0.47, 0)
-      ctx.lineTo(x + width * 0.47, cssHeight)
-      ctx.stroke()
+      if (shot.angle === undefined) {
+        ctx.globalAlpha = 0.24 * alpha
+        ctx.fillStyle = 'rgba(14,165,233,1)'
+        ctx.fillRect(x - width * 0.72, 0, width * 1.44, cssHeight)
+        ctx.globalAlpha = 0.48 * alpha
+        ctx.fillStyle = 'rgba(56,189,248,1)'
+        ctx.fillRect(x - width * 0.5, 0, width, cssHeight)
+        ctx.globalAlpha = 0.86 * alpha
+        ctx.fillStyle = 'rgba(224,242,254,1)'
+        ctx.fillRect(x - coreWidth * 0.5, 0, coreWidth, cssHeight)
+        ctx.globalAlpha = 0.55 * alpha
+        ctx.strokeStyle = 'rgba(125,249,255,1)'
+        ctx.lineWidth = Math.max(2, visualScale * 2.4)
+        ctx.beginPath()
+        ctx.moveTo(x - width * 0.47, 0)
+        ctx.lineTo(x - width * 0.47, cssHeight)
+        ctx.moveTo(x + width * 0.47, 0)
+        ctx.lineTo(x + width * 0.47, cssHeight)
+        ctx.stroke()
+      } else {
+        ctx.translate(x, y)
+        ctx.rotate(shot.angle)
+        ctx.globalAlpha = 0.24 * alpha
+        ctx.fillStyle = 'rgba(14,165,233,1)'
+        ctx.fillRect(-length / 2, -width * 0.72, length, width * 1.44)
+        ctx.globalAlpha = 0.48 * alpha
+        ctx.fillStyle = 'rgba(56,189,248,1)'
+        ctx.fillRect(-length / 2, -width * 0.5, length, width)
+        ctx.globalAlpha = 0.86 * alpha
+        ctx.fillStyle = 'rgba(224,242,254,1)'
+        ctx.fillRect(-length / 2, -coreWidth * 0.5, length, coreWidth)
+        ctx.globalAlpha = 0.55 * alpha
+        ctx.strokeStyle = 'rgba(125,249,255,1)'
+        ctx.lineWidth = Math.max(2, visualScale * 2.4)
+        ctx.beginPath()
+        ctx.moveTo(-length / 2, -width * 0.47)
+        ctx.lineTo(length / 2, -width * 0.47)
+        ctx.moveTo(-length / 2, width * 0.47)
+        ctx.lineTo(length / 2, width * 0.47)
+        ctx.stroke()
+      }
       ctx.restore()
     }
-
     const drawMissile = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
@@ -8067,6 +8126,9 @@ export function GradiusRaid({
           shot.vy += ((aimY / mag) * speed - shot.vy) * turn
         }
       }
+      if (shot.kind === 'beam' && shot.angle !== undefined && shot.spin) {
+        shot.angle += shot.spin * dt
+      }
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
       if (shot.y > -10 && shot.y < HEIGHT + 10 && shot.x > -10 && shot.x < WIDTH + 10) {
@@ -8080,6 +8142,9 @@ export function GradiusRaid({
       if (shot.life !== undefined) {
         shot.life = Math.max(0, shot.life - dt)
         if (shot.life <= 0) continue
+      }
+      if (shot.kind === 'beam' && shot.angle !== undefined && shot.spin) {
+        shot.angle += shot.spin * dt
       }
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
@@ -8223,13 +8288,12 @@ export function GradiusRaid({
           const beforeCharge = chargeTimer
           chargeTimer = Math.max(0, chargeTimer - dt)
           if (beforeCharge > 0 && chargeTimer <= 0) {
-            const lanes = getFinalBossBeamLanes(chargeLane, chargePattern)
             const beamRadius = getFinalBossBeamRadius(chargePattern)
-            lanes.forEach((lane) => {
+            const emitFinalBeam = (x: number, y: number, angle?: number, spin?: number) => {
               enemyShotsRef.current.push({
                 id: shotId++,
-                x: lane,
-                y: 50,
+                x,
+                y,
                 vx: 0,
                 vy: 0,
                 damage: 2,
@@ -8237,17 +8301,43 @@ export function GradiusRaid({
                 radius: beamRadius,
                 life: FINAL_BOSS_BEAM_LIFE_SECONDS,
                 maxLife: FINAL_BOSS_BEAM_LIFE_SECONDS,
+                angle,
+                spin,
               })
-              addRipple(lane, 50, '#38bdf8', chargePattern === 'scatter' ? 14 : 22)
-            })
+            }
+            if (chargePattern === 'horizontal') {
+              emitFinalBeam(50, chargeLane, 0)
+              addRipple(50, chargeLane, '#38bdf8', 22)
+            } else if (chargePattern === 'diagonal') {
+              emitFinalBeam(50, 50, chargeLane < 50 ? Math.PI / 4 : -Math.PI / 4)
+              addRipple(50, 50, '#38bdf8', 24)
+            } else if (chargePattern === 'cross') {
+              const angle = chargeLane < 50 ? Math.PI / 4 : -Math.PI / 4
+              emitFinalBeam(50, 50, angle)
+              emitFinalBeam(50, 50, angle + Math.PI / 2)
+              addRipple(50, 50, '#38bdf8', 28)
+            } else if (chargePattern === 'rotate') {
+              const angle = enemy.phase + Math.PI / 4
+              emitFinalBeam(50, 50, angle, 0.46)
+              emitFinalBeam(50, 50, angle + Math.PI / 2, 0.46)
+              addRipple(50, 50, '#38bdf8', 32)
+            } else {
+              getFinalBossBeamLanes(chargeLane, chargePattern).forEach((lane) => {
+                emitFinalBeam(lane, 50)
+                addRipple(lane, 50, '#38bdf8', chargePattern === 'scatter' ? 14 : 22)
+              })
+            }
             spawnSparks(enemy.x, enemy.y + 8, '#38bdf8', 84, 9)
             playGameSound('laser')
             chargeCooldown =
-              chargePattern === 'scatter' ? 3.45 + Math.random() * 1.1 :
-                chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
-                  chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
-                    2.45 + Math.random() * 0.85
-            fireCooldown = Math.max(fireCooldown, 4.8)
+              chargePattern === 'rotate' ? 4.25 + Math.random() * 1.1 :
+                chargePattern === 'cross' ? 3.95 + Math.random() * 1 :
+                  chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 3.55 + Math.random() * 1 :
+                    chargePattern === 'scatter' ? 3.45 + Math.random() * 1.1 :
+                      chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
+                        chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
+                          2.45 + Math.random() * 0.85
+            fireCooldown = Math.max(fireCooldown, chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)
           }
         } else {
           chargeCooldown = Math.max(0, chargeCooldown - dt)
@@ -8257,18 +8347,24 @@ export function GradiusRaid({
             const roll = Math.random()
             chargePattern =
               hpRatio < 0.34
-                ? roll < 0.34 ? 'single' : roll < 0.62 ? 'pincer' : roll < 0.84 ? 'trident' : 'scatter'
+                ? roll < 0.14 ? 'single' : roll < 0.27 ? 'pincer' : roll < 0.4 ? 'trident' : roll < 0.52 ? 'scatter' : roll < 0.66 ? 'diagonal' : roll < 0.78 ? 'horizontal' : roll < 0.91 ? 'cross' : 'rotate'
                 : hpRatio < 0.68
-                  ? roll < 0.42 ? 'single' : roll < 0.72 ? 'pincer' : roll < 0.9 ? 'trident' : 'scatter'
-                  : roll < 0.58 ? 'single' : roll < 0.86 ? 'pincer' : 'trident'
+                  ? roll < 0.25 ? 'single' : roll < 0.45 ? 'pincer' : roll < 0.62 ? 'trident' : roll < 0.75 ? 'diagonal' : roll < 0.88 ? 'horizontal' : 'cross'
+                  : roll < 0.4 ? 'single' : roll < 0.65 ? 'pincer' : roll < 0.82 ? 'trident' : roll < 0.92 ? 'diagonal' : 'horizontal'
             chargeLane =
-              chargePattern === 'scatter'
-                ? clamp(player.x + (Math.random() - 0.5) * 20, 31, 69)
-                : chargePattern === 'trident'
-                  ? clamp(player.x + (Math.random() - 0.5) * 18, 23, 77)
-                  : chargePattern === 'pincer'
-                    ? clamp(player.x + (Math.random() - 0.5) * 22, 28, 72)
-                    : clamp(player.x + (Math.random() - 0.5) * 12, 10, 90)
+              chargePattern === 'horizontal'
+                ? clamp(player.y + (Math.random() - 0.5) * 14, 27, 86)
+                : chargePattern === 'diagonal' || chargePattern === 'cross'
+                  ? (Math.random() < 0.5 ? 35 : 65)
+                  : chargePattern === 'rotate'
+                    ? 50
+                    : chargePattern === 'scatter'
+                      ? clamp(player.x + (Math.random() - 0.5) * 20, 31, 69)
+                      : chargePattern === 'trident'
+                        ? clamp(player.x + (Math.random() - 0.5) * 18, 23, 77)
+                        : chargePattern === 'pincer'
+                          ? clamp(player.x + (Math.random() - 0.5) * 22, 28, 72)
+                          : clamp(player.x + (Math.random() - 0.5) * 12, 10, 90)
             chargeCooldown = 999
             const laneCount = getFinalBossBeamLanes(chargeLane, chargePattern).length
             addRipple(chargeLane, 84, '#38bdf8', laneCount >= 4 ? 16 : laneCount === 3 ? 18 : laneCount === 2 ? 20 : 24)
@@ -8696,7 +8792,10 @@ export function GradiusRaid({
       const hitRange = enemyShot.radius + PLAYER_RADIUS
       for (const targetPlayer of getLivingPlayers()) {
         if (enemyShot.kind === 'beam' && enemyShot.life !== undefined) {
-          if (Math.abs(enemyShot.x - targetPlayer.x) <= hitRange) {
+          const beamHits = enemyShot.angle === undefined
+            ? Math.abs(enemyShot.x - targetPlayer.x) <= hitRange
+            : Math.abs((targetPlayer.x - enemyShot.x) * Math.sin(enemyShot.angle) - (targetPlayer.y - enemyShot.y) * Math.cos(enemyShot.angle)) <= hitRange
+          if (beamHits) {
             damagePlayer(enemyShot.damage, targetPlayer)
           }
           continue
@@ -9359,7 +9458,4 @@ export function GradiusRaid({
     </div>
   )
 }
-
-
-
 
