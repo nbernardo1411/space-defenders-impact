@@ -89,6 +89,7 @@ type Enemy = Vec & {
   chargeTimer: number
   chargeLane: number
   rapidCharge?: boolean
+  beamVolleyLeft?: number
   chargePattern: 'single' | 'pincer' | 'trident' | 'scatter' | 'diagonal' | 'horizontal' | 'cross' | 'rotate'
 }
 
@@ -6775,7 +6776,7 @@ export function GradiusRaid({
     const drawSquidBubble = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
-      const radius = Math.max(12, shot.radius * visualScale * 5.2)
+      const radius = Math.max(26, shot.radius * visualScale * 7)
       const pulse = 0.85 + Math.sin(time / 160 + shot.id) * 0.12
       ctx.save()
       ctx.globalCompositeOperation = 'lighter'
@@ -8653,6 +8654,7 @@ export function GradiusRaid({
       let chargeLane = enemy.chargeLane
       let chargePattern = enemy.chargePattern
       let rapidCharge = enemy.rapidCharge ?? false
+      let beamVolleyLeft = enemy.beamVolleyLeft ?? 0
       let fireCooldown = enemy.fireCooldown
       if (enemy.isBoss && bossKind === 'final' && enemy.y >= bossYTarget - 0.5) {
         if (chargeTimer > 0) {
@@ -8702,29 +8704,41 @@ export function GradiusRaid({
             }
             spawnSparks(enemy.x, enemy.y + 8, '#38bdf8', 84, 9)
             playGameSound('laser')
-            chargeCooldown = wasRapidCharge
-              ? chargePattern === 'rotate' ? 2.6 + Math.random() * 0.7 :
-                chargePattern === 'cross' ? 2.4 + Math.random() * 0.65 :
-                  chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 2.05 + Math.random() * 0.55 :
-                    chargePattern === 'scatter' || chargePattern === 'trident' ? 2.25 + Math.random() * 0.65 :
-                      1.8 + Math.random() * 0.5
-              : chargePattern === 'rotate' ? 3.45 + Math.random() * 0.9 :
-                chargePattern === 'cross' ? 3.25 + Math.random() * 0.8 :
-                  chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 2.95 + Math.random() * 0.8 :
-                    chargePattern === 'scatter' ? 3.45 + Math.random() * 1.1 :
-                      chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
-                        chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
-                          2.45 + Math.random() * 0.85
-            fireCooldown = Math.max(fireCooldown, wasRapidCharge ? 3.2 : chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)          }
+            if (wasRapidCharge && beamVolleyLeft > 0) {
+              beamVolleyLeft -= 1
+              chargeCooldown = 0.26 + Math.random() * 0.18
+              fireCooldown = Math.max(fireCooldown, 1.8)
+            } else {
+              chargeCooldown = wasRapidCharge
+                ? chargePattern === 'rotate' ? 2.6 + Math.random() * 0.7 :
+                  chargePattern === 'cross' ? 2.4 + Math.random() * 0.65 :
+                    chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 2.05 + Math.random() * 0.55 :
+                      chargePattern === 'scatter' || chargePattern === 'trident' ? 2.25 + Math.random() * 0.65 :
+                        1.8 + Math.random() * 0.5
+                : chargePattern === 'rotate' ? 3.45 + Math.random() * 0.9 :
+                  chargePattern === 'cross' ? 3.25 + Math.random() * 0.8 :
+                    chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 2.95 + Math.random() * 0.8 :
+                      chargePattern === 'scatter' ? 3.45 + Math.random() * 1.1 :
+                        chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
+                          chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
+                            2.45 + Math.random() * 0.85
+              fireCooldown = Math.max(fireCooldown, wasRapidCharge ? 3.2 : chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)
+            }
+          }
         } else {
           chargeCooldown = Math.max(0, chargeCooldown - dt)
           if (chargeCooldown <= 0) {
             const hpRatio = enemy.hp / enemy.maxHp
             const roll = Math.random()
-            rapidCharge = Math.random() < (hpRatio < 0.36 ? 0.55 : hpRatio < 0.72 ? 0.38 : 0.22)
-            chargeTimer = rapidCharge ? FINAL_BOSS_BEAM_CHARGE_SECONDS * (0.46 + Math.random() * 0.14) : FINAL_BOSS_BEAM_CHARGE_SECONDS
-            chargePattern =
-              hpRatio < 0.34
+            const volleyChance = hpRatio < 0.36 ? 0.42 : hpRatio < 0.72 ? 0.32 : 0.2
+            if (beamVolleyLeft <= 0 && Math.random() < volleyChance) {
+              beamVolleyLeft = 3 + Math.floor(Math.random() * (hpRatio < 0.36 ? 4 : 3))
+            }
+            rapidCharge = beamVolleyLeft > 0 || Math.random() < (hpRatio < 0.36 ? 0.55 : hpRatio < 0.72 ? 0.38 : 0.22)
+            chargeTimer = rapidCharge ? FINAL_BOSS_BEAM_CHARGE_SECONDS * (beamVolleyLeft > 0 ? 0.28 + Math.random() * 0.08 : 0.42 + Math.random() * 0.13) : FINAL_BOSS_BEAM_CHARGE_SECONDS
+            chargePattern = beamVolleyLeft > 0
+              ? roll < 0.22 ? 'single' : roll < 0.43 ? 'pincer' : roll < 0.66 ? 'diagonal' : roll < 0.86 ? 'horizontal' : 'trident'
+              : hpRatio < 0.34
                 ? roll < 0.14 ? 'single' : roll < 0.27 ? 'pincer' : roll < 0.4 ? 'trident' : roll < 0.52 ? 'scatter' : roll < 0.66 ? 'diagonal' : roll < 0.78 ? 'horizontal' : roll < 0.91 ? 'cross' : 'rotate'
                 : hpRatio < 0.68
                   ? roll < 0.25 ? 'single' : roll < 0.45 ? 'pincer' : roll < 0.62 ? 'trident' : roll < 0.75 ? 'diagonal' : roll < 0.88 ? 'horizontal' : 'cross'
@@ -8769,8 +8783,8 @@ export function GradiusRaid({
                 vy: (aimY / mag) * 6,
                 damage: 1,
                 kind: 'squidBubble',
-                radius: 5.8,
-                hp: 7 + stageRef.current,
+                radius: 10.5,
+                hp: Math.round(125 + stageRef.current * 9 + getPowerScore(playerRef.current) * 5.2 + (remotePlayerRef.current ? getPowerScore(remotePlayerRef.current) * 2.5 : 0)),
                 splitLevel: 0,
                 life: 18,
                 maxLife: 18,
@@ -8926,6 +8940,7 @@ export function GradiusRaid({
       enemy.chargeLane = chargeLane
       enemy.chargePattern = chargePattern
       enemy.rapidCharge = rapidCharge
+      enemy.beamVolleyLeft = beamVolleyLeft
 
       if ((enemy.isMiniBoss || enemy.y < HEIGHT + 14) && enemy.hp > 0) {
         enemies[liveEnemyCount] = enemy
@@ -8977,27 +8992,27 @@ export function GradiusRaid({
 
     const splitSquidBubble = (bubble: Shot) => {
       const splitLevel = bubble.splitLevel ?? 0
-      spawnSparks(bubble.x, bubble.y, '#f0abfc', splitLevel >= 2 ? 20 : 34, 7)
-      addRipple(bubble.x, bubble.y, '#f472b6', splitLevel >= 2 ? 10 : 15)
-      playGameSound(splitLevel >= 2 ? 'explosion' : 'hit')
-      if (splitLevel >= 2) return
-      const childCount = splitLevel === 0 ? 3 : 2
+      spawnSparks(bubble.x, bubble.y, '#f0abfc', splitLevel >= 5 ? 18 : 46, 7)
+      addRipple(bubble.x, bubble.y, '#f472b6', splitLevel >= 4 ? 9 : 17)
+      playGameSound(splitLevel >= 4 ? 'explosion' : 'hit')
+      if (splitLevel >= 5) return
+      const childCount = splitLevel === 0 ? 4 : splitLevel === 1 ? 3 : 2
       for (let i = 0; i < childCount; i += 1) {
         const angle = (i / childCount) * Math.PI * 2 + Math.random() * 0.55
-        const radius = Math.max(1.8, bubble.radius * 0.62)
+        const radius = Math.max(1.25, bubble.radius * 0.64)
         enemyShotsRef.current.push({
           id: shotId++,
           x: bubble.x + Math.cos(angle) * radius * 0.8,
           y: bubble.y + Math.sin(angle) * radius * 0.8,
-          vx: Math.cos(angle) * (5 + splitLevel * 2),
-          vy: Math.sin(angle) * (5 + splitLevel * 2),
+          vx: Math.cos(angle) * (5.5 + splitLevel * 2.1),
+          vy: Math.sin(angle) * (5.5 + splitLevel * 2.1),
           damage: 1,
           kind: 'squidBubble',
           radius,
-          hp: Math.max(2, Math.ceil((bubble.hp ?? 5) * 0.55)),
+          hp: Math.max(10, Math.ceil((bubble.hp ?? 40) * 0.52)),
           splitLevel: splitLevel + 1,
-          life: 14 - splitLevel * 2,
-          maxLife: 14 - splitLevel * 2,
+          life: Math.max(7, 20 - splitLevel * 2),
+          maxLife: Math.max(7, 20 - splitLevel * 2),
         })
       }
     }
@@ -9926,4 +9941,5 @@ export function GradiusRaid({
     </div>
   )
 }
+
 
