@@ -4610,36 +4610,36 @@ function drawPowerPickupIcon(ctx: CanvasRenderingContext2D, type: PowerKind, siz
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     ctx.globalAlpha = 0.85
-    const beam = ctx.createLinearGradient(0, -r * 1.45, 0, r * 1.45)
+    const beam = ctx.createLinearGradient(0, -r * 1.08, 0, r * 1.08)
     beam.addColorStop(0, 'rgba(34,211,238,0)')
     beam.addColorStop(0.18, 'rgba(34,211,238,0.7)')
     beam.addColorStop(0.5, 'rgba(255,255,255,0.95)')
     beam.addColorStop(0.82, 'rgba(34,211,238,0.7)')
     beam.addColorStop(1, 'rgba(34,211,238,0)')
     ctx.strokeStyle = 'rgba(34,211,238,0.38)'
-    ctx.lineWidth = Math.max(5, size * 0.15)
+    ctx.lineWidth = Math.max(2.6, size * 0.08)
     ctx.beginPath()
-    ctx.moveTo(0, -r * 1.35)
-    ctx.lineTo(0, r * 1.35)
+    ctx.moveTo(0, -r * 1.0)
+    ctx.lineTo(0, r * 1.0)
     ctx.stroke()
     ctx.strokeStyle = beam
-    ctx.lineWidth = Math.max(2.4, size * 0.075)
+    ctx.lineWidth = Math.max(1.4, size * 0.045)
     ctx.beginPath()
-    ctx.moveTo(0, -r * 1.45)
-    ctx.lineTo(0, r * 1.45)
+    ctx.moveTo(0, -r * 1.08)
+    ctx.lineTo(0, r * 1.08)
     ctx.stroke()
     ctx.strokeStyle = 'rgba(236,254,255,0.9)'
-    ctx.lineWidth = Math.max(1, size * 0.032)
+    ctx.lineWidth = Math.max(0.8, size * 0.024)
     ctx.beginPath()
-    ctx.moveTo(0, -r * 1.15)
-    ctx.lineTo(0, r * 1.15)
+    ctx.moveTo(0, -r * 0.82)
+    ctx.lineTo(0, r * 0.82)
     ctx.stroke()
     for (const side of [-1, 1]) {
       ctx.strokeStyle = 'rgba(125,249,255,0.6)'
       ctx.lineWidth = Math.max(0.8, size * 0.022)
       ctx.beginPath()
-      ctx.moveTo(side * r * 0.55, -r * 0.9)
-      ctx.quadraticCurveTo(side * r * 0.95, 0, side * r * 0.55, r * 0.9)
+      ctx.moveTo(side * r * 0.42, -r * 0.62)
+      ctx.quadraticCurveTo(side * r * 0.72, 0, side * r * 0.42, r * 0.62)
       ctx.stroke()
     }
     ctx.restore()
@@ -6616,9 +6616,9 @@ export function GradiusRaid({
       const mag = Math.hypot(shot.vx, shot.vy) || 1
       const ux = shot.vx / mag
       const uy = shot.vy / mag
-      const length = 136 * visualScale
-      const width = Math.max(12, (shot.radius * 5.2) * visualScale)
-      const coreWidth = Math.max(2.5, width * 0.22)
+      const length = 76 * visualScale
+      const width = Math.max(5, (shot.radius * 2.8) * visualScale)
+      const coreWidth = Math.max(1.3, width * 0.24)
       const headX = x + ux * length * 0.48
       const headY = y + uy * length * 0.48
       const tailX = x - ux * length * 0.62
@@ -6633,20 +6633,20 @@ export function GradiusRaid({
       ctx.save()
       ctx.globalCompositeOperation = 'lighter'
       ctx.strokeStyle = 'rgba(14,165,233,0.24)'
-      ctx.lineWidth = width * 1.9
+      ctx.lineWidth = width * 1.28
       ctx.lineCap = 'round'
       ctx.beginPath()
       ctx.moveTo(headX, headY)
       ctx.lineTo(tailX, tailY)
       ctx.stroke()
-      ctx.strokeStyle = 'rgba(56,189,248,0.48)'
-      ctx.lineWidth = width
+      ctx.strokeStyle = 'rgba(56,189,248,0.42)'
+      ctx.lineWidth = width * 0.68
       ctx.beginPath()
       ctx.moveTo(headX, headY)
       ctx.lineTo(tailX, tailY)
       ctx.stroke()
       ctx.strokeStyle = beam
-      ctx.lineWidth = coreWidth * 2.2
+      ctx.lineWidth = coreWidth * 1.65
       ctx.beginPath()
       ctx.moveTo(headX, headY)
       ctx.lineTo(tailX, tailY)
@@ -6665,7 +6665,7 @@ export function GradiusRaid({
         ctx.lineTo(tailX + normalX * side * width * 0.52, tailY + normalY * side * width * 0.52)
         ctx.stroke()
       }
-      drawRadialEllipse(ctx, headX, headY, width * 0.56, width * 0.56, [
+      drawRadialEllipse(ctx, headX, headY, width * 0.38, width * 0.38, [
         [0, 'rgba(255,255,255,0.75)'],
         [0.38, 'rgba(34,211,238,0.52)'],
         [1, 'rgba(34,211,238,0)'],
@@ -8498,11 +8498,15 @@ export function GradiusRaid({
     }
     shotsRef.current = liveShots
 
+    const expiredSquidBubbles: Shot[] = []
     const liveEnemyShots: Shot[] = []
     for (const shot of enemyShotsRef.current) {
       if (shot.life !== undefined) {
         shot.life = Math.max(0, shot.life - dt)
-        if (shot.life <= 0) continue
+        if (shot.life <= 0) {
+          if (shot.kind === 'squidBubble' && (shot.splitLevel ?? 0) < 5) expiredSquidBubbles.push({ ...shot })
+          continue
+        }
       }
       if (shot.kind === 'beam' && shot.angle !== undefined && shot.spin) {
         shot.angle += shot.spin * dt
@@ -8784,7 +8788,7 @@ export function GradiusRaid({
                 damage: 1,
                 kind: 'squidBubble',
                 radius: 10.5,
-                hp: Math.round(125 + stageRef.current * 9 + getPowerScore(playerRef.current) * 5.2 + (remotePlayerRef.current ? getPowerScore(remotePlayerRef.current) * 2.5 : 0)),
+                hp: Math.round(360 + stageRef.current * 24 + getPowerScore(playerRef.current) * 16 + (remotePlayerRef.current ? getPowerScore(remotePlayerRef.current) * 8 : 0)),
                 splitLevel: 0,
                 life: 18,
                 maxLife: 18,
@@ -9009,13 +9013,15 @@ export function GradiusRaid({
           damage: 1,
           kind: 'squidBubble',
           radius,
-          hp: Math.max(10, Math.ceil((bubble.hp ?? 40) * 0.52)),
+          hp: Math.max(26, Math.ceil((bubble.hp ?? 120) * 0.62)),
           splitLevel: splitLevel + 1,
           life: Math.max(7, 20 - splitLevel * 2),
           maxLife: Math.max(7, 20 - splitLevel * 2),
         })
       }
     }
+
+    for (const bubble of expiredSquidBubbles) splitSquidBubble(bubble)
 
     for (const shot of shotsRef.current) {
       if (shot.y <= -50) continue
@@ -9027,7 +9033,11 @@ export function GradiusRaid({
           Math.abs(shot.y - bubble.y) <= hitRange &&
           distSq(shot, bubble) <= hitRange * hitRange
         ) {
-          bubble.hp = (bubble.hp ?? 1) - shot.damage
+          const bubbleLevel = bubble.splitLevel ?? 0
+          const bubbleArmor = bubbleLevel === 0 ? 0.42 : bubbleLevel === 1 ? 0.5 : bubbleLevel === 2 ? 0.58 : 0.68
+          const bubbleHitCap = bubbleLevel === 0 ? 26 : bubbleLevel === 1 ? 22 : bubbleLevel === 2 ? 18 : 14
+          const bubbleDamage = Math.max(1, Math.ceil(Math.min(shot.damage, bubbleHitCap) * bubbleArmor))
+          bubble.hp = (bubble.hp ?? 1) - bubbleDamage
           spawnSparks(shot.x, shot.y, '#f0abfc', 5, 5)
           if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
