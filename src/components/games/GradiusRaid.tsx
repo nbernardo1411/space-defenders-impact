@@ -6776,7 +6776,9 @@ export function GradiusRaid({
     const drawSquidBubble = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
-      const radius = Math.max(26, shot.radius * visualScale * 7)
+      const splitLevel = shot.splitLevel ?? 0
+      const minRadius = Math.max(8, 26 - splitLevel * 5)
+      const radius = Math.max(minRadius, shot.radius * visualScale * 7)
       const pulse = 0.85 + Math.sin(time / 160 + shot.id) * 0.12
       ctx.save()
       ctx.globalCompositeOperation = 'lighter'
@@ -9009,14 +9011,14 @@ export function GradiusRaid({
 
     const splitSquidBubble = (bubble: Shot) => {
       const splitLevel = bubble.splitLevel ?? 0
-      spawnSparks(bubble.x, bubble.y, '#f0abfc', splitLevel >= 5 ? 18 : 46, 7)
-      addRipple(bubble.x, bubble.y, '#f472b6', splitLevel >= 4 ? 9 : 17)
-      playGameSound(splitLevel >= 4 ? 'explosion' : 'hit')
-      if (splitLevel >= 5) return
-      const childCount = splitLevel === 0 ? 4 : splitLevel === 1 ? 3 : 2
+      spawnSparks(bubble.x, bubble.y, '#f0abfc', splitLevel >= 2 ? 18 : 38, 7)
+      addRipple(bubble.x, bubble.y, '#f472b6', splitLevel >= 2 ? 9 : 15)
+      playGameSound(splitLevel >= 2 ? 'explosion' : 'hit')
+      if (splitLevel >= 2) return
+      const childCount = 2
       for (let i = 0; i < childCount; i += 1) {
         const angle = (i / childCount) * Math.PI * 2 + Math.random() * 0.55
-        const radius = Math.max(1.25, bubble.radius * 0.64)
+        const radius = Math.max(0.9, bubble.radius * 0.58)
         spawnedSquidBubbles.push({
           id: shotId++,
           x: bubble.x + Math.cos(angle) * radius * 0.8,
@@ -9026,10 +9028,10 @@ export function GradiusRaid({
           damage: 1,
           kind: 'squidBubble',
           radius,
-          hp: Math.max(26, Math.ceil((bubble.hp ?? 120) * 0.62)),
+          hp: Math.max(14, Math.ceil((bubble.hp ?? 80) * 0.5)),
           splitLevel: splitLevel + 1,
-          life: Math.max(7, 20 - splitLevel * 2),
-          maxLife: Math.max(7, 20 - splitLevel * 2),
+          life: Math.max(6, 13 - splitLevel * 2),
+          maxLife: Math.max(6, 13 - splitLevel * 2),
           retargetTime: 0.55,
         })
       }
@@ -9975,6 +9977,8 @@ export function GradiusRaid({
     </div>
   )
 }
+
+
 
 
 
