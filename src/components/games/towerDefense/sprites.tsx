@@ -443,9 +443,7 @@ export function AlienShip({ variant, isBoss, isMiniBoss, isFinalBoss, bossKind, 
     hydra: { top: '#5b317f', mid: '#281447', bottom: '#0c0517', dark: '#090211', spine: '#3b1468', eyeA: '#ede9fe', eyeB: '#8b5cf6' },
     gate: { top: '#2f4057', mid: '#172033', bottom: '#050814', dark: '#02040b', spine: '#263249', eyeA: '#fee2e2', eyeB: '#ef4444' },
     super: { top: '#583044', mid: '#2b1426', bottom: '#100710', dark: '#09040a', spine: '#4a1939', eyeA: '#fef3c7', eyeB: '#f59e0b' },
-    squid: { top: '#c026d3', mid: '#5b168a', bottom: '#070012', dark: '#05000b', spine: '#7e22ce', eyeA: '#fef08a', eyeB: '#f97316' },
-    snake: { top: '#fef3c7', mid: '#475569', bottom: '#020617', dark: '#020617', spine: '#a16207', eyeA: '#cffafe', eyeB: '#22d3ee' },
-    final: { top: '#fef3c7', mid: '#a16207', bottom: '#120a02', dark: '#05070c', spine: '#713f12', eyeA: '#ecfeff', eyeB: '#22d3ee' },
+    final: { top: '#39101f', mid: '#160510', bottom: '#040006', dark: '#030005', spine: '#4c0519', eyeA: '#fff7ed', eyeB: '#fb7185' },
     stalker: { top: '#135e70', mid: '#073544', bottom: '#031016', dark: '#031117', spine: '#084556', eyeA: '#cffafe', eyeB: '#22d3ee' },
     brood: { top: '#6d3589', mid: '#35164a', bottom: '#0f0617', dark: '#09020f', spine: '#4c1d5f', eyeA: '#fae8ff', eyeB: '#d946ef' },
     lancer: { top: '#713044', mid: '#3d1422', bottom: '#12050a', dark: '#0b0306', spine: '#5f162d', eyeA: '#ffe4e6', eyeB: '#f43f5e' },
@@ -554,97 +552,6 @@ export function AlienShip({ variant, isBoss, isMiniBoss, isFinalBoss, bossKind, 
     )
   }
 
-  if (isBoss && bossKind === 'squid') {
-    return (
-      <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 7px 18px #000c)' }}>
-        {defs}
-        <path d="M32 1 C43 11 49 27 48 41 C46 53 39 61 32 63 C25 61 18 53 16 41 C15 27 21 11 32 1 Z" fill="#140018" opacity="0.98" />
-        <path d="M32 2 C43 12 47 28 44 42 C42 51 37 57 32 59 C27 57 22 51 20 42 C17 28 21 12 32 2 Z" fill={shell} stroke="#f0abfc" strokeWidth="0.9" />
-        <path d="M32 6 C39 16 42 30 40 40 C38 48 35 53 32 55 C29 53 26 48 24 40 C22 30 25 16 32 6 Z" fill={paint} opacity="0.9" />
-        <path d="M21 21 L4 32 L14 38 L22 32 Z M43 21 L60 32 L50 38 L42 32 Z" fill={spine} stroke="#d946ef" strokeWidth="0.7" />
-        <path d="M18 29 L2 42 L12 47 L21 37 Z M46 29 L62 42 L52 47 L43 37 Z" fill="#21052f" stroke="#a855f7" strokeWidth="0.75" />
-        <path d="M32 5 L37 20 L39 39 L32 53 L25 39 L27 20 Z" fill="#ffffff12" />
-        <path d="M32 6 L32 54 M25 19 C29 22 35 22 39 19 M23 31 C29 35 35 35 41 31 M25 43 C29 47 35 47 39 43" stroke="#f5d0fe" strokeWidth="0.7" fill="none" opacity="0.58" />
-        <ellipse cx="32" cy="30" rx="7.5" ry="13" fill="#13040d" stroke="#facc15" strokeWidth="0.7" />
-        <ellipse cx="32" cy="30" rx="4.3" ry="10" fill="#f97316" opacity="0.95" />
-        <ellipse cx="32" cy="30" rx="1.8" ry="8.4" fill="#111827" />
-        <path d="M32 18 L34 29 L32 43 L30 29 Z" fill="#fef08a" opacity="0.42" />
-        <g opacity="0.9">
-          <circle cx="26" cy="15" r="1" fill="#bef264" /><circle cx="38" cy="15" r="1" fill="#bef264" />
-          <circle cx="24" cy="22" r="0.9" fill="#84cc16" /><circle cx="40" cy="22" r="0.9" fill="#84cc16" />
-          <circle cx="23" cy="30" r="0.8" fill="#bef264" /><circle cx="41" cy="30" r="0.8" fill="#bef264" />
-          <circle cx="25" cy="38" r="0.75" fill="#84cc16" /><circle cx="39" cy="38" r="0.75" fill="#84cc16" />
-          <circle cx="29" cy="45" r="0.65" fill="#bef264" /><circle cx="35" cy="45" r="0.65" fill="#bef264" />
-        </g>
-        <path d="M23 42 C12 49 8 55 7 63 M27 43 C21 51 19 57 20 64 M31 45 C29 53 28 59 28 64 M33 45 C35 53 36 59 36 64 M37 43 C43 51 45 57 44 64 M41 42 C52 49 56 55 57 63" stroke="#3b0764" strokeWidth="5" fill="none" strokeLinecap="round" />
-        <path d="M23 42 C12 49 8 55 7 63 M27 43 C21 51 19 57 20 64 M31 45 C29 53 28 59 28 64 M33 45 C35 53 36 59 36 64 M37 43 C43 51 45 57 44 64 M41 42 C52 49 56 55 57 63" stroke="#d946ef" strokeWidth="1.7" fill="none" strokeLinecap="round" opacity="0.85" />
-        <circle cx="7" cy="62" r="3.2" fill="#f0abfc" opacity="0.75" /><circle cx="57" cy="62" r="3.2" fill="#f0abfc" opacity="0.75" />
-        <circle cx="20" cy="63" r="1.7" fill="#f9a8d4" opacity="0.68" /><circle cx="44" cy="63" r="1.7" fill="#f9a8d4" opacity="0.68" />
-        {alienSurfaceDetails}
-      </svg>
-    )
-  }
-
-  if (isBoss && bossKind === 'snake') {
-    return (
-      <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 7px 18px #000c)' }}>
-        {defs}
-        <path d="M46 6 C24 8 19 24 35 30 C54 37 48 54 27 58 C17 60 14 52 23 46" stroke="#020617" strokeWidth="14" fill="none" strokeLinecap="round" />
-        <path d="M46 6 C24 8 19 24 35 30 C54 37 48 54 27 58 C17 60 14 52 23 46" stroke="#334155" strokeWidth="11" fill="none" strokeLinecap="round" />
-        <path d="M46 6 C24 8 19 24 35 30 C54 37 48 54 27 58 C17 60 14 52 23 46" stroke="#fef3c7" strokeWidth="3.2" fill="none" strokeLinecap="round" opacity="0.72" />
-        <path d="M43 9 L56 3 L62 21 L52 32 L40 27 Z M21 9 L8 3 L2 21 L12 32 L24 27 Z" fill="#111827" stroke="#fef3c7" strokeWidth="0.75" />
-        <path d="M32 2 C45 5 52 15 48 29 C43 38 21 38 16 29 C12 15 19 5 32 2 Z" fill={shell} stroke="#fde68a" strokeWidth="0.95" />
-        <path d="M32 6 C40 9 44 17 42 26 C39 32 25 32 22 26 C20 17 24 9 32 6 Z" fill={paint} opacity="0.88" />
-        <path d="M20 23 C10 20 7 13 7 4 M44 23 C54 20 57 13 57 4" stroke="#030712" strokeWidth="4.2" fill="none" strokeLinecap="round" opacity="0.84" />
-        <path d="M20 23 C11 20 9 13 10 6 M44 23 C53 20 55 13 54 6" stroke="#22d3ee" strokeWidth="1.4" fill="none" strokeLinecap="round" opacity="0.62" />
-        <path d="M27 24 L31 28 L26 39 M37 24 L33 28 L38 39" stroke="#fef3c7" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-        <ellipse cx="26" cy="20" rx="3" ry="4" fill="#f59e0b" /><ellipse cx="38" cy="20" rx="3" ry="4" fill="#f59e0b" />
-        <circle cx="26" cy="20" r="1" fill="#fff7ed" /><circle cx="38" cy="20" r="1" fill="#fff7ed" />
-        <path d="M32 4 L36 11 L32 17 L28 11 Z M32 18 L35 24 L32 29 L29 24 Z" fill="#fde68a" opacity="0.75" />
-        <g opacity="0.9">
-          <circle cx="32" cy="10" r="0.9" fill="#22d3ee" /><circle cx="28" cy="14" r="0.75" fill="#67e8f9" /><circle cx="36" cy="14" r="0.75" fill="#67e8f9" />
-          <circle cx="30" cy="29" r="0.75" fill="#67e8f9" /><circle cx="34" cy="29" r="0.75" fill="#67e8f9" />
-          <circle cx="41" cy="35" r="1" fill="#22d3ee" /><circle cx="50" cy="43" r="0.9" fill="#22d3ee" /><circle cx="42" cy="53" r="0.85" fill="#22d3ee" />
-          <circle cx="29" cy="56" r="0.75" fill="#22d3ee" /><circle cx="20" cy="51" r="0.75" fill="#22d3ee" />
-        </g>
-        <path d="M23 46 L12 49 L20 55" fill="#020617" stroke="#fef3c7" strokeWidth="0.7" />
-        <path d="M19 53 L11 61 L24 57" fill="#111827" stroke="#fef3c7" strokeWidth="0.75" />
-        <path d="M44 9 C40 14 36 16 32 16 C28 16 24 14 20 9 M20 28 C27 33 37 33 44 28" stroke="#ffffff66" strokeWidth="0.8" fill="none" strokeLinecap="round" />
-        {alienSurfaceDetails}
-      </svg>
-    )
-  }
-
-  if (isFinalBoss) {
-    return (
-      <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 8px 20px #000d)' }}>
-        {defs}
-        <path d="M32 0 L43 14 L47 29 L62 38 L50 47 L44 62 L32 55 L20 62 L14 47 L2 38 L17 29 L21 14 Z" fill="#05060b" stroke="#fef3c7" strokeWidth="0.75" />
-        <path d="M32 1 L40 15 L41 49 L32 63 L23 49 L24 15 Z" fill="#facc15" stroke="#fff7ad" strokeWidth="0.9" />
-        <path d="M32 4 L37 18 L37 47 L32 56 L27 47 L27 18 Z" fill="#854d0e" opacity="0.82" />
-        <path d="M21 16 L8 34 L16 45 L24 30 Z M43 16 L56 34 L48 45 L40 30 Z" fill="#b45309" stroke="#fde68a" strokeWidth="0.75" />
-        <path d="M17 31 L4 48 L14 55 L24 41 Z M47 31 L60 48 L50 55 L40 41 Z" fill="#241106" stroke="#f59e0b" strokeWidth="0.75" />
-        <path d="M10 35 L1 30 L5 44 M54 35 L63 30 L59 44 M13 54 L5 63 L21 60 M51 54 L59 63 L43 60" stroke="#020617" strokeWidth="4" fill="none" strokeLinecap="round" />
-        <path d="M10 35 L2 31 M54 35 L62 31 M13 54 L6 62 M51 54 L58 62" stroke="#fbbf24" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-        <path d="M32 3 L36 13 L32 22 L28 13 Z M32 24 L39 31 L32 39 L25 31 Z M32 42 L37 48 L32 56 L27 48 Z" fill="#fef3c7" opacity="0.8" />
-        <path d="M19 30 L26 18 M45 30 L38 18 M16 44 L25 36 M48 44 L39 36 M23 52 L32 45 L41 52" stroke="#fff7ad" strokeWidth="0.85" fill="none" strokeLinecap="round" opacity="0.7" />
-        <path d="M14 36 L25 28 L22 47 L13 49 Z M50 36 L39 28 L42 47 L51 49 Z" fill="#22d3ee" stroke="#ecfeff" strokeWidth="0.7" opacity="0.88" />
-        <path d="M17 37 L24 33 M17 41 L23 38 M17 45 L22 43 M47 37 L40 33 M47 41 L41 38 M47 45 L42 43" stroke="#083344" strokeWidth="1.1" strokeLinecap="round" opacity="0.7" />
-        <circle cx="32" cy="39" r="9.2" fill="#041019" stroke="#ecfeff" strokeWidth="0.9" />
-        <circle cx="32" cy="39" r="6.2" fill={eye} opacity="0.88" />
-        <circle cx="32" cy="39" r="2.7" fill="#ecfeff" />
-        <path d="M32 14 V54 M25 20 L39 20 M24 30 L40 30 M23 47 L41 47" stroke="#3b2106" strokeWidth="1" opacity="0.58" />
-        <g opacity="0.95">
-          <circle cx="13" cy="17" r="1.4" fill="#22d3ee" /><circle cx="51" cy="17" r="1.4" fill="#22d3ee" />
-          <circle cx="8" cy="51" r="1.3" fill="#22d3ee" /><circle cx="56" cy="51" r="1.3" fill="#22d3ee" />
-          <ellipse cx="8" cy="25" rx="3.8" ry="1.2" fill="#22d3ee" opacity="0.66" /><ellipse cx="56" cy="25" rx="3.8" ry="1.2" fill="#22d3ee" opacity="0.66" />
-          <ellipse cx="8" cy="57" rx="4.4" ry="1.1" fill="#22d3ee" opacity="0.55" /><ellipse cx="56" cy="57" rx="4.4" ry="1.1" fill="#22d3ee" opacity="0.55" />
-        </g>
-        <path d="M32 56 L29 64 H35 Z" fill="#22d3ee" opacity="0.78" />
-        {alienSurfaceDetails}
-      </svg>
-    )
-  }
   // Final boss: biomechanical star fortress.
   if (isFinalBoss) {
     return (
@@ -1018,4 +925,3 @@ export function MothershipSpawnIcon({ size }: { size: number }) {
     </svg>
   )
 }
-
