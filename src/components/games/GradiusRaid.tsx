@@ -2831,6 +2831,190 @@ function drawReferenceDreadshipBossDetails(ctx: CanvasRenderingContext2D, size: 
   }
   ctx.restore()
 }
+function drawReferenceSquidBossPaintPass(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  ctx.strokeStyle = 'rgba(250,232,255,0.42)'
+  ctx.lineWidth = Math.max(0.8, size * 0.0032)
+  for (let row = 0; row < 9; row += 1) {
+    const y = -size * 0.56 + row * size * 0.074
+    const width = size * (0.042 + row * 0.014)
+    ctx.beginPath()
+    ctx.moveTo(-width, y)
+    ctx.quadraticCurveTo(0, y + size * 0.026, width, y)
+    ctx.stroke()
+  }
+
+  for (const side of [-1, 1]) {
+    ctx.strokeStyle = 'rgba(244,114,182,0.52)'
+    ctx.lineWidth = Math.max(1, size * 0.004)
+    for (let rib = 0; rib < 8; rib += 1) {
+      const y = -size * (0.38 - rib * 0.055)
+      ctx.beginPath()
+      ctx.moveTo(side * size * 0.07, y)
+      ctx.lineTo(side * size * (0.19 + rib * 0.018), y + size * 0.035)
+      ctx.stroke()
+    }
+    ctx.strokeStyle = 'rgba(190,242,100,0.35)'
+    ctx.lineWidth = Math.max(0.8, size * 0.0028)
+    for (let vein = 0; vein < 5; vein += 1) {
+      ctx.beginPath()
+      ctx.moveTo(side * size * 0.18, -size * (0.28 - vein * 0.055))
+      ctx.quadraticCurveTo(side * size * 0.31, -size * (0.2 - vein * 0.042), side * size * 0.43, -size * (0.13 - vein * 0.03))
+      ctx.stroke()
+    }
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  const pulse = 0.65 + Math.sin(seconds * 3.4) * 0.18
+  for (let i = 0; i < 38; i += 1) {
+    const side = i % 2 === 0 ? -1 : 1
+    const row = Math.floor(i / 2)
+    const x = side * size * (0.055 + (row % 5) * 0.026)
+    const y = -size * 0.46 + row * size * 0.035
+    if (Math.abs(x) > size * (0.16 + row * 0.002) || y > size * 0.2) continue
+    drawRadialEllipse(ctx, x, y, size * 0.012, size * 0.012, [
+      [0, `rgba(255,255,255,${0.58 * pulse})`],
+      [0.45, `rgba(163,230,53,${0.68 * pulse})`],
+      [1, 'rgba(163,230,53,0)'],
+    ])
+  }
+
+  ctx.strokeStyle = 'rgba(244,114,182,0.38)'
+  ctx.lineWidth = Math.max(0.9, size * 0.003)
+  for (const side of [-1, 1]) {
+    for (let tentacle = 0; tentacle < 4; tentacle += 1) {
+      const baseX = side * size * (0.03 + tentacle * 0.045)
+      const startY = size * (0.23 + tentacle * 0.012)
+      for (let sucker = 0; sucker < 6; sucker += 1) {
+        const p = sucker / 5
+        const x = baseX + side * Math.sin(p * Math.PI + tentacle) * size * 0.055 + side * p * size * (0.1 + tentacle * 0.025)
+        const y = startY + p * size * (0.48 + tentacle * 0.08)
+        ctx.beginPath()
+        ctx.ellipse(x, y, size * 0.011, size * 0.006, side * 0.5, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+    }
+  }
+  ctx.restore()
+}
+
+function drawReferenceSnakeBossPaintPass(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  ctx.strokeStyle = 'rgba(251,191,36,0.58)'
+  ctx.lineWidth = Math.max(0.9, size * 0.0036)
+  for (let plate = 0; plate < 22; plate += 1) {
+    const p = plate / 21
+    const angle = p * Math.PI * 3.25 + seconds * 0.05
+    const radius = size * (0.29 - p * 0.11)
+    const x = Math.sin(angle) * radius + Math.sin(p * Math.PI * 5 + seconds * 0.45) * size * 0.018
+    const y = size * 0.58 - p * size * 0.9 + Math.cos(angle) * size * (0.075 - p * 0.02)
+    ctx.beginPath()
+    ctx.ellipse(x, y, size * (0.036 - p * 0.008), size * 0.012, angle, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  for (let node = 0; node < 18; node += 1) {
+    const p = node / 17
+    const angle = p * Math.PI * 3.25 + seconds * 0.05
+    const radius = size * (0.3 - p * 0.12)
+    const side = node % 2 === 0 ? -1 : 1
+    const x = Math.sin(angle) * radius + side * size * 0.032
+    const y = size * 0.58 - p * size * 0.9 + Math.cos(angle) * size * (0.075 - p * 0.02)
+    drawRadialEllipse(ctx, x, y, size * 0.016, size * 0.016, [
+      [0, 'rgba(255,255,255,0.82)'],
+      [0.45, 'rgba(34,211,238,0.76)'],
+      [1, 'rgba(34,211,238,0)'],
+    ])
+  }
+
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = 'rgba(254,243,199,0.82)'
+  ctx.strokeStyle = 'rgba(15,23,42,0.62)'
+  ctx.lineWidth = Math.max(0.8, size * 0.003)
+  for (let crown = 0; crown < 5; crown += 1) {
+    const x = (crown - 2) * size * 0.04
+    const y = -size * (0.46 - Math.abs(crown - 2) * 0.035)
+    ctx.beginPath()
+    ctx.moveTo(x, y - size * 0.035)
+    ctx.lineTo(x + size * 0.026, y + size * 0.018)
+    ctx.lineTo(x, y + size * 0.04)
+    ctx.lineTo(x - size * 0.026, y + size * 0.018)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  ctx.strokeStyle = 'rgba(236,254,255,0.58)'
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  ctx.beginPath()
+  ctx.moveTo(-size * 0.16, -size * 0.34)
+  ctx.quadraticCurveTo(-size * 0.3, -size * 0.13, -size * 0.12, size * 0.08)
+  ctx.moveTo(size * 0.16, -size * 0.34)
+  ctx.quadraticCurveTo(size * 0.3, -size * 0.13, size * 0.12, size * 0.08)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawReferenceDreadshipBossPaintPass(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  const shards = [
+    [-0.09, -0.55, -0.02, -0.49, -0.07, -0.37], [0.09, -0.55, 0.02, -0.49, 0.07, -0.37],
+    [-0.16, -0.34, -0.05, -0.27, -0.14, -0.12], [0.16, -0.34, 0.05, -0.27, 0.14, -0.12],
+    [-0.2, -0.06, -0.08, 0.02, -0.18, 0.18], [0.2, -0.06, 0.08, 0.02, 0.18, 0.18],
+    [-0.13, 0.24, -0.02, 0.31, -0.1, 0.48], [0.13, 0.24, 0.02, 0.31, 0.1, 0.48],
+  ] as const
+  ctx.strokeStyle = 'rgba(254,243,199,0.76)'
+  ctx.lineWidth = Math.max(0.85, size * 0.0034)
+  for (const [x1, y1, x2, y2, x3, y3] of shards) {
+    const grad = ctx.createLinearGradient(x1 * size, y1 * size, x3 * size, y3 * size)
+    grad.addColorStop(0, '#fff7ad')
+    grad.addColorStop(0.42, '#b45309')
+    grad.addColorStop(1, '#1c1008')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.moveTo(x1 * size, y1 * size)
+    ctx.lineTo(x2 * size, y2 * size)
+    ctx.lineTo(x3 * size, y3 * size)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  const pulse = 0.72 + Math.sin(seconds * 4.2) * 0.2
+  for (const side of [-1, 1]) {
+    for (let light = 0; light < 9; light += 1) {
+      drawRadialEllipse(ctx, side * size * (0.25 + (light % 3) * 0.07), -size * (0.36 - light * 0.086), size * 0.015, size * 0.026, [
+        [0, `rgba(255,255,255,${0.8 * pulse})`],
+        [0.42, `rgba(34,211,238,${0.72 * pulse})`],
+        [1, 'rgba(34,211,238,0)'],
+      ])
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(255,247,173,0.42)'
+  ctx.lineWidth = Math.max(0.8, size * 0.003)
+  ctx.globalCompositeOperation = 'source-over'
+  for (let seam = 0; seam < 12; seam += 1) {
+    const y = -size * 0.57 + seam * size * 0.092
+    ctx.beginPath()
+    ctx.moveTo(-size * (0.05 + seam * 0.006), y)
+    ctx.lineTo(0, y + size * 0.035)
+    ctx.lineTo(size * (0.05 + seam * 0.006), y)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
 function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
   const seconds = time / 1000
   ctx.save()
@@ -3006,6 +3190,7 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
   }
   drawReferenceSquidBossDetails(ctx, size, time)
   drawReferenceSquidBossFinishPass(ctx, size, time)
+  drawReferenceSquidBossPaintPass(ctx, size, time)
   ctx.restore()
 }
 
@@ -3230,6 +3415,7 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   ctx.stroke()
   drawReferenceSnakeBossDetails(ctx, size, time)
   drawReferenceSnakeBossFinishPass(ctx, size, time)
+  drawReferenceSnakeBossPaintPass(ctx, size, time)
   ctx.restore()
 }
 
@@ -3457,6 +3643,7 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
   }
   drawReferenceDreadshipBossDetails(ctx, size, time)
   drawReferenceDreadshipBossFinishPass(ctx, size, time)
+  drawReferenceDreadshipBossPaintPass(ctx, size, time)
   ctx.restore()
 }
 
@@ -8872,3 +9059,4 @@ export function GradiusRaid({
     </div>
   )
 }
+
