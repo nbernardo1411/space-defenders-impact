@@ -595,14 +595,14 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function getMaxActiveEliteEnemies(stage: number, isMultiplayer: boolean) {
-  return Math.round(clamp(1 + Math.floor(stage / 5) + (isMultiplayer ? 1 : 0), 1, isMultiplayer ? 4 : 3))
+  return Math.round(clamp(1 + Math.floor(Math.max(0, stage - ELITE_ENEMY_STAGE_START) / 7) + (isMultiplayer ? 1 : 0), 1, isMultiplayer ? 3 : 2))
 }
 
 function getEliteEnemyChance(stage: number, wave: number, trainSlot: number, hasFormationStyle: boolean) {
   if (stage < ELITE_ENEMY_STAGE_START) return 0
-  const formationPenalty = hasFormationStyle ? 0.46 : 1
-  const slotPenalty = trainSlot > 0 ? 0.74 : 1
-  return clamp((0.055 + stage * 0.006 + wave * 0.0025) * formationPenalty * slotPenalty, 0.035, 0.18)
+  const formationPenalty = hasFormationStyle ? 0.34 : 1
+  const slotPenalty = trainSlot > 0 ? 0.52 : 1
+  return clamp((0.038 + stage * 0.0035 + wave * 0.0015) * formationPenalty * slotPenalty, 0.02, 0.11)
 }
 
 function pickEliteEnemyKind(stage: number, wave: number, trainSlot: number): MiniBossKind {
@@ -2341,6 +2341,496 @@ function drawEtchedPanelLine(ctx: CanvasRenderingContext2D, points: Array<[numbe
   ctx.stroke()
 }
 
+function drawReferenceSquidBossFinishPass(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  const outer = ctx.createLinearGradient(0, -size * 0.78, 0, size * 0.28)
+  outer.addColorStop(0, '#f0abfc')
+  outer.addColorStop(0.18, '#a21caf')
+  outer.addColorStop(0.48, '#581c87')
+  outer.addColorStop(0.78, '#2e1065')
+  outer.addColorStop(1, '#05000a')
+  ctx.fillStyle = outer
+  ctx.strokeStyle = 'rgba(232,121,249,0.95)'
+  ctx.lineWidth = Math.max(2.2, size * 0.01)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.82)
+  ctx.lineTo(size * 0.2, -size * 0.46)
+  ctx.bezierCurveTo(size * 0.32, -size * 0.18, size * 0.31, size * 0.16, size * 0.14, size * 0.31)
+  ctx.lineTo(0, size * 0.38)
+  ctx.lineTo(-size * 0.14, size * 0.31)
+  ctx.bezierCurveTo(-size * 0.31, size * 0.16, -size * 0.32, -size * 0.18, -size * 0.2, -size * 0.46)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = 'rgba(40,6,74,0.96)'
+    ctx.strokeStyle = 'rgba(168,85,247,0.9)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.16, -size * 0.42)
+    ctx.lineTo(side * size * 0.52, -size * 0.24)
+    ctx.lineTo(side * size * 0.39, size * 0.02)
+    ctx.lineTo(side * size * 0.19, -size * 0.02)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, 0, -size * 0.08, size * 0.09, size * 0.23, [
+    [0, 'rgba(255,255,255,0.98)'],
+    [0.2, 'rgba(254,240,138,0.96)'],
+    [0.52, 'rgba(249,115,22,0.96)'],
+    [1, 'rgba(124,45,18,0.05)'],
+  ])
+  ctx.strokeStyle = 'rgba(20,6,28,0.96)'
+  ctx.lineWidth = Math.max(2.5, size * 0.013)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.27)
+  ctx.lineTo(0, size * 0.1)
+  ctx.stroke()
+
+  ctx.fillStyle = 'rgba(163,230,53,0.9)'
+  for (let i = 0; i < 96; i += 1) {
+    const band = Math.floor(i / 16)
+    const col = i % 16
+    const x = (col - 7.5) * size * 0.021
+    const y = -size * 0.56 + band * size * 0.09 + Math.abs(col - 7.5) * size * 0.012
+    if (Math.abs(x) > size * (0.155 + band * 0.012)) continue
+    ctx.beginPath()
+    ctx.arc(x, y, Math.max(0.9, size * 0.0046), 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  for (const side of [-1, 1]) {
+    for (let arm = 0; arm < 4; arm += 1) {
+      const startX = side * size * (0.06 + arm * 0.045)
+      const endX = side * size * (0.2 + arm * 0.13 + Math.sin(seconds * 1.3 + arm) * 0.045)
+      const endY = size * (0.48 + arm * 0.14)
+      ctx.strokeStyle = arm < 2 ? 'rgba(88,28,135,0.94)' : 'rgba(190,24,93,0.82)'
+      ctx.lineWidth = Math.max(2.4, size * (0.021 - arm * 0.0022))
+      ctx.beginPath()
+      ctx.moveTo(startX, size * 0.2)
+      ctx.bezierCurveTo(side * size * 0.2, size * 0.34, side * size * (0.02 + arm * 0.08), size * 0.48, endX, endY)
+      ctx.stroke()
+      if (arm % 2 === 0) {
+        drawRadialEllipse(ctx, endX, endY, size * 0.048, size * 0.048, [
+          [0, 'rgba(255,255,255,0.95)'],
+          [0.34, 'rgba(244,114,182,0.92)'],
+          [1, 'rgba(244,114,182,0)'],
+        ])
+      }
+    }
+  }
+  ctx.restore()
+}
+
+function drawReferenceSnakeBossFinishPass(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  for (const side of [-1, 1]) {
+    const hood = ctx.createLinearGradient(0, -size * 0.56, side * size * 0.48, size * 0.08)
+    hood.addColorStop(0, '#fef3c7')
+    hood.addColorStop(0.22, '#b7832f')
+    hood.addColorStop(0.58, '#1f2937')
+    hood.addColorStop(1, '#020617')
+    ctx.fillStyle = hood
+    ctx.strokeStyle = 'rgba(253,230,138,0.9)'
+    ctx.lineWidth = Math.max(2.2, size * 0.009)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.03, -size * 0.5)
+    ctx.bezierCurveTo(side * size * 0.46, -size * 0.48, side * size * 0.5, -size * 0.1, side * size * 0.2, size * 0.13)
+    ctx.lineTo(side * size * 0.04, size * 0.03)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.fillStyle = 'rgba(2,6,23,0.58)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.09, -size * 0.34)
+    ctx.lineTo(side * size * 0.29, -size * 0.18)
+    ctx.lineTo(side * size * 0.1, size * 0.04)
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  const head = ctx.createRadialGradient(-size * 0.04, -size * 0.42, size * 0.02, 0, -size * 0.22, size * 0.32)
+  head.addColorStop(0, '#fff7ad')
+  head.addColorStop(0.28, '#b6a27c')
+  head.addColorStop(0.62, '#1f2937')
+  head.addColorStop(1, '#020617')
+  ctx.fillStyle = head
+  ctx.strokeStyle = 'rgba(253,230,138,0.94)'
+  ctx.lineWidth = Math.max(2, size * 0.01)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.56)
+  ctx.bezierCurveTo(size * 0.17, -size * 0.5, size * 0.22, -size * 0.22, size * 0.1, size * 0.08)
+  ctx.bezierCurveTo(size * 0.04, size * 0.2, -size * 0.04, size * 0.2, -size * 0.1, size * 0.08)
+  ctx.bezierCurveTo(-size * 0.22, -size * 0.22, -size * 0.17, -size * 0.5, 0, -size * 0.56)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.globalCompositeOperation = 'lighter'
+  for (const side of [-1, 1]) {
+    drawRadialEllipse(ctx, side * size * 0.07, -size * 0.18, size * 0.04, size * 0.05, [
+      [0, 'rgba(255,255,255,0.98)'],
+      [0.32, 'rgba(251,191,36,0.98)'],
+      [1, 'rgba(249,115,22,0)'],
+    ])
+    for (let dot = 0; dot < 9; dot += 1) {
+      drawRadialEllipse(ctx, side * size * (0.12 + (dot % 3) * 0.045), -size * (0.42 - dot * 0.07), size * 0.017, size * 0.017, [
+        [0, 'rgba(255,255,255,0.85)'],
+        [0.45, 'rgba(34,211,238,0.78)'],
+        [1, 'rgba(34,211,238,0)'],
+      ])
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(253,230,138,0.82)'
+  ctx.lineWidth = Math.max(1.3, size * 0.0055)
+  for (let i = 0; i < 20; i += 1) {
+    const y = size * (0.55 - i * 0.055)
+    const x = Math.sin(i * 0.75 + seconds * 0.7) * size * 0.18
+    ctx.beginPath()
+    ctx.ellipse(x, y, size * (0.085 - i * 0.0016), size * 0.025, Math.sin(i) * 0.6, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'source-over'
+  const tailX = Math.sin(seconds * 0.7 + 2.8) * size * 0.2
+  ctx.fillStyle = '#111827'
+  ctx.strokeStyle = 'rgba(253,230,138,0.86)'
+  ctx.lineWidth = Math.max(1.4, size * 0.006)
+  ctx.beginPath()
+  ctx.moveTo(tailX - size * 0.035, size * 0.56)
+  ctx.quadraticCurveTo(tailX + size * 0.1, size * 0.67, tailX + size * 0.23, size * 0.8)
+  ctx.quadraticCurveTo(tailX + size * 0.06, size * 0.76, tailX - size * 0.03, size * 0.67)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, tailX + size * 0.17, size * 0.77, size * 0.025, size * 0.018, [
+    [0, 'rgba(255,255,255,0.78)'],
+    [0.45, 'rgba(34,211,238,0.55)'],
+    [1, 'rgba(34,211,238,0)'],
+  ])
+  ctx.restore()
+}
+
+function drawReferenceDreadshipBossFinishPass(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  const gold = ctx.createLinearGradient(0, -size * 0.7, 0, size * 0.68)
+  gold.addColorStop(0, '#fff7ad')
+  gold.addColorStop(0.22, '#d69e2e')
+  gold.addColorStop(0.55, '#7c3f0f')
+  gold.addColorStop(0.82, '#22140b')
+  gold.addColorStop(1, '#050506')
+  ctx.fillStyle = gold
+  ctx.strokeStyle = 'rgba(254,243,199,0.95)'
+  ctx.lineWidth = Math.max(2, size * 0.008)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.75)
+  ctx.lineTo(size * 0.17, -size * 0.42)
+  ctx.lineTo(size * 0.13, size * 0.45)
+  ctx.lineTo(0, size * 0.7)
+  ctx.lineTo(-size * 0.13, size * 0.45)
+  ctx.lineTo(-size * 0.17, -size * 0.42)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = gold
+    ctx.strokeStyle = 'rgba(251,191,36,0.88)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.18, -size * 0.5)
+    ctx.lineTo(side * size * 0.43, -size * 0.62)
+    ctx.lineTo(side * size * 0.32, -size * 0.24)
+    ctx.lineTo(side * size * 0.66, -size * 0.08)
+    ctx.lineTo(side * size * 0.42, size * 0.2)
+    ctx.lineTo(side * size * 0.2, size * 0.08)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.fillStyle = 'rgba(8,47,73,0.96)'
+    ctx.strokeStyle = 'rgba(125,249,255,0.9)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.28, -size * 0.22)
+    ctx.lineTo(side * size * 0.5, -size * 0.08)
+    ctx.lineTo(side * size * 0.34, size * 0.34)
+    ctx.lineTo(side * size * 0.18, size * 0.18)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, 0, size * 0.2, size * 0.17, size * 0.18, [
+    [0, 'rgba(255,255,255,0.98)'],
+    [0.26, 'rgba(125,249,255,0.96)'],
+    [0.64, 'rgba(14,165,233,0.62)'],
+    [1, 'rgba(14,165,233,0)'],
+  ])
+  for (let drone = 0; drone < 8; drone += 1) {
+    const angle = drone / 8 * Math.PI * 2 + seconds * 0.42
+    const dx = Math.cos(angle) * size * 0.79
+    const dy = size * 0.08 + Math.sin(angle) * size * 0.52
+    ctx.save()
+    ctx.translate(dx, dy)
+    ctx.rotate(angle)
+    ctx.fillStyle = 'rgba(14,165,233,0.46)'
+    ctx.strokeStyle = 'rgba(125,249,255,0.92)'
+    ctx.beginPath()
+    ctx.ellipse(0, 0, size * 0.052, size * 0.014, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  ctx.strokeStyle = 'rgba(125,249,255,0.86)'
+  ctx.lineWidth = Math.max(2.2, size * 0.009)
+  ctx.beginPath()
+  ctx.moveTo(0, size * 0.56)
+  ctx.lineTo(0, size * 0.82)
+  ctx.stroke()
+  drawRadialEllipse(ctx, 0, size * 0.72, size * 0.055, size * 0.18, [
+    [0, 'rgba(255,255,255,0.7)'],
+    [0.3, 'rgba(34,211,238,0.74)'],
+    [1, 'rgba(34,211,238,0)'],
+  ])
+  ctx.restore()
+}
+function drawReferenceSquidBossDetails(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  const mantle = ctx.createLinearGradient(0, -size * 0.68, 0, size * 0.28)
+  mantle.addColorStop(0, '#f0abfc')
+  mantle.addColorStop(0.16, '#8b5cf6')
+  mantle.addColorStop(0.48, '#581c87')
+  mantle.addColorStop(0.78, '#2e1065')
+  mantle.addColorStop(1, '#090211')
+  ctx.fillStyle = mantle
+  ctx.strokeStyle = 'rgba(232,121,249,0.86)'
+  ctx.lineWidth = Math.max(1.8, size * 0.008)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.73)
+  ctx.bezierCurveTo(size * 0.21, -size * 0.55, size * 0.32, -size * 0.1, size * 0.16, size * 0.3)
+  ctx.bezierCurveTo(size * 0.06, size * 0.43, -size * 0.06, size * 0.43, -size * 0.16, size * 0.3)
+  ctx.bezierCurveTo(-size * 0.32, -size * 0.1, -size * 0.21, -size * 0.55, 0, -size * 0.73)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = 'rgba(43,7,71,0.92)'
+    ctx.strokeStyle = 'rgba(168,85,247,0.82)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.18, -size * 0.38)
+    ctx.lineTo(side * size * 0.48, -size * 0.22)
+    ctx.lineTo(side * size * 0.34, size * 0.08)
+    ctx.lineTo(side * size * 0.16, size * 0.02)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, 0, -size * 0.1, size * 0.09, size * 0.22, [
+    [0, 'rgba(255,255,255,0.96)'],
+    [0.22, 'rgba(254,240,138,0.94)'],
+    [0.56, 'rgba(249,115,22,0.9)'],
+    [1, 'rgba(190,24,93,0.12)'],
+  ])
+  ctx.strokeStyle = 'rgba(15,23,42,0.9)'
+  ctx.lineWidth = Math.max(2, size * 0.012)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.27)
+  ctx.lineTo(0, size * 0.08)
+  ctx.stroke()
+
+  ctx.fillStyle = 'rgba(163,230,53,0.86)'
+  for (let i = 0; i < 78; i += 1) {
+    const row = i % 13
+    const col = Math.floor(i / 13)
+    const x = (row - 6) * size * 0.024 + Math.sin(col * 0.9 + seconds) * size * 0.006
+    const y = -size * 0.5 + col * size * 0.095 + Math.abs(row - 6) * size * 0.012
+    if (Math.abs(x) > size * (0.16 + col * 0.012)) continue
+    ctx.beginPath()
+    ctx.arc(x, y, Math.max(0.8, size * 0.0048), 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 3; i += 1) {
+      const baseX = side * size * (0.12 + i * 0.045)
+      const tipX = side * size * (0.36 + i * 0.11 + Math.sin(seconds * 1.7 + i) * 0.04)
+      const tipY = size * (0.55 + i * 0.17)
+      ctx.strokeStyle = i === 0 ? 'rgba(88,28,135,0.88)' : 'rgba(157,23,77,0.8)'
+      ctx.lineWidth = Math.max(3.2, size * (0.018 - i * 0.002))
+      ctx.beginPath()
+      ctx.moveTo(baseX, size * 0.18)
+      ctx.bezierCurveTo(side * size * 0.22, size * 0.34, side * size * 0.1, size * 0.46, tipX, tipY)
+      ctx.stroke()
+      if (i !== 1) {
+        drawRadialEllipse(ctx, tipX, tipY, size * 0.055, size * 0.055, [
+          [0, 'rgba(255,255,255,0.92)'],
+          [0.32, 'rgba(244,114,182,0.9)'],
+          [1, 'rgba(244,114,182,0)'],
+        ])
+      }
+    }
+  }
+  ctx.restore()
+}
+
+function drawReferenceSnakeBossDetails(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  for (const side of [-1, 1]) {
+    const hood = ctx.createLinearGradient(side * size * 0.04, -size * 0.45, side * size * 0.5, size * 0.08)
+    hood.addColorStop(0, '#fef3c7')
+    hood.addColorStop(0.28, '#a16207')
+    hood.addColorStop(0.62, '#1f2937')
+    hood.addColorStop(1, '#020617')
+    ctx.fillStyle = hood
+    ctx.strokeStyle = 'rgba(253,230,138,0.78)'
+    ctx.lineWidth = Math.max(2, size * 0.008)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.04, -size * 0.44)
+    ctx.bezierCurveTo(side * size * 0.43, -size * 0.42, side * size * 0.48, -size * 0.1, side * size * 0.2, size * 0.12)
+    ctx.lineTo(side * size * 0.05, size * 0.02)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    for (let rib = 0; rib < 7; rib += 1) {
+      ctx.strokeStyle = rib % 2 === 0 ? 'rgba(34,211,238,0.42)' : 'rgba(253,230,138,0.34)'
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.08 + rib * 0.035), -size * (0.34 - rib * 0.045))
+      ctx.lineTo(side * size * (0.34 - rib * 0.018), -size * (0.2 - rib * 0.035))
+      ctx.stroke()
+    }
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  for (const side of [-1, 1]) {
+    drawRadialEllipse(ctx, side * size * 0.08, -size * 0.18, size * 0.045, size * 0.05, [
+      [0, 'rgba(255,255,255,0.96)'],
+      [0.34, 'rgba(251,191,36,0.95)'],
+      [1, 'rgba(249,115,22,0)'],
+    ])
+    for (let dot = 0; dot < 8; dot += 1) {
+      const y = -size * 0.43 + dot * size * 0.08
+      drawRadialEllipse(ctx, side * size * (0.16 + (dot % 3) * 0.045), y, size * 0.018, size * 0.018, [
+        [0, 'rgba(255,255,255,0.84)'],
+        [0.45, 'rgba(34,211,238,0.74)'],
+        [1, 'rgba(34,211,238,0)'],
+      ])
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(253,230,138,0.72)'
+  ctx.lineWidth = Math.max(1.4, size * 0.006)
+  for (let i = 0; i < 16; i += 1) {
+    const y = size * (0.48 - i * 0.06)
+    const w = size * (0.08 + (i % 5) * 0.012)
+    ctx.beginPath()
+    ctx.ellipse(Math.sin(i * 0.7 + seconds) * size * 0.12, y, w, size * 0.025, Math.sin(i) * 0.6, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function drawReferenceDreadshipBossDetails(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  ctx.fillStyle = 'rgba(251,191,36,0.72)'
+  ctx.strokeStyle = 'rgba(254,243,199,0.82)'
+  ctx.lineWidth = Math.max(1.2, size * 0.005)
+  for (let plate = 0; plate < 12; plate += 1) {
+    const y = -size * 0.58 + plate * size * 0.095
+    const w = size * (0.055 + plate * 0.01)
+    ctx.beginPath()
+    ctx.moveTo(0, y)
+    ctx.lineTo(w, y + size * 0.04)
+    ctx.lineTo(0, y + size * 0.078)
+    ctx.lineTo(-w, y + size * 0.04)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = 'rgba(8,47,73,0.92)'
+    ctx.strokeStyle = 'rgba(125,249,255,0.86)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.28, -size * 0.25)
+    ctx.lineTo(side * size * 0.51, -size * 0.1)
+    ctx.lineTo(side * size * 0.34, size * 0.33)
+    ctx.lineTo(side * size * 0.18, size * 0.18)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    for (let bar = 0; bar < 7; bar += 1) {
+      ctx.strokeStyle = 'rgba(125,249,255,0.64)'
+      ctx.lineWidth = Math.max(1.4, size * 0.005)
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.27 + bar * 0.016), -size * (0.16 - bar * 0.052))
+      ctx.lineTo(side * size * (0.42 + bar * 0.006), -size * (0.08 - bar * 0.044))
+      ctx.stroke()
+    }
+    ctx.strokeStyle = 'rgba(251,191,36,0.88)'
+    ctx.lineWidth = Math.max(2, size * 0.007)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.18, -size * 0.52)
+    ctx.lineTo(side * size * 0.42, -size * 0.66)
+    ctx.lineTo(side * size * 0.32, -size * 0.32)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.48, -size * 0.26)
+    ctx.lineTo(side * size * 0.72, -size * 0.14)
+    ctx.lineTo(side * size * 0.52, size * 0.06)
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, 0, size * 0.18, size * 0.16, size * 0.17, [
+    [0, 'rgba(255,255,255,0.95)'],
+    [0.25, 'rgba(125,249,255,0.9)'],
+    [0.62, 'rgba(14,165,233,0.54)'],
+    [1, 'rgba(14,165,233,0)'],
+  ])
+  for (let drone = 0; drone < 8; drone += 1) {
+    const angle = drone / 8 * Math.PI * 2 + seconds * 0.34
+    const dx = Math.cos(angle) * size * 0.78
+    const dy = size * 0.08 + Math.sin(angle) * size * 0.5
+    ctx.save()
+    ctx.translate(dx, dy)
+    ctx.rotate(angle)
+    ctx.fillStyle = 'rgba(14,165,233,0.42)'
+    ctx.strokeStyle = 'rgba(125,249,255,0.86)'
+    ctx.beginPath()
+    ctx.ellipse(0, 0, size * 0.052, size * 0.014, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  }
+  ctx.restore()
+}
 function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
   const seconds = time / 1000
   ctx.save()
@@ -2514,6 +3004,8 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
     ctx.lineTo(x + side * size * (0.025 + (scratch % 3) * 0.01), y + size * 0.025)
     ctx.stroke()
   }
+  drawReferenceSquidBossDetails(ctx, size, time)
+  drawReferenceSquidBossFinishPass(ctx, size, time)
   ctx.restore()
 }
 
@@ -2522,7 +3014,7 @@ function drawSquidWhipStrike(ctx: CanvasRenderingContext2D, x: number, y: number
   const side = targetX < x ? -1 : 1
   const baseX = x + side * size * 0.24
   const baseY = y + size * 0.08
-  const tipY = y + size * (0.58 + warm * 0.34)
+  const tipY = y + size * (0.34 + warm * 0.22)
   const tipX = targetX + Math.sin(time / 90) * size * 0.03
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
@@ -2736,6 +3228,8 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   ctx.moveTo(size * 0.035, size * 0.04)
   ctx.lineTo(size * 0.07, size * 0.16)
   ctx.stroke()
+  drawReferenceSnakeBossDetails(ctx, size, time)
+  drawReferenceSnakeBossFinishPass(ctx, size, time)
   ctx.restore()
 }
 
@@ -2961,6 +3455,8 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
     ctx.ellipse(Math.cos(angle) * size * 0.72, size * 0.58 + Math.sin(angle) * size * 0.08, size * 0.035, size * 0.01, angle, 0, Math.PI * 2)
     ctx.fill()
   }
+  drawReferenceDreadshipBossDetails(ctx, size, time)
+  drawReferenceDreadshipBossFinishPass(ctx, size, time)
   ctx.restore()
 }
 
@@ -6499,7 +6995,7 @@ export function GradiusRaid({
       amplitude: bossKind === 'final' ? 34 : bossKind === 'snake' ? 36 : bossKind === 'squid' ? 24 : bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
       trainSlot: 0,
       pathSpeed: 0.05,
-      chargeCooldown: bossKind === 'final' ? 3.2 : bossKind === 'squid' ? 1.4 : 999,
+      chargeCooldown: bossKind === 'final' ? 3.2 : bossKind === 'snake' ? 3.4 : bossKind === 'squid' ? 1.4 : 999,
       chargeTimer: 0,
       chargeLane: 50,
       chargePattern: 'single',
@@ -6751,7 +7247,7 @@ export function GradiusRaid({
       const aimX = player.x - enemy.x
       const aimY = player.y - enemy.y
       const mag = Math.hypot(aimX, aimY) || 1
-      if (kind !== 'orb' && kind !== 'gate') {
+      if (kind !== 'orb' && kind !== 'gate' && kind !== 'snake' && kind !== 'squid') {
         enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: kind === 'serpent' || kind === 'mantis' ? 'blade' : kind === 'super' ? 'superShot' : kind === 'hydra' ? 'voidShot' : 'boss', radius: 2 })
       }
       playGameSound('rocket')
@@ -7032,10 +7528,14 @@ export function GradiusRaid({
           })
           randomEventSpawnTimerRef.current = 999
         } else if (activeRandomEvent.kind === 'ambush' && randomEventSpawnTimerRef.current <= 0) {
-          const side = Math.random() < 0.5 ? 8 : 92
-          const kind = pickEliteEnemyKind(stageRef.current, waveRef.current, 0)
-          spawnEnemyAt(side, 10 + Math.random() * 18, waveRef.current + 1, Math.floor(Math.random() * 4), 0, undefined, kind)
-          randomEventSpawnTimerRef.current = 1.35
+          const eliteCap = getMaxActiveEliteEnemies(stageRef.current, Boolean(multiplayerSessionRef.current))
+          const activeEliteCount = enemiesRef.current.filter((enemy) => enemy.isMiniBoss).length
+          if (activeEliteCount < eliteCap) {
+            const side = Math.random() < 0.5 ? 8 : 92
+            const kind = pickEliteEnemyKind(stageRef.current, waveRef.current, 0)
+            spawnEnemyAt(side, 10 + Math.random() * 18, waveRef.current + 1, Math.floor(Math.random() * 4), 0, undefined, kind)
+          }
+          randomEventSpawnTimerRef.current = stageRef.current >= 10 ? 2.65 : 2.1
         } else if (activeRandomEvent.kind === 'solar' && randomEventSpawnTimerRef.current <= 0) {
           spawnSparks(70 + Math.random() * 20, 6 + Math.random() * 16, '#fbbf24', 10, 7)
           randomEventSpawnTimerRef.current = 0.8
@@ -7314,7 +7814,7 @@ export function GradiusRaid({
           chargeTimer = Math.max(0, chargeTimer - dt)
           if (beforeCharge > 0 && chargeTimer <= 0) {
             for (const target of getLivingPlayers()) {
-              const inReachY = target.y > enemy.y + 8 && target.y < enemy.y + 66
+              const inReachY = target.y > enemy.y + 8 && target.y < enemy.y + 48
               const inStrikeLane = Math.abs(target.x - chargeLane) < 8.5
               if (inReachY && inStrikeLane) {
                 damagePlayer(2, target)
@@ -7325,15 +7825,15 @@ export function GradiusRaid({
             spawnSparks(chargeLane, enemy.y + 42, '#f472b6', 44, 8)
             addRipple(chargeLane, enemy.y + 42, '#f472b6', 18)
             playGameSound('hit')
-            chargeCooldown = 1.5 + Math.random() * 1.2
+            chargeCooldown = 2.45 + Math.random() * 1.35
             fireCooldown = Math.max(fireCooldown, 1.05)
           }
         } else {
           chargeCooldown = Math.max(0, chargeCooldown - dt)
           const closeTarget = getLivingPlayers().find((target) => (
-            target.y > enemy.y + 16 &&
-            target.y < enemy.y + 72 &&
-            Math.abs(target.x - enemy.x) < 42
+            target.y > enemy.y + 12 &&
+            target.y < enemy.y + 44 &&
+            Math.abs(target.x - enemy.x) < 34
           ))
           if (closeTarget && chargeCooldown <= 0) {
             chargeTimer = 0.62
@@ -7341,6 +7841,53 @@ export function GradiusRaid({
             chargeCooldown = 999
             addRipple(chargeLane, Math.min(92, closeTarget.y), '#f472b6', 15)
             spawnSparks(enemy.x, enemy.y + 10, '#a855f7', 28, 7)
+            playGameSound('countdown')
+          }
+        }
+      }
+      if (enemy.isBoss && bossKind === 'snake' && enemy.y >= bossYTarget - 0.5) {
+        if (chargeTimer > 0) {
+          const beforeCharge = chargeTimer
+          chargeTimer = Math.max(0, chargeTimer - dt)
+          if (beforeCharge > 0 && chargeTimer <= 0) {
+            const lane = clamp(chargeLane, 16, 84)
+            for (let row = 0; row < 5; row += 1) {
+              const gapSide = row % 2 === 0 ? -1 : 1
+              const spread = 9 + row * 4
+              ;[-1, 1].forEach((side) => {
+                enemyShotsRef.current.push({
+                  id: shotId++,
+                  x: lane + side * spread,
+                  y: enemy.y + 5 + row * 2,
+                  vx: side * (10 + row * 2.2) + gapSide * 3,
+                  vy: 29 + row * 3.2,
+                  damage: 1,
+                  kind: row % 2 === 0 ? 'orbShot' : 'needle',
+                  radius: row % 2 === 0 ? 1.65 : 1.35,
+                })
+              })
+            }
+            ;[-1, 0, 1].forEach((offset) => {
+              const aimX = lane + offset * 9 - enemy.x
+              const aimY = Math.max(28, player.y - enemy.y)
+              const mag = Math.hypot(aimX, aimY) || 1
+              enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset * 5, y: enemy.y + 4, vx: (aimX / mag) * 34, vy: (aimY / mag) * 34, damage: 1, kind: 'needle', radius: 1.4 })
+            })
+            spawnSparks(enemy.x, enemy.y + 4, '#22d3ee', 36, 7)
+            addRipple(lane, enemy.y + 28, '#22d3ee', 16)
+            playGameSound('laser')
+            chargeCooldown = 5.2 + Math.random() * 1.4
+            fireCooldown = Math.max(fireCooldown, 1.45)
+          }
+        } else {
+          chargeCooldown = Math.max(0, chargeCooldown - dt)
+          if (chargeCooldown <= 0) {
+            const target = getNearestLivingPlayer(enemy)
+            chargeTimer = 0.78
+            chargeLane = clamp(target.x + (Math.random() - 0.5) * 14, 16, 84)
+            chargeCooldown = 999
+            addRipple(chargeLane, enemy.y + 32, '#22d3ee', 18)
+            spawnSparks(enemy.x, enemy.y + 3, '#38bdf8', 32, 7)
             playGameSound('countdown')
           }
         }
@@ -7372,9 +7919,9 @@ export function GradiusRaid({
       enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
       enemy.fireCooldown = fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
         ? (enemy.isBoss
-          ? Math.max(bossKind === 'final' ? 0.62 : bossKind === 'snake' ? 0.72 : bossKind === 'squid' ? 0.78 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035)
+          ? Math.max(bossKind === 'final' ? 0.62 : bossKind === 'snake' ? 1.05 : bossKind === 'squid' ? 1.08 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035)
           : enemy.isMiniBoss
-            ? Math.max(miniKind === 'lancer' ? 0.78 : 0.98, 1.62 - stageRef.current * 0.025 + Math.random() * 0.42)
+            ? Math.max(miniKind === 'lancer' ? 1.12 : 1.28, 1.84 - stageRef.current * 0.018 + Math.random() * 0.5)
             : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
         : nextFire
       enemy.chargeCooldown = chargeCooldown
