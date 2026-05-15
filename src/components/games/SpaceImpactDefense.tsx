@@ -568,6 +568,13 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     })
   }, [playerName])
 
+  const closeDefenseGame = useCallback(() => {
+    if (endlessRef.current) {
+      submitDefenseLeaderboardScore(scoreRef.current)
+    }
+    onClose()
+  }, [onClose, submitDefenseLeaderboardScore])
+
   const gameLoop = useCallback((ts: number) => {
     const dt = Math.min((ts - (lastTimeRef.current || ts)) / 1000, 0.1)
     lastTimeRef.current = ts
@@ -1886,7 +1893,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       }} />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: (isCompact || isLandscapeMobile) ? 3 : 6, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1, flexShrink: 0 }}>
-        <button onClick={onClose} style={btnStyle('#3a120f', '#f9d7bf')} aria-label="Close">X</button>
+        <button onClick={closeDefenseGame} style={btnStyle('#3a120f', '#f9d7bf')} aria-label="Close">X</button>
         <div style={{ flex: 1, textAlign: 'center', fontWeight: 900, fontSize: isCompact ? '0.9rem' : '1.05rem', color: '#ffcf86', letterSpacing: 1.6, whiteSpace: 'nowrap', textTransform: 'uppercase', textShadow: '0 0 12px #ff7b2f66' }}>
           SPACE IMPACT DEFENDER
         </div>

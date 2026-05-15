@@ -167,6 +167,30 @@ function App() {
     setShowPlayerNamePrompt(false)
   }
 
+  const playerNamePrompt = showPlayerNamePrompt ? (
+    <div className="player-name-modal" role="dialog" aria-modal="true" aria-labelledby="player-name-title">
+      <form
+        className="player-name-modal__panel"
+        onSubmit={(event) => {
+          event.preventDefault()
+          savePlayerName()
+        }}
+      >
+        <span className="player-name-modal__eyebrow">Pilot Registration</span>
+        <h2 id="player-name-title">Choose your commander name</h2>
+        <p>This name is used for leaderboards and multiplayer rooms.</p>
+        <input
+          autoFocus
+          maxLength={18}
+          value={playerNameDraft}
+          onChange={(event) => setPlayerNameDraft(event.target.value)}
+          placeholder="Commander name"
+        />
+        <button type="submit" disabled={!playerNameDraft.trim()}>Confirm Name</button>
+      </form>
+    </div>
+  ) : null
+
   const closeGame = () => {
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
@@ -284,61 +308,65 @@ function App() {
             </div>
           </div>
         </div>
+        {playerNamePrompt}
       </div>
     )
   }
 
   if (screen === 'cutscene') {
     return (
-      <div className={`cutscene cutscene--${currentScene.accent}`}>
-        <div className="cutscene__stars" />
-        <div className="cutscene__scanlines" />
-        <div className="cutscene__planet" />
-        <div className="cutscene__hazard cutscene__hazard--one" />
-        <div className="cutscene__hazard cutscene__hazard--two" />
-        <div className="cutscene__hazard cutscene__hazard--three" />
+      <>
+        <div className={`cutscene cutscene--${currentScene.accent}`}>
+          <div className="cutscene__stars" />
+          <div className="cutscene__scanlines" />
+          <div className="cutscene__planet" />
+          <div className="cutscene__hazard cutscene__hazard--one" />
+          <div className="cutscene__hazard cutscene__hazard--two" />
+          <div className="cutscene__hazard cutscene__hazard--three" />
 
-        <div className="cutscene__fleet cutscene__fleet--allied">
-          <div className="cutscene__vessel cutscene__vessel--capital" />
-          <div className="cutscene__vessel cutscene__vessel--escort" />
-        </div>
+          <div className="cutscene__fleet cutscene__fleet--allied">
+            <div className="cutscene__vessel cutscene__vessel--capital" />
+            <div className="cutscene__vessel cutscene__vessel--escort" />
+          </div>
 
-        <div className="cutscene__fleet cutscene__fleet--hostile">
-          <div className="cutscene__vessel cutscene__vessel--raider" />
-          <div className="cutscene__vessel cutscene__vessel--mothership" />
-        </div>
+          <div className="cutscene__fleet cutscene__fleet--hostile">
+            <div className="cutscene__vessel cutscene__vessel--raider" />
+            <div className="cutscene__vessel cutscene__vessel--mothership" />
+          </div>
 
-        <div className="cutscene__hud">
-          <div className="cutscene__tag">Command Feed</div>
-          <button className="cutscene__skip" onClick={() => setScreen('game')}>
-            Skip Briefing
-          </button>
-        </div>
+          <div className="cutscene__hud">
+            <div className="cutscene__tag">Command Feed</div>
+            <button className="cutscene__skip" onClick={() => setScreen('game')}>
+              Skip Briefing
+            </button>
+          </div>
 
-        <div className="cutscene__content">
-          <div className="cutscene__eyebrow">{currentScene.eyebrow}</div>
-          <h2>{currentScene.title}</h2>
-          <p>{currentScene.text}</p>
+          <div className="cutscene__content">
+            <div className="cutscene__eyebrow">{currentScene.eyebrow}</div>
+            <h2>{currentScene.title}</h2>
+            <p>{currentScene.text}</p>
 
-          <div className="cutscene__meta">
-            <div className="cutscene__progress">
-              {CUTSCENE_SCENES.map((scene, index) => (
-                <span
-                  key={scene.title}
-                  className={
-                    index === cutsceneIndex
-                      ? 'cutscene__dot cutscene__dot--active'
-                      : 'cutscene__dot'
-                  }
-                />
-              ))}
-            </div>
-            <div className="cutscene__hint">
-              Press Enter, Space, or Esc to deploy immediately
+            <div className="cutscene__meta">
+              <div className="cutscene__progress">
+                {CUTSCENE_SCENES.map((scene, index) => (
+                  <span
+                    key={scene.title}
+                    className={
+                      index === cutsceneIndex
+                        ? 'cutscene__dot cutscene__dot--active'
+                        : 'cutscene__dot'
+                    }
+                  />
+                ))}
+              </div>
+              <div className="cutscene__hint">
+                Press Enter, Space, or Esc to deploy immediately
+              </div>
             </div>
           </div>
         </div>
-      </div>
+        {playerNamePrompt}
+      </>
     )
   }
 
@@ -367,48 +395,34 @@ function App() {
           </div>
         </div>
 
-        {showPlayerNamePrompt && (
-          <div className="player-name-modal" role="dialog" aria-modal="true" aria-labelledby="player-name-title">
-            <form
-              className="player-name-modal__panel"
-              onSubmit={(event) => {
-                event.preventDefault()
-                savePlayerName()
-              }}
-            >
-              <span className="player-name-modal__eyebrow">Pilot Registration</span>
-              <h2 id="player-name-title">Choose your commander name</h2>
-              <p>This name is used for leaderboards and multiplayer rooms.</p>
-              <input
-                autoFocus
-                maxLength={18}
-                value={playerNameDraft}
-                onChange={(event) => setPlayerNameDraft(event.target.value)}
-                placeholder="Commander name"
-              />
-              <button type="submit" disabled={!playerNameDraft.trim()}>Confirm Name</button>
-            </form>
-          </div>
-        )}
+        {playerNamePrompt}
       </div>
     )
   }
 
   if (screen === 'leaderboards') {
-    return <LeaderboardsScreen playerName={playerName} onBack={() => setScreen('title')} />
+    return (
+      <>
+        <LeaderboardsScreen playerName={playerName} onBack={() => setScreen('title')} />
+        {playerNamePrompt}
+      </>
+    )
   }
 
   if (screen === 'raidMultiplayer') {
     return (
-      <RaidMultiplayerLobby
-        playerName={playerName}
-        onBack={() => setScreen('rocketMode')}
-        onStart={(session) => {
-          setRaidMultiplayerSession(session)
-          setActiveGame('rocketRaid')
-          setScreen('game')
-        }}
-      />
+      <>
+        <RaidMultiplayerLobby
+          playerName={playerName}
+          onBack={() => setScreen('rocketMode')}
+          onStart={(session) => {
+            setRaidMultiplayerSession(session)
+            setActiveGame('rocketRaid')
+            setScreen('game')
+          }}
+        />
+        {playerNamePrompt}
+      </>
     )
   }
 
@@ -424,6 +438,7 @@ function App() {
           playerName={playerName}
         />
       )}
+      {playerNamePrompt}
     </div>
   )
 }
