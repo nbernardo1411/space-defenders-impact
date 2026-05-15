@@ -2831,7 +2831,7 @@ function drawReferenceDreadshipBossDetails(ctx: CanvasRenderingContext2D, size: 
   }
   ctx.restore()
 }
-function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
+export function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
   const seconds = time / 1000
   ctx.save()
 
@@ -3040,7 +3040,7 @@ function drawSquidWhipStrike(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.restore()
 }
 
-function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
+export function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
   const seconds = time / 1000
   ctx.save()
 
@@ -3233,7 +3233,7 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   ctx.restore()
 }
 
-function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
+export function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
   const seconds = time / 1000
   ctx.save()
 
@@ -3478,14 +3478,14 @@ function drawRaidEnemy(
     const rotation = Math.sin(time / 1100) * 0.5 * DEG
     drawBossAura(ctx, enemy, x, y, size, time)
     if (enemy.bossKind === 'squid' || enemy.bossKind === 'snake' || enemy.bossKind === 'final') {
-      ctx.save()
-      ctx.translate(x, y)
-      ctx.rotate(enemy.bossKind === 'snake' ? Math.sin(time / 850 + enemy.phase) * 0.08 : rotation * 0.45)
-      ctx.scale(floatScale, floatScale)
-      if (enemy.bossKind === 'squid') drawGalacticSquidBoss(ctx, size, time)
-      else if (enemy.bossKind === 'snake') drawGalacticSnakeBoss(ctx, size, time)
-      else drawInterstellarDreadshipBoss(ctx, size, time)
-      ctx.restore()
+      const sprite = getEnemyCanvasSprite(enemy)
+      const specialRotation = enemy.bossKind === 'snake' ? Math.sin(time / 850 + enemy.phase) * 0.08 : rotation * 0.45
+      const specialFilter = enemy.bossKind === 'final'
+        ? 'brightness(1.2) contrast(1.2) saturate(1.42)'
+        : enemy.bossKind === 'snake'
+          ? 'brightness(1.14) contrast(1.18) saturate(1.25)'
+          : 'brightness(1.2) contrast(1.24) saturate(1.55)'
+      drawCanvasSprite(ctx, sprite, x, y, size, specialFilter, 1, specialRotation, floatScale, enemy.color)
       if (enemy.bossKind === 'squid' && enemy.chargeTimer > 0) {
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), size, time, enemy.chargeTimer)
       }
@@ -8872,3 +8872,6 @@ export function GradiusRaid({
     </div>
   )
 }
+
+
+
