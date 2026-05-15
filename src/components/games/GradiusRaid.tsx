@@ -4130,6 +4130,48 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
   ctx.restore()
 }
 
+function drawFinalBossRageCore(ctx: CanvasRenderingContext2D, size: number, time: number, rage: number) {
+  if (rage <= 0.02) return
+  const seconds = time / 1000
+  const pulse = (0.78 + Math.sin(seconds * (5.4 + rage * 2.4)) * 0.18) * rage
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = clamp(0.22 + rage * 0.88, 0, 1)
+  for (const side of [-1, 1]) {
+    const panelX = side * size * 0.34
+    ctx.fillStyle = `rgba(239,68,68,${0.18 + pulse * 0.34})`
+    ctx.strokeStyle = `rgba(252,165,165,${0.32 + pulse * 0.42})`
+    ctx.lineWidth = Math.max(1.5, size * 0.006)
+    ctx.beginPath()
+    ctx.moveTo(panelX - side * size * 0.1, -size * 0.2)
+    ctx.lineTo(panelX + side * size * 0.15, -size * 0.1)
+    ctx.lineTo(panelX + side * size * 0.11, size * 0.17)
+    ctx.lineTo(panelX - side * size * 0.13, size * 0.22)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+  drawRadialEllipse(ctx, 0, size * 0.23, size * (0.16 + rage * 0.05), size * (0.18 + rage * 0.06), [
+    [0, `rgba(255,255,255,${0.72 + pulse * 0.2})`],
+    [0.24, `rgba(248,113,113,${0.6 + pulse * 0.25})`],
+    [0.62, `rgba(185,28,28,${0.36 + pulse * 0.24})`],
+    [1, 'rgba(127,29,29,0)'],
+  ])
+  ctx.strokeStyle = `rgba(252,165,165,${0.38 + pulse * 0.42})`
+  ctx.lineWidth = Math.max(1.2, size * 0.0045)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.62)
+  ctx.lineTo(0, size * 0.45)
+  ctx.stroke()
+  ctx.fillStyle = `rgba(248,113,113,${0.22 + pulse * 0.28})`
+  for (let ember = 0; ember < 10; ember += 1) {
+    const angle = ember * 2.399 + seconds * (0.9 + rage)
+    ctx.beginPath()
+    ctx.ellipse(Math.cos(angle) * size * (0.18 + rage * 0.5), size * 0.18 + Math.sin(angle) * size * (0.08 + rage * 0.24), size * 0.018, size * 0.007, angle, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
 function drawRaidEnemy(
   ctx: CanvasRenderingContext2D,
   enemy: Enemy,
@@ -4154,7 +4196,11 @@ function drawRaidEnemy(
       ctx.scale(floatScale, floatScale)
       if (enemy.bossKind === 'squid') drawGalacticSquidBoss(ctx, size, time)
       else if (enemy.bossKind === 'snake') drawGalacticSnakeBoss(ctx, size, time)
-      else drawInterstellarDreadshipBoss(ctx, size, time)
+      else {
+        const finalRage = clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1)
+        drawInterstellarDreadshipBoss(ctx, size, time)
+        drawFinalBossRageCore(ctx, size, time, finalRage)
+      }
       ctx.restore()
       if (enemy.bossKind === 'squid' && enemy.chargeTimer > 0 && enemy.chargePattern !== 'rotate') {
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), size, time, enemy.chargeTimer)
@@ -5658,7 +5704,7 @@ export function GradiusRaid({
   const bossTimerRef = useRef(28)
   const spawnLockRef = useRef(0)
   const powerDropCooldownRef = useRef(0)
-  const finalBossSupportDropTimerRef = useRef(6 + Math.random() * 4)
+  const finalBossSupportDropTimerRef = useRef(18 + Math.random() * 12)
   const killsSincePowerRef = useRef(0)
   const bossAlertRef = useRef(0)
   const bossMessageRef = useRef<BossMessage>(null)
@@ -8336,15 +8382,18 @@ export function GradiusRaid({
           if (powerUp.type === 'repair' || powerUp.type === 'forcefield') activeSupportDrops += 1
           if (activeSupportDrops >= 2) break
         }
-        if (activeSupportDrops < 2) {
+        if (activeSupportDrops < 1) {
           const hurtPlayer = player.hp < player.maxHp || (remotePlayerRef.current?.hp ?? 999) < (remotePlayerRef.current?.maxHp ?? 0)
-          const type: PowerKind = hurtPlayer && Math.random() < 0.58 ? 'repair' : 'forcefield'
-          powerUpsRef.current.push({ id: powerId++, type, x: 12 + Math.random() * 76, y: -6, vy: 8.4, radius: type === 'forcefield' ? 3.4 : 3.1, spin: Math.random() * 360 })
+          const dropChance = hurtPlayer ? 0.18 : 0.07
+          if (Math.random() < dropChance) {
+            const type: PowerKind = hurtPlayer && Math.random() < 0.62 ? 'repair' : 'forcefield'
+            powerUpsRef.current.push({ id: powerId++, type, x: 12 + Math.random() * 76, y: -6, vy: 8.4, radius: type === 'forcefield' ? 3.4 : 3.1, spin: Math.random() * 360 })
+          }
         }
-        finalBossSupportDropTimerRef.current = 9.5 + Math.random() * 6.5
+        finalBossSupportDropTimerRef.current = 18 + Math.random() * 16
       }
     } else {
-      finalBossSupportDropTimerRef.current = Math.min(finalBossSupportDropTimerRef.current, 6 + Math.random() * 4)
+      finalBossSupportDropTimerRef.current = Math.min(finalBossSupportDropTimerRef.current, 18 + Math.random() * 12)
     }
     if (bossMessageRef.current !== 'incoming') {
       bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
@@ -8648,6 +8697,7 @@ export function GradiusRaid({
     for (const enemy of enemies) {
       const t = nowSeconds + enemy.phase
       const bossKind = enemy.bossKind ?? 'carrier'
+      const finalRage = bossKind === 'final' ? clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1) : 0
       const bossX =
         bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
           bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
@@ -8657,10 +8707,10 @@ export function GradiusRaid({
                   bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
                     bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
                       bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
-                        bossKind === 'final' ? 50 + Math.sin(t * 0.36) * 31 + Math.sin(t * 1.45) * 7 :
+                        bossKind === 'final' ? 50 + Math.sin(t * (0.36 + finalRage * 0.32)) * (31 + finalRage * 7) + Math.sin(t * (1.45 + finalRage * 0.75)) * (7 + finalRage * 6) :
                           50 + Math.sin(t * 0.42) * 30
       const bossYTarget =
-        bossKind === 'final' ? 17 + Math.sin(t * 0.72) * 3 :
+        bossKind === 'final' ? 17 + Math.sin(t * (0.72 + finalRage * 0.55)) * (3 + finalRage * 3.2) :
           bossKind === 'squid' ? 18 + Math.sin(t * 0.75) * 3 :
             bossKind === 'snake' ? 19 + Math.sin(t * 1.3) * 4 :
               bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
@@ -8760,8 +8810,8 @@ export function GradiusRaid({
                         chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
                           chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
                             2.45 + Math.random() * 0.85
-              if (wasRapidCharge) beamVolleyRecovery = 5.2 + Math.random() * 1.3
-              fireCooldown = Math.max(fireCooldown, wasRapidCharge ? 3.45 : chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)
+              if (wasRapidCharge) beamVolleyRecovery = 4.4 + Math.random() * 1.1
+              fireCooldown = Math.max(fireCooldown, wasRapidCharge ? 3.15 : chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)
             }
           }
         } else {
@@ -8769,11 +8819,11 @@ export function GradiusRaid({
           if (chargeCooldown <= 0) {
             const hpRatio = enemy.hp / enemy.maxHp
             const roll = Math.random()
-            const volleyChance = hpRatio < 0.36 ? 0.34 : hpRatio < 0.72 ? 0.25 : 0.16
+            const volleyChance = hpRatio < 0.36 ? 0.45 : hpRatio < 0.72 ? 0.28 : 0.18
             if (beamVolleyRecovery <= 0 && beamVolleyLeft <= 0 && Math.random() < volleyChance) {
               beamVolleyLeft = 2 + Math.floor(Math.random() * (hpRatio < 0.36 ? 3 : 2))
             }
-            rapidCharge = beamVolleyLeft > 0 || Math.random() < (hpRatio < 0.36 ? 0.38 : hpRatio < 0.72 ? 0.25 : 0.14)
+            rapidCharge = beamVolleyLeft > 0 || Math.random() < (hpRatio < 0.36 ? 0.42 : hpRatio < 0.72 ? 0.28 : 0.16)
             chargeTimer = rapidCharge ? FINAL_BOSS_BEAM_CHARGE_SECONDS * (beamVolleyLeft > 0 ? 0.34 + Math.random() * 0.1 : 0.5 + Math.random() * 0.14) : FINAL_BOSS_BEAM_CHARGE_SECONDS
             chargePattern = beamVolleyLeft > 0
               ? roll < 0.22 ? 'single' : roll < 0.43 ? 'pincer' : roll < 0.66 ? 'diagonal' : roll < 0.86 ? 'horizontal' : 'trident'
@@ -10002,6 +10052,10 @@ export function GradiusRaid({
     </div>
   )
 }
+
+
+
+
 
 
 
