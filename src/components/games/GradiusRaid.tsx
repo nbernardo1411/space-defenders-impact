@@ -2311,94 +2311,170 @@ function getNormalEnemyFilter(time: number) {
   return `brightness(${1.16 * pulse}) contrast(1.12) saturate(1.28)`
 }
 
+function drawBossDust(ctx: CanvasRenderingContext2D, size: number, color: string, count: number, seed: number, spreadX = 0.7, spreadY = 0.7) {
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  for (let i = 0; i < count; i += 1) {
+    const a = (i + 1) * 12.9898 + seed
+    const b = (i + 1) * 78.233 + seed * 0.37
+    const x = (Math.sin(a) * 0.5 + Math.sin(a * 0.43) * 0.5) * size * spreadX
+    const y = (Math.cos(b) * 0.5 + Math.sin(b * 0.31) * 0.5) * size * spreadY
+    const alpha = 0.18 + ((i * 17) % 9) * 0.035
+    ctx.fillStyle = color.replace('ALPHA', alpha.toFixed(2))
+    ctx.beginPath()
+    ctx.arc(x, y, Math.max(0.8, size * (0.0035 + (i % 3) * 0.0018)), 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+function drawEtchedPanelLine(ctx: CanvasRenderingContext2D, points: Array<[number, number]>, size: number, color: string, width = 0.004) {
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(0.8, size * width)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  points.forEach(([x, y], index) => {
+    if (index === 0) ctx.moveTo(x * size, y * size)
+    else ctx.lineTo(x * size, y * size)
+  })
+  ctx.stroke()
+}
+
 function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
   const seconds = time / 1000
   ctx.save()
 
-  const armSpecs = [
-    [-0.58, -0.92, 0.78, 1.05],
-    [0.58, 0.92, 0.78, 1.05],
-    [-0.38, -0.45, 0.58, 1.3],
-    [0.38, 0.45, 0.58, 1.3],
-    [-0.2, -0.25, 0.5, 1.8],
-    [0.2, 0.25, 0.5, 1.8],
-    [-0.08, -0.08, 0.42, 2.2],
-    [0.08, 0.08, 0.42, 2.2],
-  ] as const
+  drawRadialEllipse(ctx, 0, size * 0.08, size * 0.62, size * 0.9, [
+    [0, 'rgba(168,85,247,0.1)'],
+    [0.48, 'rgba(88,28,135,0.08)'],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  drawBossDust(ctx, size, 'rgba(217,70,239,ALPHA)', 26, 3.7, 0.74, 0.92)
 
-  for (const [base, reach, length, phase] of armSpecs) {
-    const side = Math.sign(base || reach || 1)
-    const sway = Math.sin(seconds * 2.4 + phase) * size * 0.08
-    const baseX = base * size * 0.46
-    const tipX = reach * size * 0.78 + sway
-    const tipY = size * (0.16 + length)
+  const drawSegmentedTentacle = (baseX: number, baseY: number, tipX: number, tipY: number, side: number, phase: number, thick: number, bulb = false) => {
+    const sway = Math.sin(seconds * 2.1 + phase) * size * 0.055
+    const c1x = baseX + side * size * (0.18 + Math.abs(baseX) * 0.12)
+    const c1y = baseY + size * 0.22
+    const c2x = tipX - side * size * 0.18 + sway
+    const c2y = tipY - size * 0.2
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    ctx.strokeStyle = side < 0 ? 'rgba(68,20,86,0.98)' : 'rgba(82,22,95,0.98)'
-    ctx.lineWidth = Math.max(9, size * 0.052)
+    ctx.strokeStyle = 'rgba(56,12,78,0.98)'
+    ctx.lineWidth = Math.max(7, size * thick)
     ctx.beginPath()
-    ctx.moveTo(baseX, size * 0.08)
-    ctx.bezierCurveTo(baseX + side * size * 0.22, size * 0.12, tipX - side * size * 0.26, size * 0.46, tipX, tipY)
+    ctx.moveTo(baseX, baseY)
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, tipX + sway, tipY)
     ctx.stroke()
-    ctx.strokeStyle = side < 0 ? 'rgba(245,158,255,0.58)' : 'rgba(255,113,214,0.58)'
-    ctx.lineWidth = Math.max(3, size * 0.014)
+    ctx.strokeStyle = 'rgba(201,52,190,0.58)'
+    ctx.lineWidth = Math.max(2, size * thick * 0.28)
     ctx.beginPath()
-    ctx.moveTo(baseX, size * 0.08)
-    ctx.bezierCurveTo(baseX + side * size * 0.18, size * 0.18, tipX - side * size * 0.18, size * 0.5, tipX, tipY)
+    ctx.moveTo(baseX, baseY)
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, tipX + sway, tipY)
     ctx.stroke()
-    ctx.fillStyle = 'rgba(163,230,53,0.55)'
-    for (let dot = 0; dot < 4; dot += 1) {
-      const p = (dot + 1) / 5
-      const dotX = baseX + (tipX - baseX) * p + Math.sin(seconds + dot + phase) * size * 0.018
-      const dotY = size * 0.12 + (tipY - size * 0.12) * p
+    for (let ring = 1; ring <= 9; ring += 1) {
+      const p = ring / 10
+      const inv = 1 - p
+      const x = inv * inv * inv * baseX + 3 * inv * inv * p * c1x + 3 * inv * p * p * c2x + p * p * p * (tipX + sway)
+      const y = inv * inv * inv * baseY + 3 * inv * inv * p * c1y + 3 * inv * p * p * c2y + p * p * p * tipY
+      ctx.strokeStyle = ring % 2 === 0 ? 'rgba(244,114,182,0.45)' : 'rgba(147,51,234,0.42)'
+      ctx.lineWidth = Math.max(1, size * 0.005)
       ctx.beginPath()
-      ctx.arc(dotX, dotY, Math.max(1.4, size * 0.007), 0, Math.PI * 2)
-      ctx.fill()
+      ctx.arc(x, y, size * thick * (0.34 - p * 0.12), 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    if (bulb) {
+      drawRadialEllipse(ctx, tipX + sway, tipY, size * 0.08, size * 0.07, [
+        [0, 'rgba(255,255,255,0.94)'],
+        [0.25, 'rgba(244,114,182,0.88)'],
+        [0.65, 'rgba(190,24,93,0.48)'],
+        [1, 'rgba(190,24,93,0)'],
+      ])
     }
   }
 
-  const mantleGradient = ctx.createRadialGradient(-size * 0.12, -size * 0.2, size * 0.03, 0, -size * 0.05, size * 0.45)
-  mantleGradient.addColorStop(0, '#bbf7d0')
-  mantleGradient.addColorStop(0.22, '#6d28d9')
-  mantleGradient.addColorStop(0.55, '#312e81')
-  mantleGradient.addColorStop(1, '#070312')
-  ctx.fillStyle = mantleGradient
-  ctx.strokeStyle = 'rgba(221,214,254,0.75)'
-  ctx.lineWidth = Math.max(2, size * 0.012)
-  ctx.beginPath()
-  ctx.moveTo(0, -size * 0.48)
-  ctx.bezierCurveTo(size * 0.28, -size * 0.38, size * 0.36, -size * 0.08, size * 0.2, size * 0.16)
-  ctx.bezierCurveTo(size * 0.1, size * 0.3, -size * 0.1, size * 0.3, -size * 0.2, size * 0.16)
-  ctx.bezierCurveTo(-size * 0.36, -size * 0.08, -size * 0.28, -size * 0.38, 0, -size * 0.48)
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
+  const longTentacles = [
+    [-0.28, 0.1, -0.72, 0.84, -1, 0.8, 0.036, true],
+    [0.28, 0.1, 0.72, 0.84, 1, 1.2, 0.036, true],
+    [-0.2, 0.14, -0.44, 0.96, -1, 1.7, 0.028, false],
+    [0.2, 0.14, 0.44, 0.96, 1, 2.2, 0.028, false],
+    [-0.1, 0.16, -0.2, 1.06, -1, 2.8, 0.024, true],
+    [0.1, 0.16, 0.2, 1.06, 1, 3.2, 0.024, true],
+    [-0.02, 0.17, -0.08, 0.92, -1, 3.7, 0.022, false],
+    [0.02, 0.17, 0.08, 0.92, 1, 4.1, 0.022, false],
+  ] as const
+  for (const [baseX, baseY, tipX, tipY, side, phase, thick, bulb] of longTentacles) {
+    drawSegmentedTentacle(baseX * size, baseY * size, tipX * size, tipY * size, side, phase, thick, bulb)
+  }
 
   for (const side of [-1, 1]) {
-    ctx.fillStyle = 'rgba(40,18,70,0.9)'
-    ctx.strokeStyle = 'rgba(168,85,247,0.62)'
+    ctx.fillStyle = 'rgba(51,12,75,0.92)'
+    ctx.strokeStyle = 'rgba(168,85,247,0.72)'
+    ctx.lineWidth = Math.max(1.5, size * 0.006)
     ctx.beginPath()
-    ctx.moveTo(side * size * 0.18, -size * 0.3)
-    ctx.lineTo(side * size * 0.47, -size * 0.18)
-    ctx.lineTo(side * size * 0.23, size * 0.02)
+    ctx.moveTo(side * size * 0.17, -size * 0.34)
+    ctx.bezierCurveTo(side * size * 0.4, -size * 0.3, side * size * 0.54, -size * 0.06, side * size * 0.38, size * 0.06)
+    ctx.lineTo(side * size * 0.21, size * 0.02)
     ctx.closePath()
     ctx.fill()
     ctx.stroke()
-    ctx.strokeStyle = 'rgba(163,230,53,0.28)'
-    for (let rib = 0; rib < 4; rib += 1) {
+    for (let rib = 0; rib < 5; rib += 1) {
+      ctx.strokeStyle = 'rgba(190,242,100,0.22)'
       ctx.beginPath()
-      ctx.moveTo(side * size * 0.2, -size * (0.24 - rib * 0.045))
-      ctx.lineTo(side * size * (0.38 - rib * 0.035), -size * (0.16 - rib * 0.035))
+      ctx.moveTo(side * size * 0.2, -size * (0.26 - rib * 0.052))
+      ctx.lineTo(side * size * (0.42 - rib * 0.032), -size * (0.18 - rib * 0.035))
       ctx.stroke()
     }
   }
 
+  const mantleGradient = ctx.createRadialGradient(-size * 0.1, -size * 0.3, size * 0.02, 0, -size * 0.08, size * 0.52)
+  mantleGradient.addColorStop(0, '#d9f99d')
+  mantleGradient.addColorStop(0.16, '#a21caf')
+  mantleGradient.addColorStop(0.43, '#5b21b6')
+  mantleGradient.addColorStop(0.72, '#2e1065')
+  mantleGradient.addColorStop(1, '#070312')
+  ctx.fillStyle = mantleGradient
+  ctx.strokeStyle = 'rgba(216,180,254,0.82)'
+  ctx.lineWidth = Math.max(2, size * 0.012)
+  ctx.shadowColor = 'rgba(0,0,0,0.68)'
+  ctx.shadowBlur = size * 0.03
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.62)
+  ctx.bezierCurveTo(size * 0.32, -size * 0.48, size * 0.34, -size * 0.16, size * 0.2, size * 0.2)
+  ctx.bezierCurveTo(size * 0.1, size * 0.36, -size * 0.1, size * 0.36, -size * 0.2, size * 0.2)
+  ctx.bezierCurveTo(-size * 0.34, -size * 0.16, -size * 0.32, -size * 0.48, 0, -size * 0.62)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.shadowBlur = 0
+
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = 'rgba(244,114,182,0.42)'
+  ctx.lineWidth = Math.max(1, size * 0.005)
+  for (let rib = 0; rib < 10; rib += 1) {
+    const y = -size * 0.49 + rib * size * 0.066
+    ctx.beginPath()
+    ctx.ellipse(0, y, size * (0.055 + rib * 0.018), size * 0.016, 0, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  ctx.strokeStyle = 'rgba(216,180,254,0.5)'
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(0, -size * 0.58)
+    ctx.bezierCurveTo(side * size * 0.1, -size * 0.36, side * size * 0.16, -size * 0.1, side * size * 0.11, size * 0.23)
+    ctx.stroke()
+  }
+  drawEtchedPanelLine(ctx, [[0, -0.6], [-0.04, -0.42], [-0.025, -0.2], [-0.05, 0.08], [-0.02, 0.24]], size, 'rgba(250,232,255,0.32)', 0.0045)
+  drawEtchedPanelLine(ctx, [[0, -0.6], [0.04, -0.42], [0.025, -0.2], [0.05, 0.08], [0.02, 0.24]], size, 'rgba(250,232,255,0.32)', 0.0045)
+  drawEtchedPanelLine(ctx, [[-0.16, -0.38], [-0.07, -0.32], [-0.13, -0.18], [-0.06, -0.06], [-0.12, 0.08]], size, 'rgba(15,23,42,0.65)', 0.006)
+  drawEtchedPanelLine(ctx, [[0.16, -0.38], [0.07, -0.32], [0.13, -0.18], [0.06, -0.06], [0.12, 0.08]], size, 'rgba(15,23,42,0.65)', 0.006)
+
   ctx.fillStyle = '#020617'
   ctx.beginPath()
-  ctx.ellipse(0, -size * 0.08, size * 0.14, size * 0.2, 0, 0, Math.PI * 2)
+  ctx.ellipse(0, -size * 0.08, size * 0.15, size * 0.22, 0, 0, Math.PI * 2)
   ctx.fill()
   const eyePulse = 0.8 + Math.sin(seconds * 4.4) * 0.12
-  drawRadialEllipse(ctx, 0, -size * 0.08, size * 0.095, size * 0.17, [
+  drawRadialEllipse(ctx, 0, -size * 0.08, size * 0.105, size * 0.185, [
     [0, `rgba(255,255,255,${0.9 * eyePulse})`],
     [0.22, `rgba(254,240,138,${0.9 * eyePulse})`],
     [0.58, `rgba(249,115,22,${0.84 * eyePulse})`],
@@ -2407,7 +2483,7 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
   ctx.strokeStyle = 'rgba(255,255,255,0.7)'
   ctx.lineWidth = Math.max(1.5, size * 0.009)
   ctx.beginPath()
-  ctx.ellipse(0, -size * 0.08, size * 0.1, size * 0.18, 0, 0, Math.PI * 2)
+  ctx.ellipse(0, -size * 0.08, size * 0.11, size * 0.19, 0, 0, Math.PI * 2)
   ctx.stroke()
   ctx.strokeStyle = 'rgba(30,10,10,0.8)'
   ctx.lineWidth = Math.max(2, size * 0.012)
@@ -2416,16 +2492,27 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
   ctx.lineTo(0, size * 0.06)
   ctx.stroke()
 
-  ctx.globalCompositeOperation = 'lighter'
   ctx.fillStyle = 'rgba(163,230,53,0.72)'
-  for (let i = 0; i < 34; i += 1) {
+  for (let i = 0; i < 88; i += 1) {
     const a = i * 2.399
-    const r = size * (0.06 + (i % 9) * 0.017)
+    const r = size * (0.04 + (i % 14) * 0.014)
     const x = Math.cos(a) * r
-    const y = -size * 0.18 + Math.sin(a) * r * 0.9 + (i % 5) * size * 0.025
+    const y = -size * 0.28 + Math.sin(a) * r * 1.4 + (i % 7) * size * 0.033
+    if (Math.abs(x) > size * 0.19 || y > size * 0.22) continue
     ctx.beginPath()
     ctx.arc(x, y, Math.max(0.9, size * 0.0045), 0, Math.PI * 2)
     ctx.fill()
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+  ctx.lineWidth = Math.max(0.7, size * 0.0028)
+  for (let scratch = 0; scratch < 22; scratch += 1) {
+    const side = scratch % 2 === 0 ? -1 : 1
+    const y = -size * (0.48 - scratch * 0.027)
+    const x = side * size * (0.05 + (scratch % 5) * 0.025)
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + side * size * (0.025 + (scratch % 3) * 0.01), y + size * 0.025)
+    ctx.stroke()
   }
   ctx.restore()
 }
@@ -2465,73 +2552,189 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   const seconds = time / 1000
   ctx.save()
 
-  const coilCenterY = size * 0.2
-  for (let i = 0; i < 28; i += 1) {
-    const a = i / 28 * Math.PI * 2 + seconds * 0.18
-    const wave = Math.sin(seconds * 2.2 + i * 0.35)
-    const x = Math.cos(a) * size * (0.34 + wave * 0.015)
-    const y = coilCenterY + Math.sin(a) * size * 0.24 + i * size * 0.004
-    const scale = 0.95 + Math.sin(a + seconds) * 0.12
-    const gradient = ctx.createRadialGradient(x - size * 0.04, y - size * 0.03, 1, x, y, size * 0.12)
-    gradient.addColorStop(0, '#fef3c7')
-    gradient.addColorStop(0.28, '#64748b')
-    gradient.addColorStop(0.68, '#1e3a5f')
-    gradient.addColorStop(1, '#030712')
+  drawRadialEllipse(ctx, 0, size * 0.03, size * 0.64, size * 0.88, [
+    [0, 'rgba(14,165,233,0.09)'],
+    [0.42, 'rgba(30,64,175,0.07)'],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  drawBossDust(ctx, size, 'rgba(34,211,238,ALPHA)', 34, 8.2, 0.68, 0.96)
+
+  const bodyPoints: Vec[] = []
+  for (let i = 0; i < 70; i += 1) {
+    const p = i / 69
+    const angle = p * Math.PI * 3.3 + seconds * 0.1
+    const radius = size * (0.32 - p * 0.12)
+    bodyPoints.push({
+      x: Math.sin(angle) * radius + Math.sin(p * Math.PI * 5 + seconds * 0.5) * size * 0.025,
+      y: size * 0.58 - p * size * 0.92 + Math.cos(angle) * size * (0.08 - p * 0.02),
+    })
+  }
+
+  for (let i = 0; i < bodyPoints.length - 1; i += 1) {
+    const point = bodyPoints[i]
+    const next = bodyPoints[i + 1]
+    const p = i / (bodyPoints.length - 1)
+    const angle = Math.atan2(next.y - point.y, next.x - point.x)
+    const segmentSize = size * (0.092 - p * 0.034)
+    const scale = 1 + Math.sin(seconds * 2.1 + i * 0.4) * 0.06
+    const gradient = ctx.createRadialGradient(point.x - segmentSize * 0.28, point.y - segmentSize * 0.35, 1, point.x, point.y, segmentSize * 1.25)
+    gradient.addColorStop(0, '#fde68a')
+    gradient.addColorStop(0.2, '#94a3b8')
+    gradient.addColorStop(0.5, '#334155')
+    gradient.addColorStop(0.82, '#111827')
+    gradient.addColorStop(1, '#020617')
     ctx.fillStyle = gradient
-    ctx.strokeStyle = 'rgba(251,191,36,0.22)'
-    ctx.lineWidth = Math.max(1, size * 0.004)
+    ctx.strokeStyle = i % 3 === 0 ? 'rgba(251,191,36,0.42)' : 'rgba(148,163,184,0.28)'
+    ctx.lineWidth = Math.max(0.9, size * 0.0038)
     ctx.beginPath()
-    ctx.ellipse(x, y, size * 0.115 * scale, size * 0.07 * scale, a + Math.PI / 2, 0, Math.PI * 2)
+    ctx.ellipse(point.x, point.y, segmentSize * 1.12 * scale, segmentSize * 0.66 * scale, angle + Math.PI / 2, 0, Math.PI * 2)
     ctx.fill()
     ctx.stroke()
     if (i % 2 === 0) {
-      ctx.strokeStyle = 'rgba(203,213,225,0.48)'
+      ctx.strokeStyle = 'rgba(226,232,240,0.48)'
+      ctx.beginPath()
+      ctx.ellipse(point.x, point.y, segmentSize * 0.44, segmentSize * 0.26, angle + Math.PI / 2, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    if (i % 5 === 0) {
+      drawRadialEllipse(ctx, point.x + Math.cos(angle + Math.PI / 2) * segmentSize * 0.48, point.y + Math.sin(angle + Math.PI / 2) * segmentSize * 0.48, segmentSize * 0.18, segmentSize * 0.18, [
+        [0, 'rgba(255,255,255,0.7)'],
+        [0.34, 'rgba(34,211,238,0.7)'],
+        [1, 'rgba(34,211,238,0)'],
+      ])
+    }
+    if (i % 4 === 1) {
+      ctx.strokeStyle = 'rgba(2,6,23,0.52)'
       ctx.lineWidth = Math.max(0.8, size * 0.003)
       ctx.beginPath()
-      ctx.arc(x, y, size * 0.045 * scale, 0, Math.PI * 2)
+      ctx.moveTo(point.x - Math.cos(angle) * segmentSize * 0.45, point.y - Math.sin(angle) * segmentSize * 0.45)
+      ctx.lineTo(point.x + Math.cos(angle) * segmentSize * 0.45, point.y + Math.sin(angle) * segmentSize * 0.45)
       ctx.stroke()
     }
   }
 
-  ctx.fillStyle = '#111827'
-  ctx.strokeStyle = 'rgba(254,243,199,0.7)'
-  ctx.lineWidth = Math.max(2, size * 0.01)
-  ctx.beginPath()
-  ctx.moveTo(0, -size * 0.34)
-  ctx.bezierCurveTo(size * 0.18, -size * 0.3, size * 0.25, -size * 0.08, size * 0.13, size * 0.1)
-  ctx.bezierCurveTo(size * 0.08, size * 0.2, -size * 0.08, size * 0.2, -size * 0.13, size * 0.1)
-  ctx.bezierCurveTo(-size * 0.25, -size * 0.08, -size * 0.18, -size * 0.3, 0, -size * 0.34)
-  ctx.fill()
-  ctx.stroke()
+  ctx.strokeStyle = 'rgba(34,211,238,0.2)'
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  for (let i = 8; i < 58; i += 5) {
+    const point = bodyPoints[i]
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, size * 0.032, 0, Math.PI * 2)
+    ctx.stroke()
+  }
 
-  for (let row = 0; row < 7; row += 1) {
-    const y = -size * 0.24 + row * size * 0.047
-    const count = 2 + Math.min(row, 4)
-    for (let i = 0; i < count; i += 1) {
-      const x = (i - (count - 1) / 2) * size * 0.052
-      ctx.strokeStyle = row % 2 === 0 ? 'rgba(254,243,199,0.55)' : 'rgba(34,211,238,0.35)'
-      ctx.lineWidth = Math.max(0.8, size * 0.0035)
+  for (const side of [-1, 1]) {
+    const hood = ctx.createLinearGradient(side * size * 0.02, -size * 0.42, side * size * 0.42, size * 0.02)
+    hood.addColorStop(0, '#fef3c7')
+    hood.addColorStop(0.34, '#6b7280')
+    hood.addColorStop(0.7, '#172033')
+    hood.addColorStop(1, '#020617')
+    ctx.fillStyle = hood
+    ctx.strokeStyle = 'rgba(254,243,199,0.64)'
+    ctx.lineWidth = Math.max(1.8, size * 0.007)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.07, -size * 0.39)
+    ctx.bezierCurveTo(side * size * 0.42, -size * 0.34, side * size * 0.46, -size * 0.05, side * size * 0.24, size * 0.13)
+    ctx.lineTo(side * size * 0.08, size * 0.04)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.fillStyle = 'rgba(0,0,0,0.38)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.08, -size * 0.33)
+    ctx.lineTo(side * size * 0.24, -size * 0.2)
+    ctx.lineTo(side * size * 0.1, size * 0.02)
+    ctx.closePath()
+    ctx.fill()
+    for (let rib = 0; rib < 6; rib += 1) {
+      ctx.strokeStyle = 'rgba(34,211,238,0.26)'
       ctx.beginPath()
-      ctx.ellipse(x, y, size * 0.022, size * 0.016, 0, 0, Math.PI * 2)
+      ctx.moveTo(side * size * (0.1 + rib * 0.035), -size * (0.31 - rib * 0.04))
+      ctx.lineTo(side * size * (0.33 - rib * 0.018), -size * (0.18 - rib * 0.038))
       ctx.stroke()
     }
+  }
+
+  const hoodGradient = ctx.createRadialGradient(-size * 0.04, -size * 0.36, 1, 0, -size * 0.2, size * 0.34)
+  hoodGradient.addColorStop(0, '#fff7ad')
+  hoodGradient.addColorStop(0.26, '#a3a3a3')
+  hoodGradient.addColorStop(0.58, '#1f2937')
+  hoodGradient.addColorStop(1, '#030712')
+  ctx.fillStyle = hoodGradient
+  ctx.strokeStyle = 'rgba(254,243,199,0.86)'
+  ctx.lineWidth = Math.max(2, size * 0.011)
+  ctx.shadowColor = 'rgba(0,0,0,0.76)'
+  ctx.shadowBlur = size * 0.024
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.52)
+  ctx.bezierCurveTo(size * 0.2, -size * 0.47, size * 0.24, -size * 0.22, size * 0.12, size * 0.08)
+  ctx.bezierCurveTo(size * 0.06, size * 0.2, -size * 0.06, size * 0.2, -size * 0.12, size * 0.08)
+  ctx.bezierCurveTo(-size * 0.24, -size * 0.22, -size * 0.2, -size * 0.47, 0, -size * 0.52)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.shadowBlur = 0
+
+  ctx.fillStyle = 'rgba(2,6,23,0.72)'
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.06, -size * 0.35)
+    ctx.lineTo(side * size * 0.19, -size * 0.22)
+    ctx.lineTo(side * size * 0.08, -size * 0.04)
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  for (let row = 0; row < 10; row += 1) {
+    const y = -size * 0.4 + row * size * 0.045
+    const count = 1 + Math.min(row + 1, 5)
+    for (let i = 0; i < count; i += 1) {
+      const x = (i - (count - 1) / 2) * size * 0.042
+      ctx.strokeStyle = row % 2 === 0 ? 'rgba(254,243,199,0.58)' : 'rgba(34,211,238,0.35)'
+      ctx.lineWidth = Math.max(0.8, size * 0.0035)
+      ctx.beginPath()
+      ctx.ellipse(x, y, size * 0.019, size * 0.014, 0, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  }
+  drawEtchedPanelLine(ctx, [[0, -0.5], [-0.04, -0.39], [0.03, -0.28], [-0.02, -0.16], [0.04, -0.04]], size, 'rgba(254,243,199,0.35)', 0.004)
+  drawEtchedPanelLine(ctx, [[0, -0.5], [0.04, -0.39], [-0.03, -0.28], [0.02, -0.16], [-0.04, -0.04]], size, 'rgba(2,6,23,0.55)', 0.0045)
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+  ctx.lineWidth = Math.max(0.7, size * 0.0027)
+  for (let scratch = 0; scratch < 20; scratch += 1) {
+    const side = scratch % 2 === 0 ? -1 : 1
+    const y = -size * (0.38 - scratch * 0.018)
+    const x = side * size * (0.04 + (scratch % 6) * 0.022)
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + side * size * 0.025, y + size * 0.018)
+    ctx.stroke()
   }
 
   ctx.globalCompositeOperation = 'lighter'
   for (const side of [-1, 1]) {
-    drawRadialEllipse(ctx, side * size * 0.065, -size * 0.08, size * 0.043, size * 0.05, [
+    drawRadialEllipse(ctx, side * size * 0.07, -size * 0.16, size * 0.048, size * 0.052, [
       [0, 'rgba(255,255,255,0.95)'],
-      [0.35, 'rgba(251,191,36,0.9)'],
+      [0.3, 'rgba(251,191,36,0.95)'],
+      [0.62, 'rgba(249,115,22,0.62)'],
       [1, 'rgba(249,115,22,0)'],
     ])
+    ctx.fillStyle = '#0f172a'
+    ctx.beginPath()
+    ctx.ellipse(side * size * 0.07, -size * 0.16, size * 0.009, size * 0.026, 0, 0, Math.PI * 2)
+    ctx.fill()
   }
-  ctx.strokeStyle = 'rgba(254,243,199,0.68)'
+
+  ctx.strokeStyle = 'rgba(254,243,199,0.75)'
   ctx.lineWidth = Math.max(1.5, size * 0.008)
   ctx.beginPath()
-  ctx.moveTo(0, size * 0.1)
-  ctx.quadraticCurveTo(-size * 0.02, size * 0.19, -size * 0.08, size * 0.28)
-  ctx.moveTo(0, size * 0.1)
-  ctx.quadraticCurveTo(size * 0.02, size * 0.19, size * 0.08, size * 0.28)
+  ctx.moveTo(-size * 0.05, size * 0.05)
+  ctx.quadraticCurveTo(-size * 0.04, size * 0.16, -size * 0.12, size * 0.26)
+  ctx.moveTo(size * 0.05, size * 0.05)
+  ctx.quadraticCurveTo(size * 0.04, size * 0.16, size * 0.12, size * 0.26)
+  ctx.moveTo(-size * 0.035, size * 0.04)
+  ctx.lineTo(-size * 0.07, size * 0.16)
+  ctx.moveTo(size * 0.035, size * 0.04)
+  ctx.lineTo(size * 0.07, size * 0.16)
   ctx.stroke()
   ctx.restore()
 }
@@ -2540,91 +2743,223 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
   const seconds = time / 1000
   ctx.save()
 
-  const bronze = ctx.createLinearGradient(0, -size * 0.36, 0, size * 0.4)
-  bronze.addColorStop(0, '#fde68a')
-  bronze.addColorStop(0.25, '#a16207')
-  bronze.addColorStop(0.62, '#4b2b10')
-  bronze.addColorStop(1, '#111827')
+  drawRadialEllipse(ctx, 0, size * 0.04, size * 0.72, size * 0.9, [
+    [0, 'rgba(14,165,233,0.11)'],
+    [0.34, 'rgba(180,83,9,0.08)'],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  drawBossDust(ctx, size, 'rgba(56,189,248,ALPHA)', 30, 13.4, 0.86, 0.94)
 
-  ctx.fillStyle = 'rgba(75,43,16,0.95)'
-  ctx.strokeStyle = 'rgba(253,230,138,0.78)'
-  ctx.lineWidth = Math.max(2, size * 0.01)
+  const bronze = ctx.createLinearGradient(0, -size * 0.42, 0, size * 0.48)
+  bronze.addColorStop(0, '#fff7ad')
+  bronze.addColorStop(0.18, '#c47b16')
+  bronze.addColorStop(0.52, '#5b2f0d')
+  bronze.addColorStop(0.82, '#1e1410')
+  bronze.addColorStop(1, '#07080d')
+
+  const darkBronze = ctx.createLinearGradient(0, -size * 0.34, 0, size * 0.36)
+  darkBronze.addColorStop(0, '#8a4f14')
+  darkBronze.addColorStop(0.55, '#2f1a0b')
+  darkBronze.addColorStop(1, '#09080b')
+
+  ctx.fillStyle = 'rgba(36,20,10,0.98)'
+  ctx.strokeStyle = 'rgba(253,230,138,0.82)'
+  ctx.lineWidth = Math.max(2.2, size * 0.009)
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'
+  ctx.shadowBlur = size * 0.026
   ctx.beginPath()
-  ctx.moveTo(0, -size * 0.38)
-  ctx.lineTo(size * 0.18, -size * 0.22)
-  ctx.lineTo(size * 0.58, -size * 0.32)
-  ctx.lineTo(size * 0.48, -size * 0.1)
-  ctx.lineTo(size * 0.67, size * 0.02)
-  ctx.lineTo(size * 0.34, size * 0.22)
-  ctx.lineTo(size * 0.18, size * 0.18)
-  ctx.lineTo(size * 0.1, size * 0.38)
-  ctx.lineTo(0, size * 0.48)
-  ctx.lineTo(-size * 0.1, size * 0.38)
-  ctx.lineTo(-size * 0.18, size * 0.18)
-  ctx.lineTo(-size * 0.34, size * 0.22)
-  ctx.lineTo(-size * 0.67, size * 0.02)
-  ctx.lineTo(-size * 0.48, -size * 0.1)
-  ctx.lineTo(-size * 0.58, -size * 0.32)
-  ctx.lineTo(-size * 0.18, -size * 0.22)
+  ctx.moveTo(0, -size * 0.68)
+  ctx.lineTo(size * 0.12, -size * 0.45)
+  ctx.lineTo(size * 0.28, -size * 0.53)
+  ctx.lineTo(size * 0.47, -size * 0.38)
+  ctx.lineTo(size * 0.35, -size * 0.2)
+  ctx.lineTo(size * 0.66, -size * 0.09)
+  ctx.lineTo(size * 0.5, size * 0.14)
+  ctx.lineTo(size * 0.32, size * 0.16)
+  ctx.lineTo(size * 0.38, size * 0.36)
+  ctx.lineTo(size * 0.2, size * 0.56)
+  ctx.lineTo(size * 0.08, size * 0.5)
+  ctx.lineTo(0, size * 0.68)
+  ctx.lineTo(-size * 0.08, size * 0.5)
+  ctx.lineTo(-size * 0.2, size * 0.56)
+  ctx.lineTo(-size * 0.38, size * 0.36)
+  ctx.lineTo(-size * 0.32, size * 0.16)
+  ctx.lineTo(-size * 0.5, size * 0.14)
+  ctx.lineTo(-size * 0.66, -size * 0.09)
+  ctx.lineTo(-size * 0.35, -size * 0.2)
+  ctx.lineTo(-size * 0.47, -size * 0.38)
+  ctx.lineTo(-size * 0.28, -size * 0.53)
+  ctx.lineTo(-size * 0.12, -size * 0.45)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.shadowBlur = 0
+
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = darkBronze
+    ctx.strokeStyle = 'rgba(251,191,36,0.62)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.16, -size * 0.42)
+    ctx.lineTo(side * size * 0.38, -size * 0.5)
+    ctx.lineTo(side * size * 0.26, -size * 0.2)
+    ctx.lineTo(side * size * 0.48, -size * 0.08)
+    ctx.lineTo(side * size * 0.25, size * 0.07)
+    ctx.lineTo(side * size * 0.13, -size * 0.06)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.17, -size * 0.28)
+    ctx.lineTo(side * size * 0.31, -size * 0.21)
+    ctx.lineTo(side * size * 0.18, size * 0.06)
+    ctx.closePath()
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.2, size * 0.1)
+    ctx.lineTo(side * size * 0.44, size * 0.2)
+    ctx.lineTo(side * size * 0.26, size * 0.42)
+    ctx.lineTo(side * size * 0.1, size * 0.36)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  ctx.fillStyle = bronze
+  ctx.strokeStyle = 'rgba(254,243,199,0.9)'
+  ctx.lineWidth = Math.max(2, size * 0.0085)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.64)
+  ctx.lineTo(size * 0.14, -size * 0.2)
+  ctx.lineTo(size * 0.17, size * 0.35)
+  ctx.lineTo(0, size * 0.62)
+  ctx.lineTo(-size * 0.17, size * 0.35)
+  ctx.lineTo(-size * 0.14, -size * 0.2)
   ctx.closePath()
   ctx.fill()
   ctx.stroke()
 
-  ctx.fillStyle = bronze
-  ctx.beginPath()
-  ctx.moveTo(0, -size * 0.34)
-  ctx.lineTo(size * 0.14, -size * 0.1)
-  ctx.lineTo(size * 0.16, size * 0.22)
-  ctx.lineTo(0, size * 0.43)
-  ctx.lineTo(-size * 0.16, size * 0.22)
-  ctx.lineTo(-size * 0.14, -size * 0.1)
-  ctx.closePath()
-  ctx.fill()
+  ctx.fillStyle = 'rgba(255,247,173,0.9)'
+  ctx.strokeStyle = 'rgba(17,24,39,0.42)'
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  for (let plate = 0; plate < 9; plate += 1) {
+    const y = -size * 0.5 + plate * size * 0.105
+    const w = size * (0.08 + plate * 0.012)
+    ctx.beginPath()
+    ctx.moveTo(0, y)
+    ctx.lineTo(w, y + size * 0.05)
+    ctx.lineTo(0, y + size * 0.095)
+    ctx.lineTo(-w, y + size * 0.05)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+  ctx.strokeStyle = 'rgba(17,24,39,0.58)'
+  ctx.lineWidth = Math.max(0.8, size * 0.0032)
+  for (let plate = 0; plate < 12; plate += 1) {
+    const y = -size * 0.56 + plate * size * 0.082
+    drawEtchedPanelLine(ctx, [[-0.08, y / size], [0, y / size + 0.035], [0.08, y / size]], size, 'rgba(17,24,39,0.58)', 0.0032)
+  }
 
   ctx.globalCompositeOperation = 'lighter'
   const corePulse = 0.78 + Math.sin(seconds * 3.8) * 0.18
   for (const side of [-1, 1]) {
-    const panelX = side * size * 0.3
+    const panelX = side * size * 0.34
     ctx.fillStyle = `rgba(34,211,238,${0.28 + corePulse * 0.22})`
     ctx.strokeStyle = 'rgba(125,249,255,0.72)'
     ctx.lineWidth = Math.max(1.5, size * 0.006)
     ctx.beginPath()
-    ctx.moveTo(panelX - side * size * 0.04, -size * 0.18)
-    ctx.lineTo(panelX + side * size * 0.18, -size * 0.12)
-    ctx.lineTo(panelX + side * size * 0.12, size * 0.08)
-    ctx.lineTo(panelX - side * size * 0.08, size * 0.12)
+    ctx.moveTo(panelX - side * size * 0.1, -size * 0.2)
+    ctx.lineTo(panelX + side * size * 0.15, -size * 0.1)
+    ctx.lineTo(panelX + side * size * 0.11, size * 0.17)
+    ctx.lineTo(panelX - side * size * 0.13, size * 0.22)
     ctx.closePath()
     ctx.fill()
     ctx.stroke()
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 7; i += 1) {
       ctx.beginPath()
-      ctx.moveTo(panelX - side * size * 0.02, -size * (0.14 - i * 0.045))
-      ctx.lineTo(panelX + side * size * (0.14 - i * 0.016), -size * (0.1 - i * 0.035))
+      ctx.moveTo(panelX - side * size * 0.07, -size * (0.15 - i * 0.05))
+      ctx.lineTo(panelX + side * size * (0.1 - i * 0.011), -size * (0.1 - i * 0.04))
       ctx.stroke()
     }
+    for (let pod = 0; pod < 4; pod += 1) {
+      const podY = -size * 0.46 + pod * size * 0.24
+      drawRadialEllipse(ctx, side * size * (0.62 + pod * 0.03), podY, size * 0.045, size * 0.018, [
+        [0, 'rgba(255,255,255,0.9)'],
+        [0.34, 'rgba(125,249,255,0.7)'],
+        [1, 'rgba(125,249,255,0)'],
+      ])
+      ctx.strokeStyle = 'rgba(34,211,238,0.7)'
+      ctx.beginPath()
+      ctx.ellipse(side * size * (0.62 + pod * 0.03), podY, size * 0.08, size * 0.026, 0, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    drawRadialEllipse(ctx, side * size * 0.27, size * 0.46, size * 0.045, size * 0.09, [
+      [0, 'rgba(255,255,255,0.9)'],
+      [0.34, 'rgba(125,249,255,0.7)'],
+      [1, 'rgba(125,249,255,0)'],
+    ])
   }
-  drawRadialEllipse(ctx, 0, size * 0.1, size * 0.12, size * 0.18, [
+  drawRadialEllipse(ctx, 0, size * 0.23, size * 0.17, size * 0.18, [
     [0, `rgba(255,255,255,${0.9 * corePulse})`],
     [0.3, `rgba(34,211,238,${0.78 * corePulse})`],
+    [0.62, 'rgba(14,165,233,0.46)'],
     [1, 'rgba(34,211,238,0)'],
   ])
-  ctx.fillStyle = 'rgba(125,249,255,0.55)'
-  for (let i = 0; i < 6; i += 1) {
-    const a = i / 6 * Math.PI * 2 + seconds * 0.35
+
+  ctx.fillStyle = 'rgba(125,249,255,0.38)'
+  ctx.strokeStyle = 'rgba(125,249,255,0.56)'
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  for (let i = 0; i < 8; i += 1) {
+    const y = -size * 0.46 + i * size * 0.1
     ctx.beginPath()
-    ctx.ellipse(Math.cos(a) * size * 0.62, Math.sin(a) * size * 0.2, size * 0.045, size * 0.018, a, 0, Math.PI * 2)
+    ctx.ellipse(0, y, size * (0.032 + i * 0.006), size * 0.014, 0, 0, Math.PI * 2)
     ctx.fill()
+    ctx.stroke()
   }
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+  ctx.lineWidth = Math.max(0.7, size * 0.0026)
+  for (let scratch = 0; scratch < 30; scratch += 1) {
+    const side = scratch % 2 === 0 ? -1 : 1
+    const y = -size * (0.54 - scratch * 0.036)
+    const x = side * size * (0.07 + (scratch % 8) * 0.027)
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + side * size * 0.026, y + size * 0.026)
+    ctx.stroke()
+  }
+
   ctx.strokeStyle = 'rgba(253,230,138,0.5)'
   ctx.lineWidth = Math.max(1, size * 0.004)
   ctx.globalCompositeOperation = 'source-over'
   for (const side of [-1, 1]) {
-    for (let rib = 0; rib < 5; rib += 1) {
+    for (let rib = 0; rib < 10; rib += 1) {
       ctx.beginPath()
-      ctx.moveTo(side * size * 0.16, -size * (0.16 - rib * 0.07))
-      ctx.lineTo(side * size * (0.54 - rib * 0.04), -size * (0.23 - rib * 0.055))
+      ctx.moveTo(side * size * 0.13, -size * (0.5 - rib * 0.085))
+      ctx.lineTo(side * size * (0.48 - rib * 0.032), -size * (0.42 - rib * 0.068))
       ctx.stroke()
     }
+    ctx.strokeStyle = 'rgba(10,10,12,0.58)'
+    for (let seam = 0; seam < 6; seam += 1) {
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.22 + seam * 0.055), -size * 0.36)
+      ctx.lineTo(side * size * (0.14 + seam * 0.04), size * 0.24)
+      ctx.stroke()
+    }
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, 0, size * 0.66, size * 0.08, size * 0.32, [
+    [0, 'rgba(255,255,255,0.42)'],
+    [0.22, 'rgba(34,211,238,0.5)'],
+    [1, 'rgba(34,211,238,0)'],
+  ])
+  ctx.fillStyle = 'rgba(56,189,248,0.52)'
+  for (let burst = 0; burst < 10; burst += 1) {
+    const angle = burst / 10 * Math.PI * 2 + seconds * 0.5
+    ctx.beginPath()
+    ctx.ellipse(Math.cos(angle) * size * 0.72, size * 0.58 + Math.sin(angle) * size * 0.08, size * 0.035, size * 0.01, angle, 0, Math.PI * 2)
+    ctx.fill()
   }
   ctx.restore()
 }
