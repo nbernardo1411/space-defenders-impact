@@ -4711,7 +4711,8 @@ export function GradiusRaid({
     const originX = isElite ? clamp(eliteX + (Math.random() - 0.5) * 18, 12, 88) : style?.originX ?? x
     const hp = 2 + Math.floor(wave / 2) + Math.floor(powerPressure / 4)
     const eliteHpMultiplier = kind === 'brood' ? 12 : kind === 'lancer' ? 9.2 : 10.4
-    const eliteHp = Math.round((34 + hp * eliteHpMultiplier + stage * 6.3 + wave * 2.7 + powerPressure * 3.6) * (multiplayerSessionRef.current ? 1.32 : 1))
+    const eliteStagePressure = Math.max(0, stage - 1)
+    const eliteHp = Math.round((38 + hp * eliteHpMultiplier + eliteStagePressure * 11.5 + wave * 3.4 + powerPressure * 4.2) * (multiplayerSessionRef.current ? 1.36 : 1))
     enemiesRef.current.push({
       id: enemyId++,
       x: isElite ? eliteX : x,
