@@ -86,6 +86,7 @@ type Enemy = Vec & {
   chargeCooldown: number
   chargeTimer: number
   chargeLane: number
+  rapidCharge?: boolean
   chargePattern: 'single' | 'pincer' | 'trident' | 'scatter' | 'diagonal' | 'horizontal' | 'cross' | 'rotate'
 }
 
@@ -3315,9 +3316,220 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
   drawReferenceSquidBossDetails(ctx, size, time)
   drawReferenceSquidBossFinishPass(ctx, size, time)
   drawReferenceSquidBossPaintPass(ctx, size, time)
+  drawSquidTerrorEye(ctx, size, time)
   ctx.restore()
 }
 
+function drawSquidTerrorEye(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  const pulse = 0.84 + Math.sin(seconds * 4.8) * 0.12
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = 'rgba(3,0,10,0.94)'
+  ctx.strokeStyle = 'rgba(244,114,182,0.9)'
+  ctx.lineWidth = Math.max(2.2, size * 0.012)
+  ctx.beginPath()
+  ctx.ellipse(0, -size * 0.13, size * 0.155, size * 0.25, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+
+  const eye = ctx.createRadialGradient(-size * 0.035, -size * 0.19, 1, 0, -size * 0.13, size * 0.19)
+  eye.addColorStop(0, `rgba(255,255,255,${0.95 * pulse})`)
+  eye.addColorStop(0.18, `rgba(254,240,138,${0.96 * pulse})`)
+  eye.addColorStop(0.46, `rgba(249,115,22,${0.92 * pulse})`)
+  eye.addColorStop(0.72, 'rgba(190,24,93,0.78)')
+  eye.addColorStop(1, 'rgba(20,2,20,0.98)')
+  ctx.fillStyle = eye
+  ctx.beginPath()
+  ctx.ellipse(0, -size * 0.13, size * 0.115, size * 0.205, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.fillStyle = 'rgba(2,6,23,0.96)'
+  ctx.beginPath()
+  ctx.ellipse(0, -size * 0.13, size * 0.024, size * 0.17, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(255,255,255,0.72)'
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  ctx.beginPath()
+  ctx.ellipse(0, -size * 0.13, size * 0.122, size * 0.212, 0, 0, Math.PI * 2)
+  ctx.stroke()
+
+  ctx.strokeStyle = 'rgba(244,114,182,0.58)'
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  for (let vein = 0; vein < 18; vein += 1) {
+    const side = vein % 2 === 0 ? -1 : 1
+    const startY = -size * (0.28 - (vein % 6) * 0.045)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.04, startY)
+    ctx.quadraticCurveTo(side * size * (0.12 + (vein % 4) * 0.028), startY + size * 0.025, side * size * (0.2 + (vein % 3) * 0.028), startY + size * 0.09)
+    ctx.stroke()
+  }
+
+  ctx.fillStyle = 'rgba(250,232,255,0.86)'
+  ctx.strokeStyle = 'rgba(88,28,135,0.8)'
+  for (const side of [-1, 1]) {
+    for (let fang = 0; fang < 4; fang += 1) {
+      const x = side * size * (0.04 + fang * 0.038)
+      const y = size * (0.08 + fang * 0.012)
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + side * size * 0.026, y + size * 0.095)
+      ctx.lineTo(x - side * size * 0.012, y + size * 0.03)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
+}
+
+function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+
+  const skull = ctx.createLinearGradient(0, -size * 0.62, 0, size * 0.12)
+  skull.addColorStop(0, '#fff1a3')
+  skull.addColorStop(0.2, '#b7832f')
+  skull.addColorStop(0.54, '#273244')
+  skull.addColorStop(1, '#020617')
+  ctx.fillStyle = skull
+  ctx.strokeStyle = 'rgba(254,243,199,0.98)'
+  ctx.lineWidth = Math.max(2.2, size * 0.011)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.64)
+  ctx.lineTo(size * 0.16, -size * 0.42)
+  ctx.lineTo(size * 0.135, -size * 0.1)
+  ctx.lineTo(size * 0.055, size * 0.12)
+  ctx.lineTo(0, size * 0.19)
+  ctx.lineTo(-size * 0.055, size * 0.12)
+  ctx.lineTo(-size * 0.135, -size * 0.1)
+  ctx.lineTo(-size * 0.16, -size * 0.42)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = 'rgba(3,7,18,0.92)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.07, -size * 0.36)
+    ctx.lineTo(side * size * 0.22, -size * 0.25)
+    ctx.lineTo(side * size * 0.09, -size * 0.045)
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.globalCompositeOperation = 'lighter'
+    drawRadialEllipse(ctx, side * size * 0.085, -size * 0.18, size * 0.05, size * 0.058, [
+      [0, 'rgba(255,255,255,0.96)'],
+      [0.28, 'rgba(251,191,36,0.96)'],
+      [0.66, 'rgba(249,115,22,0.68)'],
+      [1, 'rgba(249,115,22,0)'],
+    ])
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.fillStyle = 'rgba(2,6,23,0.95)'
+    ctx.beginPath()
+    ctx.ellipse(side * size * 0.085, -size * 0.18, size * 0.01, size * 0.037, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = '#fef3c7'
+    ctx.strokeStyle = 'rgba(15,23,42,0.9)'
+    ctx.lineWidth = Math.max(1, size * 0.004)
+    for (let fang = 0; fang < 2; fang += 1) {
+      const x = side * size * (0.035 + fang * 0.035)
+      const y = size * (0.055 + fang * 0.01)
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + side * size * 0.018, size * 0.235)
+      ctx.lineTo(x - side * size * 0.014, y + size * 0.035)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(2,6,23,0.78)'
+  ctx.lineWidth = Math.max(1.1, size * 0.005)
+  for (let ridge = 0; ridge < 7; ridge += 1) {
+    const y = -size * 0.48 + ridge * size * 0.075
+    ctx.beginPath()
+    ctx.moveTo(-size * (0.035 + ridge * 0.007), y)
+    ctx.lineTo(0, y + size * 0.038)
+    ctx.lineTo(size * (0.035 + ridge * 0.007), y)
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = 'rgba(34,211,238,0.5)'
+  ctx.lineWidth = Math.max(1.2, size * 0.004)
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.02, -size * 0.54)
+    ctx.bezierCurveTo(side * size * 0.09, -size * 0.36, side * size * 0.03, -size * 0.1, side * size * 0.075, size * 0.08)
+    ctx.stroke()
+  }
+  drawRadialEllipse(ctx, 0, -size * 0.5 + Math.sin(seconds * 3.6) * size * 0.004, size * 0.025, size * 0.04, [
+    [0, 'rgba(255,255,255,0.72)'],
+    [0.45, 'rgba(34,211,238,0.54)'],
+    [1, 'rgba(34,211,238,0)'],
+  ])
+  ctx.restore()
+}
+
+function drawDreadshipTerrorOverlay(ctx: CanvasRenderingContext2D, size: number, time: number) {
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.82)
+  ctx.lineTo(size * 0.62, -size * 0.08)
+  ctx.lineTo(size * 0.2, size * 0.58)
+  ctx.lineTo(0, size * 0.72)
+  ctx.lineTo(-size * 0.2, size * 0.58)
+  ctx.lineTo(-size * 0.62, -size * 0.08)
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.strokeStyle = 'rgba(2,6,23,0.9)'
+  ctx.lineWidth = Math.max(2, size * 0.01)
+  for (const side of [-1, 1]) {
+    for (let claw = 0; claw < 5; claw += 1) {
+      const y = -size * (0.52 - claw * 0.22)
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.11 + claw * 0.025), y)
+      ctx.lineTo(side * size * (0.72 - claw * 0.035), y + size * 0.12)
+      ctx.stroke()
+    }
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  const pulse = 0.78 + Math.sin(seconds * 5.2) * 0.16
+  drawRadialEllipse(ctx, 0, size * 0.18, size * 0.22, size * 0.23, [
+    [0, `rgba(255,255,255,${0.9 * pulse})`],
+    [0.22, `rgba(125,249,255,${0.86 * pulse})`],
+    [0.54, 'rgba(14,165,233,0.58)'],
+    [1, 'rgba(3,7,18,0)'],
+  ])
+  ctx.strokeStyle = 'rgba(125,249,255,0.78)'
+  ctx.lineWidth = Math.max(1.4, size * 0.005)
+  for (let ring = 0; ring < 4; ring += 1) {
+    ctx.beginPath()
+    ctx.ellipse(0, size * 0.18, size * (0.14 + ring * 0.055), size * (0.06 + ring * 0.026), seconds * 0.2 + ring * 0.4, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  ctx.strokeStyle = 'rgba(254,243,199,0.7)'
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  for (let shard = 0; shard < 28; shard += 1) {
+    const side = shard % 2 === 0 ? -1 : 1
+    const y = -size * (0.64 - shard * 0.048)
+    ctx.beginPath()
+    ctx.moveTo(side * size * (0.035 + (shard % 6) * 0.025), y)
+    ctx.lineTo(side * size * (0.12 + (shard % 4) * 0.04), y + size * 0.07)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
 function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, size: number, time: number, chargeTimer: number, pattern: Enemy['chargePattern']) {
   const warm = clamp(1 - chargeTimer / 0.95, 0, 1)
   const pulse = 0.45 + Math.sin(time / 85) * 0.18
@@ -3566,6 +3778,7 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   drawReferenceSnakeBossDetails(ctx, size, time)
   drawReferenceSnakeBossFinishPass(ctx, size, time)
   drawReferenceSnakeBossPaintPass(ctx, size, time)
+  drawSnakeTerrorHead(ctx, size, time)
   ctx.restore()
 }
 
@@ -3791,9 +4004,91 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
     ctx.ellipse(Math.cos(angle) * size * 0.72, size * 0.58 + Math.sin(angle) * size * 0.08, size * 0.035, size * 0.01, angle, 0, Math.PI * 2)
     ctx.fill()
   }
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.lineJoin = 'miter'
+  for (const side of [-1, 1]) {
+    const blade = ctx.createLinearGradient(side * size * 0.1, -size * 0.64, side * size * 0.58, size * 0.5)
+    blade.addColorStop(0, '#fff7ad')
+    blade.addColorStop(0.28, '#d97706')
+    blade.addColorStop(0.66, '#271407')
+    blade.addColorStop(1, '#030712')
+    ctx.fillStyle = blade
+    ctx.strokeStyle = 'rgba(254,243,199,0.8)'
+    ctx.lineWidth = Math.max(1.1, size * 0.0048)
+    const bladeSets = [
+      [0.18, -0.58, 0.34, -0.42, 0.21, -0.2],
+      [0.32, -0.36, 0.62, -0.22, 0.42, 0.03],
+      [0.28, 0.06, 0.55, 0.2, 0.34, 0.44],
+      [0.12, 0.34, 0.25, 0.62, 0.04, 0.5],
+    ] as const
+    for (const [x1, y1, x2, y2, x3, y3] of bladeSets) {
+      ctx.beginPath()
+      ctx.moveTo(side * size * x1, size * y1)
+      ctx.lineTo(side * size * x2, size * y2)
+      ctx.lineTo(side * size * x3, size * y3)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    ctx.strokeStyle = 'rgba(8,47,73,0.9)'
+    ctx.lineWidth = Math.max(2.2, size * 0.008)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.22, -size * 0.5)
+    ctx.lineTo(side * size * 0.09, -size * 0.08)
+    ctx.lineTo(side * size * 0.16, size * 0.42)
+    ctx.stroke()
+
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = 'rgba(125,249,255,0.72)'
+    ctx.lineWidth = Math.max(1.4, size * 0.005)
+    for (let vent = 0; vent < 8; vent += 1) {
+      const y = -size * (0.38 - vent * 0.095)
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.22 + (vent % 3) * 0.018), y)
+      ctx.lineTo(side * size * (0.39 + (vent % 2) * 0.03), y + size * 0.035)
+      ctx.stroke()
+    }
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
+  const prow = ctx.createLinearGradient(0, -size * 0.84, 0, size * 0.46)
+  prow.addColorStop(0, '#fff7ad')
+  prow.addColorStop(0.25, '#f59e0b')
+  prow.addColorStop(0.58, '#5b2f0d')
+  prow.addColorStop(1, '#050506')
+  ctx.fillStyle = prow
+  ctx.strokeStyle = 'rgba(254,243,199,0.94)'
+  ctx.lineWidth = Math.max(1.5, size * 0.006)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.82)
+  ctx.lineTo(size * 0.07, -size * 0.5)
+  ctx.lineTo(size * 0.055, size * 0.36)
+  ctx.lineTo(0, size * 0.52)
+  ctx.lineTo(-size * 0.055, size * 0.36)
+  ctx.lineTo(-size * 0.07, -size * 0.5)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = 'rgba(125,249,255,0.78)'
+  ctx.lineWidth = Math.max(1.2, size * 0.0045)
+  ctx.beginPath()
+  ctx.moveTo(0, -size * 0.62)
+  ctx.lineTo(0, size * 0.45)
+  ctx.stroke()
+  for (let node = 0; node < 9; node += 1) {
+    drawRadialEllipse(ctx, 0, -size * 0.46 + node * size * 0.105, size * 0.015, size * 0.024, [
+      [0, 'rgba(255,255,255,0.92)'],
+      [0.42, 'rgba(125,249,255,0.78)'],
+      [1, 'rgba(125,249,255,0)'],
+    ])
+  }
   drawReferenceDreadshipBossDetails(ctx, size, time)
   drawReferenceDreadshipBossFinishPass(ctx, size, time)
   drawReferenceDreadshipBossPaintPass(ctx, size, time)
+  drawDreadshipTerrorOverlay(ctx, size, time)
   ctx.restore()
 }
 
@@ -8282,13 +8577,16 @@ export function GradiusRaid({
       let chargeTimer = enemy.chargeTimer
       let chargeLane = enemy.chargeLane
       let chargePattern = enemy.chargePattern
+      let rapidCharge = enemy.rapidCharge ?? false
       let fireCooldown = enemy.fireCooldown
       if (enemy.isBoss && bossKind === 'final' && enemy.y >= bossYTarget - 0.5) {
         if (chargeTimer > 0) {
           const beforeCharge = chargeTimer
           chargeTimer = Math.max(0, chargeTimer - dt)
           if (beforeCharge > 0 && chargeTimer <= 0) {
-            const beamRadius = getFinalBossBeamRadius(chargePattern)
+            const wasRapidCharge = rapidCharge
+            rapidCharge = false
+            const beamRadius = getFinalBossBeamRadius(chargePattern) * (wasRapidCharge ? 0.82 : 1)
             const emitFinalBeam = (x: number, y: number, angle?: number, spin?: number) => {
               enemyShotsRef.current.push({
                 id: shotId++,
@@ -8329,22 +8627,27 @@ export function GradiusRaid({
             }
             spawnSparks(enemy.x, enemy.y + 8, '#38bdf8', 84, 9)
             playGameSound('laser')
-            chargeCooldown =
-              chargePattern === 'rotate' ? 4.25 + Math.random() * 1.1 :
+            chargeCooldown = wasRapidCharge
+              ? chargePattern === 'rotate' ? 2.6 + Math.random() * 0.7 :
+                chargePattern === 'cross' ? 2.4 + Math.random() * 0.65 :
+                  chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 2.05 + Math.random() * 0.55 :
+                    chargePattern === 'scatter' || chargePattern === 'trident' ? 2.25 + Math.random() * 0.65 :
+                      1.8 + Math.random() * 0.5
+              : chargePattern === 'rotate' ? 4.25 + Math.random() * 1.1 :
                 chargePattern === 'cross' ? 3.95 + Math.random() * 1 :
                   chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 3.55 + Math.random() * 1 :
                     chargePattern === 'scatter' ? 3.45 + Math.random() * 1.1 :
                       chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
                         chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
                           2.45 + Math.random() * 0.85
-            fireCooldown = Math.max(fireCooldown, chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)
-          }
+            fireCooldown = Math.max(fireCooldown, wasRapidCharge ? 3.2 : chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)          }
         } else {
           chargeCooldown = Math.max(0, chargeCooldown - dt)
           if (chargeCooldown <= 0) {
-            chargeTimer = FINAL_BOSS_BEAM_CHARGE_SECONDS
             const hpRatio = enemy.hp / enemy.maxHp
             const roll = Math.random()
+            rapidCharge = Math.random() < (hpRatio < 0.36 ? 0.44 : hpRatio < 0.72 ? 0.28 : 0.13)
+            chargeTimer = rapidCharge ? FINAL_BOSS_BEAM_CHARGE_SECONDS * (0.46 + Math.random() * 0.14) : FINAL_BOSS_BEAM_CHARGE_SECONDS
             chargePattern =
               hpRatio < 0.34
                 ? roll < 0.14 ? 'single' : roll < 0.27 ? 'pincer' : roll < 0.4 ? 'trident' : roll < 0.52 ? 'scatter' : roll < 0.66 ? 'diagonal' : roll < 0.78 ? 'horizontal' : roll < 0.91 ? 'cross' : 'rotate'
@@ -8511,6 +8814,7 @@ export function GradiusRaid({
       enemy.chargeTimer = chargeTimer
       enemy.chargeLane = chargeLane
       enemy.chargePattern = chargePattern
+      enemy.rapidCharge = rapidCharge
 
       if ((enemy.isMiniBoss || enemy.y < HEIGHT + 14) && enemy.hp > 0) {
         enemies[liveEnemyCount] = enemy
