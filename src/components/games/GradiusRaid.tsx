@@ -90,6 +90,7 @@ type Enemy = Vec & {
   chargeLane: number
   rapidCharge?: boolean
   beamVolleyLeft?: number
+  beamVolleyRecovery?: number
   chargePattern: 'single' | 'pincer' | 'trident' | 'scatter' | 'diagonal' | 'horizontal' | 'cross' | 'rotate'
 }
 
@@ -5657,6 +5658,7 @@ export function GradiusRaid({
   const bossTimerRef = useRef(28)
   const spawnLockRef = useRef(0)
   const powerDropCooldownRef = useRef(0)
+  const finalBossSupportDropTimerRef = useRef(6 + Math.random() * 4)
   const killsSincePowerRef = useRef(0)
   const bossAlertRef = useRef(0)
   const bossMessageRef = useRef<BossMessage>(null)
@@ -8325,6 +8327,25 @@ export function GradiusRaid({
       startRaidBgm(stageRef.current, desiredBgmMode)
     }
     powerDropCooldownRef.current = Math.max(0, powerDropCooldownRef.current - dt)
+    const finalBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.bossKind === 'final' && enemy.hp > 0)
+    if (finalBoss && finalBoss.y > 0 && stageClearRef.current <= 0) {
+      finalBossSupportDropTimerRef.current = Math.max(0, finalBossSupportDropTimerRef.current - dt)
+      if (finalBossSupportDropTimerRef.current <= 0) {
+        let activeSupportDrops = 0
+        for (const powerUp of powerUpsRef.current) {
+          if (powerUp.type === 'repair' || powerUp.type === 'forcefield') activeSupportDrops += 1
+          if (activeSupportDrops >= 2) break
+        }
+        if (activeSupportDrops < 2) {
+          const hurtPlayer = player.hp < player.maxHp || (remotePlayerRef.current?.hp ?? 999) < (remotePlayerRef.current?.maxHp ?? 0)
+          const type: PowerKind = hurtPlayer && Math.random() < 0.58 ? 'repair' : 'forcefield'
+          powerUpsRef.current.push({ id: powerId++, type, x: 12 + Math.random() * 76, y: -6, vy: 8.4, radius: type === 'forcefield' ? 3.4 : 3.1, spin: Math.random() * 360 })
+        }
+        finalBossSupportDropTimerRef.current = 9.5 + Math.random() * 6.5
+      }
+    } else {
+      finalBossSupportDropTimerRef.current = Math.min(finalBossSupportDropTimerRef.current, 6 + Math.random() * 4)
+    }
     if (bossMessageRef.current !== 'incoming') {
       bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
     }
@@ -8671,6 +8692,7 @@ export function GradiusRaid({
       let chargePattern = enemy.chargePattern
       let rapidCharge = enemy.rapidCharge ?? false
       let beamVolleyLeft = enemy.beamVolleyLeft ?? 0
+      let beamVolleyRecovery = Math.max(0, (enemy.beamVolleyRecovery ?? 0) - dt)
       let fireCooldown = enemy.fireCooldown
       if (enemy.isBoss && bossKind === 'final' && enemy.y >= bossYTarget - 0.5) {
         if (chargeTimer > 0) {
@@ -8722,8 +8744,8 @@ export function GradiusRaid({
             playGameSound('laser')
             if (wasRapidCharge && beamVolleyLeft > 0) {
               beamVolleyLeft -= 1
-              chargeCooldown = 0.26 + Math.random() * 0.18
-              fireCooldown = Math.max(fireCooldown, 1.8)
+              chargeCooldown = 0.42 + Math.random() * 0.28
+              fireCooldown = Math.max(fireCooldown, 2.15)
             } else {
               chargeCooldown = wasRapidCharge
                 ? chargePattern === 'rotate' ? 2.6 + Math.random() * 0.7 :
@@ -8738,7 +8760,8 @@ export function GradiusRaid({
                         chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
                           chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
                             2.45 + Math.random() * 0.85
-              fireCooldown = Math.max(fireCooldown, wasRapidCharge ? 3.2 : chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)
+              if (wasRapidCharge) beamVolleyRecovery = 5.2 + Math.random() * 1.3
+              fireCooldown = Math.max(fireCooldown, wasRapidCharge ? 3.45 : chargePattern === 'rotate' || chargePattern === 'cross' ? 5.4 : 4.8)
             }
           }
         } else {
@@ -8746,12 +8769,12 @@ export function GradiusRaid({
           if (chargeCooldown <= 0) {
             const hpRatio = enemy.hp / enemy.maxHp
             const roll = Math.random()
-            const volleyChance = hpRatio < 0.36 ? 0.42 : hpRatio < 0.72 ? 0.32 : 0.2
-            if (beamVolleyLeft <= 0 && Math.random() < volleyChance) {
-              beamVolleyLeft = 3 + Math.floor(Math.random() * (hpRatio < 0.36 ? 4 : 3))
+            const volleyChance = hpRatio < 0.36 ? 0.34 : hpRatio < 0.72 ? 0.25 : 0.16
+            if (beamVolleyRecovery <= 0 && beamVolleyLeft <= 0 && Math.random() < volleyChance) {
+              beamVolleyLeft = 2 + Math.floor(Math.random() * (hpRatio < 0.36 ? 3 : 2))
             }
-            rapidCharge = beamVolleyLeft > 0 || Math.random() < (hpRatio < 0.36 ? 0.55 : hpRatio < 0.72 ? 0.38 : 0.22)
-            chargeTimer = rapidCharge ? FINAL_BOSS_BEAM_CHARGE_SECONDS * (beamVolleyLeft > 0 ? 0.28 + Math.random() * 0.08 : 0.42 + Math.random() * 0.13) : FINAL_BOSS_BEAM_CHARGE_SECONDS
+            rapidCharge = beamVolleyLeft > 0 || Math.random() < (hpRatio < 0.36 ? 0.38 : hpRatio < 0.72 ? 0.25 : 0.14)
+            chargeTimer = rapidCharge ? FINAL_BOSS_BEAM_CHARGE_SECONDS * (beamVolleyLeft > 0 ? 0.34 + Math.random() * 0.1 : 0.5 + Math.random() * 0.14) : FINAL_BOSS_BEAM_CHARGE_SECONDS
             chargePattern = beamVolleyLeft > 0
               ? roll < 0.22 ? 'single' : roll < 0.43 ? 'pincer' : roll < 0.66 ? 'diagonal' : roll < 0.86 ? 'horizontal' : 'trident'
               : hpRatio < 0.34
@@ -8957,6 +8980,7 @@ export function GradiusRaid({
       enemy.chargePattern = chargePattern
       enemy.rapidCharge = rapidCharge
       enemy.beamVolleyLeft = beamVolleyLeft
+      enemy.beamVolleyRecovery = beamVolleyRecovery
 
       const enemyMargin = enemy.isBoss || enemy.isMiniBoss ? 90 : 28
       const enemyOnField = enemy.y > -enemyMargin && enemy.y < HEIGHT + enemyMargin && enemy.x > -enemyMargin && enemy.x < WIDTH + enemyMargin
@@ -9302,9 +9326,10 @@ export function GradiusRaid({
       const hitRange = enemyShot.radius + PLAYER_RADIUS
       for (const targetPlayer of getLivingPlayers()) {
         if (enemyShot.kind === 'beam' && enemyShot.life !== undefined) {
+          const beamHitRange = enemyShot.radius * 0.82 + PLAYER_RADIUS * 0.72
           const beamHits = enemyShot.angle === undefined
-            ? Math.abs(enemyShot.x - targetPlayer.x) <= hitRange
-            : Math.abs((targetPlayer.x - enemyShot.x) * Math.sin(enemyShot.angle) - (targetPlayer.y - enemyShot.y) * Math.cos(enemyShot.angle)) <= hitRange
+            ? Math.abs(enemyShot.x - targetPlayer.x) <= beamHitRange
+            : Math.abs((targetPlayer.x - enemyShot.x) * Math.sin(enemyShot.angle) - (targetPlayer.y - enemyShot.y) * Math.cos(enemyShot.angle)) <= beamHitRange
           if (beamHits) {
             damagePlayer(enemyShot.damage, targetPlayer)
           }
@@ -9977,6 +10002,10 @@ export function GradiusRaid({
     </div>
   )
 }
+
+
+
+
 
 
 
