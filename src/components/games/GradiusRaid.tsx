@@ -50,7 +50,7 @@ type Shot = Vec & {
   vx: number
   vy: number
   damage: number
-  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud'
+  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud' | 'squidBubble'
   radius: number
   pierce?: number
   turn?: number
@@ -60,6 +60,8 @@ type Shot = Vec & {
   maxLife?: number
   angle?: number
   spin?: number
+  hp?: number
+  splitLevel?: number
 }
 
 type Enemy = Vec & {
@@ -3479,54 +3481,88 @@ function drawDreadshipTerrorOverlay(ctx: CanvasRenderingContext2D, size: number,
   const seconds = time / 1000
   ctx.save()
   ctx.globalCompositeOperation = 'source-over'
-  ctx.fillStyle = 'rgba(0,0,0,0.28)'
+
+  const blackGold = ctx.createLinearGradient(0, -size * 0.82, 0, size * 0.72)
+  blackGold.addColorStop(0, '#fff7ad')
+  blackGold.addColorStop(0.16, '#b45309')
+  blackGold.addColorStop(0.52, '#130b07')
+  blackGold.addColorStop(1, '#02030a')
+
+  ctx.fillStyle = 'rgba(0,0,0,0.34)'
   ctx.beginPath()
-  ctx.moveTo(0, -size * 0.82)
-  ctx.lineTo(size * 0.62, -size * 0.08)
-  ctx.lineTo(size * 0.2, size * 0.58)
-  ctx.lineTo(0, size * 0.72)
-  ctx.lineTo(-size * 0.2, size * 0.58)
-  ctx.lineTo(-size * 0.62, -size * 0.08)
+  ctx.moveTo(0, -size * 0.88)
+  ctx.lineTo(size * 0.28, -size * 0.44)
+  ctx.lineTo(size * 0.18, size * 0.56)
+  ctx.lineTo(0, size * 0.78)
+  ctx.lineTo(-size * 0.18, size * 0.56)
+  ctx.lineTo(-size * 0.28, -size * 0.44)
   ctx.closePath()
   ctx.fill()
 
-  ctx.strokeStyle = 'rgba(2,6,23,0.9)'
-  ctx.lineWidth = Math.max(2, size * 0.01)
+  ctx.fillStyle = blackGold
+  ctx.strokeStyle = 'rgba(254,243,199,0.9)'
+  ctx.lineWidth = Math.max(1.6, size * 0.007)
+  const armorRows = [
+    [-0.02, -0.78, 0.12, -0.48, 0.04, -0.28],
+    [0.02, -0.78, -0.12, -0.48, -0.04, -0.28],
+    [-0.11, -0.36, -0.02, -0.18, -0.16, 0.04],
+    [0.11, -0.36, 0.02, -0.18, 0.16, 0.04],
+    [-0.16, 0.1, -0.02, 0.24, -0.13, 0.48],
+    [0.16, 0.1, 0.02, 0.24, 0.13, 0.48],
+  ] as const
+  for (const [x1, y1, x2, y2, x3, y3] of armorRows) {
+    ctx.beginPath()
+    ctx.moveTo(size * x1, size * y1)
+    ctx.lineTo(size * x2, size * y2)
+    ctx.lineTo(size * x3, size * y3)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
+
   for (const side of [-1, 1]) {
-    for (let claw = 0; claw < 5; claw += 1) {
-      const y = -size * (0.52 - claw * 0.22)
+    ctx.fillStyle = blackGold
+    ctx.strokeStyle = 'rgba(251,191,36,0.78)'
+    const wings = [
+      [0.22, -0.62, 0.56, -0.5, 0.34, -0.2, 0.14, -0.31],
+      [0.35, -0.18, 0.76, -0.02, 0.43, 0.22, 0.18, 0.06],
+      [0.24, 0.26, 0.54, 0.47, 0.2, 0.62, 0.08, 0.42],
+    ] as const
+    for (const [x1, y1, x2, y2, x3, y3, x4, y4] of wings) {
       ctx.beginPath()
-      ctx.moveTo(side * size * (0.11 + claw * 0.025), y)
-      ctx.lineTo(side * size * (0.72 - claw * 0.035), y + size * 0.12)
+      ctx.moveTo(side * size * x1, size * y1)
+      ctx.lineTo(side * size * x2, size * y2)
+      ctx.lineTo(side * size * x3, size * y3)
+      ctx.lineTo(side * size * x4, size * y4)
+      ctx.closePath()
+      ctx.fill()
       ctx.stroke()
     }
   }
 
   ctx.globalCompositeOperation = 'lighter'
   const pulse = 0.78 + Math.sin(seconds * 5.2) * 0.16
-  drawRadialEllipse(ctx, 0, size * 0.18, size * 0.22, size * 0.23, [
-    [0, `rgba(255,255,255,${0.9 * pulse})`],
-    [0.22, `rgba(125,249,255,${0.86 * pulse})`],
+  drawRadialEllipse(ctx, 0, size * 0.18, size * 0.24, size * 0.25, [
+    [0, `rgba(255,255,255,${0.92 * pulse})`],
+    [0.2, `rgba(125,249,255,${0.9 * pulse})`],
     [0.54, 'rgba(14,165,233,0.58)'],
     [1, 'rgba(3,7,18,0)'],
   ])
   ctx.strokeStyle = 'rgba(125,249,255,0.78)'
   ctx.lineWidth = Math.max(1.4, size * 0.005)
-  for (let ring = 0; ring < 4; ring += 1) {
+  for (let ring = 0; ring < 5; ring += 1) {
     ctx.beginPath()
-    ctx.ellipse(0, size * 0.18, size * (0.14 + ring * 0.055), size * (0.06 + ring * 0.026), seconds * 0.2 + ring * 0.4, 0, Math.PI * 2)
+    ctx.ellipse(0, size * 0.18, size * (0.13 + ring * 0.045), size * (0.05 + ring * 0.024), seconds * 0.2 + ring * 0.36, 0, Math.PI * 2)
     ctx.stroke()
   }
-
-  ctx.strokeStyle = 'rgba(254,243,199,0.7)'
-  ctx.lineWidth = Math.max(1, size * 0.004)
-  for (let shard = 0; shard < 28; shard += 1) {
-    const side = shard % 2 === 0 ? -1 : 1
-    const y = -size * (0.64 - shard * 0.048)
-    ctx.beginPath()
-    ctx.moveTo(side * size * (0.035 + (shard % 6) * 0.025), y)
-    ctx.lineTo(side * size * (0.12 + (shard % 4) * 0.04), y + size * 0.07)
-    ctx.stroke()
+  for (const side of [-1, 1]) {
+    for (let slit = 0; slit < 9; slit += 1) {
+      const y = -size * (0.44 - slit * 0.096)
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.18 + (slit % 3) * 0.018), y)
+      ctx.lineTo(side * size * (0.34 + (slit % 2) * 0.035), y + size * 0.035)
+      ctx.stroke()
+    }
   }
   ctx.restore()
 }
@@ -4118,7 +4154,7 @@ function drawRaidEnemy(
       else if (enemy.bossKind === 'snake') drawGalacticSnakeBoss(ctx, size, time)
       else drawInterstellarDreadshipBoss(ctx, size, time)
       ctx.restore()
-      if (enemy.bossKind === 'squid' && enemy.chargeTimer > 0) {
+      if (enemy.bossKind === 'squid' && enemy.chargeTimer > 0 && enemy.chargePattern !== 'rotate') {
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), size, time, enemy.chargeTimer)
       }
       if (enemy.bossKind === 'snake' && enemy.chargeTimer > 0) {
@@ -6736,6 +6772,34 @@ export function GradiusRaid({
       }
       ctx.restore()
     }
+    const drawSquidBubble = (shot: Shot) => {
+      const x = toX(shot.x)
+      const y = toY(shot.y)
+      const radius = Math.max(12, shot.radius * visualScale * 5.2)
+      const pulse = 0.85 + Math.sin(time / 160 + shot.id) * 0.12
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      drawRadialEllipse(ctx, x, y, radius * pulse, radius * pulse, [
+        [0, 'rgba(255,255,255,0.72)'],
+        [0.22, 'rgba(244,114,182,0.58)'],
+        [0.58, 'rgba(168,85,247,0.42)'],
+        [1, 'rgba(88,28,135,0)'],
+      ])
+      ctx.strokeStyle = 'rgba(250,232,255,0.76)'
+      ctx.lineWidth = Math.max(1.5, visualScale * 1.4)
+      ctx.beginPath()
+      ctx.arc(x, y, radius * 0.82, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.strokeStyle = 'rgba(244,114,182,0.52)'
+      ctx.beginPath()
+      ctx.arc(x, y, radius * 0.48, time / 420, time / 420 + Math.PI * 1.35)
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'
+      ctx.beginPath()
+      ctx.arc(x - radius * 0.25, y - radius * 0.28, radius * 0.16, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
     const drawMissile = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
@@ -6775,7 +6839,8 @@ export function GradiusRaid({
     for (const shot of guestLocalShotsRef.current) drawPlayerShot(shot)
 
     for (const shot of enemyShotsRef.current) {
-      if (shot.kind === 'poisonCloud') drawPoisonCloud(shot)
+      if (shot.kind === 'squidBubble') drawSquidBubble(shot)
+      else if (shot.kind === 'poisonCloud') drawPoisonCloud(shot)
       else if (shot.kind === 'orbShot') drawOrb(shot, 'rgba(168,85,247,0.92)', 12)
       else if (shot.kind === 'blade') drawTrail(shot, 'rgba(34,211,238,0.9)', 46, 7)
       else if (shot.kind === 'needle') drawTrail(shot, 'rgba(190,242,100,0.92)', 42, 5)
@@ -8441,9 +8506,19 @@ export function GradiusRaid({
       if (shot.kind === 'beam' && shot.angle !== undefined && shot.spin) {
         shot.angle += shot.spin * dt
       }
+      if (shot.kind === 'squidBubble') {
+        const target = getNearestLivingPlayer(shot)
+        const aimX = target.x - shot.x
+        const aimY = target.y - shot.y
+        const mag = Math.hypot(aimX, aimY) || 1
+        const speed = 7.5 + (shot.splitLevel ?? 0) * 2.4
+        const turn = Math.min(1, dt * 0.9)
+        shot.vx += ((aimX / mag) * speed - shot.vx) * turn
+        shot.vy += ((aimY / mag) * speed - shot.vy) * turn
+      }
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
-      const beamMargin = shot.kind === 'beam' && shot.life !== undefined ? 120 : shot.kind === 'poisonCloud' ? 24 : 12
+      const beamMargin = shot.kind === 'beam' && shot.life !== undefined ? 120 : shot.kind === 'poisonCloud' || shot.kind === 'squidBubble' ? 24 : 12
       if (shot.kind === 'poisonCloud') {
         shot.vx += Math.sin(performance.now() / 1000 * 1.4 + shot.id) * dt * 1.6
       }
@@ -8633,9 +8708,9 @@ export function GradiusRaid({
                   chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 2.05 + Math.random() * 0.55 :
                     chargePattern === 'scatter' || chargePattern === 'trident' ? 2.25 + Math.random() * 0.65 :
                       1.8 + Math.random() * 0.5
-              : chargePattern === 'rotate' ? 4.25 + Math.random() * 1.1 :
-                chargePattern === 'cross' ? 3.95 + Math.random() * 1 :
-                  chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 3.55 + Math.random() * 1 :
+              : chargePattern === 'rotate' ? 3.45 + Math.random() * 0.9 :
+                chargePattern === 'cross' ? 3.25 + Math.random() * 0.8 :
+                  chargePattern === 'horizontal' || chargePattern === 'diagonal' ? 2.95 + Math.random() * 0.8 :
                     chargePattern === 'scatter' ? 3.45 + Math.random() * 1.1 :
                       chargePattern === 'trident' ? 3.05 + Math.random() * 1 :
                         chargePattern === 'pincer' ? 2.85 + Math.random() * 0.9 :
@@ -8646,7 +8721,7 @@ export function GradiusRaid({
           if (chargeCooldown <= 0) {
             const hpRatio = enemy.hp / enemy.maxHp
             const roll = Math.random()
-            rapidCharge = Math.random() < (hpRatio < 0.36 ? 0.44 : hpRatio < 0.72 ? 0.28 : 0.13)
+            rapidCharge = Math.random() < (hpRatio < 0.36 ? 0.55 : hpRatio < 0.72 ? 0.38 : 0.22)
             chargeTimer = rapidCharge ? FINAL_BOSS_BEAM_CHARGE_SECONDS * (0.46 + Math.random() * 0.14) : FINAL_BOSS_BEAM_CHARGE_SECONDS
             chargePattern =
               hpRatio < 0.34
@@ -8681,20 +8756,46 @@ export function GradiusRaid({
           const beforeCharge = chargeTimer
           chargeTimer = Math.max(0, chargeTimer - dt)
           if (beforeCharge > 0 && chargeTimer <= 0) {
-            for (const target of getLivingPlayers()) {
-              const inReachY = target.y > enemy.y + 8 && target.y < enemy.y + 48
-              const inStrikeLane = Math.abs(target.x - chargeLane) < 8.5
-              if (inReachY && inStrikeLane) {
-                damagePlayer(2, target)
-                spawnSparks(target.x, target.y, '#fb7185', 34, 8)
-                addRipple(target.x, target.y, '#fb7185', 16)
+            if (chargePattern === 'rotate') {
+              const target = getNearestLivingPlayer(enemy)
+              const aimX = target.x - enemy.x
+              const aimY = target.y - (enemy.y + 14)
+              const mag = Math.hypot(aimX, aimY) || 1
+              enemyShotsRef.current.push({
+                id: shotId++,
+                x: enemy.x,
+                y: enemy.y + 14,
+                vx: (aimX / mag) * 6,
+                vy: (aimY / mag) * 6,
+                damage: 1,
+                kind: 'squidBubble',
+                radius: 5.8,
+                hp: 7 + stageRef.current,
+                splitLevel: 0,
+                life: 18,
+                maxLife: 18,
+              })
+              spawnSparks(enemy.x, enemy.y + 10, '#f0abfc', 42, 8)
+              addRipple(enemy.x, enemy.y + 14, '#f472b6', 22)
+              playGameSound('laser')
+              chargeCooldown = 4.2 + Math.random() * 1.2
+              fireCooldown = Math.max(fireCooldown, 1.25)
+            } else {
+              for (const target of getLivingPlayers()) {
+                const inReachY = target.y > enemy.y + 8 && target.y < enemy.y + 48
+                const inStrikeLane = Math.abs(target.x - chargeLane) < 8.5
+                if (inReachY && inStrikeLane) {
+                  damagePlayer(2, target)
+                  spawnSparks(target.x, target.y, '#fb7185', 34, 8)
+                  addRipple(target.x, target.y, '#fb7185', 16)
+                }
               }
+              spawnSparks(chargeLane, enemy.y + 42, '#f472b6', 44, 8)
+              addRipple(chargeLane, enemy.y + 42, '#f472b6', 18)
+              playGameSound('hit')
+              chargeCooldown = 2.45 + Math.random() * 1.35
+              fireCooldown = Math.max(fireCooldown, 1.05)
             }
-            spawnSparks(chargeLane, enemy.y + 42, '#f472b6', 44, 8)
-            addRipple(chargeLane, enemy.y + 42, '#f472b6', 18)
-            playGameSound('hit')
-            chargeCooldown = 2.45 + Math.random() * 1.35
-            fireCooldown = Math.max(fireCooldown, 1.05)
           }
         } else {
           chargeCooldown = Math.max(0, chargeCooldown - dt)
@@ -8703,8 +8804,19 @@ export function GradiusRaid({
             target.y < enemy.y + 44 &&
             Math.abs(target.x - enemy.x) < 34
           ))
-          if (closeTarget && chargeCooldown <= 0) {
+          const bubbleTarget = getNearestLivingPlayer(enemy)
+          const shouldBubble = chargeCooldown <= 0 && (!closeTarget || Math.random() < 0.38)
+          if (shouldBubble) {
+            chargeTimer = 0.86
+            chargePattern = 'rotate'
+            chargeLane = clamp(bubbleTarget.x, 8, 92)
+            chargeCooldown = 999
+            addRipple(enemy.x, enemy.y + 14, '#f472b6', 18)
+            spawnSparks(enemy.x, enemy.y + 7, '#f0abfc', 34, 7)
+            playGameSound('countdown')
+          } else if (closeTarget && chargeCooldown <= 0) {
             chargeTimer = 0.62
+            chargePattern = 'single'
             chargeLane = clamp(closeTarget.x + (Math.random() - 0.5) * 4, 8, 92)
             chargeCooldown = 999
             addRipple(chargeLane, Math.min(92, closeTarget.y), '#f472b6', 15)
@@ -8712,8 +8824,7 @@ export function GradiusRaid({
             playGameSound('countdown')
           }
         }
-      }
-      if (enemy.isBoss && bossKind === 'snake' && enemy.y >= bossYTarget - 0.5) {
+      }      if (enemy.isBoss && bossKind === 'snake' && enemy.y >= bossYTarget - 0.5) {
         if (chargeTimer > 0) {
           const beforeCharge = chargeTimer
           chargeTimer = Math.max(0, chargeTimer - dt)
@@ -8864,6 +8975,59 @@ export function GradiusRaid({
       playGameSound(asteroid.tier === 2 ? 'explosion_big' : 'explosion')
     }
 
+    const splitSquidBubble = (bubble: Shot) => {
+      const splitLevel = bubble.splitLevel ?? 0
+      spawnSparks(bubble.x, bubble.y, '#f0abfc', splitLevel >= 2 ? 20 : 34, 7)
+      addRipple(bubble.x, bubble.y, '#f472b6', splitLevel >= 2 ? 10 : 15)
+      playGameSound(splitLevel >= 2 ? 'explosion' : 'hit')
+      if (splitLevel >= 2) return
+      const childCount = splitLevel === 0 ? 3 : 2
+      for (let i = 0; i < childCount; i += 1) {
+        const angle = (i / childCount) * Math.PI * 2 + Math.random() * 0.55
+        const radius = Math.max(1.8, bubble.radius * 0.62)
+        enemyShotsRef.current.push({
+          id: shotId++,
+          x: bubble.x + Math.cos(angle) * radius * 0.8,
+          y: bubble.y + Math.sin(angle) * radius * 0.8,
+          vx: Math.cos(angle) * (5 + splitLevel * 2),
+          vy: Math.sin(angle) * (5 + splitLevel * 2),
+          damage: 1,
+          kind: 'squidBubble',
+          radius,
+          hp: Math.max(2, Math.ceil((bubble.hp ?? 5) * 0.55)),
+          splitLevel: splitLevel + 1,
+          life: 14 - splitLevel * 2,
+          maxLife: 14 - splitLevel * 2,
+        })
+      }
+    }
+
+    for (const shot of shotsRef.current) {
+      if (shot.y <= -50) continue
+      for (const bubble of enemyShotsRef.current) {
+        if (bubble.kind !== 'squidBubble' || (bubble.hp ?? 1) <= 0) continue
+        const hitRange = shot.radius + bubble.radius
+        if (
+          Math.abs(shot.x - bubble.x) <= hitRange &&
+          Math.abs(shot.y - bubble.y) <= hitRange &&
+          distSq(shot, bubble) <= hitRange * hitRange
+        ) {
+          bubble.hp = (bubble.hp ?? 1) - shot.damage
+          spawnSparks(shot.x, shot.y, '#f0abfc', 5, 5)
+          if (shot.pierce && shot.pierce > 0) {
+            shot.pierce -= 1
+          } else {
+            shot.y = -999
+          }
+          if ((bubble.hp ?? 0) <= 0) {
+            bubble.life = 0
+            bubble.y = HEIGHT + 99
+            splitSquidBubble(bubble)
+          }
+          break
+        }
+      }
+    }
     for (const shot of shotsRef.current) {
       if (shot.y <= -50) continue
       for (const asteroid of asteroidsRef.current) {
