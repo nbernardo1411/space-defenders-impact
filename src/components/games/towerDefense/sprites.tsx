@@ -80,6 +80,8 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
     const tailGL = `space-et-tail-l-${svgId}`
     const tailGR = `space-et-tail-r-${svgId}`
     const flameG = `space-et-flame-${svgId}`
+    const plumeG = `space-et-plume-${svgId}`
+    const auraG = `space-et-aura-${svgId}`
     const canopyG = `space-et-canopy-${svgId}`
     const noseG = `space-et-nose-${svgId}`
 
@@ -117,6 +119,18 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
             <stop offset="56%" stopColor={core} stopOpacity="0.85" />
             <stop offset="100%" stopColor="#220500" stopOpacity="0" />
           </linearGradient>
+          <linearGradient id={plumeG} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.54" />
+            <stop offset="22%" stopColor="#a7f3d0" stopOpacity="0.58" />
+            <stop offset="54%" stopColor="#22d3ee" stopOpacity="0.38" />
+            <stop offset="100%" stopColor={core} stopOpacity="0" />
+          </linearGradient>
+          <radialGradient id={auraG} cx="0.5" cy="0.38" r="0.72">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.22" />
+            <stop offset="38%" stopColor="#67e8f9" stopOpacity="0.16" />
+            <stop offset="72%" stopColor={core} stopOpacity="0.1" />
+            <stop offset="100%" stopColor={core} stopOpacity="0" />
+          </radialGradient>
           <linearGradient id={canopyG} x1="0.2" y1="0" x2="0.8" y2="1">
             <stop offset="0%" stopColor="#a8e8ff" stopOpacity="0.9" />
             <stop offset="48%" stopColor="#1a5577" stopOpacity="0.86" />
@@ -127,6 +141,10 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
             <stop offset="100%" stopColor="#dceaf2" />
           </linearGradient>
         </defs>
+        <ellipse cx="340" cy="716" rx="44" ry="38" fill={`url(#${auraG})`} opacity="0.5" />
+        <path d="M312 648 C286 704 300 748 328 766 C316 724 320 688 328 650 Z" fill={`url(#${plumeG})`} opacity="0.48" />
+        <path d="M368 648 C394 704 380 748 352 766 C364 724 360 688 352 650 Z" fill={`url(#${plumeG})`} opacity="0.48" />
+        <path d="M340 632 C320 696 324 746 340 766 C356 746 360 696 340 632 Z" fill={`url(#${plumeG})`} opacity="0.68" />
         <ellipse cx="316" cy="718" rx="13" ry="38" fill={`url(#${flameG})`} />
         <ellipse cx="364" cy="718" rx="13" ry="38" fill={`url(#${flameG})`} />
         <ellipse cx="316" cy="724" rx="4" ry="12" fill="#ffee88" opacity="0.86" />
@@ -140,10 +158,11 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
         <path d="M300 318 L108 510 M295 330 L118 518 M288 345 L130 524 M380 318 L572 510 M385 330 L562 518 M392 345 L550 524" stroke="#c8dce8" strokeWidth="0.7" opacity="0.25" />
         <path d="M80 510 L130 548 L126 530 Z M600 510 L550 548 L554 530 Z" fill="#23323d" />
 
-        <path d="M316 590 L210 650 L248 672 L320 628 Z" fill={`url(#${tailGL})`} stroke="#8aabb8" strokeWidth="0.8" />
-        <path d="M364 590 L470 650 L432 672 L360 628 Z" fill={`url(#${tailGR})`} stroke="#8aabb8" strokeWidth="0.8" />
-        <path d="M212 650 L317 592 M468 650 L363 592" stroke={core} strokeWidth="1.6" opacity="0.72" />
-        <path d="M318 560 L288 618 L308 640 L324 590 Z M362 560 L392 618 L372 640 L356 590 Z" fill="#334959" stroke="#7a9aaa" strokeWidth="0.8" />
+        <path d="M316 578 L184 642 L238 690 L322 630 Z" fill={`url(#${tailGL})`} stroke="#8aabb8" strokeWidth="0.8" />
+        <path d="M364 578 L496 642 L442 690 L358 630 Z" fill={`url(#${tailGR})`} stroke="#8aabb8" strokeWidth="0.8" />
+        <path d="M210 646 L318 590 M470 646 L362 590" stroke={core} strokeWidth="2" opacity="0.78" />
+        <path d="M320 548 L276 626 L304 662 L330 592 Z M360 548 L404 626 L376 662 L350 592 Z" fill="#334959" stroke="#7a9aaa" strokeWidth="0.8" />
+        <path d="M304 662 L250 684 M376 662 L430 684" stroke="#67e8f9" strokeWidth="1.4" strokeLinecap="round" opacity="0.58" />
 
         <path d="M340 65 L296 210 L304 310 L316 310 L318 190 Z" fill="#415f72" stroke="#9ab8cc" strokeWidth="0.6" opacity="0.9" />
         <path d="M340 65 L384 210 L376 310 L364 310 L362 190 Z" fill="#415f72" stroke="#9ab8cc" strokeWidth="0.6" opacity="0.9" />

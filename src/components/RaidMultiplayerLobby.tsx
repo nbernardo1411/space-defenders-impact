@@ -66,7 +66,7 @@ const SHIP_OPTIONS = [
   { key: 'laser', name: 'Night Lance' },
   { key: 'dreadnought', name: 'Obsidian Ark' },
   { key: 'xwing', name: 'Crosswing Nova' },
-  { key: 'spaceEt', name: 'Space ET' },
+  { key: 'spaceEt', name: 'Space Jet' },
 ]
 
 const getShipName = (shipKey: string) => SHIP_OPTIONS.find((ship) => ship.key === shipKey)?.name ?? 'Black Comet'

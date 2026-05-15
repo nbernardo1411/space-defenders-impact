@@ -235,7 +235,7 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'laser', name: 'Night Lance', role: 'Sharper beam control', speed: 1.03, hp: 5, fireRate: 1.12 },
   { key: 'dreadnought', name: 'Obsidian Ark', role: 'Heavy survival hull', speed: 0.82, hp: 8, fireRate: 0.86 },
   { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.14, hp: 5, fireRate: 1.18 },
-  { key: 'spaceEt', name: 'Space ET', role: 'Speed demon microfighter', speed: 1.24, hp: 3, fireRate: 1.28 },
+  { key: 'spaceEt', name: 'Space Jet', role: 'Comet-tail microfighter', speed: 1.24, hp: 3, fireRate: 1.28 },
 ]
 
 const BRIEFING_PANELS = [
@@ -2122,32 +2122,50 @@ function drawPlasmaForceField(ctx: CanvasRenderingContext2D, x: number, y: numbe
 }
 
 function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, charge: number) {
-  const pulse = 0.96 + Math.sin(time / 180) * 0.045
-  const radiusX = size * (0.38 + charge * 0.025) * pulse
-  const radiusY = size * (0.58 + charge * 0.035) * pulse
-  const tail = size * (0.68 + charge * 0.1)
-  const streakPhase = time / 95
+  const energy = clamp(charge, 0.35, 1)
+  const pulse = 0.98 + Math.sin(time / 165) * 0.055
+  const radiusX = size * (0.41 + energy * 0.045) * pulse
+  const radiusY = size * (0.58 + energy * 0.05) * pulse
+  const tail = size * (1.12 + energy * 0.34)
+  const streakPhase = time / 82
 
   ctx.save()
   ctx.translate(x, y)
+  ctx.rotate(Math.sin(time / 260) * 0.018)
   ctx.globalCompositeOperation = 'lighter'
 
-  const tailGradient = ctx.createLinearGradient(0, tail, 0, -radiusY * 0.9)
-  tailGradient.addColorStop(0, 'rgba(34,197,94,0)')
-  tailGradient.addColorStop(0.24, 'rgba(34,197,94,0.14)')
-  tailGradient.addColorStop(0.58, 'rgba(16,185,129,0.26)')
-  tailGradient.addColorStop(1, 'rgba(187,247,208,0.08)')
+  const tailGradient = ctx.createLinearGradient(0, tail * 1.08, 0, -radiusY * 0.9)
+  tailGradient.addColorStop(0, 'rgba(34,211,238,0)')
+  tailGradient.addColorStop(0.2, 'rgba(34,211,238,0.12)')
+  tailGradient.addColorStop(0.48, 'rgba(74,222,128,0.24)')
+  tailGradient.addColorStop(0.72, 'rgba(250,204,21,0.14)')
+  tailGradient.addColorStop(1, 'rgba(240,253,244,0.08)')
   ctx.fillStyle = tailGradient
   ctx.shadowBlur = 18
-  ctx.shadowColor = 'rgba(34,197,94,0.55)'
+  ctx.shadowColor = 'rgba(45,212,191,0.55)'
   ctx.beginPath()
-  ctx.ellipse(0, tail * 0.22, radiusX * 0.92, tail, 0, 0, Math.PI * 2)
+  ctx.moveTo(-radiusX * 0.5, -radiusY * 0.04)
+  ctx.bezierCurveTo(-radiusX * 0.78, tail * 0.24, -radiusX * 0.28, tail * 0.94, 0, tail * 1.02)
+  ctx.bezierCurveTo(radiusX * 0.28, tail * 0.94, radiusX * 0.78, tail * 0.24, radiusX * 0.5, -radiusY * 0.04)
+  ctx.closePath()
+  ctx.fill()
+
+  const coreGradient = ctx.createLinearGradient(0, tail * 0.86, 0, -radiusY * 0.25)
+  coreGradient.addColorStop(0, 'rgba(45,212,191,0)')
+  coreGradient.addColorStop(0.34, 'rgba(134,239,172,0.24)')
+  coreGradient.addColorStop(0.64, 'rgba(255,255,255,0.44)')
+  coreGradient.addColorStop(1, 'rgba(103,232,249,0.12)')
+  ctx.fillStyle = coreGradient
+  ctx.shadowBlur = 12
+  ctx.shadowColor = 'rgba(187,247,208,0.66)'
+  ctx.beginPath()
+  ctx.ellipse(0, tail * 0.32, radiusX * 0.22, tail * 0.54, 0, 0, Math.PI * 2)
   ctx.fill()
 
   const shell = ctx.createRadialGradient(0, -radiusY * 0.12, radiusX * 0.16, 0, 0, radiusY * 1.12)
-  shell.addColorStop(0, 'rgba(240,253,244,0.12)')
-  shell.addColorStop(0.44, 'rgba(74,222,128,0.18)')
-  shell.addColorStop(0.74, 'rgba(34,197,94,0.22)')
+  shell.addColorStop(0, 'rgba(255,255,255,0.2)')
+  shell.addColorStop(0.38, 'rgba(103,232,249,0.2)')
+  shell.addColorStop(0.7, 'rgba(74,222,128,0.24)')
   shell.addColorStop(1, 'rgba(21,128,61,0)')
   ctx.fillStyle = shell
   ctx.beginPath()
@@ -2155,25 +2173,31 @@ function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.fill()
 
   ctx.lineCap = 'round'
-  for (let index = 0; index < 5; index += 1) {
-    const offset = ((streakPhase + index * 0.23) % 1) * tail
-    const xOffset = Math.sin(streakPhase + index * 1.9) * radiusX * 0.55
-    const yOffset = tail * 0.72 - offset
+  for (let index = 0; index < 7; index += 1) {
+    const offset = ((streakPhase + index * 0.17) % 1) * tail
+    const xOffset = Math.sin(streakPhase * 1.4 + index * 1.85) * radiusX * (0.14 + (index % 3) * 0.06)
+    const yOffset = tail * 0.9 - offset
     const alpha = 0.24 + (index % 2) * 0.16
-    ctx.strokeStyle = index % 2 === 0 ? `rgba(187,247,208,${alpha})` : `rgba(34,197,94,${alpha})`
-    ctx.lineWidth = Math.max(1.2, size * (0.012 + index * 0.001))
+    ctx.strokeStyle = index % 3 === 0 ? `rgba(255,255,255,${alpha})` : index % 2 === 0 ? `rgba(125,249,255,${alpha})` : `rgba(134,239,172,${alpha})`
+    ctx.lineWidth = Math.max(1.15, size * (0.011 + index * 0.0009))
     ctx.beginPath()
-    ctx.moveTo(xOffset, yOffset + tail * 0.18)
-    ctx.lineTo(xOffset * 0.28, yOffset - tail * 0.18)
+    ctx.moveTo(xOffset, yOffset + tail * 0.16)
+    ctx.bezierCurveTo(xOffset * 0.7, yOffset - tail * 0.02, xOffset * 0.24, yOffset - tail * 0.2, 0, yOffset - tail * 0.34)
     ctx.stroke()
   }
 
-  ctx.strokeStyle = 'rgba(220,252,231,0.58)'
+  ctx.strokeStyle = 'rgba(240,253,250,0.64)'
   ctx.lineWidth = Math.max(1.1, size * 0.014)
   ctx.shadowBlur = 8
-  ctx.shadowColor = 'rgba(74,222,128,0.75)'
+  ctx.shadowColor = 'rgba(125,249,255,0.62)'
   ctx.beginPath()
   ctx.ellipse(0, 0, radiusX * 0.9, radiusY * 0.9, 0, Math.PI * 1.12, Math.PI * 1.88)
+  ctx.stroke()
+
+  ctx.strokeStyle = 'rgba(250,204,21,0.22)'
+  ctx.lineWidth = Math.max(0.9, size * 0.01)
+  ctx.beginPath()
+  ctx.ellipse(0, radiusY * 0.04, radiusX * 0.58, radiusY * 0.76, 0, Math.PI * 1.08, Math.PI * 1.92)
   ctx.stroke()
 
   ctx.restore()
@@ -2203,7 +2227,9 @@ function drawRaidPlayer(
   else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
 
   if (player.forceField > 0) {
-    const forceCharge = clamp(player.forceField / FORCE_FIELD_ARMOR, 0, 1)
+    const forceCharge = player.ship.key === 'spaceEt'
+      ? clamp(player.forceField / SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES, 0.42, 1)
+      : clamp(player.forceField / FORCE_FIELD_ARMOR, 0, 1)
     if (player.ship.key === 'spaceEt') drawCometForceField(ctx, x, y, size, time, forceCharge)
     else drawPlasmaForceField(ctx, x, y, size, time, forceCharge)
   }
@@ -2214,7 +2240,7 @@ function drawRaidPlayer(
     x,
     y,
     size,
-    player.forceField > 0 ? player.ship.key === 'spaceEt' ? 'rgba(74,222,128,0.38)' : 'rgba(34,211,238,0.34)' : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : color,
+    player.forceField > 0 ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)' : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : color,
     1,
   )
   drawCanvasSprite(
@@ -4520,7 +4546,7 @@ export function GradiusRaid({
         }
       }
 
-      // ── SPACE ET: single thin fast green laser line ──
+      // ── SPACE JET: single thin fast green laser line ──
       else if (shipKey === 'spaceEt') {
         const phaseDrift = (shotId % 3) - 1
         pushShot({
@@ -4582,7 +4608,7 @@ export function GradiusRaid({
         shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
           shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
             shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
-              shipKey === 'spaceEt' ? 0.001 :    // Space ET — fastest
+              shipKey === 'spaceEt' ? 0.001 :    // Space Jet — fastest
                 shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
                   0.10                              // Black Comet — default
 
