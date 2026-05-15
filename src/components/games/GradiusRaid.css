@@ -8,6 +8,10 @@
   --raid-base-top: #020307;
   --raid-base-mid: #060812;
   --raid-base-bottom: #070a10;
+  --raid-surface-mode: ruins;
+  --raid-surface-a: rgba(15, 23, 42, 0.66);
+  --raid-surface-b: rgba(30, 41, 59, 0.74);
+  --raid-surface-c: rgba(148, 163, 184, 0.42);
   --raid-bg-a: rgba(239, 35, 60, 0.16);
   --raid-bg-b: rgba(14, 165, 233, 0.13);
   --raid-nebula-a: rgba(127, 29, 29, 0.3);
@@ -27,6 +31,10 @@
   --raid-base-top: #090018;
   --raid-base-mid: #17062f;
   --raid-base-bottom: #05020f;
+  --raid-surface-mode: alien;
+  --raid-surface-a: rgba(49, 17, 96, 0.7);
+  --raid-surface-b: rgba(88, 28, 135, 0.62);
+  --raid-surface-c: rgba(216, 180, 254, 0.42);
   --raid-bg-a: rgba(88, 28, 135, 0.24);
   --raid-bg-b: rgba(236, 72, 153, 0.12);
   --raid-nebula-a: rgba(76, 29, 149, 0.34);
@@ -42,6 +50,10 @@
   --raid-base-top: #02161c;
   --raid-base-mid: #062b34;
   --raid-base-bottom: #030a12;
+  --raid-surface-mode: sea;
+  --raid-surface-a: rgba(14, 116, 144, 0.5);
+  --raid-surface-b: rgba(6, 78, 99, 0.72);
+  --raid-surface-c: rgba(103, 232, 249, 0.36);
   --raid-bg-a: rgba(22, 78, 99, 0.24);
   --raid-bg-b: rgba(239, 68, 68, 0.11);
   --raid-nebula-a: rgba(8, 47, 73, 0.38);
@@ -57,6 +69,10 @@
   --raid-base-top: #150703;
   --raid-base-mid: #2b1208;
   --raid-base-bottom: #080402;
+  --raid-surface-mode: lava;
+  --raid-surface-a: rgba(67, 20, 7, 0.76);
+  --raid-surface-b: rgba(127, 29, 29, 0.62);
+  --raid-surface-c: rgba(251, 146, 60, 0.42);
   --raid-bg-a: rgba(120, 53, 15, 0.22);
   --raid-bg-b: rgba(127, 29, 29, 0.2);
   --raid-nebula-a: rgba(67, 20, 7, 0.34);
@@ -72,6 +88,10 @@
   --raid-base-top: #01110a;
   --raid-base-mid: #062313;
   --raid-base-bottom: #030807;
+  --raid-surface-mode: ice;
+  --raid-surface-a: rgba(15, 118, 110, 0.44);
+  --raid-surface-b: rgba(8, 47, 73, 0.68);
+  --raid-surface-c: rgba(186, 230, 253, 0.42);
   --raid-bg-a: rgba(34, 197, 94, 0.16);
   --raid-bg-b: rgba(45, 212, 191, 0.14);
   --raid-nebula-a: rgba(22, 101, 52, 0.34);
@@ -852,6 +872,7 @@
 .raid__playfield {
   position: absolute;
   inset: 0;
+  contain: layout paint style;
 }
 
 .raid__fx-canvas {
@@ -861,6 +882,8 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .raid__playfield::before,

@@ -15,6 +15,7 @@ type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 's
 type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
+type RaidRandomEventKind = 'meteor' | 'solar' | 'rift' | 'wreck' | 'ambush' | 'ion'
 
 type Vec = { x: number; y: number }
 
@@ -127,6 +128,56 @@ type NukeStrike = {
   duration: number
 }
 
+type AsteroidHazard = Vec & {
+  id: number
+  vx: number
+  vy: number
+  hp: number
+  maxHp: number
+  radius: number
+  tier: number
+  spin: number
+  spinSpeed: number
+  phase: number
+}
+
+type RaidRandomEvent = {
+  kind: RaidRandomEventKind
+  age: number
+  duration: number
+  warning: number
+  seed: number
+}
+
+type MeteorHazard = Vec & {
+  id: number
+  vx: number
+  vy: number
+  radius: number
+  life: number
+  phase: number
+}
+
+type IonStrike = {
+  id: number
+  x: number
+  width: number
+  warmup: number
+  life: number
+  duration: number
+}
+
+type DerelictWreck = Vec & {
+  id: number
+  vx: number
+  vy: number
+  width: number
+  height: number
+  hp: number
+  maxHp: number
+  phase: number
+}
+
 type Snapshot = {
   phase: GamePhase
   player: Player
@@ -148,6 +199,8 @@ type Snapshot = {
   unlockedStage: number
   nukeCooldown: number
   nukeFlash: number
+  asteroidWarning: number
+  randomEvent: RaidRandomEvent | null
 }
 
 type MultiplayerInput = {
@@ -184,6 +237,12 @@ type MultiplayerHostState = {
   nukeFlash: number
   nukeStrike: NukeStrike | null
   nukeBlastOrigin: Vec
+  asteroids: AsteroidHazard[]
+  asteroidWarning: number
+  randomEvent: RaidRandomEvent | null
+  meteors: MeteorHazard[]
+  ionStrikes: IonStrike[]
+  wrecks: DerelictWreck[]
 }
 
 type MultiplayerPlayerSnapshot = {
@@ -194,6 +253,11 @@ type MultiplayerPlayerSnapshot = {
 type MultiplayerEnemySnapshot = {
   at: number
   enemies: Enemy[]
+}
+
+type MultiplayerAsteroidSnapshot = {
+  at: number
+  asteroids: AsteroidHazard[]
 }
 
 type RelayGameMessage =
@@ -370,6 +434,10 @@ const MULTIPLAYER_MAX_BUFFERED_BYTES = 512 * 1024
 const MULTIPLAYER_MAX_SHOTS = 120
 const MULTIPLAYER_MAX_ENEMY_SHOTS = 140
 const MULTIPLAYER_MAX_ENEMIES = 40
+const MULTIPLAYER_MAX_ASTEROIDS = 18
+const MULTIPLAYER_MAX_METEORS = 24
+const MULTIPLAYER_MAX_ION_STRIKES = 8
+const MULTIPLAYER_MAX_WRECKS = 3
 const MULTIPLAYER_MAX_POWERUPS = 16
 const MULTIPLAYER_MAX_SPARKS = 16
 const MULTIPLAYER_MAX_RIPPLES = 12
@@ -408,10 +476,25 @@ const STAGE_CLEAR_SECONDS = 3.15
 const VICTORY_BLACKOUT_SECONDS = 0.55
 const MAX_SPARKS = 45
 const MAX_RIPPLES = 10
+const MAX_ASTEROIDS = 16
+const MAX_METEORS = 26
+const MAX_ION_STRIKES = 8
+const MAX_WRECKS = 3
+const ASTEROID_CLUSTER_WARNING_SECONDS = 3.2
+const ASTEROID_CLUSTER_SPAWN_DELAY_SECONDS = 1.35
+const ASTEROID_CLUSTER_MIN_SECONDS = 42
+const ASTEROID_CLUSTER_MAX_SECONDS = 64
+const RANDOM_EVENT_WARNING_SECONDS = 2.45
+const RANDOM_EVENT_MIN_SECONDS = 34
+const RANDOM_EVENT_MAX_SECONDS = 56
 const RAID_BACKGROUND_THEME_COUNT = 5
 
 let shotId = 1
 let enemyId = 1
+let asteroidId = 1
+let meteorId = 1
+let ionStrikeId = 1
+let wreckId = 1
 let powerId = 1
 let sparkId = 1
 let rippleId = 1
@@ -429,6 +512,10 @@ type RaidPalette = {
   baseTop: string
   baseMid: string
   baseBottom: string
+  surfaceMode: string
+  surfaceA: string
+  surfaceB: string
+  surfaceC: string
   bgA: string
   bgB: string
   nebulaA: string
@@ -448,6 +535,10 @@ const DEFAULT_RAID_PALETTE: RaidPalette = {
   baseTop: '#020307',
   baseMid: '#060812',
   baseBottom: '#070a10',
+  surfaceMode: 'ruins',
+  surfaceA: '#172033',
+  surfaceB: '#243447',
+  surfaceC: '#64748b',
   bgA: 'rgba(239, 35, 60, 0.16)',
   bgB: 'rgba(14, 165, 233, 0.13)',
   nebulaA: 'rgba(127, 29, 29, 0.3)',
@@ -521,6 +612,10 @@ function readRaidPalette(root: HTMLElement): RaidPalette {
     baseTop: getCssVar(root, '--raid-base-top', DEFAULT_RAID_PALETTE.baseTop),
     baseMid: getCssVar(root, '--raid-base-mid', DEFAULT_RAID_PALETTE.baseMid),
     baseBottom: getCssVar(root, '--raid-base-bottom', DEFAULT_RAID_PALETTE.baseBottom),
+    surfaceMode: getCssVar(root, '--raid-surface-mode', DEFAULT_RAID_PALETTE.surfaceMode),
+    surfaceA: getCssVar(root, '--raid-surface-a', DEFAULT_RAID_PALETTE.surfaceA),
+    surfaceB: getCssVar(root, '--raid-surface-b', DEFAULT_RAID_PALETTE.surfaceB),
+    surfaceC: getCssVar(root, '--raid-surface-c', DEFAULT_RAID_PALETTE.surfaceC),
     bgA: getCssVar(root, '--raid-bg-a', DEFAULT_RAID_PALETTE.bgA),
     bgB: getCssVar(root, '--raid-bg-b', DEFAULT_RAID_PALETTE.bgB),
     nebulaA: getCssVar(root, '--raid-nebula-a', DEFAULT_RAID_PALETTE.nebulaA),
@@ -634,13 +729,13 @@ function getTowerCanvasSprite(shipKey: string, color: string, size: number) {
 }
 
 function getEnemySpriteMarkupSize(enemy: Enemy) {
-  if (enemy.isMiniBoss) return 104
-  if (!enemy.isBoss) return 50
-  if (enemy.bossKind === 'final') return 330
-  if (enemy.bossKind === 'super') return 280
-  if (enemy.bossKind === 'gate') return 220
-  if (enemy.bossKind === 'hydra') return 190
-  return 156
+  if (enemy.isMiniBoss) return 128
+  if (!enemy.isBoss) return 64
+  if (enemy.bossKind === 'final') return 360
+  if (enemy.bossKind === 'super') return 310
+  if (enemy.bossKind === 'gate') return 250
+  if (enemy.bossKind === 'hydra') return 215
+  return 184
 }
 
 function getEnemyCanvasSprite(enemy: Enemy) {
@@ -728,13 +823,13 @@ function drawSpriteGlow(ctx: CanvasRenderingContext2D, x: number, y: number, siz
 }
 
 function getEnemyCanvasSize(enemy: Enemy, viewportWidth: number) {
-  if (enemy.isMiniBoss) return Math.min(viewportWidth * 0.115, 108)
-  if (!enemy.isBoss) return Math.min(viewportWidth * 0.08, 64)
-  if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.52, 470)
-  if (enemy.bossKind === 'super') return Math.min(viewportWidth * 0.42, 380)
-  if (enemy.bossKind === 'gate') return Math.min(viewportWidth * 0.34, 310)
-  if (enemy.bossKind === 'hydra') return Math.min(viewportWidth * 0.3, 260)
-  return Math.min(viewportWidth * 0.24, 210)
+  if (enemy.isMiniBoss) return Math.min(viewportWidth * 0.15, 132)
+  if (!enemy.isBoss) return Math.min(viewportWidth * 0.105, 82)
+  if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.58, 520)
+  if (enemy.bossKind === 'super') return Math.min(viewportWidth * 0.48, 430)
+  if (enemy.bossKind === 'gate') return Math.min(viewportWidth * 0.4, 360)
+  if (enemy.bossKind === 'hydra') return Math.min(viewportWidth * 0.35, 305)
+  return Math.min(viewportWidth * 0.3, 260)
 }
 
 function distSq(a: Vec, b: Vec) {
@@ -911,6 +1006,26 @@ function cloneEnemy(enemy: Enemy): Enemy {
   return { ...enemy }
 }
 
+function cloneAsteroid(asteroid: AsteroidHazard): AsteroidHazard {
+  return { ...asteroid }
+}
+
+function cloneRaidRandomEvent(event: RaidRandomEvent | null): RaidRandomEvent | null {
+  return event ? { ...event } : null
+}
+
+function cloneMeteor(meteor: MeteorHazard): MeteorHazard {
+  return { ...meteor }
+}
+
+function cloneIonStrike(strike: IonStrike): IonStrike {
+  return { ...strike }
+}
+
+function cloneDerelictWreck(wreck: DerelictWreck): DerelictWreck {
+  return { ...wreck }
+}
+
 function roundNetworkNumber(value: number) {
   return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0
 }
@@ -1082,6 +1197,145 @@ function getBufferedEnemyVisuals(buffer: MultiplayerEnemySnapshot[], renderAt: n
   }
 
   return latest.enemies.map(cloneEnemy)
+}
+
+function interpolateAsteroidVisual(previous: AsteroidHazard, next: AsteroidHazard, t: number) {
+  const visual = cloneAsteroid(next)
+  visual.x = previous.x + (next.x - previous.x) * t
+  visual.y = previous.y + (next.y - previous.y) * t
+  visual.spin = previous.spin + (next.spin - previous.spin) * t
+  return visual
+}
+
+function getBufferedAsteroidVisuals(buffer: MultiplayerAsteroidSnapshot[], renderAt: number) {
+  if (buffer.length === 0) return null
+  if (buffer.length === 1) return buffer[0].asteroids.map(cloneAsteroid)
+
+  const first = buffer[0]
+  if (renderAt <= first.at) return first.asteroids.map(cloneAsteroid)
+
+  const latest = buffer[buffer.length - 1]
+  if (renderAt >= latest.at) {
+    const previous = buffer[buffer.length - 2]
+    const previousById = new Map(previous.asteroids.map((asteroid) => [asteroid.id, asteroid]))
+    const packetMs = Math.max(16, latest.at - previous.at)
+    const extrapolateMs = Math.min(renderAt - latest.at, MULTIPLAYER_REMOTE_EXTRAPOLATION_LIMIT_MS)
+    const t = 1 + extrapolateMs / packetMs
+    return latest.asteroids.map((asteroid) => {
+      const previousAsteroid = previousById.get(asteroid.id)
+      return previousAsteroid ? interpolateAsteroidVisual(previousAsteroid, asteroid, t) : cloneAsteroid(asteroid)
+    })
+  }
+
+  for (let index = 1; index < buffer.length; index += 1) {
+    const next = buffer[index]
+    if (next.at < renderAt) continue
+
+    const previous = buffer[index - 1]
+    const previousById = new Map(previous.asteroids.map((asteroid) => [asteroid.id, asteroid]))
+    const span = Math.max(1, next.at - previous.at)
+    const t = clamp((renderAt - previous.at) / span, 0, 1)
+    return next.asteroids.map((asteroid) => {
+      const previousAsteroid = previousById.get(asteroid.id)
+      return previousAsteroid ? interpolateAsteroidVisual(previousAsteroid, asteroid, t) : cloneAsteroid(asteroid)
+    })
+  }
+
+  return latest.asteroids.map(cloneAsteroid)
+}
+
+function getAsteroidClusterInterval() {
+  return ASTEROID_CLUSTER_MIN_SECONDS + Math.random() * (ASTEROID_CLUSTER_MAX_SECONDS - ASTEROID_CLUSTER_MIN_SECONDS)
+}
+
+function getRandomEventInterval() {
+  return RANDOM_EVENT_MIN_SECONDS + Math.random() * (RANDOM_EVENT_MAX_SECONDS - RANDOM_EVENT_MIN_SECONDS)
+}
+
+function getRandomEventDuration(kind: RaidRandomEventKind) {
+  if (kind === 'meteor') return 7.4
+  if (kind === 'solar') return 6.2
+  if (kind === 'rift') return 8.2
+  if (kind === 'wreck') return 9
+  if (kind === 'ambush') return 5.8
+  return 6.8
+}
+
+function getRandomEventLabel(kind: RaidRandomEventKind) {
+  if (kind === 'meteor') return 'METEOR SHOWER INBOUND'
+  if (kind === 'solar') return 'SOLAR FLARE DETECTED'
+  if (kind === 'rift') return 'GRAVITY DISTORTION'
+  if (kind === 'wreck') return 'DERELICT SHIP AHEAD'
+  if (kind === 'ambush') return 'SIGNAL JAMMED. AMBUSH'
+  return 'ION STORM WARNING'
+}
+
+function pickRandomRaidEventKind(stage: number, surfaceStage: boolean): RaidRandomEventKind {
+  const pool: RaidRandomEventKind[] = stage < 4
+    ? ['meteor', 'ion', 'wreck']
+    : surfaceStage
+      ? ['meteor', 'solar', 'rift', 'ambush', 'ion']
+      : ['meteor', 'solar', 'rift', 'wreck', 'ambush', 'ion']
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+function pickNextRandomRaidEventKind(stage: number, surfaceStage: boolean, previousKind: RaidRandomEventKind | null) {
+  let kind = pickRandomRaidEventKind(stage, surfaceStage)
+  if (previousKind && kind === previousKind) {
+    for (let attempt = 0; attempt < 4 && kind === previousKind; attempt += 1) {
+      kind = pickRandomRaidEventKind(stage, surfaceStage)
+    }
+  }
+  return kind
+}
+
+function getAsteroidHp(tier: number, stage: number, powerPressure: number) {
+  const tierBase = tier === 2 ? 168 : tier === 1 ? 66 : 22
+  const stageScale = tier === 2 ? 15 : tier === 1 ? 6.4 : 2.4
+  const powerScale = tier === 2 ? 6.2 : tier === 1 ? 2.5 : 0.85
+  return Math.round(tierBase + stage * stageScale + powerPressure * powerScale)
+}
+
+function createAsteroidHazard(tier: number, x: number, y: number, vx: number, vy: number, stage: number, powerPressure: number): AsteroidHazard {
+  const hp = getAsteroidHp(tier, stage, powerPressure)
+  return {
+    id: asteroidId++,
+    x,
+    y,
+    vx,
+    vy,
+    hp,
+    maxHp: hp,
+    radius: tier === 2 ? 16.5 : tier === 1 ? 9.2 : 4.8,
+    tier,
+    spin: Math.random() * 360,
+    spinSpeed: (Math.random() < 0.5 ? -1 : 1) * (tier === 2 ? 14 + Math.random() * 18 : 24 + Math.random() * 34),
+    phase: Math.random() * Math.PI * 2,
+  }
+}
+
+function splitAsteroidHazard(asteroid: AsteroidHazard, stage: number, powerPressure: number) {
+  if (asteroid.tier <= 0) return []
+
+  const childTier = asteroid.tier - 1
+  const childCount = asteroid.tier === 2 ? 3 : 2
+  const spread = asteroid.tier === 2 ? 0.72 : 0.58
+  const children: AsteroidHazard[] = []
+  for (let index = 0; index < childCount; index += 1) {
+    const angle = Math.PI / 2 + (index - (childCount - 1) / 2) * spread + (Math.random() - 0.5) * 0.24
+    const speed = asteroid.tier === 2 ? 15 + Math.random() * 8 : 19 + Math.random() * 10
+    children.push(createAsteroidHazard(
+      childTier,
+      asteroid.x + Math.cos(angle) * asteroid.radius * 0.8,
+      asteroid.y + Math.sin(angle) * asteroid.radius * 0.5,
+      asteroid.vx * 0.42 + Math.cos(angle) * speed,
+      Math.max(8, asteroid.vy * 0.62 + Math.sin(angle) * speed),
+      stage,
+      powerPressure,
+    ))
+  }
+
+  return children
 }
 
 function getNukeStageScale(stage: number) {
@@ -1532,12 +1786,144 @@ function drawDebrisShape(
   ctx.restore()
 }
 
-function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max') {
+function drawPlanetSurface(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, seconds: number, quality: GraphicsQuality) {
+  if (quality === 'low') return
+
+  const scroll = (seconds * (quality === 'medium' ? 34 : 48)) % height
+  const featureCount = quality === 'medium' ? 7 : 11
+  const { surfaceMode, surfaceA, surfaceB, surfaceC } = palette
+  ctx.save()
+
+  const ground = ctx.createLinearGradient(0, 0, width, height)
+  if (surfaceMode === 'sea') {
+    ground.addColorStop(0, 'rgba(3, 57, 70, 0.96)')
+    ground.addColorStop(0.48, 'rgba(8, 96, 116, 0.9)')
+    ground.addColorStop(1, 'rgba(2, 16, 28, 0.98)')
+  } else if (surfaceMode === 'lava') {
+    ground.addColorStop(0, 'rgba(43, 14, 7, 0.98)')
+    ground.addColorStop(0.5, 'rgba(94, 25, 13, 0.92)')
+    ground.addColorStop(1, 'rgba(9, 4, 3, 0.98)')
+  } else if (surfaceMode === 'ice') {
+    ground.addColorStop(0, 'rgba(8, 47, 73, 0.98)')
+    ground.addColorStop(0.48, 'rgba(69, 146, 170, 0.84)')
+    ground.addColorStop(1, 'rgba(3, 13, 24, 0.98)')
+  } else if (surfaceMode === 'alien') {
+    ground.addColorStop(0, 'rgba(19, 5, 45, 0.98)')
+    ground.addColorStop(0.52, 'rgba(60, 18, 105, 0.9)')
+    ground.addColorStop(1, 'rgba(5, 2, 15, 0.98)')
+  } else {
+    ground.addColorStop(0, 'rgba(12, 18, 28, 0.96)')
+    ground.addColorStop(0.52, 'rgba(34, 42, 57, 0.86)')
+    ground.addColorStop(1, 'rgba(5, 8, 14, 0.98)')
+  }
+  ctx.fillStyle = ground
+  ctx.globalAlpha = 0.92
+  ctx.fillRect(0, 0, width, height)
+
+  ctx.globalCompositeOperation = 'screen'
+  const glow = ctx.createRadialGradient(width * 0.5, height * 0.46, 0, width * 0.5, height * 0.46, Math.max(width, height) * 0.62)
+  glow.addColorStop(0, surfaceA)
+  glow.addColorStop(0.5, surfaceB)
+  glow.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.globalAlpha = 0.28
+  ctx.fillStyle = glow
+  ctx.fillRect(0, 0, width, height)
+  ctx.globalCompositeOperation = 'source-over'
+
+  const tileHeight = height / (quality === 'medium' ? 3.4 : 4.2)
+  for (let index = -1; index < featureCount; index += 1) {
+    const seed = index + Math.floor(seconds * 0.18) * 19
+    const y = ((index * tileHeight + scroll) % (height + tileHeight)) - tileHeight
+    const x = seededNoise(seed, 2) * width
+    const w = width * (0.12 + seededNoise(seed, 3) * 0.22)
+    const h = height * (0.055 + seededNoise(seed, 4) * 0.12)
+
+    if (surfaceMode === 'sea') {
+      ctx.globalCompositeOperation = 'screen'
+      ctx.globalAlpha = 0.12 + seededNoise(seed, 5) * 0.08
+      ctx.strokeStyle = seededNoise(seed, 6) > 0.45 ? 'rgba(125,211,252,0.72)' : 'rgba(255,255,255,0.34)'
+      ctx.lineWidth = Math.max(1, width * 0.0014)
+      ctx.beginPath()
+      ctx.ellipse(x, y, w, h * 0.32, seededNoise(seed, 7) * 0.6 - 0.3, 0, Math.PI * 2)
+      ctx.stroke()
+      if (seededNoise(seed, 8) > 0.62) {
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 0.18
+        ctx.fillStyle = 'rgba(11, 70, 64, 0.72)'
+        ctx.beginPath()
+        ctx.ellipse(x + w * 0.15, y + h * 0.12, w * 0.28, h * 0.42, 0.4, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    } else if (surfaceMode === 'lava') {
+      ctx.globalCompositeOperation = seededNoise(seed, 8) > 0.42 ? 'lighter' : 'source-over'
+      ctx.globalAlpha = seededNoise(seed, 8) > 0.42 ? 0.38 : 0.26
+      ctx.fillStyle = seededNoise(seed, 8) > 0.42 ? 'rgba(249, 115, 22, 0.86)' : 'rgba(24, 10, 8, 0.72)'
+      ctx.beginPath()
+      ctx.moveTo(x - w * 0.5, y - h * 0.15)
+      ctx.lineTo(x - w * 0.12, y - h * 0.48)
+      ctx.lineTo(x + w * 0.48, y - h * 0.18)
+      ctx.lineTo(x + w * 0.28, y + h * 0.44)
+      ctx.lineTo(x - w * 0.34, y + h * 0.36)
+      ctx.closePath()
+      ctx.fill()
+    } else if (surfaceMode === 'ice') {
+      ctx.globalCompositeOperation = 'screen'
+      ctx.globalAlpha = 0.16 + seededNoise(seed, 8) * 0.12
+      ctx.fillStyle = 'rgba(224,242,254,0.62)'
+      ctx.beginPath()
+      ctx.moveTo(x, y - h)
+      ctx.lineTo(x + w * 0.42, y - h * 0.08)
+      ctx.lineTo(x + w * 0.18, y + h * 0.62)
+      ctx.lineTo(x - w * 0.46, y + h * 0.12)
+      ctx.closePath()
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(186,230,253,0.36)'
+      ctx.lineWidth = Math.max(1, width * 0.001)
+      ctx.beginPath()
+      ctx.moveTo(x - w * 0.24, y + h * 0.12)
+      ctx.lineTo(x + w * 0.2, y - h * 0.18)
+      ctx.lineTo(x + w * 0.34, y + h * 0.22)
+      ctx.stroke()
+    } else {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = surfaceMode === 'alien' ? 0.24 : 0.18
+      ctx.fillStyle = surfaceMode === 'alien' ? 'rgba(31, 9, 62, 0.72)' : 'rgba(15, 23, 42, 0.72)'
+      ctx.beginPath()
+      ctx.moveTo(x - w * 0.56, y - h * 0.18)
+      ctx.lineTo(x - w * 0.2, y - h * 0.5)
+      ctx.lineTo(x + w * 0.52, y - h * 0.2)
+      ctx.lineTo(x + w * 0.22, y + h * 0.48)
+      ctx.lineTo(x - w * 0.44, y + h * 0.36)
+      ctx.closePath()
+      ctx.fill()
+      if (surfaceMode === 'alien') {
+        ctx.globalCompositeOperation = 'screen'
+        ctx.globalAlpha = 0.16
+        ctx.strokeStyle = surfaceC
+        ctx.lineWidth = Math.max(1, width * 0.001)
+        ctx.beginPath()
+        ctx.moveTo(x - w * 0.28, y)
+        ctx.lineTo(x + w * 0.24, y - h * 0.1)
+        ctx.stroke()
+      }
+    }
+  }
+
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 0.18
+  ctx.fillStyle = 'rgba(0,0,0,0.42)'
+  ctx.fillRect(0, 0, width, height)
+
+  ctx.restore()
+}
+
+function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max', stageTheme = 1) {
   const seconds = time / 1000
   const { baseTop, baseMid, baseBottom, bgA, bgB, nebulaA, nebulaB, starTint, streak, planetA, planetB, planetC } = palette
   const isLow = quality === 'low'
   const isMedium = quality === 'medium'
   const isHigh = quality === 'high'
+  const isSurfaceStage = stageTheme % 2 === 0
 
   const base = ctx.createLinearGradient(0, 0, 0, height)
   base.addColorStop(0, baseTop)
@@ -1638,6 +2024,9 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   const planet3R = Math.min(width * 0.03, 26)
 
   if (!isLow) {
+    if (isSurfaceStage) {
+      drawPlanetSurface(ctx, palette, width, height, seconds, quality)
+    }
     ctx.save()
     ctx.globalAlpha = 1
     drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9fafb'], [0.5, planetA], [1, baseTop]])
@@ -2699,6 +3088,317 @@ function drawNukeBlast(ctx: CanvasRenderingContext2D, width: number, height: num
   ctx.restore()
 }
 
+function drawAsteroidHazard(
+  ctx: CanvasRenderingContext2D,
+  asteroid: AsteroidHazard,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+) {
+  const x = toX(asteroid.x)
+  const y = toY(asteroid.y)
+  const baseSize = asteroid.tier === 2 ? 280 : asteroid.tier === 1 ? 150 : 78
+  const size = Math.max(30, Math.min(viewportWidth * (asteroid.tier === 2 ? 0.29 : asteroid.tier === 1 ? 0.16 : 0.085), baseSize))
+  const healthGlow = clamp(asteroid.hp / asteroid.maxHp, 0, 1)
+  const points = asteroid.tier === 2 ? 12 : 9
+
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate((asteroid.spin + time * 0.012) * DEG)
+  ctx.shadowBlur = asteroid.tier === 2 ? 18 : 9
+  ctx.shadowColor = 'rgba(251,146,60,0.22)'
+
+  const gradient = ctx.createLinearGradient(-size * 0.5, -size * 0.55, size * 0.48, size * 0.5)
+  gradient.addColorStop(0, '#a8a29e')
+  gradient.addColorStop(0.32, '#57534e')
+  gradient.addColorStop(0.72, '#292524')
+  gradient.addColorStop(1, '#120f0d')
+  ctx.fillStyle = gradient
+  ctx.strokeStyle = asteroid.tier === 2 ? 'rgba(251,191,36,0.62)' : 'rgba(214,211,209,0.34)'
+  ctx.lineWidth = Math.max(1, size * 0.035)
+  ctx.beginPath()
+  for (let index = 0; index < points; index += 1) {
+    const angle = (index / points) * Math.PI * 2
+    const wobble = 0.78 + seededNoise(asteroid.id + index * 13, asteroid.phase) * 0.34
+    const rx = Math.cos(angle) * size * 0.5 * wobble
+    const ry = Math.sin(angle) * size * 0.42 * (0.86 + seededNoise(asteroid.id, index + 4) * 0.25)
+    if (index === 0) ctx.moveTo(rx, ry)
+    else ctx.lineTo(rx, ry)
+  }
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.shadowBlur = 0
+  const innerShade = ctx.createRadialGradient(-size * 0.2, -size * 0.24, size * 0.08, size * 0.1, size * 0.1, size * 0.64)
+  innerShade.addColorStop(0, 'rgba(255,255,255,0.18)')
+  innerShade.addColorStop(0.46, 'rgba(68,64,60,0)')
+  innerShade.addColorStop(1, 'rgba(0,0,0,0.42)')
+  ctx.fillStyle = innerShade
+  ctx.globalAlpha = 0.78
+  ctx.beginPath()
+  for (let index = 0; index < points; index += 1) {
+    const angle = (index / points) * Math.PI * 2
+    const wobble = 0.74 + seededNoise(asteroid.id + index * 17, asteroid.phase + 3) * 0.28
+    const rx = Math.cos(angle) * size * 0.46 * wobble
+    const ry = Math.sin(angle) * size * 0.39 * (0.88 + seededNoise(asteroid.id + 6, index) * 0.18)
+    if (index === 0) ctx.moveTo(rx, ry)
+    else ctx.lineTo(rx, ry)
+  }
+  ctx.closePath()
+  ctx.fill()
+
+  const craterCount = asteroid.tier === 2 ? 6 : asteroid.tier === 1 ? 4 : 2
+  for (let index = 0; index < craterCount; index += 1) {
+    const seed = asteroid.id * 11 + index * 19
+    const angle = seededNoise(seed, 1) * Math.PI * 2
+    const distance = size * (0.1 + seededNoise(seed, 2) * 0.28)
+    const craterX = Math.cos(angle) * distance
+    const craterY = Math.sin(angle) * distance * 0.78
+    const craterW = size * (0.055 + seededNoise(seed, 3) * 0.07)
+    const craterH = craterW * (0.55 + seededNoise(seed, 4) * 0.35)
+    ctx.save()
+    ctx.translate(craterX, craterY)
+    ctx.rotate((seededNoise(seed, 5) - 0.5) * 1.2)
+    ctx.globalAlpha = 0.45
+    ctx.fillStyle = 'rgba(12,10,9,0.72)'
+    ctx.beginPath()
+    ctx.ellipse(0, 0, craterW, craterH, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = 0.28
+    ctx.strokeStyle = 'rgba(214,211,209,0.72)'
+    ctx.lineWidth = Math.max(1, size * 0.012)
+    ctx.beginPath()
+    ctx.ellipse(-craterW * 0.08, -craterH * 0.12, craterW, craterH, 0, Math.PI * 0.95, Math.PI * 1.85)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  ctx.globalAlpha = 0.52
+  ctx.strokeStyle = 'rgba(15,23,42,0.72)'
+  ctx.lineWidth = Math.max(1, size * 0.018)
+  for (let index = 0; index < (asteroid.tier === 2 ? 7 : 4); index += 1) {
+    const offset = (index - 1.5) * size * 0.12
+    ctx.beginPath()
+    ctx.moveTo(-size * (0.3 - index * 0.018), offset)
+    ctx.lineTo(-size * 0.05 + seededNoise(asteroid.id, index) * size * 0.18, -offset * 0.2)
+    ctx.lineTo(size * (0.18 + index * 0.025), -offset * 0.48)
+    ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'screen'
+  ctx.globalAlpha = asteroid.tier === 2 ? 0.2 : 0.12
+  ctx.fillStyle = asteroid.tier === 2 ? 'rgba(251,146,60,0.8)' : 'rgba(214,211,209,0.52)'
+  const fleckCount = asteroid.tier === 2 ? 10 : asteroid.tier === 1 ? 6 : 3
+  for (let index = 0; index < fleckCount; index += 1) {
+    const seed = asteroid.id * 23 + index * 7
+    const fx = (seededNoise(seed, 6) - 0.5) * size * 0.62
+    const fy = (seededNoise(seed, 7) - 0.5) * size * 0.46
+    ctx.beginPath()
+    ctx.arc(fx, fy, Math.max(0.8, size * (0.008 + seededNoise(seed, 8) * 0.01)), 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.globalCompositeOperation = 'source-over'
+
+  if (healthGlow < 0.6) {
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.globalAlpha = (0.62 - healthGlow) * 1.1
+    ctx.strokeStyle = asteroid.tier === 2 ? 'rgba(251,146,60,0.9)' : 'rgba(251,191,36,0.74)'
+    ctx.lineWidth = Math.max(1, size * 0.024)
+    ctx.beginPath()
+    ctx.moveTo(-size * 0.24, -size * 0.18)
+    ctx.lineTo(size * 0.08, size * 0.02)
+    ctx.lineTo(size * 0.28, -size * 0.12)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+}
+
+function drawAsteroidWarning(ctx: CanvasRenderingContext2D, width: number, height: number, warningTime: number, time: number) {
+  if (warningTime <= 0) return
+
+  const pulse = 0.72 + Math.sin(time / 120) * 0.18
+  const panelWidth = Math.min(width * 0.84, 560)
+  const x = (width - panelWidth) / 2
+  const y = Math.max(76, height * 0.14)
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = clamp(warningTime / 0.4, 0, 1)
+  ctx.fillStyle = 'rgba(24, 8, 8, 0.78)'
+  ctx.strokeStyle = `rgba(251, 146, 60, ${pulse})`
+  ctx.lineWidth = 2
+  traceRoundedRect(ctx, x, y, panelWidth, 54, 8)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = `rgba(251, 191, 36, ${pulse})`
+  ctx.font = `800 ${Math.max(14, Math.min(22, width * 0.035))}px system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('ASTEROID CLUSTER DETECTED. BEWARE!', width / 2, y + 27)
+  ctx.restore()
+}
+
+function drawRandomEventWarning(ctx: CanvasRenderingContext2D, width: number, height: number, event: RaidRandomEvent | null, time: number) {
+  if (!event || event.warning <= 0) return
+
+  const pulse = 0.68 + Math.sin(time / 105) * 0.2
+  const panelWidth = Math.min(width * 0.86, 560)
+  const x = (width - panelWidth) / 2
+  const y = Math.max(132, height * 0.22)
+  const color = event.kind === 'solar' ? 'rgba(251,191,36,' : event.kind === 'rift' ? 'rgba(168,85,247,' : event.kind === 'ion' ? 'rgba(103,232,249,' : 'rgba(251,113,133,'
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = clamp(event.warning / 0.45, 0, 1)
+  ctx.fillStyle = 'rgba(2,6,23,0.78)'
+  ctx.strokeStyle = `${color}${pulse})`
+  ctx.lineWidth = 2
+  traceRoundedRect(ctx, x, y, panelWidth, 50, 8)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = `${color}${Math.min(1, pulse + 0.12)})`
+  ctx.font = `850 ${Math.max(13, Math.min(21, width * 0.032))}px system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(getRandomEventLabel(event.kind), width / 2, y + 25)
+  ctx.restore()
+}
+
+function drawMeteorHazard(
+  ctx: CanvasRenderingContext2D,
+  meteor: MeteorHazard,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+) {
+  const x = toX(meteor.x)
+  const y = toY(meteor.y)
+  const size = Math.max(8, viewportWidth * 0.018 * meteor.radius)
+  const tail = size * 4.8
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(Math.atan2(meteor.vy, meteor.vx))
+  const trail = ctx.createLinearGradient(-tail, 0, size, 0)
+  trail.addColorStop(0, 'rgba(251,146,60,0)')
+  trail.addColorStop(0.62, 'rgba(251,146,60,0.44)')
+  trail.addColorStop(1, 'rgba(255,255,255,0.92)')
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = trail
+  ctx.lineWidth = Math.max(2, size * 0.46)
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(-tail, 0)
+  ctx.lineTo(size * 0.6, 0)
+  ctx.stroke()
+  ctx.fillStyle = '#fef3c7'
+  ctx.beginPath()
+  ctx.arc(0, 0, size * 0.44, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawIonStrike(ctx: CanvasRenderingContext2D, strike: IonStrike, width: number, height: number, time: number) {
+  const x = (strike.x / WIDTH) * width
+  const laneWidth = Math.max(20, (strike.width / WIDTH) * width)
+  const charging = strike.warmup > 0
+  const pulse = 0.55 + Math.sin(time / 80 + strike.id) * 0.24
+  ctx.save()
+  ctx.globalCompositeOperation = charging ? 'source-over' : 'lighter'
+  ctx.globalAlpha = charging ? 0.18 + pulse * 0.12 : 0.34 + pulse * 0.26
+  const gradient = ctx.createLinearGradient(x - laneWidth, 0, x + laneWidth, 0)
+  gradient.addColorStop(0, 'rgba(103,232,249,0)')
+  gradient.addColorStop(0.45, charging ? 'rgba(103,232,249,0.36)' : 'rgba(255,255,255,0.78)')
+  gradient.addColorStop(0.55, charging ? 'rgba(103,232,249,0.36)' : 'rgba(103,232,249,0.88)')
+  gradient.addColorStop(1, 'rgba(103,232,249,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(x - laneWidth, 0, laneWidth * 2, height)
+  ctx.strokeStyle = charging ? 'rgba(103,232,249,0.62)' : 'rgba(255,255,255,0.86)'
+  ctx.lineWidth = charging ? 1.5 : 3
+  ctx.beginPath()
+  ctx.moveTo(x - laneWidth * 0.5, 0)
+  ctx.lineTo(x + laneWidth * 0.18 + Math.sin(time / 70) * 14, height * 0.38)
+  ctx.lineTo(x - laneWidth * 0.1, height)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawDerelictWreck(
+  ctx: CanvasRenderingContext2D,
+  wreck: DerelictWreck,
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+) {
+  const x = toX(wreck.x)
+  const y = toY(wreck.y)
+  const w = Math.max(90, (wreck.width / WIDTH) * viewportWidth)
+  const h = w * 0.34
+  const damage = clamp(1 - wreck.hp / Math.max(1, wreck.maxHp), 0, 1)
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(Math.sin(time / 1300 + wreck.phase) * 0.08)
+  ctx.shadowBlur = 14
+  ctx.shadowColor = 'rgba(239,68,68,0.28)'
+  const hull = ctx.createLinearGradient(-w * 0.5, -h * 0.5, w * 0.5, h * 0.5)
+  hull.addColorStop(0, '#94a3b8')
+  hull.addColorStop(0.42, '#334155')
+  hull.addColorStop(1, '#020617')
+  ctx.fillStyle = hull
+  ctx.strokeStyle = 'rgba(226,232,240,0.52)'
+  ctx.lineWidth = Math.max(1, w * 0.01)
+  ctx.beginPath()
+  ctx.moveTo(-w * 0.52, -h * 0.12)
+  ctx.lineTo(-w * 0.2, -h * 0.42)
+  ctx.lineTo(w * 0.46, -h * 0.2)
+  ctx.lineTo(w * 0.36, h * 0.22)
+  ctx.lineTo(-w * 0.36, h * 0.42)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.shadowBlur = 0
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = 0.26 + damage * 0.42
+  ctx.strokeStyle = 'rgba(251,113,133,0.9)'
+  ctx.lineWidth = Math.max(1, w * 0.008)
+  for (let index = 0; index < 4; index += 1) {
+    const ox = -w * 0.3 + index * w * 0.18
+    ctx.beginPath()
+    ctx.moveTo(ox, -h * 0.22)
+    ctx.lineTo(ox + w * 0.1, h * 0.18)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function drawRandomEventOverlay(ctx: CanvasRenderingContext2D, width: number, height: number, event: RaidRandomEvent | null, time: number) {
+  if (!event || event.warning > 0) return
+  const progress = clamp(event.age / Math.max(0.1, event.duration), 0, 1)
+  ctx.save()
+  if (event.kind === 'solar') {
+    const strength = Math.sin(progress * Math.PI)
+    ctx.globalCompositeOperation = 'screen'
+    ctx.globalAlpha = 0.1 + strength * 0.26
+    ctx.fillStyle = 'rgba(251,191,36,0.58)'
+    ctx.fillRect(0, 0, width, height)
+    drawRadialEllipse(ctx, width * 0.82, height * 0.12, width * 0.42, height * 0.28, [[0, `rgba(255,255,255,${0.3 * strength})`], [1, 'rgba(0,0,0,0)']])
+  } else if (event.kind === 'rift') {
+    const wobble = Math.sin(time / 180 + event.seed) * width * 0.04
+    const x = width * 0.5 + wobble
+    const y = height * 0.38 + Math.cos(time / 260 + event.seed) * height * 0.08
+    ctx.globalCompositeOperation = 'screen'
+    drawRadialEllipse(ctx, x, y, width * 0.18, height * 0.2, [[0, 'rgba(255,255,255,0.22)'], [0.28, 'rgba(168,85,247,0.36)'], [1, 'rgba(0,0,0,0)']])
+    ctx.globalAlpha = 0.42
+    ctx.strokeStyle = 'rgba(216,180,254,0.65)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.ellipse(x, y, width * 0.12, height * 0.045, time / 520, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function drawPowerUpCanvas(
   ctx: CanvasRenderingContext2D,
   powerUp: PowerUp,
@@ -2960,9 +3660,11 @@ export function GradiusRaid({
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const fxCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const fxCanvasContextRef = useRef<CanvasRenderingContext2D | null>(null)
   const rafRef = useRef(0)
   const lastTimeRef = useRef(0)
   const lastRenderTimeRef = useRef(0)
+  const graphicsQualityRef = useRef<GraphicsQuality>(getGraphicsQuality())
   const snapshotKeyRef = useRef('')
   const paletteRef = useRef<RaidPalette>(DEFAULT_RAID_PALETTE)
   const paletteClassRef = useRef('')
@@ -2982,6 +3684,7 @@ export function GradiusRaid({
   const multiplayerHostVisualVelocityRef = useRef<Vec>({ x: 0, y: 0 })
   const multiplayerHostSnapshotBufferRef = useRef<MultiplayerPlayerSnapshot[]>([])
   const multiplayerEnemySnapshotBufferRef = useRef<MultiplayerEnemySnapshot[]>([])
+  const multiplayerAsteroidSnapshotBufferRef = useRef<MultiplayerAsteroidSnapshot[]>([])
   const multiplayerLastHeartbeatRef = useRef(0)
   const multiplayerHeartbeatSentAtRef = useRef(0)
   const multiplayerLastConnectionCheckRef = useRef(0)
@@ -3014,6 +3717,10 @@ export function GradiusRaid({
   const shotsRef = useRef<Shot[]>([])
   const enemyShotsRef = useRef<Shot[]>([])
   const enemiesRef = useRef<Enemy[]>([])
+  const asteroidsRef = useRef<AsteroidHazard[]>([])
+  const meteorsRef = useRef<MeteorHazard[]>([])
+  const ionStrikesRef = useRef<IonStrike[]>([])
+  const wrecksRef = useRef<DerelictWreck[]>([])
   const powerUpsRef = useRef<PowerUp[]>([])
   const sparksRef = useRef<Spark[]>([])
   const ripplesRef = useRef<Ripple[]>([])
@@ -3029,10 +3736,18 @@ export function GradiusRaid({
   const bossAlertRef = useRef(0)
   const bossMessageRef = useRef<BossMessage>(null)
   const stageClearRef = useRef(0)
+  const pendingNextStageRef = useRef<number | null>(null)
   const nukeCooldownRef = useRef(0)
   const nukeFlashRef = useRef(0)
   const nukeStrikeRef = useRef<NukeStrike | null>(null)
   const nukeBlastOriginRef = useRef<Vec>({ x: 50, y: 46 })
+  const asteroidClusterTimerRef = useRef(34 + Math.random() * 18)
+  const asteroidSpawnDelayRef = useRef(0)
+  const asteroidWarningRef = useRef(0)
+  const randomEventRef = useRef<RaidRandomEvent | null>(null)
+  const randomEventTimerRef = useRef(24 + Math.random() * 18)
+  const randomEventSpawnTimerRef = useRef(0)
+  const lastRandomEventKindRef = useRef<RaidRandomEventKind | null>(null)
   const highScoreRef = useRef(getHighScore())
   const unlockedStageRef = useRef(getUnlockedStage())
   const raidBgmElementRef = useRef<HTMLAudioElement | null>(null)
@@ -3062,6 +3777,8 @@ export function GradiusRaid({
     unlockedStage: unlockedStageRef.current,
     nukeCooldown: 0,
     nukeFlash: 0,
+    asteroidWarning: 0,
+    randomEvent: null,
   }))
   const [multiplayerConnection, setMultiplayerConnection] = useState<{
     quality: MultiplayerConnectionQuality
@@ -3082,6 +3799,7 @@ export function GradiusRaid({
     guestLocalWeaponCooldownsRef.current = { ...EMPTY_WEAPON_TIMERS }
     multiplayerHostSnapshotBufferRef.current = []
     multiplayerEnemySnapshotBufferRef.current = []
+    multiplayerAsteroidSnapshotBufferRef.current = []
   }, [])
 
   const syncSnapshot = useCallback(() => {
@@ -3091,6 +3809,9 @@ export function GradiusRaid({
     const stageClearBucket = stageClearRef.current > 0 ? Math.ceil(stageClearRef.current * 30) : 0
     const nukeCooldownBucket = nukeCooldownRef.current > 0 ? Math.ceil(nukeCooldownRef.current) : 0
     const nukeFlashBucket = nukeFlashRef.current > 0 ? Math.ceil(nukeFlashRef.current * 10) : 0
+    const asteroidWarningBucket = asteroidWarningRef.current > 0 ? Math.ceil(asteroidWarningRef.current * 4) : 0
+    const randomEvent = randomEventRef.current
+    const randomEventBucket = randomEvent ? `${randomEvent.kind}:${Math.ceil(randomEvent.warning * 4)}:${Math.ceil(randomEvent.age * 2)}` : ''
     const snapshotKey = [
       phaseRef.current,
       stageRef.current,
@@ -3102,6 +3823,8 @@ export function GradiusRaid({
       stageClearBucket,
       nukeCooldownBucket,
       nukeFlashBucket,
+      asteroidWarningBucket,
+      randomEventBucket,
       unlockedStageRef.current,
       player.hp,
       player.maxHp,
@@ -3144,6 +3867,8 @@ export function GradiusRaid({
       unlockedStage: unlockedStageRef.current,
       nukeCooldown: nukeCooldownRef.current,
       nukeFlash: nukeFlashRef.current,
+      asteroidWarning: asteroidWarningRef.current,
+      randomEvent: cloneRaidRandomEvent(randomEventRef.current),
     })
   }, [])
 
@@ -3199,6 +3924,21 @@ export function GradiusRaid({
       .filter((enemy) => enemy.isBoss || isNetworkVisible(enemy))
       .slice(-MULTIPLAYER_MAX_ENEMIES)
       .map((enemy) => compactVec(enemy)),
+    asteroids: asteroidsRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_ASTEROIDS)
+      .map((asteroid) => compactVec(asteroid)),
+    meteors: meteorsRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_METEORS)
+      .map((meteor) => compactVec(meteor)),
+    ionStrikes: ionStrikesRef.current
+      .slice(-MULTIPLAYER_MAX_ION_STRIKES)
+      .map(cloneIonStrike),
+    wrecks: wrecksRef.current
+      .filter(isNetworkVisible)
+      .slice(-MULTIPLAYER_MAX_WRECKS)
+      .map((wreck) => compactVec(wreck)),
     powerUps: powerUpsRef.current
       .filter(isNetworkVisible)
       .slice(-MULTIPLAYER_MAX_POWERUPS)
@@ -3225,6 +3965,8 @@ export function GradiusRaid({
     nukeFlash: nukeFlashRef.current,
     nukeStrike: nukeStrikeRef.current ? { ...nukeStrikeRef.current } : null,
     nukeBlastOrigin: { ...nukeBlastOriginRef.current },
+    asteroidWarning: asteroidWarningRef.current,
+    randomEvent: cloneRaidRandomEvent(randomEventRef.current),
   }), [])
 
   const applyMultiplayerState = useCallback((state: MultiplayerHostState) => {
@@ -3244,6 +3986,12 @@ export function GradiusRaid({
       enemyBuffer.push({ at: now, enemies: state.enemies.map(cloneEnemy) })
       if (enemyBuffer.length > MULTIPLAYER_REMOTE_BUFFER_MAX) {
         enemyBuffer.splice(0, enemyBuffer.length - MULTIPLAYER_REMOTE_BUFFER_MAX)
+      }
+
+      const asteroidBuffer = multiplayerAsteroidSnapshotBufferRef.current
+      asteroidBuffer.push({ at: now, asteroids: (state.asteroids ?? []).map(cloneAsteroid) })
+      if (asteroidBuffer.length > MULTIPLAYER_REMOTE_BUFFER_MAX) {
+        asteroidBuffer.splice(0, asteroidBuffer.length - MULTIPLAYER_REMOTE_BUFFER_MAX)
       }
 
       const previousHost = multiplayerLastHostStateRef.current
@@ -3327,6 +4075,10 @@ export function GradiusRaid({
     shotsRef.current = state.shots.map((shot) => ({ ...shot }))
     enemyShotsRef.current = state.enemyShots.map((shot) => ({ ...shot }))
     enemiesRef.current = state.enemies.map((enemy) => ({ ...enemy }))
+    asteroidsRef.current = (state.asteroids ?? []).map(cloneAsteroid)
+    meteorsRef.current = (state.meteors ?? []).map(cloneMeteor)
+    ionStrikesRef.current = (state.ionStrikes ?? []).map(cloneIonStrike)
+    wrecksRef.current = (state.wrecks ?? []).map(cloneDerelictWreck)
     powerUpsRef.current = state.powerUps.map((powerUp) => ({ ...powerUp }))
     sparksRef.current = state.sparks.map((spark) => ({ ...spark }))
     ripplesRef.current = state.ripples.map((ripple) => ({ ...ripple }))
@@ -3355,6 +4107,8 @@ export function GradiusRaid({
     nukeFlashRef.current = state.nukeFlash
     nukeStrikeRef.current = state.nukeStrike ? { ...state.nukeStrike } : null
     nukeBlastOriginRef.current = { ...state.nukeBlastOrigin }
+    asteroidWarningRef.current = state.asteroidWarning ?? 0
+    randomEventRef.current = cloneRaidRandomEvent(state.randomEvent ?? null)
     remotePointerVisualRef.current = cloneVec(state.guestPointer)
 
     const ownPlayer = session?.isHost ? state.hostPlayer : state.guestPlayer ?? state.hostPlayer
@@ -3383,6 +4137,8 @@ export function GradiusRaid({
       unlockedStage: state.unlockedStage,
       nukeCooldown: state.nukeCooldown,
       nukeFlash: state.nukeFlash,
+      asteroidWarning: state.asteroidWarning ?? 0,
+      randomEvent: cloneRaidRandomEvent(state.randomEvent ?? null),
     })
   }, [resetGuestPredictionState])
 
@@ -3520,6 +4276,45 @@ export function GradiusRaid({
     }
     keepNetworkVisibleInPlace(enemiesRef.current, (enemy) => enemy.isBoss)
 
+    const bufferedAsteroids = getBufferedAsteroidVisuals(
+      multiplayerAsteroidSnapshotBufferRef.current,
+      performance.now() - getRemoteInterpolationDelayMs(multiplayerRttRef.current),
+    )
+    if (bufferedAsteroids) {
+      asteroidsRef.current = bufferedAsteroids
+    } else {
+      for (const asteroid of asteroidsRef.current) {
+        asteroid.x += asteroid.vx * dt
+        asteroid.y += asteroid.vy * dt
+        asteroid.spin += asteroid.spinSpeed * dt
+      }
+    }
+    keepNetworkVisibleInPlace(asteroidsRef.current)
+
+    for (const meteor of meteorsRef.current) {
+      meteor.x += meteor.vx * dt
+      meteor.y += meteor.vy * dt
+      meteor.life -= dt
+    }
+    keepNetworkVisibleInPlace(meteorsRef.current)
+
+    for (const wreck of wrecksRef.current) {
+      wreck.x += wreck.vx * dt
+      wreck.y += wreck.vy * dt
+    }
+    keepNetworkVisibleInPlace(wrecksRef.current)
+
+    let ionWrite = 0
+    for (const strike of ionStrikesRef.current) {
+      if (strike.warmup > 0) strike.warmup = Math.max(0, strike.warmup - dt)
+      else strike.life -= dt
+      if (strike.life > 0) {
+        ionStrikesRef.current[ionWrite] = strike
+        ionWrite += 1
+      }
+    }
+    ionStrikesRef.current.length = ionWrite
+
     for (const powerUp of powerUpsRef.current) {
       powerUp.y += powerUp.vy * dt
       powerUp.spin += dt * 180
@@ -3535,6 +4330,13 @@ export function GradiusRaid({
     }
     nukeFlashRef.current = Math.max(0, nukeFlashRef.current - dt)
     bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
+    asteroidWarningRef.current = Math.max(0, asteroidWarningRef.current - dt)
+    if (randomEventRef.current) {
+      randomEventRef.current.warning = Math.max(0, randomEventRef.current.warning - dt)
+      if (randomEventRef.current.warning <= 0) {
+        randomEventRef.current.age += dt
+      }
+    }
 
     // Advance locally predicted shots and expire stale ones
     const nowMs = performance.now()
@@ -3799,7 +4601,7 @@ export function GradiusRaid({
     const cssWidth = Math.max(1, root.clientWidth || window.innerWidth || 1)
     const cssHeight = Math.max(1, root.clientHeight || window.innerHeight || 1)
     const maxDpr = multiplayerSessionRef.current ? 1.35 : 2
-    const gfxQuality = getGraphicsQuality()
+    const gfxQuality = graphicsQualityRef.current
     const dprCap = gfxQuality === 'low' ? 1 : gfxQuality === 'medium' ? 1.25 : gfxQuality === 'high' ? 1.5 : maxDpr
     const dpr = Math.min(dprCap, window.devicePixelRatio || 1)
     const width = Math.max(1, Math.floor(cssWidth * dpr))
@@ -3808,10 +4610,14 @@ export function GradiusRaid({
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width
       canvas.height = height
+      fxCanvasContextRef.current = null
     }
 
-    const ctx = canvas.getContext('2d')
+    const ctx = fxCanvasContextRef.current ?? canvas.getContext('2d')
     if (!ctx) return
+    fxCanvasContextRef.current = ctx
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = gfxQuality === 'low' || gfxQuality === 'medium' ? 'medium' : 'high'
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, cssWidth, cssHeight)
 
@@ -3824,7 +4630,7 @@ export function GradiusRaid({
       paletteRef.current = readRaidPalette(root)
     }
 
-    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality)
+    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality, stageRef.current)
 
     const drawTrail = (shot: Shot, color: string, length: number, widthPx: number) => {
       const x = toX(shot.x)
@@ -3926,6 +4732,16 @@ export function GradiusRaid({
     ctx.globalCompositeOperation = 'source-over'
     ctx.filter = 'none'
 
+    drawRandomEventOverlay(ctx, cssWidth, cssHeight, randomEventRef.current, time)
+
+    for (const asteroid of asteroidsRef.current) {
+      drawAsteroidHazard(ctx, asteroid, toX, toY, cssWidth, time)
+    }
+
+    for (const wreck of wrecksRef.current) {
+      drawDerelictWreck(ctx, wreck, toX, toY, cssWidth, time)
+    }
+
     const normalEnemyFilter = getNormalEnemyFilter(time)
     for (const enemy of enemiesRef.current) {
       drawRaidEnemy(ctx, enemy, toX, toY, cssWidth, time, normalEnemyFilter)
@@ -3951,6 +4767,14 @@ export function GradiusRaid({
       drawFingerGuide(ctx, pointerVisualRef.current, toX, toY)
     }
 
+    for (const meteor of meteorsRef.current) {
+      drawMeteorHazard(ctx, meteor, toX, toY, cssWidth)
+    }
+
+    for (const strike of ionStrikesRef.current) {
+      drawIonStrike(ctx, strike, cssWidth, cssHeight, time)
+    }
+
     if (nukeStrikeRef.current) {
       drawNukeMissile(ctx, nukeStrikeRef.current, toX, toY, cssWidth, time)
     }
@@ -3966,6 +4790,9 @@ export function GradiusRaid({
         toY(nukeBlastOriginRef.current.y),
       )
     }
+
+    drawAsteroidWarning(ctx, cssWidth, cssHeight, asteroidWarningRef.current, time)
+    drawRandomEventWarning(ctx, cssWidth, cssHeight, randomEventRef.current, time)
 
     // Victory blackout: black full-screen fade-out after the fly-forward, before/during cutscene
     if (victoryBlackoutRef.current > 0) {
@@ -3996,6 +4823,57 @@ export function GradiusRaid({
       })
     }
   }, [])
+
+  const spawnAsteroidCluster = useCallback(() => {
+    if (asteroidsRef.current.length >= MAX_ASTEROIDS) return
+
+    const stage = stageRef.current
+    const remotePlayer = remotePlayerRef.current
+    const powerPressure = getPowerScore(playerRef.current) + (remotePlayer ? getPowerScore(remotePlayer) * 0.7 : 0)
+    const availableSlots = Math.max(0, MAX_ASTEROIDS - asteroidsRef.current.length)
+    const centerLane = clamp(50 + (Math.random() - 0.5) * 54, 20, 80)
+    const clusterPlan = [2]
+    const companionCount = Math.min(availableSlots - 1, stage >= 9 ? 4 : 3)
+    for (let index = 0; index < companionCount; index += 1) {
+      clusterPlan.push(index === 0 || (stage >= 7 && Math.random() < 0.56) ? 1 : 0)
+    }
+
+    clusterPlan.slice(0, availableSlots).forEach((tier, index) => {
+      const side = index % 2 === 0 ? 1 : -1
+      const spread = index === 0 ? 0 : 9 + index * 5 + Math.random() * 7
+      const lane = centerLane + side * spread + (Math.random() - 0.5) * 5
+      const entryY = tier === 2 ? -18 : -10 - index * 3
+      const driftSpeed = tier === 2 ? 7 : tier === 1 ? 14 : 20
+      asteroidsRef.current.push(createAsteroidHazard(
+        tier,
+        clamp(lane, 12, 88),
+        entryY,
+        side * (3 + Math.random() * driftSpeed) + (Math.random() - 0.5) * 5,
+        11 + Math.random() * 7 + stage * 0.16 + index * 0.8,
+        stage,
+        powerPressure,
+      ))
+    })
+    spawnSparks(50, -4, '#fbbf24', 24, 7)
+    addRipple(50, 7, '#fb923c', 13)
+    playGameSound('countdown')
+  }, [addRipple, spawnSparks])
+
+  const startRandomRaidEvent = useCallback((kind: RaidRandomEventKind) => {
+    randomEventRef.current = {
+      kind,
+      age: 0,
+      duration: getRandomEventDuration(kind),
+      warning: RANDOM_EVENT_WARNING_SECONDS,
+      seed: Math.random() * 1000,
+    }
+    lastRandomEventKindRef.current = kind
+    randomEventSpawnTimerRef.current = 0
+    playGameSound('countdown')
+    const x = kind === 'rift' ? 50 : kind === 'wreck' ? 16 : 50
+    const color = kind === 'solar' ? '#fbbf24' : kind === 'ion' ? '#67e8f9' : kind === 'rift' ? '#a855f7' : '#fb7185'
+    addRipple(x, kind === 'wreck' ? 24 : 38, color, kind === 'wreck' ? 18 : 14)
+  }, [addRipple])
 
   const detonateNuke = useCallback((targetX = 50, targetY = 46) => {
     if (phaseRef.current !== 'playing') return
@@ -4051,6 +4929,36 @@ export function GradiusRaid({
     }
 
     enemiesRef.current = survivors
+    const asteroidSurvivors: AsteroidHazard[] = []
+    let vaporizedAsteroids = 0
+    for (const asteroid of asteroidsRef.current) {
+      const inBlast = asteroid.y > -18 && asteroid.y < HEIGHT + 16
+      if (!inBlast) {
+        asteroidSurvivors.push(asteroid)
+        continue
+      }
+
+      vaporizedAsteroids += 1
+      player.score += asteroid.tier === 2 ? 140 : asteroid.tier === 1 ? 65 : 24
+      if (remotePlayerRef.current) {
+        remotePlayerRef.current.score += asteroid.tier === 2 ? 140 : asteroid.tier === 1 ? 65 : 24
+      }
+      if (markedExplosions < 10) {
+        markedExplosions += 1
+        addRipple(asteroid.x, asteroid.y, asteroid.tier === 2 ? '#fb923c' : '#fbbf24', asteroid.tier === 2 ? 13 : 8)
+        spawnSparks(asteroid.x, asteroid.y, '#fbbf24', asteroid.tier === 2 ? 28 : 14, asteroid.tier === 2 ? 7 : 5)
+      }
+    }
+    asteroidsRef.current = asteroidSurvivors
+    const vaporizedMeteors = meteorsRef.current.length
+    meteorsRef.current = []
+    ionStrikesRef.current = []
+    for (const wreck of wrecksRef.current) {
+      wreck.hp -= 260 + stageRef.current * 22
+      addRipple(wreck.x, wreck.y, '#fbbf24', 16)
+      spawnSparks(wreck.x, wreck.y, '#fbbf24', 32, 7)
+    }
+    wrecksRef.current = wrecksRef.current.filter((wreck) => wreck.hp > 0)
     killsSincePowerRef.current += destroyed
     if (player.score > highScoreRef.current) {
       highScoreRef.current = player.score
@@ -4061,6 +4969,7 @@ export function GradiusRaid({
     spawnSparks(targetX, targetY, '#fbbf24', 80, 9)
     playGameSound('explosion_big')
     if (destroyed >= 5) window.setTimeout(() => playGameSound('combo'), 120)
+    if (vaporizedAsteroids >= 2 || vaporizedMeteors >= 4) window.setTimeout(() => playGameSound('score'), 180)
     syncSnapshot()
   }, [addRipple, spawnSparks, syncSnapshot])
 
@@ -4077,7 +4986,10 @@ export function GradiusRaid({
     const visibleEnemies = enemiesRef.current.filter((enemy) => (
       enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16
     ))
-    const hasTargets = enemyShotsRef.current.length > 0 || visibleEnemies.length > 0
+    const visibleAsteroids = asteroidsRef.current.filter((asteroid) => (
+      asteroid.hp > 0 && asteroid.y > -18 && asteroid.y < HEIGHT + 16
+    ))
+    const hasTargets = enemyShotsRef.current.length > 0 || visibleEnemies.length > 0 || visibleAsteroids.length > 0
     if (!hasTargets) return
 
     const player = sourcePlayer
@@ -4096,6 +5008,9 @@ export function GradiusRaid({
     } else if (enemyShotsRef.current.length > 0) {
       targetX = clamp(enemyShotsRef.current.reduce((sum, shot) => sum + shot.x, 0) / enemyShotsRef.current.length, 18, 82)
       targetY = clamp(enemyShotsRef.current.reduce((sum, shot) => sum + shot.y, 0) / enemyShotsRef.current.length, 22, 58)
+    } else if (visibleAsteroids.length > 0) {
+      targetX = clamp(visibleAsteroids.reduce((sum, asteroid) => sum + asteroid.x, 0) / visibleAsteroids.length, 18, 82)
+      targetY = clamp(visibleAsteroids.reduce((sum, asteroid) => sum + asteroid.y, 0) / visibleAsteroids.length, 22, 58)
     }
 
     nukeBlastOriginRef.current = { x: targetX, y: targetY }
@@ -4149,6 +5064,10 @@ export function GradiusRaid({
     shotsRef.current = []
     enemyShotsRef.current = []
     enemiesRef.current = []
+    asteroidsRef.current = []
+    meteorsRef.current = []
+    ionStrikesRef.current = []
+    wrecksRef.current = []
     powerUpsRef.current = []
     sparksRef.current = []
     ripplesRef.current = []
@@ -4164,6 +5083,14 @@ export function GradiusRaid({
     bossAlertRef.current = 0
     bossMessageRef.current = null
     stageClearRef.current = 0
+    pendingNextStageRef.current = null
+    asteroidClusterTimerRef.current = stage >= 2 ? 30 + Math.random() * 24 : getAsteroidClusterInterval()
+    asteroidSpawnDelayRef.current = 0
+    asteroidWarningRef.current = 0
+    randomEventRef.current = null
+    randomEventTimerRef.current = 20 + Math.random() * 18
+    randomEventSpawnTimerRef.current = 0
+    lastRandomEventKindRef.current = null
     nukeCooldownRef.current = 0
     nukeFlashRef.current = 0
     nukeStrikeRef.current = null
@@ -5067,6 +5994,7 @@ export function GradiusRaid({
     const player = playerRef.current
     nukeCooldownRef.current = Math.max(0, nukeCooldownRef.current - dt)
     nukeFlashRef.current = Math.max(0, nukeFlashRef.current - dt)
+    asteroidWarningRef.current = Math.max(0, asteroidWarningRef.current - dt)
     if (nukeStrikeRef.current) {
       const strike = nukeStrikeRef.current
       strike.age = Math.min(strike.duration, strike.age + dt)
@@ -5078,16 +6006,19 @@ export function GradiusRaid({
     if (stageClearRef.current > 0) {
       const before = stageClearRef.current
       stageClearRef.current = Math.max(0, stageClearRef.current - dt)
-      const progress = 1 - stageClearRef.current / STAGE_CLEAR_SECONDS
       const remotePlayer = remotePlayerRef.current
       pointerTargetRef.current = null
       pointerVisualRef.current = null
+      asteroidWarningRef.current = 0
+      asteroidSpawnDelayRef.current = 0
+      randomEventRef.current = null
+      randomEventSpawnTimerRef.current = 0
       player.x += (50 - player.x) * Math.min(1, dt * 4.8)
-      player.y = progress < 0.78 ? Math.max(4, player.y - dt * 31) : player.y
+      player.y = Math.max(-26, player.y - dt * 38)
       player.invuln = Math.max(player.invuln, 0.45)
       if (remotePlayer) {
         remotePlayer.x += (58 - remotePlayer.x) * Math.min(1, dt * 4.8)
-        remotePlayer.y = progress < 0.78 ? Math.max(4, remotePlayer.y - dt * 31) : remotePlayer.y
+        remotePlayer.y = Math.max(-26, remotePlayer.y - dt * 38)
         remotePlayer.invuln = Math.max(remotePlayer.invuln, 0.45)
       }
       updateSparksInPlace(sparksRef.current, dt)
@@ -5101,11 +6032,24 @@ export function GradiusRaid({
           startRaidBgm(MAX_RAID_STAGE, 'ending')
           return
         }
+        const pendingNextStage = pendingNextStageRef.current
+        if (pendingNextStage !== null) {
+          stageRef.current = pendingNextStage
+          waveRef.current = pendingNextStage
+          pendingNextStageRef.current = null
+          startRaidBgm(stageRef.current, 'cruise')
+        }
         player.x = 50
         player.y = 82
         enemiesRef.current = []
+        asteroidsRef.current = []
+        meteorsRef.current = []
+        ionStrikesRef.current = []
+        wrecksRef.current = []
         shotsRef.current = []
         enemyShotsRef.current = []
+        asteroidClusterTimerRef.current = getAsteroidClusterInterval()
+        randomEventTimerRef.current = getRandomEventInterval()
         spawnLockRef.current = 1.2
         spawnTimerRef.current = 1.1
         formationTimerRef.current = 2.2
@@ -5178,6 +6122,117 @@ export function GradiusRaid({
       spawnEnemyAt(10 + Math.random() * 80, -6, waveRef.current, Math.floor(Math.random() * 4))
       spawnTimerRef.current = getSingleEnemySpawnSeconds(waveRef.current)
     }
+    const anyRandomEventActive = Boolean(randomEventRef.current) || meteorsRef.current.length > 0 || ionStrikesRef.current.length > 0 || wrecksRef.current.length > 0
+    const anyAsteroidEventActive = asteroidWarningRef.current > 0 || asteroidSpawnDelayRef.current > 0 || asteroidsRef.current.length > 0
+    if (canSpawnStageEnemies && !bossActive && stageRef.current >= 2 && !anyRandomEventActive) {
+      if (asteroidSpawnDelayRef.current > 0) {
+        asteroidSpawnDelayRef.current = Math.max(0, asteroidSpawnDelayRef.current - dt)
+        if (asteroidSpawnDelayRef.current <= 0) {
+          spawnAsteroidCluster()
+          asteroidClusterTimerRef.current = getAsteroidClusterInterval()
+        }
+      } else if (asteroidsRef.current.length === 0) {
+        asteroidClusterTimerRef.current = Math.max(0, asteroidClusterTimerRef.current - dt)
+        if (asteroidClusterTimerRef.current <= 0) {
+          asteroidWarningRef.current = ASTEROID_CLUSTER_WARNING_SECONDS
+          asteroidSpawnDelayRef.current = ASTEROID_CLUSTER_SPAWN_DELAY_SECONDS
+          playGameSound('countdown')
+        }
+      }
+    } else {
+      asteroidSpawnDelayRef.current = 0
+    }
+
+    const activeRandomEvent = randomEventRef.current
+    if (activeRandomEvent) {
+      activeRandomEvent.warning = Math.max(0, activeRandomEvent.warning - dt)
+      if (activeRandomEvent.warning <= 0) {
+        activeRandomEvent.age += dt
+        randomEventSpawnTimerRef.current = Math.max(0, randomEventSpawnTimerRef.current - dt)
+
+        if (activeRandomEvent.kind === 'meteor' && randomEventSpawnTimerRef.current <= 0) {
+          const spawnCount = Math.min(MAX_METEORS - meteorsRef.current.length, stageRef.current >= 8 ? 3 : 2)
+          for (let index = 0; index < spawnCount; index += 1) {
+            const x = 8 + Math.random() * 84
+            meteorsRef.current.push({
+              id: meteorId++,
+              x,
+              y: -8 - index * 4,
+              vx: (Math.random() - 0.5) * 22,
+              vy: 58 + Math.random() * 30 + stageRef.current * 0.6,
+              radius: 1.35 + Math.random() * 1.3,
+              life: 5,
+              phase: Math.random() * Math.PI * 2,
+            })
+          }
+          randomEventSpawnTimerRef.current = 0.28
+        } else if (activeRandomEvent.kind === 'ion' && randomEventSpawnTimerRef.current <= 0) {
+          if (ionStrikesRef.current.length < MAX_ION_STRIKES) {
+            ionStrikesRef.current.push({
+              id: ionStrikeId++,
+              x: 12 + Math.random() * 76,
+              width: 5.4 + Math.random() * 4.2,
+              warmup: 0.95,
+              life: 1.05,
+              duration: 1.05,
+            })
+          }
+          randomEventSpawnTimerRef.current = 1.15 + Math.random() * 0.35
+        } else if (activeRandomEvent.kind === 'wreck' && randomEventSpawnTimerRef.current <= 0 && wrecksRef.current.length < MAX_WRECKS) {
+          const leftEntry = Math.random() < 0.5
+          const hp = 170 + stageRef.current * 18 + getPowerScore(player) * 5
+          wrecksRef.current.push({
+            id: wreckId++,
+            x: leftEntry ? -18 : 118,
+            y: 24 + Math.random() * 34,
+            vx: leftEntry ? 9 + Math.random() * 4 : -9 - Math.random() * 4,
+            vy: 3 + Math.random() * 5,
+            width: 34 + Math.random() * 10,
+            height: 11,
+            hp,
+            maxHp: hp,
+            phase: Math.random() * Math.PI * 2,
+          })
+          randomEventSpawnTimerRef.current = 999
+        } else if (activeRandomEvent.kind === 'ambush' && randomEventSpawnTimerRef.current <= 0) {
+          const side = Math.random() < 0.5 ? 8 : 92
+          const kind = pickEliteEnemyKind(stageRef.current, waveRef.current, 0)
+          spawnEnemyAt(side, 10 + Math.random() * 18, waveRef.current + 1, Math.floor(Math.random() * 4), 0, undefined, kind)
+          randomEventSpawnTimerRef.current = 1.35
+        } else if (activeRandomEvent.kind === 'solar' && randomEventSpawnTimerRef.current <= 0) {
+          spawnSparks(70 + Math.random() * 20, 6 + Math.random() * 16, '#fbbf24', 10, 7)
+          randomEventSpawnTimerRef.current = 0.8
+        }
+
+        if (activeRandomEvent.kind === 'rift') {
+          const riftX = 50 + Math.sin(activeRandomEvent.age * 1.3 + activeRandomEvent.seed) * 18
+          const pull = dt * 7.5
+          for (const shot of enemyShotsRef.current) {
+            shot.vx += clamp(riftX - shot.x, -18, 18) * pull * 0.06
+          }
+          for (const shot of shotsRef.current) {
+            shot.vx += clamp(riftX - shot.x, -18, 18) * pull * 0.025
+          }
+          for (const powerUp of powerUpsRef.current) {
+            powerUp.x += clamp(riftX - powerUp.x, -12, 12) * dt * 0.42
+          }
+          for (const asteroid of asteroidsRef.current) {
+            asteroid.vx += clamp(riftX - asteroid.x, -18, 18) * pull * 0.018
+          }
+        }
+      }
+
+      if (activeRandomEvent.age >= activeRandomEvent.duration) {
+        randomEventRef.current = null
+        randomEventSpawnTimerRef.current = 0
+        randomEventTimerRef.current = getRandomEventInterval()
+      }
+    } else if (canSpawnStageEnemies && !bossActive && stageRef.current >= 2 && !anyAsteroidEventActive) {
+      randomEventTimerRef.current = Math.max(0, randomEventTimerRef.current - dt)
+      if (randomEventTimerRef.current <= 0) {
+        startRandomRaidEvent(pickNextRandomRaidEventKind(stageRef.current, stageRef.current % 2 === 0, lastRandomEventKindRef.current))
+      }
+    }
 
     let homingTargets: Map<number, Enemy> | null = null
     if (shotsRef.current.some((shot) => shot.kind === 'homing')) {
@@ -5229,6 +6284,81 @@ export function GradiusRaid({
 
     const now = performance.now()
     const nowSeconds = now / 1000
+    const asteroidDriftTime = now / 900
+    const asteroids = asteroidsRef.current
+    let liveAsteroidCount = 0
+    for (const asteroid of asteroids) {
+      asteroid.x += asteroid.vx * dt
+      asteroid.y += asteroid.vy * dt
+      asteroid.spin += asteroid.spinSpeed * dt
+      asteroid.vx += Math.sin(asteroidDriftTime + asteroid.phase) * dt * (asteroid.tier === 2 ? 1.1 : 1.8)
+      const xPadding = Math.max(5, asteroid.radius * 0.72)
+      const yPadding = Math.max(7, asteroid.radius * 0.5)
+      const minX = xPadding
+      const maxX = WIDTH - xPadding
+      const minY = yPadding
+      const maxY = HEIGHT - yPadding
+      if (asteroid.x < minX || asteroid.x > maxX) {
+        const rebound = Math.max(6, Math.abs(asteroid.vx) * 0.78)
+        asteroid.x = clamp(asteroid.x, minX, maxX)
+        asteroid.vx = asteroid.x <= minX ? rebound : -rebound
+      }
+      if (asteroid.y > maxY) {
+        asteroid.y = maxY
+        asteroid.vy = -Math.max(8, Math.abs(asteroid.vy) * 0.76)
+      } else if (asteroid.y < minY && asteroid.vy < 0) {
+        asteroid.y = minY
+        asteroid.vy = Math.max(8, Math.abs(asteroid.vy) * 0.76)
+      }
+      if (asteroid.hp > 0 && asteroid.y > -asteroid.radius - 20) {
+        asteroids[liveAsteroidCount] = asteroid
+        liveAsteroidCount += 1
+      }
+    }
+    asteroids.length = liveAsteroidCount
+
+    const meteors = meteorsRef.current
+    let liveMeteorCount = 0
+    for (const meteor of meteors) {
+      meteor.x += meteor.vx * dt
+      meteor.y += meteor.vy * dt
+      meteor.life -= dt
+      meteor.vx += Math.sin(nowSeconds * 2.2 + meteor.phase) * dt * 3
+      if (meteor.life > 0 && meteor.y < HEIGHT + 18 && meteor.x > -18 && meteor.x < WIDTH + 18) {
+        meteors[liveMeteorCount] = meteor
+        liveMeteorCount += 1
+      }
+    }
+    meteors.length = liveMeteorCount
+
+    const ionStrikes = ionStrikesRef.current
+    let liveIonStrikeCount = 0
+    for (const strike of ionStrikes) {
+      if (strike.warmup > 0) {
+        strike.warmup = Math.max(0, strike.warmup - dt)
+      } else {
+        strike.life -= dt
+      }
+      if (strike.life > 0) {
+        ionStrikes[liveIonStrikeCount] = strike
+        liveIonStrikeCount += 1
+      }
+    }
+    ionStrikes.length = liveIonStrikeCount
+
+    const wrecks = wrecksRef.current
+    let liveWreckCount = 0
+    for (const wreck of wrecks) {
+      wreck.x += wreck.vx * dt
+      wreck.y += wreck.vy * dt
+      wreck.vy += Math.sin(nowSeconds + wreck.phase) * dt * 1.5
+      if (wreck.hp > 0 && wreck.x > -28 && wreck.x < WIDTH + 28 && wreck.y > -14 && wreck.y < HEIGHT + 18) {
+        wrecks[liveWreckCount] = wreck
+        liveWreckCount += 1
+      }
+    }
+    wrecks.length = liveWreckCount
+
     const enemies = enemiesRef.current
     let liveEnemyCount = 0
     for (const enemy of enemies) {
@@ -5370,6 +6500,81 @@ export function GradiusRaid({
     updateSparksInPlace(sparksRef.current, dt)
     updateRipplesInPlace(ripplesRef.current, dt)
 
+    const spawnedAsteroids: AsteroidHazard[] = []
+    const breakAsteroid = (asteroid: AsteroidHazard, awardScore: boolean) => {
+      asteroid.hp = 0
+      spawnedAsteroids.push(...splitAsteroidHazard(
+        asteroid,
+        stageRef.current,
+        getPowerScore(playerRef.current) + (remotePlayerRef.current ? getPowerScore(remotePlayerRef.current) * 0.7 : 0),
+      ))
+      const scoreValue = asteroid.tier === 2 ? 190 : asteroid.tier === 1 ? 82 : 26
+      if (awardScore) {
+        player.score += scoreValue + stageRef.current * 4
+        if (remotePlayerRef.current) {
+          remotePlayerRef.current.score += scoreValue + stageRef.current * 4
+        }
+      }
+      spawnSparks(asteroid.x, asteroid.y, asteroid.tier === 2 ? '#fb923c' : '#fbbf24', asteroid.tier === 2 ? 38 : 22, asteroid.tier === 2 ? 8 : 5)
+      addRipple(asteroid.x, asteroid.y, asteroid.tier === 2 ? '#fb923c' : '#fbbf24', asteroid.tier === 2 ? 15 : 9)
+      playGameSound(asteroid.tier === 2 ? 'explosion_big' : 'explosion')
+    }
+
+    for (const shot of shotsRef.current) {
+      if (shot.y <= -50) continue
+      for (const asteroid of asteroidsRef.current) {
+        if (asteroid.hp <= 0) continue
+        const hitRange = shot.radius + asteroid.radius
+        if (
+          Math.abs(shot.x - asteroid.x) <= hitRange &&
+          Math.abs(shot.y - asteroid.y) <= hitRange &&
+          distSq(shot, asteroid) <= hitRange * hitRange
+        ) {
+          asteroid.hp -= shot.damage
+          spawnSparks(shot.x, shot.y, '#fbbf24', asteroid.tier === 2 ? 5 : 3, asteroid.tier === 2 ? 5 : 3)
+          if (shot.kind === 'rocket') {
+            addRipple(shot.x, shot.y, '#fb923c', 8)
+            playGameSound('explosion')
+          }
+          if (shot.pierce && shot.pierce > 0) {
+            shot.pierce -= 1
+          } else {
+            shot.y = -999
+          }
+          if (asteroid.hp <= 0) {
+            breakAsteroid(asteroid, true)
+          }
+          break
+        }
+      }
+    }
+
+    for (const shot of shotsRef.current) {
+      if (shot.y <= -50) continue
+      for (const wreck of wrecksRef.current) {
+        if (wreck.hp <= 0) continue
+        const hitX = wreck.width * 0.5 + shot.radius
+        const hitY = wreck.height * 0.55 + shot.radius
+        if (Math.abs(shot.x - wreck.x) <= hitX && Math.abs(shot.y - wreck.y) <= hitY) {
+          wreck.hp -= shot.damage
+          spawnSparks(shot.x, shot.y, '#94a3b8', 5, 5)
+          if (shot.pierce && shot.pierce > 0) {
+            shot.pierce -= 1
+          } else {
+            shot.y = -999
+          }
+          if (wreck.hp <= 0) {
+            player.score += 240 + stageRef.current * 18
+            if (remotePlayerRef.current) remotePlayerRef.current.score += 240 + stageRef.current * 18
+            spawnSparks(wreck.x, wreck.y, '#fb7185', 44, 8)
+            addRipple(wreck.x, wreck.y, '#fb7185', 17)
+            playGameSound('explosion_big')
+          }
+          break
+        }
+      }
+    }
+
     let bossDefeatedThisFrame = false
     let preserveLoadoutForSuperBoss = false
     let completedRun = false
@@ -5452,7 +6657,7 @@ export function GradiusRaid({
               } else {
                 const nextStage = clearedStage + 1
                 preserveLoadoutForSuperBoss = nextStage % 5 === 0
-                stageRef.current = nextStage
+                pendingNextStageRef.current = nextStage
                 unlockedStageRef.current = Math.max(unlockedStageRef.current, nextStage)
                 if (!coOpRunRef.current) saveUnlockedStage(unlockedStageRef.current)
                 if (!coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
@@ -5460,7 +6665,6 @@ export function GradiusRaid({
                 }
                 bossAlertRef.current = 2.4
                 bossMessageRef.current = 'clear'
-                startRaidBgm(stageRef.current)
               }
               playGameSound('levelup')
               playGameSound('combo')
@@ -5479,6 +6683,14 @@ export function GradiusRaid({
         shotsRef.current = []
         enemyShotsRef.current = []
         enemiesRef.current = []
+        asteroidsRef.current = []
+        meteorsRef.current = []
+        ionStrikesRef.current = []
+        wrecksRef.current = []
+        asteroidWarningRef.current = 0
+        asteroidSpawnDelayRef.current = 0
+        randomEventRef.current = null
+        randomEventSpawnTimerRef.current = 0
         powerUpsRef.current = []
         // Start the fly-forward animation like a normal stage clear
         stageClearRef.current = STAGE_CLEAR_SECONDS
@@ -5513,6 +6725,16 @@ export function GradiusRaid({
       shotsRef.current = []
       enemyShotsRef.current = []
       enemiesRef.current = enemiesRef.current.filter((enemy) => enemy.isBoss && enemy.hp <= 0)
+      asteroidsRef.current = []
+      meteorsRef.current = []
+      ionStrikesRef.current = []
+      wrecksRef.current = []
+      asteroidWarningRef.current = 0
+      asteroidSpawnDelayRef.current = 0
+      randomEventRef.current = null
+      randomEventSpawnTimerRef.current = 0
+      asteroidClusterTimerRef.current = getAsteroidClusterInterval()
+      randomEventTimerRef.current = getRandomEventInterval()
       powerUpsRef.current = []
       if (defeatedBoss) {
         ;[120, 320, 540, 780].forEach((delay, index) => {
@@ -5579,6 +6801,71 @@ export function GradiusRaid({
       }
     }
 
+    for (const asteroid of asteroidsRef.current) {
+      if (asteroid.hp <= 0) continue
+      const hitRange = asteroid.radius + PLAYER_RADIUS
+      for (const targetPlayer of getLivingPlayers()) {
+        if (
+          Math.abs(asteroid.x - targetPlayer.x) <= hitRange &&
+          Math.abs(asteroid.y - targetPlayer.y) <= hitRange &&
+          distSq(asteroid, targetPlayer) <= hitRange * hitRange
+        ) {
+          damagePlayer(asteroid.tier === 2 ? 2 : 1, targetPlayer)
+          breakAsteroid(asteroid, false)
+          break
+        }
+      }
+    }
+
+    for (const meteor of meteorsRef.current) {
+      const hitRange = meteor.radius + PLAYER_RADIUS
+      for (const targetPlayer of getLivingPlayers()) {
+        if (
+          Math.abs(meteor.x - targetPlayer.x) <= hitRange &&
+          Math.abs(meteor.y - targetPlayer.y) <= hitRange &&
+          distSq(meteor, targetPlayer) <= hitRange * hitRange
+        ) {
+          meteor.life = 0
+          damagePlayer(1, targetPlayer)
+          spawnSparks(meteor.x, meteor.y, '#fbbf24', 18, 6)
+          addRipple(meteor.x, meteor.y, '#fb923c', 9)
+          break
+        }
+      }
+    }
+    meteorsRef.current = meteorsRef.current.filter((meteor) => meteor.life > 0)
+
+    for (const strike of ionStrikesRef.current) {
+      if (strike.warmup > 0) continue
+      for (const targetPlayer of getLivingPlayers()) {
+        if (Math.abs(targetPlayer.x - strike.x) <= strike.width * 0.62 + PLAYER_RADIUS) {
+          damagePlayer(1, targetPlayer)
+        }
+      }
+    }
+
+    for (const wreck of wrecksRef.current) {
+      if (wreck.hp <= 0) continue
+      for (const targetPlayer of getLivingPlayers()) {
+        if (
+          Math.abs(wreck.x - targetPlayer.x) <= wreck.width * 0.5 + PLAYER_RADIUS &&
+          Math.abs(wreck.y - targetPlayer.y) <= wreck.height * 0.58 + PLAYER_RADIUS
+        ) {
+          damagePlayer(2, targetPlayer)
+          wreck.hp = Math.max(0, wreck.hp - 70)
+          spawnSparks(wreck.x, wreck.y, '#94a3b8', 18, 6)
+          break
+        }
+      }
+    }
+    wrecksRef.current = wrecksRef.current.filter((wreck) => wreck.hp > 0)
+
+    const survivingAsteroids = asteroidsRef.current.filter((asteroid) => asteroid.hp > 0)
+    if (spawnedAsteroids.length > 0) {
+      survivingAsteroids.push(...spawnedAsteroids.slice(0, Math.max(0, MAX_ASTEROIDS - survivingAsteroids.length)))
+    }
+    asteroidsRef.current = survivingAsteroids
+
     for (const powerUp of powerUpsRef.current) {
       const pickupAssist = powerUp.type === 'levelup' ? 4.2 : 1.8
       const hitRange = powerUp.radius + PLAYER_RADIUS + pickupAssist
@@ -5624,7 +6911,7 @@ export function GradiusRaid({
     if (remotePlayerRef.current && remotePlayerRef.current.score > highScoreRef.current) {
       highScoreRef.current = remotePlayerRef.current.score
     }
-  }, [activateNuke, addRipple, damagePlayer, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, stopRaidBgm, submitRaidLeaderboardScore])
+  }, [activateNuke, addRipple, damagePlayer, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore])
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -5748,7 +7035,11 @@ export function GradiusRaid({
   const isMultiplayer = Boolean(multiplayerSession)
   const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
   const [graphicsQuality, setGraphicsQualityState] = useState<GraphicsQuality>(() => getGraphicsQuality())
-  const applyGraphicsQuality = (q: GraphicsQuality) => { setGraphicsQuality(q); setGraphicsQualityState(q) }
+  const applyGraphicsQuality = (q: GraphicsQuality) => {
+    graphicsQualityRef.current = q
+    setGraphicsQuality(q)
+    setGraphicsQualityState(q)
+  }
   const connectionClass = `raid__connection raid__connection--${multiplayerConnection.quality}`
   const finalScore = Math.max(player.score, snapshot.allyPlayer?.score ?? 0)
   const finaleShipSize = getShipSpriteSize(player.ship.key, 'picker') + 22
