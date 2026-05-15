@@ -5,43 +5,82 @@
   overflow: hidden;
   touch-action: none;
   user-select: none;
+  --raid-base-top: #020307;
+  --raid-base-mid: #060812;
+  --raid-base-bottom: #070a10;
   --raid-bg-a: rgba(239, 35, 60, 0.16);
   --raid-bg-b: rgba(14, 165, 233, 0.13);
   --raid-nebula-a: rgba(127, 29, 29, 0.3);
   --raid-nebula-b: rgba(8, 47, 73, 0.32);
   --raid-star-tint: rgba(248, 113, 113, 0.64);
   --raid-streak: rgba(239, 35, 60, 0.5);
+  --raid-planet-a: #7c3aed;
+  --raid-planet-b: #7f1d1d;
+  --raid-planet-c: #164e63;
   background:
     radial-gradient(circle at 18% 16%, var(--raid-bg-a), transparent 24%),
     radial-gradient(circle at 76% 38%, var(--raid-bg-b), transparent 26%),
-    linear-gradient(180deg, #020307 0%, #060812 45%, #070a10 100%);
+    linear-gradient(180deg, var(--raid-base-top) 0%, var(--raid-base-mid) 45%, var(--raid-base-bottom) 100%);
 }
 
 .raid--theme-2 {
+  --raid-base-top: #090018;
+  --raid-base-mid: #17062f;
+  --raid-base-bottom: #05020f;
   --raid-bg-a: rgba(88, 28, 135, 0.24);
   --raid-bg-b: rgba(236, 72, 153, 0.12);
   --raid-nebula-a: rgba(76, 29, 149, 0.34);
   --raid-nebula-b: rgba(131, 24, 67, 0.26);
   --raid-star-tint: rgba(216, 180, 254, 0.62);
   --raid-streak: rgba(168, 85, 247, 0.48);
+  --raid-planet-a: #8b5cf6;
+  --raid-planet-b: #be185d;
+  --raid-planet-c: #4338ca;
 }
 
 .raid--theme-3 {
+  --raid-base-top: #02161c;
+  --raid-base-mid: #062b34;
+  --raid-base-bottom: #030a12;
   --raid-bg-a: rgba(22, 78, 99, 0.24);
   --raid-bg-b: rgba(239, 68, 68, 0.11);
   --raid-nebula-a: rgba(8, 47, 73, 0.38);
   --raid-nebula-b: rgba(69, 10, 10, 0.28);
   --raid-star-tint: rgba(103, 232, 249, 0.58);
   --raid-streak: rgba(34, 211, 238, 0.42);
+  --raid-planet-a: #0891b2;
+  --raid-planet-b: #0e7490;
+  --raid-planet-c: #dc2626;
 }
 
 .raid--theme-4 {
+  --raid-base-top: #150703;
+  --raid-base-mid: #2b1208;
+  --raid-base-bottom: #080402;
   --raid-bg-a: rgba(120, 53, 15, 0.22);
   --raid-bg-b: rgba(127, 29, 29, 0.2);
   --raid-nebula-a: rgba(67, 20, 7, 0.34);
   --raid-nebula-b: rgba(127, 29, 29, 0.32);
   --raid-star-tint: rgba(251, 146, 60, 0.56);
   --raid-streak: rgba(251, 146, 60, 0.44);
+  --raid-planet-a: #b45309;
+  --raid-planet-b: #991b1b;
+  --raid-planet-c: #92400e;
+}
+
+.raid--theme-5 {
+  --raid-base-top: #01110a;
+  --raid-base-mid: #062313;
+  --raid-base-bottom: #030807;
+  --raid-bg-a: rgba(34, 197, 94, 0.16);
+  --raid-bg-b: rgba(45, 212, 191, 0.14);
+  --raid-nebula-a: rgba(22, 101, 52, 0.34);
+  --raid-nebula-b: rgba(13, 148, 136, 0.24);
+  --raid-star-tint: rgba(134, 239, 172, 0.58);
+  --raid-streak: rgba(45, 212, 191, 0.42);
+  --raid-planet-a: #16a34a;
+  --raid-planet-b: #0f766e;
+  --raid-planet-c: #65a30d;
 }
 
 .raid__nebula,
@@ -869,35 +908,15 @@
 .raid__player svg,
 .raid__ship-card svg {
   filter:
-    brightness(0.56)
-    contrast(1.85)
-    saturate(1.55)
-    sepia(0.28)
-    hue-rotate(318deg)
-    drop-shadow(0 0 16px rgba(239, 35, 60, 0.66));
+    brightness(1.08)
+    contrast(1.12)
+    saturate(1.16)
+    drop-shadow(0 0 12px rgba(148, 163, 184, 0.26));
 }
 
 .raid__player svg {
   width: min(100%, 82px);
   height: auto;
-}
-
-.raid__player svg line,
-.raid__ship-card svg line {
-  stroke: #ef233c !important;
-}
-
-.raid__player::after {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  inset: 10px 8px 12px;
-  background:
-    linear-gradient(90deg, transparent 0 44%, rgba(239, 35, 60, 0.6) 46% 54%, transparent 56% 100%),
-    radial-gradient(circle at 50% 60%, rgba(0, 0, 0, 0.48), transparent 56%);
-  clip-path: polygon(50% 0%, 92% 34%, 76% 88%, 50% 100%, 24% 88%, 8% 34%);
-  mix-blend-mode: multiply;
-  opacity: 0.5;
 }
 
 .raid__player--shielded {
@@ -1943,9 +1962,9 @@
   position: relative;
   display: grid;
   justify-items: center;
-  gap: 7px;
-  min-height: 172px;
-  padding: 12px 8px;
+  gap: 5px;
+  min-height: 184px;
+  padding: 10px 8px 12px;
   border: 1px solid rgba(239, 35, 60, 0.28);
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(18, 3, 5, 0.92), rgba(3, 4, 8, 0.96));
@@ -1953,45 +1972,10 @@
   overflow: hidden;
 }
 
-.raid__ship-card::before {
-  content: '';
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  width: 68px;
-  height: 78px;
-  pointer-events: none;
-  transform: translateX(-50%);
-  background:
-    linear-gradient(90deg, transparent 0 44%, rgba(239, 35, 60, 0.42) 46% 54%, transparent 56% 100%),
-    radial-gradient(circle at 50% 55%, rgba(0, 0, 0, 0.42), transparent 60%);
-  clip-path: polygon(50% 0%, 94% 34%, 78% 88%, 50% 100%, 22% 88%, 6% 34%);
-  mix-blend-mode: multiply;
-  opacity: 0.46;
-  z-index: 2;
-}
-
-.raid__ship-card::after {
-  content: '';
-  position: absolute;
-  top: 32px;
-  left: 50%;
-  width: 64px;
-  height: 52px;
-  pointer-events: none;
-  transform: translateX(-50%);
-  background:
-    linear-gradient(90deg, transparent 0 14%, rgba(239, 35, 60, 0.65) 15% 21%, transparent 22% 78%, rgba(239, 35, 60, 0.65) 79% 85%, transparent 86%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 34%);
-  clip-path: polygon(0 38%, 50% 0, 100% 38%, 82% 100%, 18% 100%);
-  mix-blend-mode: screen;
-  opacity: 0.6;
-  z-index: 2;
-}
-
 .raid__ship-card svg {
   position: relative;
   z-index: 1;
+  margin-bottom: -2px;
 }
 
 .raid__ship-card span,

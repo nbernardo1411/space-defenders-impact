@@ -12,6 +12,7 @@ type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair' | 'le
 type GamePhase = 'select' | 'briefing' | 'playing' | 'paused' | 'gameover' | 'victory'
 type BossMessage = 'incoming' | 'clear' | null
 type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super' | 'final'
+type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
 
@@ -65,11 +66,13 @@ type Enemy = Vec & {
   radius: number
   variant: number
   isBoss: boolean
+  isMiniBoss: boolean
   fireCooldown: number
   phase: number
   color: string
   pattern: number
   bossKind: BossKind | null
+  miniBossKind: MiniBossKind | null
   shieldTime: number
   originX: number
   amplitude: number
@@ -212,6 +215,13 @@ const RAID_CHECKPOINT_STORAGE_KEY = 'gradiusRaidCheckpointStage'
 const PLAYER_COLOR = '#ef233c'
 const ALLY_PLAYER_COLOR = '#38bdf8'
 const DARK_ENEMY_COLORS = ['#4c1d95', '#581c87', '#7f1d1d', '#831843', '#312e81', '#164e63', '#3f1d2e', '#1f2937']
+const MINI_BOSS_KINDS: MiniBossKind[] = ['stalker', 'brood', 'lancer']
+const MINI_BOSS_COLORS: Record<MiniBossKind, string> = {
+  stalker: '#06b6d4',
+  brood: '#a855f7',
+  lancer: '#f43f5e',
+}
+const ELITE_ENEMY_STAGE_START = 2
 const BOSS_COLORS: Record<BossKind, string> = {
   carrier: '#7f1d1d',
   orb: '#581c87',
@@ -313,10 +323,10 @@ const EMPTY_WEAPON_TIMERS: Record<WeaponKey, number> = {
 }
 
 function getShipSpriteSize(shipKey: string, context: 'player' | 'option' | 'picker') {
-  if (shipKey === 'dreadnought') return context === 'player' ? 88 : context === 'option' ? 40 : 76
-  if (shipKey === 'spaceEt') return context === 'player' ? 84 : context === 'option' ? 38 : 72
-  if (shipKey === 'xwing') return context === 'player' ? 78 : context === 'option' ? 36 : 68
-  return context === 'player' ? 74 : context === 'option' ? 34 : 64
+  if (shipKey === 'dreadnought') return context === 'player' ? 88 : context === 'option' ? 40 : 88
+  if (shipKey === 'spaceEt') return context === 'player' ? 84 : context === 'option' ? 38 : 84
+  if (shipKey === 'xwing') return context === 'player' ? 78 : context === 'option' ? 36 : 82
+  return context === 'player' ? 74 : context === 'option' ? 34 : 80
 }
 
 const WEAPON_STACK_CAPS: Record<WeaponKey, number> = {
@@ -398,6 +408,7 @@ const STAGE_CLEAR_SECONDS = 3.15
 const VICTORY_BLACKOUT_SECONDS = 0.55
 const MAX_SPARKS = 45
 const MAX_RIPPLES = 10
+const RAID_BACKGROUND_THEME_COUNT = 5
 
 let shotId = 1
 let enemyId = 1
@@ -415,12 +426,18 @@ type CanvasSpriteEntry = {
 }
 
 type RaidPalette = {
+  baseTop: string
+  baseMid: string
+  baseBottom: string
   bgA: string
   bgB: string
   nebulaA: string
   nebulaB: string
   starTint: string
   streak: string
+  planetA: string
+  planetB: string
+  planetC: string
 }
 
 const canvasSpriteCache = new Map<string, CanvasSpriteEntry>()
@@ -428,12 +445,18 @@ const homingMissileSpriteCache = new Map<number, HTMLCanvasElement>()
 const honeycombShieldSpriteCache = new Map<number, HTMLCanvasElement>()
 
 const DEFAULT_RAID_PALETTE: RaidPalette = {
+  baseTop: '#020307',
+  baseMid: '#060812',
+  baseBottom: '#070a10',
   bgA: 'rgba(239, 35, 60, 0.16)',
   bgB: 'rgba(14, 165, 233, 0.13)',
   nebulaA: 'rgba(127, 29, 29, 0.3)',
   nebulaB: 'rgba(8, 47, 73, 0.32)',
   starTint: 'rgba(248, 113, 113, 0.64)',
   streak: 'rgba(239, 35, 60, 0.5)',
+  planetA: '#7c3aed',
+  planetB: '#7f1d1d',
+  planetC: '#164e63',
 }
 
 const BACKGROUND_STARS = Array.from({ length: 220 }, (_, index) => ({
@@ -458,8 +481,30 @@ const BACKGROUND_DEBRIS = [
   { x: 0.82, width: 18, height: 14, speed: 0.03, delay: -8, alpha: 0.12, spin: 140 },
 ]
 
+const BACKGROUND_SPEED_LINES = [
+  { x: 0.11, length: 170, width: 2, delay: -0.2, color: 'streak' },
+  { x: 0.32, length: 120, width: 1, delay: -0.42, color: 'white' },
+  { x: 0.63, length: 150, width: 2, delay: -0.16, color: 'red' },
+  { x: 0.88, length: 135, width: 1, delay: -0.34, color: 'cyan' },
+] as const
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function getMaxActiveEliteEnemies(stage: number, isMultiplayer: boolean) {
+  return Math.round(clamp(1 + Math.floor(stage / 5) + (isMultiplayer ? 1 : 0), 1, isMultiplayer ? 4 : 3))
+}
+
+function getEliteEnemyChance(stage: number, wave: number, trainSlot: number, hasFormationStyle: boolean) {
+  if (stage < ELITE_ENEMY_STAGE_START) return 0
+  const formationPenalty = hasFormationStyle ? 0.46 : 1
+  const slotPenalty = trainSlot > 0 ? 0.74 : 1
+  return clamp((0.055 + stage * 0.006 + wave * 0.0025) * formationPenalty * slotPenalty, 0.035, 0.18)
+}
+
+function pickEliteEnemyKind(stage: number, wave: number, trainSlot: number): MiniBossKind {
+  return MINI_BOSS_KINDS[(stage + wave + trainSlot + Math.floor(Math.random() * MINI_BOSS_KINDS.length)) % MINI_BOSS_KINDS.length]
 }
 
 function seededNoise(index: number, salt: number) {
@@ -473,12 +518,18 @@ function getCssVar(root: HTMLElement, name: string, fallback: string) {
 
 function readRaidPalette(root: HTMLElement): RaidPalette {
   return {
+    baseTop: getCssVar(root, '--raid-base-top', DEFAULT_RAID_PALETTE.baseTop),
+    baseMid: getCssVar(root, '--raid-base-mid', DEFAULT_RAID_PALETTE.baseMid),
+    baseBottom: getCssVar(root, '--raid-base-bottom', DEFAULT_RAID_PALETTE.baseBottom),
     bgA: getCssVar(root, '--raid-bg-a', DEFAULT_RAID_PALETTE.bgA),
     bgB: getCssVar(root, '--raid-bg-b', DEFAULT_RAID_PALETTE.bgB),
     nebulaA: getCssVar(root, '--raid-nebula-a', DEFAULT_RAID_PALETTE.nebulaA),
     nebulaB: getCssVar(root, '--raid-nebula-b', DEFAULT_RAID_PALETTE.nebulaB),
     starTint: getCssVar(root, '--raid-star-tint', DEFAULT_RAID_PALETTE.starTint),
     streak: getCssVar(root, '--raid-streak', DEFAULT_RAID_PALETTE.streak),
+    planetA: getCssVar(root, '--raid-planet-a', DEFAULT_RAID_PALETTE.planetA),
+    planetB: getCssVar(root, '--raid-planet-b', DEFAULT_RAID_PALETTE.planetB),
+    planetC: getCssVar(root, '--raid-planet-c', DEFAULT_RAID_PALETTE.planetC),
   }
 }
 
@@ -583,6 +634,7 @@ function getTowerCanvasSprite(shipKey: string, color: string, size: number) {
 }
 
 function getEnemySpriteMarkupSize(enemy: Enemy) {
+  if (enemy.isMiniBoss) return 104
   if (!enemy.isBoss) return 50
   if (enemy.bossKind === 'final') return 330
   if (enemy.bossKind === 'super') return 280
@@ -594,7 +646,8 @@ function getEnemySpriteMarkupSize(enemy: Enemy) {
 function getEnemyCanvasSprite(enemy: Enemy) {
   const size = getEnemySpriteMarkupSize(enemy)
   const bossKind = enemy.bossKind ?? 'none'
-  const key = `alien:${enemy.variant % 4}:${enemy.isBoss ? 1 : 0}:${bossKind}:${enemy.color}:${size}`
+  const miniBossKind = enemy.miniBossKind ?? 'none'
+  const key = `alien:${enemy.variant % 6}:${enemy.isBoss ? 1 : 0}:${enemy.isMiniBoss ? 1 : 0}:${bossKind}:${miniBossKind}:${enemy.color}:${size}`
   const existing = canvasSpriteCache.get(key)
   if (existing) return existing
   return makeCanvasSprite(
@@ -603,8 +656,10 @@ function getEnemyCanvasSprite(enemy: Enemy) {
       <AlienShip
         variant={enemy.variant}
         isBoss={enemy.isBoss}
+        isMiniBoss={enemy.isMiniBoss}
         isFinalBoss={enemy.bossKind === 'final'}
         bossKind={enemy.bossKind ?? undefined}
+        miniBossKind={enemy.miniBossKind ?? undefined}
         color={enemy.color}
         size={size}
       />,
@@ -617,13 +672,22 @@ function drawSpriteFallback(ctx: CanvasRenderingContext2D, size: number, color: 
   ctx.strokeStyle = 'rgba(255,255,255,0.72)'
   ctx.lineWidth = Math.max(1, size * 0.025)
   ctx.beginPath()
-  ctx.moveTo(0, -size * 0.46)
-  ctx.lineTo(size * 0.34, size * 0.34)
-  ctx.lineTo(0, size * 0.18)
-  ctx.lineTo(-size * 0.34, size * 0.34)
+  ctx.moveTo(0, -size * 0.42)
+  ctx.bezierCurveTo(size * 0.3, -size * 0.34, size * 0.48, -size * 0.08, size * 0.36, size * 0.2)
+  ctx.bezierCurveTo(size * 0.3, size * 0.36, size * 0.14, size * 0.42, 0, size * 0.34)
+  ctx.bezierCurveTo(-size * 0.14, size * 0.42, -size * 0.3, size * 0.36, -size * 0.36, size * 0.2)
+  ctx.bezierCurveTo(-size * 0.48, -size * 0.08, -size * 0.3, -size * 0.34, 0, -size * 0.42)
   ctx.closePath()
   ctx.fill()
   ctx.stroke()
+  ctx.strokeStyle = color
+  ctx.globalAlpha *= 0.72
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.18, size * 0.18)
+    ctx.bezierCurveTo(side * size * 0.42, size * 0.26, side * size * 0.48, size * 0.42, side * size * 0.36, size * 0.5)
+    ctx.stroke()
+  }
 }
 
 function drawCanvasSprite(
@@ -664,6 +728,7 @@ function drawSpriteGlow(ctx: CanvasRenderingContext2D, x: number, y: number, siz
 }
 
 function getEnemyCanvasSize(enemy: Enemy, viewportWidth: number) {
+  if (enemy.isMiniBoss) return Math.min(viewportWidth * 0.115, 108)
   if (!enemy.isBoss) return Math.min(viewportWidth * 0.08, 64)
   if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.52, 470)
   if (enemy.bossKind === 'super') return Math.min(viewportWidth * 0.42, 380)
@@ -688,7 +753,7 @@ function acquireHomingTarget(shot: Shot, enemies: Enemy[]) {
     const dy = shot.y - enemy.y
     const distance = dx * dx + dy * dy
     const forwardBias = enemy.y > shot.y + 18 ? 2400 : 0
-    const bossBias = enemy.isBoss ? -1400 : 0
+    const bossBias = enemy.isBoss ? -1400 : enemy.isMiniBoss ? -700 : 0
     const score = distance + forwardBias + bossBias
     if (score < bestScore) {
       bestScore = score
@@ -1469,15 +1534,15 @@ function drawDebrisShape(
 
 function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max') {
   const seconds = time / 1000
-  const { bgA, bgB, nebulaA, nebulaB, starTint, streak } = palette
+  const { baseTop, baseMid, baseBottom, bgA, bgB, nebulaA, nebulaB, starTint, streak, planetA, planetB, planetC } = palette
   const isLow = quality === 'low'
   const isMedium = quality === 'medium'
   const isHigh = quality === 'high'
 
   const base = ctx.createLinearGradient(0, 0, 0, height)
-  base.addColorStop(0, '#020307')
-  base.addColorStop(0.45, '#060812')
-  base.addColorStop(1, '#070a10')
+  base.addColorStop(0, baseTop)
+  base.addColorStop(0.45, baseMid)
+  base.addColorStop(1, baseBottom)
   ctx.fillStyle = base
   ctx.fillRect(0, 0, width, height)
 
@@ -1511,8 +1576,9 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  const starPool = isLow ? BACKGROUND_STARS.slice(0, 40) : isMedium ? BACKGROUND_STARS.slice(0, 100) : isHigh ? BACKGROUND_STARS.slice(0, 160) : BACKGROUND_STARS
-  for (const star of starPool) {
+  const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
+  for (let index = 0; index < starLimit; index += 1) {
+    const star = BACKGROUND_STARS[index]
     const farY = ((star.y * height * 1.26 + seconds * 15) % (height * 1.26)) - height * 0.13
     const nearY = ((star.y * height * 1.38 + seconds * 72) % (height * 1.38)) - height * 0.19
     const x = star.x * width
@@ -1538,18 +1604,19 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   }
 
   if (!isLow) {
-    const speedLines = [
-      { x: 0.11, length: 170, width: 2, delay: -0.2, color: streak },
-      { x: 0.32, length: 120, width: 1, delay: -0.42, color: 'rgba(255,255,255,0.26)' },
-      { x: 0.63, length: 150, width: 2, delay: -0.16, color: 'rgba(239,35,60,0.42)' },
-      { x: 0.88, length: 135, width: 1, delay: -0.34, color: 'rgba(125,211,252,0.28)' },
-    ]
-    for (const line of (isMedium ? speedLines.slice(0, 2) : speedLines)) {
+    const speedLineLimit = isMedium ? 2 : BACKGROUND_SPEED_LINES.length
+    for (let index = 0; index < speedLineLimit; index += 1) {
+      const line = BACKGROUND_SPEED_LINES[index]
+      const lineColor =
+        line.color === 'streak' ? streak :
+          line.color === 'red' ? 'rgba(239,35,60,0.42)' :
+            line.color === 'cyan' ? 'rgba(125,211,252,0.28)' :
+              'rgba(255,255,255,0.26)'
       const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
       const x = line.x * width
       const gradient = ctx.createLinearGradient(x, y, x, y + line.length)
       gradient.addColorStop(0, 'rgba(255,255,255,0)')
-      gradient.addColorStop(0.46, line.color)
+      gradient.addColorStop(0.46, lineColor)
       gradient.addColorStop(1, 'rgba(255,255,255,0)')
       ctx.globalAlpha = 0.58
       ctx.strokeStyle = gradient
@@ -1573,7 +1640,7 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   if (!isLow) {
     ctx.save()
     ctx.globalAlpha = 1
-    drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9a8d4'], [0.5, '#7c3aed'], [1, '#120617']])
+    drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9fafb'], [0.5, planetA], [1, baseTop]])
     if (!isMedium) {
       ctx.strokeStyle = 'rgba(167,139,250,0.28)'
       ctx.lineWidth = 2
@@ -1582,21 +1649,23 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
       ctx.stroke()
     }
     ctx.globalAlpha = 0.82
-    drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#fecaca'], [0.55, '#7f1d1d'], [1, '#1f0909']])
+    drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#f8fafc'], [0.55, planetB], [1, baseBottom]])
     if (!isMedium) {
-      drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#a5f3fc'], [0.55, '#164e63'], [1, '#06151b']])
+      drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#e0f2fe'], [0.55, planetC], [1, baseMid]])
     }
     ctx.restore()
   }
 
   if (!isLow) {
-    const asteroidPool = isMedium ? BACKGROUND_ASTEROIDS.slice(0, 3) : BACKGROUND_ASTEROIDS
-    const debrisPool = isMedium ? BACKGROUND_DEBRIS.slice(0, 3) : BACKGROUND_DEBRIS
-    for (const asteroid of asteroidPool) {
+    const asteroidLimit = isMedium ? 3 : BACKGROUND_ASTEROIDS.length
+    const debrisLimit = isMedium ? 3 : BACKGROUND_DEBRIS.length
+    for (let index = 0; index < asteroidLimit; index += 1) {
+      const asteroid = BACKGROUND_ASTEROIDS[index]
       const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
       drawAsteroidShape(ctx, width * asteroid.x, y, asteroid.width, asteroid.height, seconds * asteroid.spin * DEG / 10, asteroid.alpha)
     }
-    for (const debris of debrisPool) {
+    for (let index = 0; index < debrisLimit; index += 1) {
+      const debris = BACKGROUND_DEBRIS[index]
       const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
       drawDebrisShape(ctx, width * debris.x, y, debris.width, debris.height, seconds * debris.spin * DEG / 12, debris.alpha)
     }
@@ -1848,6 +1917,16 @@ function drawRaidEnemy(
     return
   }
 
+  if (enemy.isMiniBoss) {
+    const floatScale = 1 + Math.sin(time / 760 + enemy.phase) * 0.035
+    const rotation = Math.sin(time / 900 + enemy.phase) * 1.4 * DEG
+    drawSpriteGlow(ctx, x, y, size, 'rgba(168,85,247,0.36)', 1)
+    drawCanvasSprite(ctx, sprite, x, y, size, 'brightness(1.18) contrast(1.2) saturate(1.45)', 1, rotation, floatScale, enemy.color)
+    if (enemy.shieldTime > 0 || enemy.y < 8) drawBossShield(ctx, x, y, size * 0.78, time)
+    drawBossBar(ctx, enemy, x, y, size * 0.82)
+    return
+  }
+
   drawSpriteGlow(ctx, x, y, size, 'rgba(239,35,60,0.34)', 1)
   drawCanvasSprite(ctx, sprite, x, y, size, normalEnemyFilter, 1, 0, 1, enemy.color)
 }
@@ -1871,17 +1950,6 @@ function drawRaidOptions(
   for (const side of [-1, 1]) {
     const x = toX(clamp(player.x + optionOffset * side, 4, 96))
     const y = toY(player.y + 1.8) + Math.sin(time / 900 + (side > 0 ? 0.18 : 0)) * 2.5
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.strokeStyle = color
-    ctx.shadowBlur = 14
-    ctx.shadowColor = color
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.arc(0, 0, optionBox * 0.4, 0, Math.PI * 2)
-    ctx.stroke()
-    ctx.restore()
     drawCanvasSprite(
       ctx,
       sprite,
@@ -2235,14 +2303,10 @@ function drawRaidPlayer(
   }
 
   const sprite = getTowerCanvasSprite(player.ship.key, color, getShipSpriteSize(player.ship.key, 'player'))
-  drawSpriteGlow(
-    ctx,
-    x,
-    y,
-    size,
-    player.forceField > 0 ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)' : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : color,
-    1,
-  )
+  const spriteGlow = player.forceField > 0
+    ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
+    : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : null
+  if (spriteGlow) drawSpriteGlow(ctx, x, y, size, spriteGlow, 1)
   drawCanvasSprite(
     ctx,
     sprite,
@@ -3963,6 +4027,15 @@ export function GradiusRaid({
         spawnSparks(enemy.x, enemy.y, '#fbbf24', 48, 9)
         continue
       }
+      if (enemy.isMiniBoss) {
+        const damage = Math.max(110, Math.round(enemy.maxHp * 0.48))
+        enemy.shieldTime = 0
+        enemy.hp = Math.max(1, enemy.hp - damage)
+        survivors.push(enemy)
+        addRipple(enemy.x, enemy.y, '#a855f7', 16)
+        spawnSparks(enemy.x, enemy.y, '#c084fc', 34, 7)
+        continue
+      }
 
       destroyed += 1
       const scoreValue = 95 + waveRef.current * 14
@@ -4013,7 +4086,7 @@ export function GradiusRaid({
 
     let targetX = 50
     let targetY = 46
-    const priorityTarget = visibleEnemies.find((enemy) => enemy.isBoss)
+    const priorityTarget = visibleEnemies.find((enemy) => enemy.isBoss) ?? visibleEnemies.find((enemy) => enemy.isMiniBoss)
     if (priorityTarget) {
       targetX = clamp(priorityTarget.x, 18, 82)
       targetY = clamp(priorityTarget.y + 5, 18, 58)
@@ -4620,33 +4693,49 @@ export function GradiusRaid({
   // Keep the stable ref current so predictGuestPlayer can call firePlayer without a forward-reference issue
   firePlayerRef.current = firePlayer
 
-  const spawnEnemyAt = useCallback((x: number, y: number, wave: number, pattern: number, trainSlot = 0, style?: FormationStyle) => {
+  const spawnEnemyAt = useCallback((x: number, y: number, wave: number, pattern: number, trainSlot = 0, style?: FormationStyle, eliteKind?: MiniBossKind | null) => {
     const powerPressure = getPowerScore(playerRef.current)
+    const stage = stageRef.current
+    let activeEliteCount = 0
+    for (const enemy of enemiesRef.current) {
+      if (enemy.isMiniBoss && enemy.hp > 0) activeEliteCount += 1
+    }
+    const eliteCap = getMaxActiveEliteEnemies(stage, Boolean(multiplayerSessionRef.current))
+    const randomEliteKind = eliteKind === undefined && activeEliteCount < eliteCap && Math.random() < getEliteEnemyChance(stage, wave, trainSlot, Boolean(style))
+      ? pickEliteEnemyKind(stage, wave, trainSlot)
+      : null
+    const kind = eliteKind === undefined ? randomEliteKind : eliteKind
+    const isElite = Boolean(kind)
     const color = style?.color ?? DARK_ENEMY_COLORS[Math.floor(Math.random() * DARK_ENEMY_COLORS.length)]
-    const originX = style?.originX ?? x
+    const eliteX = clamp(Math.random() < 0.62 ? x + (Math.random() - 0.5) * 32 : 8 + Math.random() * 84, 8, 92)
+    const originX = isElite ? clamp(eliteX + (Math.random() - 0.5) * 18, 12, 88) : style?.originX ?? x
     const hp = 2 + Math.floor(wave / 2) + Math.floor(powerPressure / 4)
+    const eliteHpMultiplier = kind === 'brood' ? 12 : kind === 'lancer' ? 9.2 : 10.4
+    const eliteHp = Math.round((34 + hp * eliteHpMultiplier + stage * 6.3 + wave * 2.7 + powerPressure * 3.6) * (multiplayerSessionRef.current ? 1.32 : 1))
     enemiesRef.current.push({
       id: enemyId++,
-      x,
-      y,
-      vx: (Math.random() - 0.5) * 4,
-      vy: 14 + Math.random() * 7 + wave * 0.38,
-      hp,
-      maxHp: hp,
-      radius: 3.7,
-      variant: enemyId % 4,
+      x: isElite ? eliteX : x,
+      y: isElite ? Math.min(y, -7 - Math.random() * 16) : y,
+      vx: kind === 'lancer' ? (Math.random() < 0.5 ? -1 : 1) * 10 : (Math.random() - 0.5) * (isElite ? 7 : 4),
+      vy: isElite ? kind === 'brood' ? 10.4 : kind === 'lancer' ? 13.2 : 11.8 : 14 + Math.random() * 7 + wave * 0.38,
+      hp: isElite ? eliteHp : hp,
+      maxHp: isElite ? eliteHp : hp,
+      radius: isElite ? kind === 'brood' ? 6.4 : kind === 'lancer' ? 5.7 : 6 : 3.7,
+      variant: enemyId % 6,
       isBoss: false,
-      fireCooldown: Math.max(1.25, 2.1 + Math.random() * 2.1 - wave * 0.04 - powerPressure * 0.025),
+      isMiniBoss: isElite,
+      fireCooldown: isElite ? kind === 'lancer' ? 0.95 : kind === 'brood' ? 1.28 : 1.08 : Math.max(1.25, 2.1 + Math.random() * 2.1 - wave * 0.04 - powerPressure * 0.025),
       phase: Math.random() * Math.PI * 2,
-      color,
-      pattern: style?.pattern ?? pattern,
+      color: isElite ? MINI_BOSS_COLORS[kind ?? 'stalker'] : color,
+      pattern: isElite ? kind === 'brood' ? 7 : kind === 'lancer' ? 8 : 5 : style?.pattern ?? pattern,
       bossKind: null,
-      shieldTime: 0,
+      miniBossKind: kind,
+      shieldTime: isElite ? 0.45 : 0,
       originX,
-      amplitude: style?.amplitude ?? (8 + Math.random() * 14),
+      amplitude: isElite ? kind === 'brood' ? 12 + Math.random() * 8 : kind === 'lancer' ? 24 + Math.random() * 14 : 18 + Math.random() * 10 : style?.amplitude ?? (8 + Math.random() * 14),
       trainSlot,
-      pathSpeed: style?.pathSpeed ?? (0.06 + Math.random() * 0.035),
-      chargeCooldown: 999,
+      pathSpeed: isElite ? kind === 'lancer' ? 0.105 : 0.076 : style?.pathSpeed ?? (0.06 + Math.random() * 0.035),
+      chargeCooldown: isElite ? kind === 'lancer' ? 3.4 : kind === 'brood' ? 4.8 : 4 : 999,
       chargeTimer: 0,
       chargeLane: 50,
       chargePattern: 'single',
@@ -4714,11 +4803,13 @@ export function GradiusRaid({
       radius,
       variant: stage % 4,
       isBoss: true,
+      isMiniBoss: false,
       fireCooldown: Math.max(0.75, 1 - stagePressure * 0.025),
       phase: Math.random() * Math.PI * 2,
       color: BOSS_COLORS[bossKind],
       pattern: bossKind === 'final' ? 9 : bossKind === 'super' ? 6 : bossCycle.indexOf(bossKind),
       bossKind,
+      miniBossKind: null,
       shieldTime: (bossKind === 'final' ? 7.4 : bossKind === 'super' || bossKind === 'gate' ? 5.4 : 3.8) + Math.min(2.2, stagePressure * 0.18),
       originX: 50,
       amplitude: bossKind === 'final' ? 34 : bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
@@ -4927,6 +5018,40 @@ export function GradiusRaid({
       return
     }
 
+    if (enemy.isMiniBoss) {
+      const kind = enemy.miniBossKind ?? 'stalker'
+      if (kind === 'brood') {
+        for (let i = 0; i < 5; i += 1) {
+          const angle = -Math.PI * 0.88 + (i / 4) * Math.PI * 0.76
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 5, vx: Math.cos(angle) * 22, vy: Math.sin(angle) * 10 + 32, damage: 1, kind: i % 2 === 0 ? 'orbShot' : 'enemy', radius: 1.35 })
+        }
+        ;[-7, 7].forEach((offset) => {
+          const aimX = player.x - (enemy.x + offset)
+          const aimY = player.y - enemy.y
+          const mag = Math.hypot(aimX, aimY) || 1
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset, y: enemy.y + 8, vx: (aimX / mag) * 28, vy: (aimY / mag) * 28, damage: 1, kind: 'voidShot', radius: 1.55 })
+        })
+      } else if (kind === 'lancer') {
+        const aimX = player.x - enemy.x
+        const aimY = player.y - enemy.y
+        const mag = Math.hypot(aimX, aimY) || 1
+        ;[-4, 4].forEach((offset, index) => {
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset, y: enemy.y + 7, vx: (aimX / mag) * 39 + offset * 1.7, vy: (aimY / mag) * 39 + index * 2, damage: 1, kind: 'needle', radius: 1.25 })
+        })
+        ;[-15, 15].forEach((vx) => {
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 10, vx, vy: 34, damage: 1, kind: 'blade', radius: 1.45 })
+        })
+      } else {
+        const sweep = Math.sin(time / 230) * 18
+        ;[-1, 1].forEach((offset) => {
+          enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset * 9, y: enemy.y + 8, vx: offset * 13 + sweep * 0.28, vy: 34 + Math.abs(offset) * 4, damage: 1, kind: offset === 0 ? 'boss' : 'blade', radius: offset === 0 ? 1.9 : 1.45 })
+        })
+        enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 6, vx: sweep * 0.18, vy: 36, damage: 1, kind: 'boss', radius: 1.65 })
+      }
+      playGameSound(kind === 'lancer' ? 'laser' : 'rocket')
+      return
+    }
+
     if (Math.random() < 0.76) {
       const aimX = player.x - enemy.x
       const aimY = player.y - enemy.y
@@ -5017,7 +5142,7 @@ export function GradiusRaid({
     const canSpawnStageEnemies = spawnLockRef.current <= 0 && stageClearRef.current <= 0
     spawnTimerRef.current -= dt
     formationTimerRef.current -= dt
-    const bossActive = enemiesRef.current.some((enemy) => enemy.isBoss)
+    let bossActive = enemiesRef.current.some((enemy) => enemy.isBoss)
     if (!bossActive) {
       bossTimerRef.current = Math.max(0, bossTimerRef.current - dt)
     }
@@ -5040,6 +5165,7 @@ export function GradiusRaid({
 
     if (bossTimerRef.current <= 0 && !bossActive) {
       spawnBoss()
+      bossActive = true
       bossTimerRef.current = 0
       waveRef.current += 1
     }
@@ -5131,6 +5257,16 @@ export function GradiusRaid({
           enemy.pattern === 1 ? enemy.originX + Math.sin(trainT) * enemy.amplitude + Math.sin(trainT * 2.1) * 5 :
             enemy.pattern === 2 ? enemy.originX + Math.sin(trainT * 0.72) * enemy.amplitude * 0.7 :
               enemy.originX + Math.cos(trainT) * enemy.amplitude
+      const miniKind = enemy.miniBossKind ?? 'stalker'
+      const eliteTarget = enemy.isMiniBoss ? getNearestLivingPlayer(enemy) : player
+      const miniBossX =
+        miniKind === 'brood' ? enemy.originX + Math.sin(t * 0.72) * enemy.amplitude + Math.sin(t * 1.9) * 4 + (eliteTarget.x - enemy.originX) * 0.1 :
+          miniKind === 'lancer' ? eliteTarget.x + Math.sin(t * 1.55) * enemy.amplitude :
+            eliteTarget.x + Math.sin(t * 1.05) * enemy.amplitude
+      const miniBossYTarget =
+        miniKind === 'brood' ? clamp(eliteTarget.y - 58 + Math.sin(t * 0.8) * 4, 18, 34) :
+          miniKind === 'lancer' ? clamp(eliteTarget.y - 50 + Math.cos(t * 1.35) * 5, 20, 40) :
+            clamp(eliteTarget.y - 54 + Math.sin(t * 1.2) * 5, 18, 36)
       let chargeCooldown = enemy.chargeCooldown
       let chargeTimer = enemy.chargeTimer
       let chargeLane = enemy.chargeLane
@@ -5176,10 +5312,14 @@ export function GradiusRaid({
 
       enemy.x = enemy.isBoss
         ? clamp(bossX, bossKind === 'final' ? 14 : bossKind === 'super' ? 20 : 16, bossKind === 'final' ? 86 : bossKind === 'super' ? 80 : 84)
-        : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96)
+        : enemy.isMiniBoss
+          ? clamp(enemy.x + (miniBossX - enemy.x) * Math.min(1, dt * 3.6) + enemy.vx * dt * 0.24, 10, 90)
+          : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96)
       enemy.y = enemy.isBoss
         ? (enemy.y < bossYTarget ? Math.min(bossYTarget, enemy.y + enemy.vy * dt) : bossYTarget)
-        : enemy.y + enemy.vy * dt
+        : enemy.isMiniBoss
+          ? (enemy.y < miniBossYTarget ? Math.min(miniBossYTarget, enemy.y + enemy.vy * dt) : miniBossYTarget)
+          : enemy.y + enemy.vy * dt
       if (enemy.isBoss && bossMessageRef.current === 'incoming') {
         if (enemy.y >= Math.min(5, bossYTarget - 6)) {
           bossAlertRef.current = 0
@@ -5190,14 +5330,18 @@ export function GradiusRaid({
       }
       enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
       enemy.fireCooldown = fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
-        ? (enemy.isBoss ? Math.max(bossKind === 'final' ? 0.62 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035) : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
+        ? (enemy.isBoss
+          ? Math.max(bossKind === 'final' ? 0.62 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035)
+          : enemy.isMiniBoss
+            ? Math.max(miniKind === 'lancer' ? 0.78 : 0.98, 1.62 - stageRef.current * 0.025 + Math.random() * 0.42)
+            : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
         : nextFire
       enemy.chargeCooldown = chargeCooldown
       enemy.chargeTimer = chargeTimer
       enemy.chargeLane = chargeLane
       enemy.chargePattern = chargePattern
 
-      if (enemy.y < HEIGHT + 14 && enemy.hp > 0) {
+      if ((enemy.isMiniBoss || enemy.y < HEIGHT + 14) && enemy.hp > 0) {
         enemies[liveEnemyCount] = enemy
         liveEnemyCount += 1
       }
@@ -5237,11 +5381,11 @@ export function GradiusRaid({
           Math.abs(shot.y - enemy.y) <= hitRange &&
           distSq(shot, enemy) <= hitRange * hitRange
         ) {
-          const bossShielded = enemy.isBoss && (enemy.shieldTime > 0 || enemy.y < 15)
+          const bossShielded = (enemy.isBoss && (enemy.shieldTime > 0 || enemy.y < 15)) || (enemy.isMiniBoss && (enemy.shieldTime > 0 || enemy.y < 8))
           if (!bossShielded) {
             enemy.hp -= shot.damage
           }
-          spawnSparks(enemy.x, enemy.y, bossShielded ? '#fbbf24' : enemy.isBoss ? '#fca5a5' : '#ef4444', enemy.isBoss ? 5 : 3, enemy.isBoss ? 5 : 3)
+          spawnSparks(enemy.x, enemy.y, bossShielded ? '#fbbf24' : enemy.isBoss ? '#fca5a5' : enemy.isMiniBoss ? '#c084fc' : '#ef4444', enemy.isBoss || enemy.isMiniBoss ? 5 : 3, enemy.isBoss || enemy.isMiniBoss ? 5 : 3)
           if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
@@ -5281,14 +5425,16 @@ export function GradiusRaid({
             addRipple(enemy.x, enemy.y, '#facc15', 7)
           }
           if (enemy.hp <= 0) {
-            const scoreValue = enemy.isBoss ? 2800 + waveRef.current * 220 : 95 + waveRef.current * 14
+            const scoreValue = enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
             player.score += scoreValue
             if (remotePlayerRef.current) {
               remotePlayerRef.current.score += scoreValue
             }
-            spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fda4af' : '#fb7185', enemy.isBoss ? 60 : 18, enemy.isBoss ? 8 : 5)
-            addRipple(enemy.x, enemy.y, enemy.isBoss ? '#fb7185' : '#f97316', enemy.isBoss ? 18 : 9)
-            if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
+            spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fda4af' : enemy.isMiniBoss ? '#c084fc' : '#fb7185', enemy.isBoss ? 60 : enemy.isMiniBoss ? 42 : 18, enemy.isBoss ? 8 : enemy.isMiniBoss ? 7 : 5)
+            addRipple(enemy.x, enemy.y, enemy.isBoss ? '#fb7185' : enemy.isMiniBoss ? '#a855f7' : '#f97316', enemy.isBoss ? 18 : enemy.isMiniBoss ? 14 : 9)
+            if (enemy.isMiniBoss) {
+              spawnPowerUp(enemy.x, enemy.y, Math.random() < 0.55)
+            } else if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
             if (enemy.isBoss) {
               bossDefeatedThisFrame = true
               const clearedStage = stageRef.current
@@ -5319,7 +5465,7 @@ export function GradiusRaid({
               playGameSound('combo')
               window.setTimeout(() => playGameSound('score'), 180)
             }
-            playGameSound(enemy.isBoss ? 'explosion_big' : 'explosion')
+            playGameSound(enemy.isBoss || enemy.isMiniBoss ? 'explosion_big' : 'explosion')
           }
           break
         }
@@ -5404,25 +5550,29 @@ export function GradiusRaid({
           distSq(enemy, targetPlayer) <= hitRange * hitRange
         ) {
           if (targetPlayer.forceField > 0) {
-            if (enemy.isBoss && targetPlayer.invuln > 0) continue
-          const armorCost = enemy.isBoss ? 2 : 1
-          targetPlayer.forceField = Math.max(0, targetPlayer.forceField - armorCost)
-          targetPlayer.invuln = 0.16
-          if (enemy.isBoss) {
-            enemy.hp = Math.max(1, enemy.hp - (28 + waveRef.current * 8))
+            if ((enemy.isBoss || enemy.isMiniBoss) && targetPlayer.invuln > 0) continue
+            const armorCost = enemy.isBoss ? 2 : 1
+            targetPlayer.forceField = Math.max(0, targetPlayer.forceField - armorCost)
+            targetPlayer.invuln = 0.16
+            if (enemy.isBoss || enemy.isMiniBoss) {
+              enemy.hp = Math.max(1, enemy.hp - (enemy.isBoss ? 28 + waveRef.current * 8 : 34 + waveRef.current * 7))
+            } else {
+              enemy.hp = 0
+              targetPlayer.score += 70 + waveRef.current * 10
+              spawnPowerUp(enemy.x, enemy.y)
+            }
+            spawnSparks(enemy.x, enemy.y, '#22d3ee', enemy.isBoss || enemy.isMiniBoss ? 40 : 18, 7)
+            addRipple(enemy.x, enemy.y, '#22d3ee', enemy.isBoss || enemy.isMiniBoss ? 15 : 10)
+            playGameSound(enemy.isBoss || enemy.isMiniBoss ? 'hit' : 'explosion')
           } else {
-            enemy.hp = 0
-            targetPlayer.score += 70 + waveRef.current * 10
-            spawnPowerUp(enemy.x, enemy.y)
+            if (enemy.isBoss || enemy.isMiniBoss) {
+              enemy.hp = Math.max(1, enemy.hp - (enemy.isBoss ? 22 + waveRef.current * 6 : 30 + waveRef.current * 6))
+            } else {
+              enemy.hp = 0
+            }
+            damagePlayer(enemy.isBoss ? 2 : 1, targetPlayer)
+            spawnSparks(enemy.x, enemy.y, '#fb7185', enemy.isBoss || enemy.isMiniBoss ? 35 : 14, 6)
           }
-          spawnSparks(enemy.x, enemy.y, '#22d3ee', enemy.isBoss ? 40 : 18, 7)
-          addRipple(enemy.x, enemy.y, '#22d3ee', enemy.isBoss ? 15 : 10)
-          playGameSound(enemy.isBoss ? 'hit' : 'explosion')
-        } else {
-          enemy.hp = 0
-          damagePlayer(enemy.isBoss ? 2 : 1, targetPlayer)
-          spawnSparks(enemy.x, enemy.y, '#fb7185', enemy.isBoss ? 35 : 14, 6)
-        }
           break
         }
       }
@@ -5605,7 +5755,7 @@ export function GradiusRaid({
 
   return (
     <div
-      className={`raid raid--theme-${((snapshot.stageTheme - 1) % 4) + 1}`}
+      className={`raid raid--theme-${((snapshot.stageTheme - 1) % RAID_BACKGROUND_THEME_COUNT) + 1}`}
       ref={rootRef}
       onPointerDown={(event) => {
         if (isUiPointerTarget(event.target) || phaseRef.current !== 'playing') return
