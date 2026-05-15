@@ -8415,7 +8415,11 @@ export function GradiusRaid({
           randomEventSpawnTimerRef.current = 999
         } else if (activeRandomEvent.kind === 'ambush' && randomEventSpawnTimerRef.current <= 0) {
           const eliteCap = getMaxActiveEliteEnemies(stageRef.current, Boolean(multiplayerSessionRef.current))
-          const activeEliteCount = enemiesRef.current.filter((enemy) => enemy.isMiniBoss).length
+          let activeEliteCount = 0
+          for (const enemy of enemiesRef.current) {
+            if (enemy.isMiniBoss) activeEliteCount += 1
+            if (activeEliteCount >= eliteCap) break
+          }
           if (activeEliteCount < eliteCap) {
             const side = Math.random() < 0.5 ? 8 : 92
             const kind = pickEliteEnemyKind(stageRef.current, waveRef.current, 0)
@@ -8457,6 +8461,10 @@ export function GradiusRaid({
       }
     }
 
+    const now = performance.now()
+    const nowSeconds = now / 1000
+    const asteroidDriftTime = now / 900
+
     let homingTargets: Map<number, Enemy> | null = null
     if (shotsRef.current.some((shot) => shot.kind === 'homing')) {
       homingTargets = new Map()
@@ -8465,8 +8473,9 @@ export function GradiusRaid({
       }
     }
 
-    const liveShots: Shot[] = []
-    for (const shot of shotsRef.current) {
+    const shots = shotsRef.current
+    let liveShotCount = 0
+    for (const shot of shots) {
       if (shot.kind === 'homing') {
         shot.retargetTime = Math.max(0, (shot.retargetTime ?? 0) - dt)
         let target = shot.homingTargetId && homingTargets ? homingTargets.get(shot.homingTargetId) ?? null : null
@@ -8493,14 +8502,16 @@ export function GradiusRaid({
       shot.x += shot.vx * dt
       shot.y += shot.vy * dt
       if (shot.y > -10 && shot.y < HEIGHT + 10 && shot.x > -10 && shot.x < WIDTH + 10) {
-        liveShots.push(shot)
+        shots[liveShotCount] = shot
+        liveShotCount += 1
       }
     }
-    shotsRef.current = liveShots
+    shots.length = liveShotCount
 
     const expiredSquidBubbles: Shot[] = []
-    const liveEnemyShots: Shot[] = []
-    for (const shot of enemyShotsRef.current) {
+    const enemyShots = enemyShotsRef.current
+    let liveEnemyShotCount = 0
+    for (const shot of enemyShots) {
       if (shot.life !== undefined) {
         shot.life = Math.max(0, shot.life - dt)
         if (shot.life <= 0) {
@@ -8512,6 +8523,7 @@ export function GradiusRaid({
         shot.angle += shot.spin * dt
       }
       if (shot.kind === 'squidBubble') {
+        shot.retargetTime = Math.max(0, (shot.retargetTime ?? 0) - dt)
         const target = getNearestLivingPlayer(shot)
         const aimX = target.x - shot.x
         const aimY = target.y - shot.y
@@ -8525,17 +8537,15 @@ export function GradiusRaid({
       shot.y += shot.vy * dt
       const beamMargin = shot.kind === 'beam' && shot.life !== undefined ? 120 : shot.kind === 'poisonCloud' || shot.kind === 'squidBubble' ? 24 : 12
       if (shot.kind === 'poisonCloud') {
-        shot.vx += Math.sin(performance.now() / 1000 * 1.4 + shot.id) * dt * 1.6
+        shot.vx += Math.sin(nowSeconds * 1.4 + shot.id) * dt * 1.6
       }
       if (shot.y > -beamMargin && shot.y < HEIGHT + beamMargin && shot.x > -12 && shot.x < WIDTH + 12) {
-        liveEnemyShots.push(shot)
+        enemyShots[liveEnemyShotCount] = shot
+        liveEnemyShotCount += 1
       }
     }
-    enemyShotsRef.current = liveEnemyShots
+    enemyShots.length = liveEnemyShotCount
 
-    const now = performance.now()
-    const nowSeconds = now / 1000
-    const asteroidDriftTime = now / 900
     const asteroids = asteroidsRef.current
     let liveAsteroidCount = 0
     for (const asteroid of asteroids) {
@@ -8788,7 +8798,7 @@ export function GradiusRaid({
                 damage: 1,
                 kind: 'squidBubble',
                 radius: 10.5,
-                hp: Math.round(360 + stageRef.current * 24 + getPowerScore(playerRef.current) * 16 + (remotePlayerRef.current ? getPowerScore(remotePlayerRef.current) * 8 : 0)),
+                hp: Math.round(230 + stageRef.current * 15 + getPowerScore(playerRef.current) * 9 + (remotePlayerRef.current ? getPowerScore(remotePlayerRef.current) * 4.5 : 0)),
                 splitLevel: 0,
                 life: 18,
                 maxLife: 18,
@@ -8946,7 +8956,9 @@ export function GradiusRaid({
       enemy.rapidCharge = rapidCharge
       enemy.beamVolleyLeft = beamVolleyLeft
 
-      if ((enemy.isMiniBoss || enemy.y < HEIGHT + 14) && enemy.hp > 0) {
+      const enemyMargin = enemy.isBoss || enemy.isMiniBoss ? 90 : 28
+      const enemyOnField = enemy.y > -enemyMargin && enemy.y < HEIGHT + enemyMargin && enemy.x > -enemyMargin && enemy.x < WIDTH + enemyMargin
+      if ((enemy.isBoss || enemy.isMiniBoss || enemyOnField) && enemy.hp > 0) {
         enemies[liveEnemyCount] = enemy
         liveEnemyCount += 1
       }
@@ -8975,6 +8987,7 @@ export function GradiusRaid({
     updateRipplesInPlace(ripplesRef.current, dt)
 
     const spawnedAsteroids: AsteroidHazard[] = []
+    const spawnedSquidBubbles: Shot[] = []
     const breakAsteroid = (asteroid: AsteroidHazard, awardScore: boolean) => {
       asteroid.hp = 0
       spawnedAsteroids.push(...splitAsteroidHazard(
@@ -9004,7 +9017,7 @@ export function GradiusRaid({
       for (let i = 0; i < childCount; i += 1) {
         const angle = (i / childCount) * Math.PI * 2 + Math.random() * 0.55
         const radius = Math.max(1.25, bubble.radius * 0.64)
-        enemyShotsRef.current.push({
+        spawnedSquidBubbles.push({
           id: shotId++,
           x: bubble.x + Math.cos(angle) * radius * 0.8,
           y: bubble.y + Math.sin(angle) * radius * 0.8,
@@ -9017,6 +9030,7 @@ export function GradiusRaid({
           splitLevel: splitLevel + 1,
           life: Math.max(7, 20 - splitLevel * 2),
           maxLife: Math.max(7, 20 - splitLevel * 2),
+          retargetTime: 0.55,
         })
       }
     }
@@ -9026,7 +9040,7 @@ export function GradiusRaid({
     for (const shot of shotsRef.current) {
       if (shot.y <= -50) continue
       for (const bubble of enemyShotsRef.current) {
-        if (bubble.kind !== 'squidBubble' || (bubble.hp ?? 1) <= 0) continue
+        if (bubble.kind !== 'squidBubble' || (bubble.hp ?? 1) <= 0 || (bubble.retargetTime ?? 0) > 0) continue
         const hitRange = shot.radius + bubble.radius
         if (
           Math.abs(shot.x - bubble.x) <= hitRange &&
@@ -9034,6 +9048,7 @@ export function GradiusRaid({
           distSq(shot, bubble) <= hitRange * hitRange
         ) {
           const bubbleLevel = bubble.splitLevel ?? 0
+          const bubbleSplitHp = bubble.hp ?? 120
           const bubbleArmor = bubbleLevel === 0 ? 0.42 : bubbleLevel === 1 ? 0.5 : bubbleLevel === 2 ? 0.58 : 0.68
           const bubbleHitCap = bubbleLevel === 0 ? 26 : bubbleLevel === 1 ? 22 : bubbleLevel === 2 ? 18 : 14
           const bubbleDamage = Math.max(1, Math.ceil(Math.min(shot.damage, bubbleHitCap) * bubbleArmor))
@@ -9045,9 +9060,9 @@ export function GradiusRaid({
             shot.y = -999
           }
           if ((bubble.hp ?? 0) <= 0) {
+            splitSquidBubble({ ...bubble, hp: bubbleSplitHp })
             bubble.life = 0
             bubble.y = HEIGHT + 99
-            splitSquidBubble(bubble)
           }
           break
         }
@@ -9298,13 +9313,22 @@ export function GradiusRaid({
           Math.abs(enemyShot.y - targetPlayer.y) <= hitRange &&
           distSq(enemyShot, targetPlayer) <= hitRange * hitRange
         ) {
+          if (enemyShot.kind === 'squidBubble') {
+            splitSquidBubble({ ...enemyShot })
+            enemyShot.life = 0
+          }
           enemyShot.y = HEIGHT + 99
           damagePlayer(enemyShot.kind === 'boss' || enemyShot.kind === 'plasma' || enemyShot.kind === 'blade' || enemyShot.kind === 'orbShot' || enemyShot.kind === 'superShot' || enemyShot.kind === 'beam' || enemyShot.kind === 'scatterBoss' || enemyShot.kind === 'poisonCloud' ? 1 : enemyShot.damage, targetPlayer)
           break
         }
       }
     }
-    enemyShotsRef.current = enemyShotsRef.current.filter((shot) => shot.y < HEIGHT + 30)
+    const survivingEnemyShots = enemyShotsRef.current.filter((shot) => {
+      const margin = shot.kind === 'beam' && shot.life !== undefined ? 120 : shot.kind === 'squidBubble' || shot.kind === 'poisonCloud' ? 34 : 24
+      return shot.y > -margin && shot.y < HEIGHT + margin && shot.x > -margin && shot.x < WIDTH + margin
+    })
+    if (spawnedSquidBubbles.length > 0) survivingEnemyShots.push(...spawnedSquidBubbles)
+    enemyShotsRef.current = survivingEnemyShots
 
     for (const enemy of enemiesRef.current) {
       const hitRange = enemy.radius + PLAYER_RADIUS
@@ -9951,5 +9975,14 @@ export function GradiusRaid({
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
 
 
