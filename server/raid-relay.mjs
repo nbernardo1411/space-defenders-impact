@@ -1,26 +1,61 @@
 import { createServer } from 'node:http'
 import { randomBytes, createHash } from 'node:crypto'
+import pg from 'pg'
 
 const PORT = Number(process.env.PORT || 8787)
 const MAX_PAYLOAD_BYTES = 256 * 1024
+const LEADERBOARD_MODES = ['ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_multiplayer']
+const LEADERBOARD_MODE_SET = new Set(LEADERBOARD_MODES)
+const LEADERBOARD_BODY_LIMIT_BYTES = 16 * 1024
+const DATABASE_URL = process.env.DATABASE_URL || ''
+const { Pool } = pg
+const leaderboardPool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    })
+  : null
+let leaderboardSchemaPromise = null
 
 /** @type {Map<string, { code: string, hostId: string, peers: Set<string> }>} */
 const rooms = new Map()
 /** @type {Map<string, { id: string, socket: import('node:net').Socket, roomCode: string | null, name: string, ready: boolean, isHost: boolean, shipKey: string }>} */
 const peers = new Map()
 
-const server = createServer((req, res) => {
-  if (req.url === '/health') {
+const server = createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+
+    if (req.method === 'OPTIONS') {
+      writeJson(res, 204, null)
+      return
+    }
+
+    if (url.pathname === '/health') {
+      writeJson(res, 200, {
+        ok: true,
+        rooms: rooms.size,
+        peers: peers.size,
+        leaderboards: Boolean(leaderboardPool),
+      })
+      return
+    }
+
+    if (url.pathname === '/leaderboards' || url.pathname.startsWith('/leaderboards/')) {
+      await handleLeaderboardRequest(req, res, url)
+      return
+    }
+
     res.writeHead(200, {
-      'content-type': 'application/json',
-      'cache-control': 'no-store',
+      'content-type': 'text/plain; charset=utf-8',
+      'access-control-allow-origin': '*',
     })
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, peers: peers.size }))
+    res.end('Space Raid relay is running.\n')
+  } catch (error) {
+    console.error('Relay request failed:', error)
+    writeJson(res, 500, { error: 'Relay request failed.' })
     return
   }
-
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
-  res.end('Space Raid relay is running.\n')
 })
 
 server.on('upgrade', (req, socket) => {
@@ -125,6 +160,217 @@ server.on('upgrade', (req, socket) => {
 server.listen(PORT, () => {
   console.log(`Space Raid relay listening on ${PORT}`)
 })
+
+async function handleLeaderboardRequest(req, res, url) {
+  if (!leaderboardPool) {
+    writeJson(res, 503, { error: 'Leaderboard database is not configured.' })
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/leaderboards') {
+    await ensureLeaderboardSchema()
+    const leaderboards = {}
+    for (const mode of LEADERBOARD_MODES) {
+      leaderboards[mode] = await getLeaderboardRows(mode)
+    }
+    writeJson(res, 200, { leaderboards })
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/leaderboards/')) {
+    const mode = cleanLeaderboardMode(url.pathname.replace('/leaderboards/', ''))
+    if (!mode) {
+      writeJson(res, 404, { error: 'Leaderboard mode not found.' })
+      return
+    }
+
+    await ensureLeaderboardSchema()
+    writeJson(res, 200, { mode, entries: await getLeaderboardRows(mode) })
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/leaderboards/submit') {
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch {
+      writeJson(res, 400, { error: 'Invalid JSON body.' })
+      return
+    }
+    const mode = cleanLeaderboardMode(body.mode)
+    const playerName = cleanLeaderboardName(body.playerName)
+    const score = cleanLeaderboardScore(body.score)
+    const shipKey = cleanOptionalShipKey(body.shipKey)
+    const stage = cleanOptionalStage(body.stage)
+
+    if (!mode || score <= 0) {
+      writeJson(res, 400, { error: 'A valid mode and score are required.' })
+      return
+    }
+
+    await ensureLeaderboardSchema()
+    const result = await submitLeaderboardScore({ mode, playerName, score, shipKey, stage })
+    writeJson(res, 200, result)
+    return
+  }
+
+  writeJson(res, 404, { error: 'Leaderboard route not found.' })
+}
+
+async function ensureLeaderboardSchema() {
+  if (!leaderboardPool) throw new Error('Leaderboard database is not configured.')
+  if (!leaderboardSchemaPromise) {
+    leaderboardSchemaPromise = leaderboardPool.query(`
+      CREATE TABLE IF NOT EXISTS leaderboard_scores (
+        id BIGSERIAL PRIMARY KEY,
+        mode TEXT NOT NULL CHECK (mode IN ('ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_multiplayer')),
+        player_name TEXT NOT NULL,
+        score INTEGER NOT NULL CHECK (score >= 0),
+        ship_key TEXT,
+        stage INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS leaderboard_scores_mode_score_idx
+        ON leaderboard_scores (mode, score DESC, created_at ASC);
+      CREATE UNIQUE INDEX IF NOT EXISTS leaderboard_scores_mode_player_idx
+        ON leaderboard_scores (mode, lower(player_name));
+    `).catch((error) => {
+      leaderboardSchemaPromise = null
+      throw error
+    })
+  }
+
+  return leaderboardSchemaPromise
+}
+
+async function getLeaderboardRows(mode) {
+  const result = await leaderboardPool.query(
+    `
+      SELECT id, player_name AS "playerName", score, ship_key AS "shipKey", stage, created_at AS "createdAt"
+      FROM leaderboard_scores
+      WHERE mode = $1
+      ORDER BY score DESC, created_at ASC
+      LIMIT 10
+    `,
+    [mode],
+  )
+
+  return result.rows.map((row, index) => ({
+    id: row.id,
+    rank: index + 1,
+    playerName: row.playerName,
+    score: row.score,
+    shipKey: row.shipKey,
+    stage: row.stage,
+    createdAt: row.createdAt,
+  }))
+}
+
+async function submitLeaderboardScore({ mode, playerName, score, shipKey, stage }) {
+  const client = await leaderboardPool.connect()
+  let insertedId = null
+
+  try {
+    await client.query('BEGIN')
+    const insertResult = await client.query(
+      `
+        INSERT INTO leaderboard_scores (mode, player_name, score, ship_key, stage)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (mode, lower(player_name))
+        DO UPDATE SET
+          player_name = EXCLUDED.player_name,
+          score = EXCLUDED.score,
+          ship_key = EXCLUDED.ship_key,
+          stage = EXCLUDED.stage,
+          created_at = NOW()
+        WHERE EXCLUDED.score > leaderboard_scores.score
+        RETURNING id
+      `,
+      [mode, playerName, score, shipKey, stage],
+    )
+    insertedId = insertResult.rows[0]?.id ?? null
+
+    await client.query(
+      `
+        DELETE FROM leaderboard_scores
+        WHERE id IN (
+          SELECT id
+          FROM (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY mode ORDER BY score DESC, created_at ASC) AS rank
+            FROM leaderboard_scores
+            WHERE mode = $1
+          ) ranked_scores
+          WHERE ranked_scores.rank > 10
+        )
+      `,
+      [mode],
+    )
+
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+
+  const leaderboard = await getLeaderboardRows(mode)
+  const accepted = insertedId !== null && leaderboard.some((entry) => String(entry.id) === String(insertedId))
+  return { accepted, mode, leaderboard }
+}
+
+function writeJson(res, statusCode, body) {
+  const headers = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'cache-control': 'no-store',
+  }
+
+  if (statusCode === 204 || body === null) {
+    res.writeHead(statusCode, headers)
+    res.end()
+    return
+  }
+
+  res.writeHead(statusCode, {
+    ...headers,
+    'content-type': 'application/json',
+  })
+  res.end(JSON.stringify(body))
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let totalBytes = 0
+    const chunks = []
+
+    req.on('data', (chunk) => {
+      totalBytes += chunk.length
+      if (totalBytes > LEADERBOARD_BODY_LIMIT_BYTES) {
+        reject(new Error('Leaderboard request body is too large.'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+
+    req.on('end', () => {
+      if (chunks.length === 0) {
+        resolve({})
+        return
+      }
+
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      } catch {
+        reject(new Error('Invalid JSON body.'))
+      }
+    })
+
+    req.on('error', reject)
+  })
+}
 
 function handleTextPayload(id, payload) {
   let message
@@ -423,10 +669,44 @@ function cleanName(value) {
   return name || 'Pilot'
 }
 
+function cleanLeaderboardName(value) {
+  const name = String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 36)
+
+  return name || 'Pilot'
+}
+
+function cleanLeaderboardMode(value) {
+  const mode = String(value || '').trim()
+  return LEADERBOARD_MODE_SET.has(mode) ? mode : null
+}
+
+function cleanLeaderboardScore(value) {
+  const score = Math.floor(Number(value))
+  if (!Number.isFinite(score) || score <= 0) return 0
+  return Math.min(score, 2147483647)
+}
+
+function cleanOptionalStage(value) {
+  if (value === null || value === undefined || value === '') return null
+  const stage = Math.floor(Number(value))
+  if (!Number.isFinite(stage) || stage < 0) return null
+  return Math.min(stage, 999)
+}
+
 function cleanShipKey(value) {
   const shipKey = String(value || '').trim()
   const allowedShipKeys = new Set(['rocket', 'fast', 'gatling', 'laser', 'dreadnought', 'xwing', 'spaceEt'])
   return allowedShipKeys.has(shipKey) ? shipKey : 'rocket'
+}
+
+function cleanOptionalShipKey(value) {
+  if (value === null || value === undefined || value === '') return null
+
+  const shipKey = cleanShipKey(value)
+  return shipKey || null
 }
 
 function randomId() {

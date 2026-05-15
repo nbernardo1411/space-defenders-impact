@@ -32,6 +32,7 @@ export type RaidMultiplayerSession = {
 }
 
 type RaidMultiplayerLobbyProps = {
+  playerName: string
   onBack: () => void
   onStart: (session: RaidMultiplayerSession) => void
 }
@@ -78,12 +79,11 @@ const getLobbyShipSize = (shipKey: string) => {
   return 48
 }
 
-export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyProps) {
+export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultiplayerLobbyProps) {
   const socketRef = useRef<WebSocket | null>(null)
   const handoffRef = useRef(false)
   const roomRef = useRef<RoomSnapshot | null>(null)
   const peerIdRef = useRef<string | null>(null)
-  const [playerName, setPlayerName] = useState('Pilot')
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const relayUrl = useMemo(getDefaultRelayUrl, [])
   const [joinCode, setJoinCode] = useState('')
@@ -282,10 +282,10 @@ export function RaidMultiplayerLobby({ onBack, onStart }: RaidMultiplayerLobbyPr
         </p>
 
         <div className="raid-lobby__grid">
-          <label className="raid-lobby__field">
+          <div className="raid-lobby__field raid-lobby__field--readonly">
             <span>Pilot name</span>
-            <input value={playerName} maxLength={18} onChange={(event) => setPlayerName(event.target.value)} />
-          </label>
+            <strong>{playerName}</strong>
+          </div>
         </div>
 
         <div className="raid-lobby__ships" aria-label="Choose ship">

@@ -27,6 +27,7 @@ import type { Bullet, Enemy, EnemyTrait, GameState, ParticleType, ScoutDrone, To
 import { angleToDeg, lerp, spawnImpactParticles, triggerEnemyDeath } from './towerDefense/effects'
 import { AlienShip, EarthHQIcon, MothershipSpawnIcon, TowerShip } from './towerDefense/sprites'
 import { StatPill, btnStyle } from './towerDefense/ui'
+import { submitLeaderboardScore } from '../../leaderboards'
 
 let _eid = 1
 let _tid = 1
@@ -66,7 +67,7 @@ const HQ_MAX_LEVEL = 4
 
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'normal' }: { availableCoins: CoinOption[]; onClose: () => void; initialMode?: 'normal' | 'endless' }) {
+export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'normal', playerName }: { availableCoins: CoinOption[]; onClose: () => void; initialMode?: 'normal' | 'endless'; playerName: string }) {
   const [mobileLayoutMode, setMobileLayoutMode] = useState<MobileLayoutMode>(() => {
     if (typeof window === 'undefined') return 'auto'
     const raw = localStorage.getItem(MOBILE_LAYOUT_STORAGE_KEY)
@@ -88,6 +89,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const hqLevelRef = useRef(1)
   const waveRef = useRef(0)
   const scoreRef = useRef(0)
+  const leaderboardSubmittedRef = useRef(false)
   const stateRef = useRef<GameState>('idle')
   const stageRef = useRef(1)
   const spawnQueueRef = useRef(0)
@@ -554,6 +556,18 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     if (soundOn) playGameSound(comboSound ? 'combo' : 'pop')
   }
 
+  const submitDefenseLeaderboardScore = useCallback((score: number) => {
+    if (leaderboardSubmittedRef.current || score <= 0) return
+
+    leaderboardSubmittedRef.current = true
+    void submitLeaderboardScore({
+      mode: endlessRef.current ? 'ship_defense_endless' : 'ship_defense_normal',
+      playerName,
+      score,
+      stage: stageRef.current,
+    })
+  }, [playerName])
+
   const gameLoop = useCallback((ts: number) => {
     const dt = Math.min((ts - (lastTimeRef.current || ts)) / 1000, 0.1)
     lastTimeRef.current = ts
@@ -629,6 +643,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             localStorage.setItem(STORAGE_KEY, String(s))
             setUiHighScore(s)
           }
+          submitDefenseLeaderboardScore(s)
           // Trigger victory effect
           setVictoryEffect({time: 0, maxTime: 2.0})
         } else {
@@ -668,6 +683,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               localStorage.setItem(STORAGE_KEY, String(s))
               setUiHighScore(s)
             }
+            submitDefenseLeaderboardScore(s)
           }
           break
         }
@@ -1253,7 +1269,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     setUiCommanderCooldowns({ ...commanderCooldownsRef.current })
 
     frameRef.current = requestAnimationFrame(gameLoop)
-  }, [soundOn])
+  }, [soundOn, submitDefenseLeaderboardScore])
 
   useEffect(() => {
     frameRef.current = requestAnimationFrame(gameLoop)
@@ -1279,6 +1295,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     pathRef.current = ps[0]
     pathSetRef.current = new Set(ps.flat().map(([c, r]) => `${c},${r}`))
     scoreRef.current = 0
+    leaderboardSubmittedRef.current = false
     spawnQueueRef.current = 0
     bossQueueRef.current = 0
     normalEscortQueueRef.current = 0
@@ -1663,6 +1680,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     pathRef.current = ps[0]
     pathSetRef.current = new Set(ps.flat().map(([c, r]) => `${c},${r}`))
     scoreRef.current = 0
+    leaderboardSubmittedRef.current = false
     spawnQueueRef.current = 0
     bossQueueRef.current = 0
     normalEscortQueueRef.current = 0
@@ -1870,7 +1888,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: (isCompact || isLandscapeMobile) ? 3 : 6, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1, flexShrink: 0 }}>
         <button onClick={onClose} style={btnStyle('#3a120f', '#f9d7bf')} aria-label="Close">X</button>
         <div style={{ flex: 1, textAlign: 'center', fontWeight: 900, fontSize: isCompact ? '0.9rem' : '1.05rem', color: '#ffcf86', letterSpacing: 1.6, whiteSpace: 'nowrap', textTransform: 'uppercase', textShadow: '0 0 12px #ff7b2f66' }}>
-          SPACE IMPACT DEFENSE
+          SPACE IMPACT DEFENDER
         </div>
         <button onClick={() => setShowSettingsModal(true)} style={btnStyle('#2d2148', '#d3c6ff')} aria-label="Settings">SETTINGS</button>
       </div>

@@ -10,7 +10,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Space Defender Impact',
+        name: 'Space Impact Defender',
         short_name: 'Space Defense',
         description: 'Deploy warships, defend Earth, and break alien fleets across shifting space lanes.',
         theme_color: '#050816',

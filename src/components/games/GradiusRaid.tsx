@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM } from './sound'
 import type { GraphicsQuality } from './sound'
 import { AlienShip, TowerShip } from './towerDefense/sprites'
+import { submitLeaderboardScore } from '../../leaderboards'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -2861,9 +2862,11 @@ type RaidMultiplayerSession = {
 export function GradiusRaid({
   onClose,
   multiplayerSession,
+  playerName,
 }: {
   onClose: () => void
   multiplayerSession?: RaidMultiplayerSession | null
+  playerName: string
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const fxCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -2917,6 +2920,7 @@ export function GradiusRaid({
   // Stable ref to firePlayer so predictGuestPlayer can call it without a forward-declaration issue
   const firePlayerRef = useRef<(player: Player) => void>((_p: Player) => {})
   const playerRef = useRef<Player>(getInitialPlayer())
+  const leaderboardSubmittedRef = useRef(false)
   const shotsRef = useRef<Shot[]>([])
   const enemyShotsRef = useRef<Shot[]>([])
   const enemiesRef = useRef<Enemy[]>([])
@@ -4065,6 +4069,7 @@ export function GradiusRaid({
     nukeFlashRef.current = 0
     nukeStrikeRef.current = null
     nukeBlastOriginRef.current = { x: 50, y: 46 }
+    leaderboardSubmittedRef.current = false
     remotePointerTargetRef.current = null
     remotePointerVisualRef.current = null
     remoteKeysRef.current = new Set()
@@ -4752,6 +4757,25 @@ export function GradiusRaid({
     powerUpsRef.current.push({ id: powerId++, type: 'levelup', x, y, vy: 8.5, radius: 4.2, spin: Math.random() * 360 })
   }, [])
 
+  const submitRaidLeaderboardScore = useCallback((score: number) => {
+    const session = multiplayerSessionRef.current
+    if (session && !session.isHost) return
+    if (leaderboardSubmittedRef.current || score <= 0) return
+
+    const leaderboardName = session
+      ? session.players.map((roomPlayer) => roomPlayer.name).join(' + ')
+      : playerName
+
+    leaderboardSubmittedRef.current = true
+    void submitLeaderboardScore({
+      mode: session ? 'gradius_multiplayer' : 'gradius_solo',
+      playerName: leaderboardName,
+      score,
+      shipKey: selectedShipRef.current.key,
+      stage: stageRef.current,
+    })
+  }, [playerName])
+
   const damagePlayer = useCallback((amount: number, targetPlayer = playerRef.current) => {
     const player = targetPlayer
     if (player.hp <= 0 || player.invuln > 0) return
@@ -4797,8 +4821,9 @@ export function GradiusRaid({
         highScoreRef.current = player.score
         saveHighScore(player.score)
       }
+      submitRaidLeaderboardScore(Math.max(playerRef.current.score, remotePlayerRef.current?.score ?? 0))
     }
-  }, [addRipple, spawnSparks, stopRaidBgm])
+  }, [addRipple, spawnSparks, stopRaidBgm, submitRaidLeaderboardScore])
 
   const fireEnemy = useCallback((enemy: Enemy, player: Player, time = performance.now()) => {
     if (enemy.isBoss) {
@@ -5289,6 +5314,7 @@ export function GradiusRaid({
           highScoreRef.current = player.score
           saveHighScore(player.score)
         }
+        submitRaidLeaderboardScore(Math.max(player.score, remotePlayerRef.current?.score ?? 0))
         return
       }
       if (preserveLoadoutForSuperBoss) {
@@ -5421,7 +5447,7 @@ export function GradiusRaid({
     if (remotePlayerRef.current && remotePlayerRef.current.score > highScoreRef.current) {
       highScoreRef.current = remotePlayerRef.current.score
     }
-  }, [activateNuke, addRipple, damagePlayer, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, stopRaidBgm])
+  }, [activateNuke, addRipple, damagePlayer, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, stopRaidBgm, submitRaidLeaderboardScore])
 
   useEffect(() => {
     const tick = (time: number) => {

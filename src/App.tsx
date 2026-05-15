@@ -1,9 +1,11 @@
 import './App.css'
+import { LeaderboardsScreen } from './components/LeaderboardsScreen'
 import { RaidMultiplayerLobby, type RaidMultiplayerSession } from './components/RaidMultiplayerLobby'
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
 import { AlienShip, TowerShip } from './components/games/towerDefense/sprites'
+import { getStoredPlayerName, hasStoredPlayerName, saveStoredPlayerName } from './leaderboards'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed — kept for prop compatibility)
@@ -32,7 +34,7 @@ const CUTSCENE_SCENES = [
   },
 ] as const
 
-type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidMultiplayer'
+type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidMultiplayer' | 'leaderboards'
 type GameMode = 'normal' | 'endless'
 type ActiveGame = 'towerDefense' | 'rocketRaid'
 
@@ -42,6 +44,9 @@ function App() {
   const [activeGame, setActiveGame] = useState<ActiveGame>('towerDefense')
   const [raidMultiplayerSession, setRaidMultiplayerSession] = useState<RaidMultiplayerSession | null>(null)
   const [cutsceneIndex, setCutsceneIndex] = useState(0)
+  const [playerName, setPlayerName] = useState(getStoredPlayerName)
+  const [playerNameDraft, setPlayerNameDraft] = useState(playerName === 'Pilot' && !hasStoredPlayerName() ? '' : playerName)
+  const [showPlayerNamePrompt, setShowPlayerNamePrompt] = useState(() => !hasStoredPlayerName())
 
   const currentScene = useMemo(() => CUTSCENE_SCENES[cutsceneIndex], [cutsceneIndex])
 
@@ -154,6 +159,14 @@ function App() {
     setScreen('game')
   }
 
+  const savePlayerName = () => {
+    if (!playerNameDraft.trim()) return
+    const nextName = saveStoredPlayerName(playerNameDraft)
+    setPlayerName(nextName)
+    setPlayerNameDraft(nextName)
+    setShowPlayerNamePrompt(false)
+  }
+
   const closeGame = () => {
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
@@ -197,9 +210,15 @@ function App() {
               <span className="start-screen__version">V1.0</span>
             </div>
 
+            <div className="start-screen__pilot">
+              <span>Commander</span>
+              <strong>{playerName}</strong>
+              <button onClick={() => setShowPlayerNamePrompt(true)}>Change</button>
+            </div>
+
             <div className="start-screen__title-lockup">
               <div className="start-screen__eyebrow">Earth Defense Initiative</div>
-              <h1>Space Impact Defense</h1>
+              <h1>Space Impact Defender</h1>
               <p>Deploy warships. Defend Earth. Break alien fleets across shifting space lanes.</p>
             </div>
 
@@ -251,6 +270,11 @@ function App() {
                 <span className="start-screen__button-kicker">Pilot Assault</span>
                 <span className="start-screen__button-title">Rocket Raid</span>
                 <span className="start-screen__button-copy">Launch into a direct side-scroll strike.</span>
+              </button>
+              <button className="start-screen__button start-screen__button--leaderboards" onClick={() => setScreen('leaderboards')}>
+                <span className="start-screen__button-kicker">Online Records</span>
+                <span className="start-screen__button-title">Leaderboards</span>
+                <span className="start-screen__button-copy">View the top ten commanders across every mode.</span>
               </button>
             </div>
 
@@ -342,13 +366,42 @@ function App() {
             </button>
           </div>
         </div>
+
+        {showPlayerNamePrompt && (
+          <div className="player-name-modal" role="dialog" aria-modal="true" aria-labelledby="player-name-title">
+            <form
+              className="player-name-modal__panel"
+              onSubmit={(event) => {
+                event.preventDefault()
+                savePlayerName()
+              }}
+            >
+              <span className="player-name-modal__eyebrow">Pilot Registration</span>
+              <h2 id="player-name-title">Choose your commander name</h2>
+              <p>This name is used for leaderboards and multiplayer rooms.</p>
+              <input
+                autoFocus
+                maxLength={18}
+                value={playerNameDraft}
+                onChange={(event) => setPlayerNameDraft(event.target.value)}
+                placeholder="Commander name"
+              />
+              <button type="submit" disabled={!playerNameDraft.trim()}>Confirm Name</button>
+            </form>
+          </div>
+        )}
       </div>
     )
+  }
+
+  if (screen === 'leaderboards') {
+    return <LeaderboardsScreen playerName={playerName} onBack={() => setScreen('title')} />
   }
 
   if (screen === 'raidMultiplayer') {
     return (
       <RaidMultiplayerLobby
+        playerName={playerName}
         onBack={() => setScreen('rocketMode')}
         onStart={(session) => {
           setRaidMultiplayerSession(session)
@@ -362,12 +415,13 @@ function App() {
   return (
     <div className="app">
       {activeGame === 'rocketRaid' ? (
-        <GradiusRaid onClose={closeGame} multiplayerSession={raidMultiplayerSession} />
+        <GradiusRaid onClose={closeGame} multiplayerSession={raidMultiplayerSession} playerName={playerName} />
       ) : (
         <SpaceImpactDefense
           availableCoins={DEFAULT_COINS}
           onClose={closeGame}
           initialMode={gameMode}
+          playerName={playerName}
         />
       )}
     </div>
