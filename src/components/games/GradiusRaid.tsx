@@ -4330,12 +4330,14 @@ function drawRaidOptions(
   time: number,
   color = PLAYER_COLOR,
 ) {
-  if (player.optionTimer <= 0) return
-  const optionOffset = viewportWidth < 640 ? 12 : 8.5
-  const optionShipSize = getShipSpriteSize(player.ship.key, 'option')
-  const optionBox = viewportWidth < 860 ? 30 : 38
-  const drawSize = Math.min(optionShipSize, optionBox)
-  const sprite = getTowerCanvasSprite(player.ship.key, color, optionShipSize)
+  const isArk = player.ship.key === 'dreadnought'
+  if (player.optionTimer <= 0 && !isArk) return
+  const optionOffset = isArk ? (viewportWidth < 640 ? 14 : 10.5) : viewportWidth < 640 ? 12 : 8.5
+  const optionShipKey = isArk ? 'rocket' : player.ship.key
+  const optionShipSize = getShipSpriteSize(optionShipKey, 'option')
+  const optionBox = isArk ? (viewportWidth < 860 ? 34 : 42) : viewportWidth < 860 ? 30 : 38
+  const drawSize = Math.min(optionShipSize * (isArk ? 1.08 : 1), optionBox)
+  const sprite = getTowerCanvasSprite(optionShipKey, color, optionShipSize)
 
   for (const side of [-1, 1]) {
     const x = toX(clamp(player.x + optionOffset * side, 4, 96))
@@ -4346,7 +4348,7 @@ function drawRaidOptions(
       x,
       y,
       drawSize,
-      'brightness(1.12) contrast(1.12) saturate(1.24)',
+      isArk ? 'brightness(1.08) contrast(1.18) saturate(1.35)' : 'brightness(1.12) contrast(1.12) saturate(1.24)',
       1,
       0,
       1,
@@ -7631,14 +7633,18 @@ export function GradiusRaid({
     if (player.fireCooldown > 0) return
 
     const baseDamage = getPlayerBaseAttack(player)
-    const optionOffset = rootRef.current && rootRef.current.clientWidth < 640 ? 12 : 8.5
     const shipKey = player.ship.key
+    const isArk = shipKey === 'dreadnought'
+    const optionOffset = isArk
+      ? (rootRef.current && rootRef.current.clientWidth < 640 ? 14 : 10.5)
+      : (rootRef.current && rootRef.current.clientWidth < 640 ? 12 : 8.5)
+    const scoutScale = isArk ? 0.76 : 0.72
 
     const emitters = [{ x: player.x, y: player.y, scale: 1, main: true }]
-    if (player.optionTimer > 0) {
+    if (player.optionTimer > 0 || isArk) {
       emitters.push(
-        { x: clamp(player.x - optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72, main: false },
-        { x: clamp(player.x + optionOffset, 4, 96), y: player.y + 1.8, scale: 0.72, main: false },
+        { x: clamp(player.x - optionOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false },
+        { x: clamp(player.x + optionOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false },
       )
     }
 
@@ -7867,24 +7873,6 @@ export function GradiusRaid({
               kind: 'laser',
               radius: 1.65,
               pierce: 2
-            })
-          }
-        }
-
-        if (firingWeapons.scatter) {
-          const count = Math.min(8, 2 + stacks.scatter * 2)
-
-          for (let i = 0; i < count; i++) {
-            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
-
-            pushShot({
-              x: emitter.x,
-              y: emitter.y - 1.5,
-              vx: Math.cos(angle) * 82,
-              vy: Math.sin(angle) * 82,
-              damage,
-              kind: 'scatter',
-              radius: 1.2
             })
           }
         }
@@ -9503,29 +9491,12 @@ export function GradiusRaid({
           if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
-            // rocket explosion + shrapnel
-          if (shot.kind === 'rocket') {
-            if (playerRef.current.ship.key === 'dreadnought') {
-              const shrapnelCount = 8
-              for (let s = 0; s < shrapnelCount; s++) {
-                const angle = (s / shrapnelCount) * Math.PI * 2
-                const speed = 38 + Math.random() * 28
-                shotsRef.current.push({
-                  id: shotId++,
-                  x: shot.x,
-                  y: shot.y,
-                  vx: Math.cos(angle) * speed,
-                  vy: Math.sin(angle) * speed,
-                  damage: Math.ceil(shot.damage * 0.45),
-                  kind: 'scatter',
-                  radius: 1.1,
-                })
-              }
-            }
-            spawnSparks(shot.x, shot.y, '#f97316', 28, 6)
+            // rocket explosion
+            if (shot.kind === 'rocket') {
+              spawnSparks(shot.x, shot.y, '#f97316', 28, 6)
             addRipple(shot.x, shot.y, '#fb923c', 10)
             playGameSound('explosion')
-          }
+            }
             shot.y = -999
           }
           if (bossShielded) {
