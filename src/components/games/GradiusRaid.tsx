@@ -7655,9 +7655,10 @@ export function GradiusRaid({
 
     emitters.forEach((emitter) => {
       const damage = Math.max(1, Math.ceil(baseDamage * emitter.scale))
+      const attackShipKey = isArk && !emitter.main ? 'rocket' : shipKey
 
       // ── BLACK COMET: original default attack ──
-      if (shipKey === 'rocket') {
+      if (attackShipKey === 'rocket') {
         pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -108, damage: Math.ceil((baseDamage + 3) * emitter.scale), kind: 'pulse', radius: 1.8 })
         if (firingWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
@@ -7693,7 +7694,7 @@ export function GradiusRaid({
       }
 
       // ── RED WRAITH: rapid twin needle streams ──
-      else if (shipKey === 'fast') {
+      else if (attackShipKey === 'fast') {
         pushShot({ x: emitter.x - 1.2, y: emitter.y - 3, vx: -3, vy: -110, damage, kind: 'needle' as any, radius: 1.1 })
         pushShot({ x: emitter.x + 1.2, y: emitter.y - 3, vx: 3, vy: -110, damage, kind: 'needle' as any, radius: 1.1 })
         if (firingWeapons.spread) {
@@ -7730,7 +7731,7 @@ export function GradiusRaid({
       }
 
       // ── CRIMSON SAW: dual side-by-side gatling cannons ──
-      else if (shipKey === 'gatling') {
+      else if (attackShipKey === 'gatling') {
         // left cannon
         pushShot({ x: emitter.x - 3.2, y: emitter.y - 3, vx: -2, vy: -98, damage, kind: 'pulse', radius: 1.25 })
         // right cannon
@@ -7769,7 +7770,7 @@ export function GradiusRaid({
       }
 
       // ── NIGHT LANCE: single thick slow piercing laser ray ──
-      else if (shipKey === 'laser') {
+      else if (attackShipKey === 'laser') {
         pushShot({
           x: emitter.x,
           y: emitter.y - 4,
@@ -7823,7 +7824,7 @@ export function GradiusRaid({
       }
 
       // ── OBSIDIAN ARK: slow heavy rocket core ──
-      else if (shipKey === 'dreadnought') {
+      else if (attackShipKey === 'dreadnought') {
         // CORE WEAPON (this was missing)
         pushShot({
           x: emitter.x,
@@ -7914,7 +7915,7 @@ export function GradiusRaid({
       }
 
       // ── CROSSWING NOVA: tri-beam shotgun ──
-      else if (shipKey === 'xwing') {
+      else if (attackShipKey === 'xwing') {
         const spread = stacks.spread >= 2 ? 0.34 : stacks.spread >= 1 ? 0.24 : 0.16
         const wingOffset = emitter.main ? 3.4 : 2.2
         // three wide beams per shot
@@ -7956,7 +7957,7 @@ export function GradiusRaid({
       }
 
       // ── SPACE JET: single thin fast green laser line ──
-      else if (shipKey === 'spaceEt') {
+      else if (attackShipKey === 'spaceEt') {
         const phaseDrift = (shotId % 3) - 1
         pushShot({
           x: emitter.x + phaseDrift * 0.55,
