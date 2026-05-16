@@ -2312,24 +2312,149 @@ function drawBossShield(ctx: CanvasRenderingContext2D, x: number, y: number, siz
   ctx.restore()
 }
 
+function drawBossBarSkull(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, accent: string, finalBoss = false) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.shadowBlur = finalBoss ? 14 : 9
+  ctx.shadowColor = accent
+  const skull = ctx.createRadialGradient(-radius * 0.28, -radius * 0.36, 1, 0, 0, radius * 1.25)
+  skull.addColorStop(0, finalBoss ? '#fff7ad' : '#f8fafc')
+  skull.addColorStop(0.38, finalBoss ? '#d6a84b' : '#cbd5e1')
+  skull.addColorStop(0.78, finalBoss ? '#4a2209' : '#334155')
+  skull.addColorStop(1, '#020617')
+  ctx.fillStyle = skull
+  ctx.strokeStyle = finalBoss ? 'rgba(254,243,199,0.92)' : 'rgba(226,232,240,0.72)'
+  ctx.lineWidth = Math.max(1, radius * 0.14)
+  ctx.beginPath()
+  ctx.moveTo(0, -radius * 0.92)
+  ctx.bezierCurveTo(radius * 0.72, -radius * 0.86, radius * 0.92, -radius * 0.22, radius * 0.62, radius * 0.28)
+  ctx.lineTo(radius * 0.38, radius * 0.84)
+  ctx.lineTo(-radius * 0.38, radius * 0.84)
+  ctx.lineTo(-radius * 0.62, radius * 0.28)
+  ctx.bezierCurveTo(-radius * 0.92, -radius * 0.22, -radius * 0.72, -radius * 0.86, 0, -radius * 0.92)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.shadowBlur = 0
+  ctx.fillStyle = 'rgba(2,6,23,0.95)'
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.ellipse(side * radius * 0.3, -radius * 0.18, radius * 0.18, radius * 0.24, side * 0.22, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.beginPath()
+  ctx.moveTo(0, radius * 0.02)
+  ctx.lineTo(radius * 0.14, radius * 0.26)
+  ctx.lineTo(-radius * 0.14, radius * 0.26)
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.strokeStyle = finalBoss ? 'rgba(56,189,248,0.76)' : 'rgba(248,113,113,0.72)'
+  ctx.lineWidth = Math.max(0.8, radius * 0.08)
+  ctx.beginPath()
+  ctx.moveTo(-radius * 0.36, radius * 0.48)
+  ctx.lineTo(radius * 0.36, radius * 0.48)
+  ctx.stroke()
+  for (const tooth of [-0.22, 0, 0.22]) {
+    ctx.beginPath()
+    ctx.moveTo(radius * tooth, radius * 0.38)
+    ctx.lineTo(radius * tooth, radius * 0.68)
+    ctx.stroke()
+  }
+
+  if (finalBoss) {
+    ctx.globalCompositeOperation = 'lighter'
+    drawRadialEllipse(ctx, 0, -radius * 0.16, radius * 0.18, radius * 0.12, [
+      [0, 'rgba(255,255,255,0.82)'],
+      [0.38, 'rgba(56,189,248,0.7)'],
+      [1, 'rgba(56,189,248,0)'],
+    ])
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.strokeStyle = 'rgba(254,243,199,0.8)'
+    ctx.beginPath()
+    ctx.moveTo(-radius * 0.48, -radius * 0.78)
+    ctx.lineTo(-radius * 0.2, -radius * 1.18)
+    ctx.lineTo(0, -radius * 0.82)
+    ctx.lineTo(radius * 0.2, -radius * 1.18)
+    ctx.lineTo(radius * 0.48, -radius * 0.78)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: number, size: number) {
-  const isSuper = enemy.bossKind === 'super' || enemy.bossKind === 'squid' || enemy.bossKind === 'snake' || enemy.bossKind === 'final'
-  const width = size * (isSuper ? 1.04 : 0.9)
-  const height = isSuper ? 13 : 10
+  const isStageBoss = enemy.bossKind === 'squid' || enemy.bossKind === 'snake' || enemy.bossKind === 'final'
+  const isSuper = enemy.bossKind === 'super' || isStageBoss
+  const isFinal = enemy.bossKind === 'final'
+  const width = size * (isFinal ? 1.28 : isStageBoss ? 1.12 : isSuper ? 1.04 : 0.9)
+  const height = isFinal ? 18 : isStageBoss ? 15 : isSuper ? 13 : 10
+  const skullRadius = size * (isFinal ? 0.09 : isStageBoss ? 0.075 : 0)
   const barX = x - width / 2
-  const barY = y + size * 0.5 + (isSuper ? 16 : 12)
+  const barY = y + size * 0.5 + (isFinal ? 20 : isSuper ? 16 : 12)
   const fill = clamp(enemy.hp / enemy.maxHp, 0, 1)
+  const accent = isFinal ? '#38bdf8' : enemy.bossKind === 'snake' ? '#fbbf24' : enemy.bossKind === 'squid' ? '#f472b6' : '#ef233c'
+
+  ctx.save()
+  if (isStageBoss) {
+    const framePadX = skullRadius * (isFinal ? 2.15 : 1.65)
+    const framePadY = isFinal ? 7 : 5
+    const frameX = barX - framePadX
+    const frameY = barY - framePadY
+    const frameW = width + framePadX * 2
+    const frameH = height + framePadY * 2
+    const frame = ctx.createLinearGradient(frameX, frameY, frameX + frameW, frameY + frameH)
+    frame.addColorStop(0, 'rgba(2,6,23,0.98)')
+    frame.addColorStop(0.26, isFinal ? 'rgba(69,26,3,0.94)' : 'rgba(42,12,42,0.94)')
+    frame.addColorStop(0.62, 'rgba(15,23,42,0.96)')
+    frame.addColorStop(1, 'rgba(2,6,23,0.98)')
+    ctx.fillStyle = frame
+    ctx.strokeStyle = isFinal ? 'rgba(254,243,199,0.82)' : 'rgba(248,113,113,0.62)'
+    ctx.lineWidth = isFinal ? 2 : 1.4
+    ctx.shadowBlur = isFinal ? 20 : 12
+    ctx.shadowColor = isFinal ? 'rgba(56,189,248,0.34)' : 'rgba(248,113,113,0.28)'
+    traceRoundedRect(ctx, frameX, frameY, frameW, frameH, isFinal ? 9 : 7)
+    ctx.fill()
+    ctx.stroke()
+    ctx.shadowBlur = 0
+
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = isFinal ? 'rgba(56,189,248,0.42)' : 'rgba(251,191,36,0.26)'
+    ctx.lineWidth = Math.max(1, size * 0.003)
+    for (let mark = 0; mark < (isFinal ? 12 : 8); mark += 1) {
+      const px = barX + (mark / ((isFinal ? 12 : 8) - 1)) * width
+      ctx.beginPath()
+      ctx.moveTo(px, frameY + 3)
+      ctx.lineTo(px + (mark % 2 === 0 ? size * 0.018 : -size * 0.018), frameY + frameH - 3)
+      ctx.stroke()
+    }
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
+  traceRoundedRect(ctx, barX, barY, width, height, 999)
+  ctx.fillStyle = isFinal ? 'rgba(3,7,18,0.98)' : isSuper ? 'rgba(18,8,16,0.95)' : 'rgba(20,10,20,0.92)'
+  ctx.strokeStyle = isFinal ? 'rgba(125,249,255,0.72)' : isSuper ? 'rgba(251,191,36,0.65)' : 'rgba(255,255,255,0.2)'
+  ctx.lineWidth = isFinal ? 1.5 : 1
+  ctx.fill()
+  ctx.stroke()
 
   ctx.save()
   traceRoundedRect(ctx, barX, barY, width, height, 999)
-  ctx.fillStyle = isSuper ? 'rgba(18,8,16,0.95)' : 'rgba(20,10,20,0.92)'
-  ctx.strokeStyle = isSuper ? 'rgba(251,191,36,0.65)' : 'rgba(255,255,255,0.2)'
-  ctx.lineWidth = 1
-  ctx.fill()
-  ctx.stroke()
   ctx.clip()
   const gradient = ctx.createLinearGradient(barX, 0, barX + width, 0)
-  if (isSuper) {
+  if (isFinal) {
+    gradient.addColorStop(0, '#22d3ee')
+    gradient.addColorStop(0.28, '#2563eb')
+    gradient.addColorStop(0.56, '#ef233c')
+    gradient.addColorStop(0.82, '#fbbf24')
+    gradient.addColorStop(1, '#fef3c7')
+  } else if (isStageBoss) {
+    gradient.addColorStop(0, enemy.bossKind === 'snake' ? '#0f172a' : '#581c87')
+    gradient.addColorStop(0.42, enemy.bossKind === 'snake' ? '#06b6d4' : '#ef233c')
+    gradient.addColorStop(0.74, enemy.bossKind === 'snake' ? '#fbbf24' : '#f472b6')
+    gradient.addColorStop(1, '#fef3c7')
+  } else if (isSuper) {
     gradient.addColorStop(0, '#581c87')
     gradient.addColorStop(0.46, '#ef233c')
     gradient.addColorStop(1, '#fbbf24')
@@ -2339,25 +2464,49 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
     gradient.addColorStop(1, '#fca5a5')
   }
   ctx.fillStyle = gradient
-  ctx.shadowBlur = isSuper ? 18 : 14
-  ctx.shadowColor = isSuper ? 'rgba(251,191,36,0.82)' : 'rgba(239,35,60,0.8)'
+  ctx.shadowBlur = isFinal ? 24 : isSuper ? 18 : 14
+  ctx.shadowColor = isFinal ? 'rgba(56,189,248,0.9)' : isSuper ? 'rgba(251,191,36,0.82)' : 'rgba(239,35,60,0.8)'
   ctx.fillRect(barX, barY, width * fill, height)
+  ctx.globalCompositeOperation = 'screen'
+  ctx.fillStyle = isFinal ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.14)'
+  ctx.fillRect(barX, barY, width * fill, Math.max(2, height * 0.32))
   ctx.restore()
 
-  if (enemy.bossKind === 'final') {
+  if (isStageBoss) {
     ctx.save()
-    ctx.font = `${Math.max(9, size * 0.026)}px Orbitron, system-ui, sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'bottom'
-    ctx.fillStyle = 'rgba(226,232,240,0.88)'
-    ctx.shadowBlur = 10
-    ctx.shadowColor = 'rgba(239,68,68,0.55)'
-    ctx.fillText('MIRAGE MOTHERSHIP', x, barY - 4)
+    ctx.globalCompositeOperation = 'source-over'
+    drawBossBarSkull(ctx, barX - skullRadius * 0.9, barY + height * 0.5, skullRadius, accent, isFinal)
+    drawBossBarSkull(ctx, barX + width + skullRadius * 0.9, barY + height * 0.5, skullRadius, accent, isFinal)
     ctx.restore()
   }
-}
 
-function getNormalEnemyFilter(time: number) {
+  if (isFinal) {
+    ctx.save()
+    ctx.font = `900 ${Math.max(10, size * 0.03)}px Orbitron, system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.fillStyle = 'rgba(254,243,199,0.94)'
+    ctx.shadowBlur = 12
+    ctx.shadowColor = 'rgba(56,189,248,0.72)'
+    ctx.fillText('MIRAGE MOTHERSHIP', x, barY - 9)
+    ctx.font = `800 ${Math.max(7, size * 0.018)}px Orbitron, system-ui, sans-serif`
+    ctx.fillStyle = 'rgba(125,249,255,0.72)'
+    ctx.fillText('FINAL CORE INTEGRITY', x, barY + height + 15)
+    ctx.restore()
+  } else if (isStageBoss) {
+    ctx.save()
+    ctx.font = `850 ${Math.max(8, size * 0.023)}px Orbitron, system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.fillStyle = 'rgba(226,232,240,0.86)'
+    ctx.shadowBlur = 8
+    ctx.shadowColor = accent
+    ctx.fillText(enemy.bossKind === 'snake' ? 'SERPENT GUARDIAN' : 'ABYSS SQUID', x, barY - 5)
+    ctx.restore()
+  }
+
+  ctx.restore()
+}function getNormalEnemyFilter(time: number) {
   const pulse = 0.88 + ((Math.sin(time / 700) + 1) / 2) * 0.3
   return `brightness(${1.16 * pulse}) contrast(1.12) saturate(1.28)`
 }
@@ -3074,17 +3223,56 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
     ctx.arc(x, y, Math.max(0.9, size * 0.0045), 0, Math.PI * 2)
     ctx.fill()
   }
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)'
-  ctx.lineWidth = Math.max(0.7, size * 0.0028)
-  for (let scratch = 0; scratch < 22; scratch += 1) {
-    const side = scratch % 2 === 0 ? -1 : 1
-    const y = -size * (0.48 - scratch * 0.027)
-    const x = side * size * (0.05 + (scratch % 5) * 0.025)
+
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  const mantleArmor = ctx.createLinearGradient(0, -size * 0.58, 0, size * 0.24)
+  mantleArmor.addColorStop(0, 'rgba(250,232,255,0.72)')
+  mantleArmor.addColorStop(0.26, 'rgba(168,85,247,0.48)')
+  mantleArmor.addColorStop(0.62, 'rgba(49,12,78,0.62)')
+  mantleArmor.addColorStop(1, 'rgba(10,2,18,0.78)')
+  ctx.strokeStyle = 'rgba(244,114,182,0.44)'
+  ctx.lineWidth = Math.max(1.1, size * 0.0044)
+  for (let plate = 0; plate < 7; plate += 1) {
+    const y = -size * 0.48 + plate * size * 0.09
+    const outer = size * (0.075 + plate * 0.017)
+    const inner = outer * 0.58
+    ctx.fillStyle = mantleArmor
     ctx.beginPath()
-    ctx.moveTo(x, y)
-    ctx.lineTo(x + side * size * (0.025 + (scratch % 3) * 0.01), y + size * 0.025)
+    ctx.moveTo(-outer, y)
+    ctx.quadraticCurveTo(0, y + size * 0.048, outer, y)
+    ctx.quadraticCurveTo(inner, y + size * 0.07, 0, y + size * 0.082)
+    ctx.quadraticCurveTo(-inner, y + size * 0.07, -outer, y)
+    ctx.fill()
     ctx.stroke()
   }
+
+  ctx.globalCompositeOperation = 'lighter'
+  for (let node = 0; node < 18; node += 1) {
+    const column = node % 3 - 1
+    const row = Math.floor(node / 3)
+    const x = column * size * (0.048 + row * 0.004)
+    const y = -size * 0.43 + row * size * 0.085
+    drawRadialEllipse(ctx, x, y, size * (0.012 + (row % 2) * 0.004), size * 0.015, [
+      [0, 'rgba(255,255,255,0.86)'],
+      [0.36, 'rgba(190,242,100,0.78)'],
+      [1, 'rgba(34,197,94,0)'],
+    ])
+  }
+  for (const side of [-1, 1]) {
+    for (let bulb = 0; bulb < 3; bulb += 1) {
+      const x = side * size * (0.24 + bulb * 0.13)
+      const y = size * (0.36 + bulb * 0.16)
+      drawRadialEllipse(ctx, x, y, size * (0.03 + bulb * 0.006), size * (0.038 + bulb * 0.006), [
+        [0, 'rgba(255,255,255,0.82)'],
+        [0.32, 'rgba(244,114,182,0.78)'],
+        [0.7, 'rgba(190,24,93,0.38)'],
+        [1, 'rgba(190,24,93,0)'],
+      ])
+    }
+  }
+
   drawReferenceSquidBossDetails(ctx, size, time)
   drawReferenceSquidBossFinishPass(ctx, size, time)
   drawReferenceSquidBossPaintPass(ctx, size, time)
@@ -3337,15 +3525,59 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   }
   drawEtchedPanelLine(ctx, [[0, -0.5], [-0.04, -0.39], [0.03, -0.28], [-0.02, -0.16], [0.04, -0.04]], size, 'rgba(254,243,199,0.35)', 0.004)
   drawEtchedPanelLine(ctx, [[0, -0.5], [0.04, -0.39], [-0.03, -0.28], [0.02, -0.16], [-0.04, -0.04]], size, 'rgba(2,6,23,0.55)', 0.0045)
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)'
-  ctx.lineWidth = Math.max(0.7, size * 0.0027)
-  for (let scratch = 0; scratch < 20; scratch += 1) {
-    const side = scratch % 2 === 0 ? -1 : 1
-    const y = -size * (0.38 - scratch * 0.018)
-    const x = side * size * (0.04 + (scratch % 6) * 0.022)
+
+
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  for (let scale = 5; scale < bodyPoints.length - 8; scale += 4) {
+    const point = bodyPoints[scale]
+    const next = bodyPoints[Math.min(bodyPoints.length - 1, scale + 1)]
+    const p = scale / (bodyPoints.length - 1)
+    const angle = Math.atan2(next.y - point.y, next.x - point.x) + Math.PI / 2
+    const w = size * (0.052 - p * 0.018)
+    const h = size * (0.018 - p * 0.004)
+    const scalePlate = ctx.createRadialGradient(point.x - w * 0.3, point.y - h * 0.5, 1, point.x, point.y, w)
+    scalePlate.addColorStop(0, '#fef3c7')
+    scalePlate.addColorStop(0.34, '#64748b')
+    scalePlate.addColorStop(0.74, '#111827')
+    scalePlate.addColorStop(1, '#020617')
+    ctx.fillStyle = scalePlate
+    ctx.strokeStyle = scale % 8 === 1 ? 'rgba(251,191,36,0.64)' : 'rgba(148,163,184,0.34)'
+    ctx.lineWidth = Math.max(0.8, size * 0.0029)
     ctx.beginPath()
-    ctx.moveTo(x, y)
-    ctx.lineTo(x + side * size * 0.025, y + size * 0.018)
+    ctx.ellipse(point.x, point.y, w, h, angle, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  for (const side of [-1, 1]) {
+    const hoodTrim = ctx.createLinearGradient(side * size * 0.08, -size * 0.46, side * size * 0.45, size * 0.1)
+    hoodTrim.addColorStop(0, 'rgba(254,243,199,0.72)')
+    hoodTrim.addColorStop(0.48, 'rgba(56,189,248,0.24)')
+    hoodTrim.addColorStop(1, 'rgba(2,6,23,0.66)')
+    ctx.strokeStyle = hoodTrim
+    ctx.lineWidth = Math.max(1.4, size * 0.005)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.1, -size * 0.38)
+    ctx.bezierCurveTo(side * size * 0.34, -size * 0.26, side * size * 0.33, -size * 0.02, side * size * 0.15, size * 0.12)
+    ctx.stroke()
+    for (let node = 0; node < 4; node += 1) {
+      drawRadialEllipse(ctx, side * size * (0.15 + node * 0.045), -size * (0.34 - node * 0.105), size * 0.014, size * 0.014, [
+        [0, 'rgba(255,255,255,0.84)'],
+        [0.42, 'rgba(34,211,238,0.72)'],
+        [1, 'rgba(34,211,238,0)'],
+      ])
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(254,243,199,0.92)'
+  ctx.lineWidth = Math.max(1.7, size * 0.007)
+  for (const side of [-1, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.052, size * 0.06)
+    ctx.lineTo(side * size * 0.08, size * 0.28)
+    ctx.lineTo(side * size * 0.022, size * 0.115)
     ctx.stroke()
   }
 
@@ -3456,6 +3688,62 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
       ctx.lineTo(side * size * x4, size * y4)
       ctx.closePath()
       ctx.fill()
+      ctx.stroke()
+    }
+
+    const wingPlate = ctx.createLinearGradient(side * size * 0.12, -size * 0.58, side * size * 0.58, size * 0.42)
+    wingPlate.addColorStop(0, '#fff1a3')
+    wingPlate.addColorStop(0.24, '#a16207')
+    wingPlate.addColorStop(0.58, '#25130a')
+    wingPlate.addColorStop(1, '#030712')
+    const armorPlates = [
+      [0.2, -0.56, 0.34, -0.49, 0.26, -0.36, 0.14, -0.43],
+      [0.27, -0.38, 0.48, -0.3, 0.34, -0.13, 0.18, -0.22],
+      [0.4, -0.11, 0.66, -0.03, 0.46, 0.16, 0.27, 0.02],
+      [0.32, 0.2, 0.54, 0.34, 0.35, 0.47, 0.2, 0.31],
+    ] as const
+    ctx.fillStyle = wingPlate
+    ctx.strokeStyle = 'rgba(254,243,199,0.5)'
+    ctx.lineWidth = Math.max(0.9, size * 0.0038)
+    for (const [x1, y1, x2, y2, x3, y3, x4, y4] of armorPlates) {
+      ctx.beginPath()
+      ctx.moveTo(side * size * x1, size * y1)
+      ctx.lineTo(side * size * x2, size * y2)
+      ctx.lineTo(side * size * x3, size * y3)
+      ctx.lineTo(side * size * x4, size * y4)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    ctx.strokeStyle = 'rgba(3,7,18,0.72)'
+    ctx.lineWidth = Math.max(1, size * 0.0042)
+    for (let rib = 0; rib < 4; rib += 1) {
+      const y = -size * (0.5 - rib * 0.21)
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.18 + rib * 0.04), y)
+      ctx.lineTo(side * size * (0.43 + rib * 0.055), y + size * 0.09)
+      ctx.lineTo(side * size * (0.29 + rib * 0.045), y + size * 0.19)
+      ctx.stroke()
+    }
+
+    ctx.globalCompositeOperation = 'lighter'
+    for (let cell = 0; cell < 4; cell += 1) {
+      const cx = side * size * (0.27 + (cell % 2) * 0.18 + Math.floor(cell / 2) * 0.04)
+      const cy = size * (-0.43 + cell * 0.22)
+      drawRadialEllipse(ctx, cx, cy, size * 0.027, size * 0.017, [
+        [0, 'rgba(255,255,255,0.86)'],
+        [0.42, 'rgba(34,211,238,0.74)'],
+        [1, 'rgba(34,211,238,0)'],
+      ])
+    }
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.strokeStyle = 'rgba(251,191,36,0.36)'
+    ctx.lineWidth = Math.max(0.85, size * 0.003)
+    for (const sideLine of [0.22, 0.37, 0.52]) {
+      ctx.beginPath()
+      ctx.moveTo(side * size * sideLine, -size * 0.6)
+      ctx.quadraticCurveTo(side * size * (sideLine + 0.05), -size * 0.12, side * size * (sideLine - 0.03), size * 0.42)
       ctx.stroke()
     }
 
@@ -3623,6 +3911,42 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
     ctx.fill()
     ctx.stroke()
   }
+  ctx.globalCompositeOperation = 'source-over'
+  for (const side of [-1, 1]) {
+    const lowerPlate = ctx.createLinearGradient(side * size * 0.08, size * 0.18, side * size * 0.5, size * 0.6)
+    lowerPlate.addColorStop(0, '#fef3c7')
+    lowerPlate.addColorStop(0.28, '#92400e')
+    lowerPlate.addColorStop(0.68, '#111827')
+    lowerPlate.addColorStop(1, '#020617')
+    ctx.fillStyle = lowerPlate
+    ctx.strokeStyle = 'rgba(254,243,199,0.5)'
+    ctx.lineWidth = Math.max(0.95, size * 0.0038)
+    const lowerArmor = [
+      [0.11, 0.28, 0.24, 0.42, 0.14, 0.58, 0.055, 0.42],
+      [0.2, 0.18, 0.38, 0.31, 0.27, 0.5, 0.14, 0.32],
+      [0.3, 0.1, 0.53, 0.22, 0.4, 0.39, 0.22, 0.2],
+    ] as const
+    for (const [x1, y1, x2, y2, x3, y3, x4, y4] of lowerArmor) {
+      ctx.beginPath()
+      ctx.moveTo(side * size * x1, size * y1)
+      ctx.lineTo(side * size * x2, size * y2)
+      ctx.lineTo(side * size * x3, size * y3)
+      ctx.lineTo(side * size * x4, size * y4)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+    ctx.globalCompositeOperation = 'lighter'
+    for (let vent = 0; vent < 3; vent += 1) {
+      drawRadialEllipse(ctx, side * size * (0.17 + vent * 0.1), size * (0.31 + vent * 0.055), size * 0.019, size * 0.03, [
+        [0, 'rgba(255,255,255,0.86)'],
+        [0.36, 'rgba(34,211,238,0.74)'],
+        [1, 'rgba(34,211,238,0)'],
+      ])
+    }
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
   ctx.globalCompositeOperation = 'lighter'
   ctx.strokeStyle = `rgba(248,113,113,${0.22 + pulse * 0.2})`
   ctx.lineWidth = Math.max(1, size * 0.0038)
@@ -3662,18 +3986,7 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
     [1, 'rgba(34,211,238,0)'],
   ])
 
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)'
-  ctx.lineWidth = Math.max(0.7, size * 0.0024)
-  for (let scratch = 0; scratch < 14; scratch += 1) {
-    const side = scratch % 2 === 0 ? -1 : 1
-    const y = -size * (0.5 - scratch * 0.065)
-    const x = side * size * (0.08 + (scratch % 5) * 0.045)
-    ctx.beginPath()
-    ctx.moveTo(x, y)
-    ctx.lineTo(x + side * size * 0.025, y + size * 0.018)
-    ctx.stroke()
-  }
+
 
   ctx.restore()
 }
@@ -3968,7 +4281,7 @@ function drawRaidEnemy(
         drawInterstellarDreadshipBoss(ctx, size, time)
         drawFinalBossRageCore(ctx, size, time, finalRage)
       }
-      if (displayBossKind !== 'squid' && displayBossKind !== 'snake') drawBossRichDetailOverlay(ctx, size, time, displayBossKind, enemy.color)
+      if (displayBossKind === 'final') drawBossRichDetailOverlay(ctx, size, time, displayBossKind, enemy.color)
       ctx.restore()
       if (displayBossKind === 'squid' && enemy.chargeTimer > 0 && enemy.chargePattern !== 'rotate') {
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), size, time, enemy.chargeTimer)
@@ -3986,12 +4299,6 @@ function drawRaidEnemy(
         ? 'brightness(1.12) contrast(1.16) saturate(1.32)'
         : 'brightness(1.16) contrast(1.16) saturate(1.32)'
     drawCanvasSprite(ctx, sprite, x, y, size, bossFilter, 1, rotation, floatScale, enemy.color)
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.rotate(rotation)
-    ctx.scale(floatScale, floatScale)
-    drawBossRichDetailOverlay(ctx, size, time, enemy.bossKind, enemy.color)
-    ctx.restore()
     if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time)
     drawBossReticle(ctx, x, y, size, time, false)
     drawBossBar(ctx, enemy, x, y, size)
