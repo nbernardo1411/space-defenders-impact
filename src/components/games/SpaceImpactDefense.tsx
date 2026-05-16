@@ -8,6 +8,7 @@ import {
   ENEMY_COLORS,
   MAX_STAGES,
   MAX_TOWER_LEVEL,
+  ENDLESS_UNLOCK_STORAGE_KEY,
   MOBILE_LAYOUT_STORAGE_KEY,
   ROWS,
   STORAGE_KEY,
@@ -651,6 +652,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             setUiHighScore(s)
           }
           submitDefenseLeaderboardScore(s)
+          localStorage.setItem(ENDLESS_UNLOCK_STORAGE_KEY, 'true')
           // Trigger victory effect
           setVictoryEffect({time: 0, maxTime: 2.0})
         } else {
@@ -2982,6 +2984,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                   <>
                     <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#18e6c4' }}>🏆 VICTORY!</div>
                     <div style={{ color: '#ddd', fontSize: '0.95rem' }}>All 10 stages conquered!</div>
+                    <div style={{ color: '#ff8800', fontWeight: 900, fontSize: '1rem', textTransform: 'uppercase', letterSpacing: 1 }}>You unlocked the endless mode</div>
                     <div style={{ color: '#ffd666', fontWeight: 800, fontSize: '1.1rem' }}>Score: {uiScore.toLocaleString()}</div>
                     <div style={{ color: '#aaa', fontSize: '0.85rem' }}>Best: {uiHighScore.toLocaleString()}</div>
                     <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>

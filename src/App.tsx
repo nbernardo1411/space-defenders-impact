@@ -4,6 +4,7 @@ import { RaidMultiplayerLobby, type RaidMultiplayerSession } from './components/
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
+import { ENDLESS_UNLOCK_STORAGE_KEY } from './components/games/towerDefense/config'
 import { AlienShip, TowerShip } from './components/games/towerDefense/sprites'
 import { getStoredPlayerName, hasStoredPlayerName, saveStoredPlayerName } from './leaderboards'
 import { useEffect, useMemo, useState, useRef } from 'react'
@@ -47,6 +48,7 @@ function App() {
   const [playerName, setPlayerName] = useState(getStoredPlayerName)
   const [playerNameDraft, setPlayerNameDraft] = useState(playerName === 'Pilot' && !hasStoredPlayerName() ? '' : playerName)
   const [showPlayerNamePrompt, setShowPlayerNamePrompt] = useState(() => !hasStoredPlayerName())
+  const [endlessUnlocked, setEndlessUnlocked] = useState(() => localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
 
   const currentScene = useMemo(() => CUTSCENE_SCENES[cutsceneIndex], [cutsceneIndex])
 
@@ -144,6 +146,7 @@ function App() {
   }
 
   const startEndless = () => {
+    if (!endlessUnlocked) return
     setActiveGame('towerDefense')
     setGameMode('endless')
     setScreen('game')
@@ -192,6 +195,7 @@ function App() {
   ) : null
 
   const closeGame = () => {
+    setEndlessUnlocked(localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
     setScreen('title')
@@ -285,11 +289,13 @@ function App() {
                 <span className="start-screen__button-title">Normal Campaign</span>
                 <span className="start-screen__button-copy">Hold the defense grid through escalating waves.</span>
               </button>
-              <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
-                <span className="start-screen__button-kicker">Survival Run</span>
-                <span className="start-screen__button-title">Endless Mode</span>
-                <span className="start-screen__button-copy">Fight until the fleet is overwhelmed.</span>
-              </button>
+              {endlessUnlocked && (
+                <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
+                  <span className="start-screen__button-kicker">Survival Run</span>
+                  <span className="start-screen__button-title">Endless Mode</span>
+                  <span className="start-screen__button-copy">Fight until the fleet is overwhelmed.</span>
+                </button>
+              )}
               <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
                 <span className="start-screen__button-kicker">Pilot Assault</span>
                 <span className="start-screen__button-title">Rocket Raid</span>

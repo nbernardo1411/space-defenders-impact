@@ -3,6 +3,7 @@ export const ROWS = 10
 export const MAX_STAGES = 10
 export const WAVES_PER_STAGE = 5
 export const STORAGE_KEY = 'spaceImpactDefenseHighScore'
+export const ENDLESS_UNLOCK_STORAGE_KEY = 'spaceImpactDefenseEndlessUnlocked'
 export const MOBILE_LAYOUT_STORAGE_KEY = 'spaceImpactDefenseLayoutMode'
 
 export type MobileLayoutMode = 'auto' | 'portrait' | 'landscape'
