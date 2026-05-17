@@ -2440,16 +2440,16 @@ function drawBossReticle(ctx: CanvasRenderingContext2D, x: number, y: number, si
   ctx.restore()
 }
 
-function drawBossShield(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number) {
+function drawBossShield(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color = '#38bdf8') {
   const pulse = 0.94 + Math.sin(time / 430) * 0.06
   ctx.save()
   ctx.translate(x, y)
   ctx.scale(pulse, pulse)
   ctx.globalCompositeOperation = 'lighter'
-  ctx.strokeStyle = 'rgba(251,191,36,0.72)'
-  ctx.fillStyle = 'rgba(251,191,36,0.08)'
-  ctx.shadowBlur = 26
-  ctx.shadowColor = 'rgba(251,191,36,0.48)'
+  ctx.strokeStyle = hexToRgba(color, 0.52)
+  ctx.fillStyle = hexToRgba(color, 0.04)
+  ctx.shadowBlur = 18
+  ctx.shadowColor = hexToRgba(color, 0.34)
   ctx.lineWidth = Math.max(2, size * 0.012)
   ctx.beginPath()
   ctx.arc(0, 0, size * 0.56, 0, Math.PI * 2)
@@ -3020,14 +3020,126 @@ function drawReferenceSnakeBossDetails(ctx: CanvasRenderingContext2D, size: numb
 }
 
 
-function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, size: number, time: number, chargeTimer: number, pattern: Enemy['chargePattern']) {
-  const warm = clamp(1 - chargeTimer / 0.95, 0, 1)
+function drawSnakeBiteLungeModel(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, targetY: number, size: number, time: number, warm: number, pulse: number) {
+  const seconds = time / 1000
+  const reach = Math.min(size, 380)
+  const startX = x
+  const startY = y + size * 0.06
+  const lunge = 0.16 + warm * 0.84
+  const endX = startX + (targetX - startX) * lunge
+  const endY = startY + (targetY - startY) * lunge
+  const c1x = x + Math.sin(seconds * 2.3) * reach * 0.12
+  const c1y = y + size * 0.3
+  const c2x = targetX + Math.sin(seconds * 3.1) * reach * 0.08
+  const c2y = targetY - reach * 0.24
+  const pointAt = (t: number) => {
+    const inv = 1 - t
+    return {
+      x: inv * inv * inv * startX + 3 * inv * inv * t * c1x + 3 * inv * t * t * c2x + t * t * t * endX,
+      y: inv * inv * inv * startY + 3 * inv * inv * t * c1y + 3 * inv * t * t * c2y + t * t * t * endY,
+    }
+  }
+  const tangentAt = (t: number) => {
+    const inv = 1 - t
+    const dx = 3 * inv * inv * (c1x - startX) + 6 * inv * t * (c2x - c1x) + 3 * t * t * (endX - c2x)
+    const dy = 3 * inv * inv * (c1y - startY) + 6 * inv * t * (c2y - c1y) + 3 * t * t * (endY - c2y)
+    return Math.atan2(dy, dx)
+  }
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.fillStyle = `rgba(132,204,22,${0.05 + warm * 0.08})`
+  ctx.strokeStyle = `rgba(190,242,100,${0.34 + pulse * 0.24})`
+  ctx.lineWidth = Math.max(2, size * 0.01)
+  ctx.beginPath()
+  ctx.ellipse(targetX, targetY, reach * 0.12, reach * 0.075, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.globalCompositeOperation = 'source-over'
+  for (let segment = 0; segment <= 22; segment += 1) {
+    const p = segment / 22
+    const point = pointAt(p)
+    const angle = tangentAt(p)
+    const taper = 1 - p * 0.36
+    const segmentSize = reach * (0.058 * taper + 0.013)
+    const scale = 1 + Math.sin(seconds * 4.2 + segment * 0.5) * 0.06
+    const gradient = ctx.createRadialGradient(point.x - segmentSize * 0.26, point.y - segmentSize * 0.32, 1, point.x, point.y, segmentSize * 1.35)
+    gradient.addColorStop(0, '#fde68a')
+    gradient.addColorStop(0.22, '#94a3b8')
+    gradient.addColorStop(0.52, '#334155')
+    gradient.addColorStop(0.84, '#111827')
+    gradient.addColorStop(1, '#020617')
+    ctx.fillStyle = gradient
+    ctx.strokeStyle = segment % 3 === 0 ? 'rgba(251,191,36,0.5)' : 'rgba(148,163,184,0.34)'
+    ctx.lineWidth = Math.max(0.9, size * 0.0034)
+    ctx.beginPath()
+    ctx.ellipse(point.x, point.y, segmentSize * 1.12 * scale, segmentSize * 0.64 * scale, angle + Math.PI / 2, 0, Math.PI * 2)
+    ctx.fill()
+    if (segment % 2 === 0) ctx.stroke()
+  }
+
+  ctx.globalCompositeOperation = 'lighter'
+  for (let node = 4; node <= 20; node += 4) {
+    const point = pointAt(node / 22)
+    drawRadialEllipse(ctx, point.x, point.y, reach * 0.014, reach * 0.014, [
+      [0, 'rgba(255,255,255,0.75)'],
+      [0.34, 'rgba(34,211,238,0.66)'],
+      [1, 'rgba(34,211,238,0)'],
+    ])
+  }
+
+  const headAngle = tangentAt(1)
+  ctx.save()
+  ctx.translate(endX, endY)
+  ctx.rotate(headAngle + Math.PI / 2)
+  drawSnakeTerrorHead(ctx, reach * 0.42, time)
+  ctx.restore()
+  ctx.restore()
+}
+
+function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, targetY: number, size: number, time: number, chargeTimer: number, pattern: Enemy['chargePattern']) {
+  const warm = clamp(1 - chargeTimer / (pattern === 'horizontal' ? 1.18 : pattern === 'cross' ? 1.08 : 0.95), 0, 1)
   const pulse = 0.45 + Math.sin(time / 85) * 0.18
   const laneX = targetX
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  if (pattern === 'horizontal') {
+    const bandHeight = Math.max(18, size * 0.12)
+    const wave = Math.sin(time / 130) * size * 0.018
+    ctx.strokeStyle = `rgba(132,204,22,${0.24 + warm * 0.36})`
+    ctx.fillStyle = `rgba(132,204,22,${0.05 + warm * 0.09})`
+    ctx.lineWidth = Math.max(3, size * 0.012)
+    ctx.beginPath()
+    ctx.roundRect?.(targetX - size * 0.46, targetY - bandHeight * 0.5, size * 0.92, bandHeight, bandHeight * 0.42)
+    if (!ctx.roundRect) {
+      ctx.rect(targetX - size * 0.46, targetY - bandHeight * 0.5, size * 0.92, bandHeight)
+    }
+    ctx.fill()
+    ctx.stroke()
+    for (let coil = 0; coil < 3; coil += 1) {
+      ctx.beginPath()
+      const offsetY = targetY + (coil - 1) * bandHeight * 0.22 + wave
+      ctx.moveTo(targetX - size * 0.42, offsetY)
+      for (let segment = 0; segment <= 10; segment += 1) {
+        const px = targetX - size * 0.42 + (segment / 10) * size * 0.84
+        const py = offsetY + Math.sin(segment * 1.1 + time / 120 + coil) * bandHeight * 0.18
+        ctx.lineTo(px, py)
+      }
+      ctx.stroke()
+    }
+    ctx.restore()
+    return
+  }
+
+  if (pattern === 'cross') {
+    drawSnakeBiteLungeModel(ctx, x, y, laneX, targetY, size, time, warm, pulse)
+    ctx.restore()
+    return
+  }
+
   ctx.strokeStyle = `rgba(34,211,238,${0.18 + warm * 0.42})`
   ctx.lineWidth = Math.max(3, size * 0.014)
   const laneOffsets = pattern === 'scatter' ? [-26, -10, 10, 26] : pattern === 'trident' ? [-18, 0, 18] : pattern === 'pincer' ? [-24, 24] : [0]
@@ -3546,7 +3658,7 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
 }
 
 
-function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: number) {
+function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: number, redEyeWarning = false) {
   const seconds = time / 1000
   ctx.save()
   ctx.globalCompositeOperation = 'source-over'
@@ -3584,9 +3696,9 @@ function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: 
     ctx.globalCompositeOperation = 'lighter'
     drawRadialEllipse(ctx, side * size * 0.085, -size * 0.18, size * 0.05, size * 0.058, [
       [0, 'rgba(255,255,255,0.96)'],
-      [0.28, 'rgba(251,191,36,0.96)'],
-      [0.66, 'rgba(249,115,22,0.68)'],
-      [1, 'rgba(249,115,22,0)'],
+      [0.28, redEyeWarning ? 'rgba(248,113,113,0.98)' : 'rgba(251,191,36,0.96)'],
+      [0.66, redEyeWarning ? 'rgba(220,38,38,0.82)' : 'rgba(249,115,22,0.68)'],
+      [1, redEyeWarning ? 'rgba(127,29,29,0)' : 'rgba(249,115,22,0)'],
     ])
     ctx.globalCompositeOperation = 'source-over'
     ctx.fillStyle = 'rgba(2,6,23,0.95)'
@@ -3639,7 +3751,7 @@ function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: 
 }
 
 
-function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
+function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time: number, redEyeWarning = false) {
   const seconds = time / 1000
   ctx.save()
 
@@ -3848,11 +3960,11 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
 
   ctx.globalCompositeOperation = 'lighter'
   for (const side of [-1, 1]) {
-    drawRadialEllipse(ctx, side * size * 0.07, -size * 0.16, size * 0.048, size * 0.052, [
+    drawRadialEllipse(ctx, side * size * 0.07, -size * 0.16, size * (redEyeWarning ? 0.066 : 0.048), size * (redEyeWarning ? 0.07 : 0.052), [
       [0, 'rgba(255,255,255,0.95)'],
-      [0.3, 'rgba(251,191,36,0.95)'],
-      [0.62, 'rgba(249,115,22,0.62)'],
-      [1, 'rgba(249,115,22,0)'],
+      [0.3, redEyeWarning ? 'rgba(248,113,113,0.98)' : 'rgba(251,191,36,0.95)'],
+      [0.62, redEyeWarning ? 'rgba(220,38,38,0.82)' : 'rgba(249,115,22,0.62)'],
+      [1, redEyeWarning ? 'rgba(127,29,29,0)' : 'rgba(249,115,22,0)'],
     ])
     ctx.fillStyle = '#0f172a'
     ctx.beginPath()
@@ -3874,7 +3986,7 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   ctx.stroke()
   drawReferenceSnakeBossDetails(ctx, size, time)
   drawReferenceSnakeBossFinishPass(ctx, size, time)
-  drawSnakeTerrorHead(ctx, size, time)
+  drawSnakeTerrorHead(ctx, size, time, redEyeWarning)
   ctx.restore()
 }
 
@@ -4499,7 +4611,7 @@ function drawRaidEnemy(
       ctx.rotate(displayBossKind === 'snake' ? 0 : rotation * 0.45)
       ctx.scale(floatScale, floatScale)
       if (displayBossKind === 'squid') drawGalacticSquidBoss(ctx, size, time)
-      else if (displayBossKind === 'snake') drawGalacticSnakeBoss(ctx, size, time)
+      else if (displayBossKind === 'snake') drawGalacticSnakeBoss(ctx, size, time, enemy.chargeTimer > 0 && enemy.chargePattern === 'cross')
       else {
         const finalRage = clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1)
         drawInterstellarDreadshipBoss(ctx, size, time, finalRage)
@@ -4511,9 +4623,9 @@ function drawRaidEnemy(
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer)
       }
       if (displayBossKind === 'snake' && enemy.chargeTimer > 0) {
-        drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), size, time, enemy.chargeTimer, enemy.chargePattern)
+        drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer, enemy.chargePattern)
       }
-      if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time)
+      if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
       drawBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
       drawBossBar(ctx, enemy, x, y, size)
       return
@@ -4523,7 +4635,7 @@ function drawRaidEnemy(
         ? 'brightness(1.12) contrast(1.16) saturate(1.32)'
         : 'brightness(1.16) contrast(1.16) saturate(1.32)'
     drawCanvasSprite(ctx, sprite, x, y, size, bossFilter, 1, rotation, floatScale, enemy.color)
-    if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time)
+    if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
     drawBossReticle(ctx, x, y, size, time, false)
     drawBossBar(ctx, enemy, x, y, size)
     return
@@ -4535,7 +4647,7 @@ function drawRaidEnemy(
     const rotation = Math.sin(time / 900 + enemy.phase) * 1.4 * DEG
     drawSpriteGlow(ctx, x, y, size, 'rgba(168,85,247,0.36)', 1)
     drawCanvasSprite(ctx, sprite, x, y, size, 'brightness(1.18) contrast(1.2) saturate(1.45)', 1, rotation, floatScale, enemy.color)
-    if (enemy.shieldTime > 0 || enemy.y < 8) drawBossShield(ctx, x, y, size * 0.78, time)
+    if (enemy.shieldTime > 0 || enemy.y < 8) drawBossShield(ctx, x, y, size * 0.78, time, enemy.color)
     drawBossBar(ctx, enemy, x, y, size * 0.82)
     return
   }
@@ -8666,8 +8778,8 @@ export function GradiusRaid({
     const bossKind: BossKind = stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
       bossKind === 'final' ? 13.4 :
-        bossKind === 'snake' ? 6.15 :
-          bossKind === 'squid' ? 5.6 :
+        bossKind === 'snake' ? 8.25 :
+          bossKind === 'squid' ? 7.45 :
         bossKind === 'super' ? 3.45 :
           bossKind === 'gate' ? 1.75 :
             bossKind === 'hydra' ? 1.62 :
@@ -9790,6 +9902,7 @@ export function GradiusRaid({
           chargeTimer = Math.max(0, chargeTimer - dt)
           if (beforeCharge > 0 && chargeTimer <= 0) {
             const lane = clamp(chargeLane, 14, 86)
+            const targetY = clamp(chargeTargetY, 24, 86)
             const emitPoisonCloud = (x: number, y: number, radius: number, vx: number, vy: number, life: number) => {
               enemyShotsRef.current.push({
                 id: shotId++,
@@ -9804,7 +9917,52 @@ export function GradiusRaid({
                 maxLife: life,
               })
             }
-            if (chargePattern === 'scatter') {
+            if (chargePattern === 'horizontal') {
+              for (let column = 0; column < 9; column += 1) {
+                const x = 12 + column * 9.5
+                const wave = Math.sin(column * 1.35 + nowSeconds) * 1.8
+                emitPoisonCloud(x, targetY + wave, column % 2 === 0 ? 3.8 : 3.1, Math.sin(column) * 0.45, 3.8 + column * 0.08, 2.7)
+              }
+              ;[-1, 1].forEach((side) => {
+                enemyShotsRef.current.push({
+                  id: shotId++,
+                  x: lane + side * 38,
+                  y: targetY - 4,
+                  vx: -side * 24,
+                  vy: 6,
+                  damage: 1,
+                  kind: 'snakeFang',
+                  radius: 1.85,
+                })
+              })
+            } else if (chargePattern === 'cross') {
+              for (const target of livingPlayersThisTick) {
+                if (target.hp <= 0) continue
+                const inBiteSpot =
+                  Math.abs(target.x - lane) < 9.5 &&
+                  Math.abs(target.y - targetY) < 7.5
+                if (inBiteSpot) {
+                  damagePlayer(2, target)
+                  spawnSparks(target.x, target.y, '#bef264', 38, 8)
+                  addRipple(target.x, target.y, '#84cc16', 17)
+                }
+              }
+              ;[-1, 1].forEach((side) => {
+                enemyShotsRef.current.push({
+                  id: shotId++,
+                  x: lane + side * 4.5,
+                  y: targetY - 2,
+                  vx: side * 5,
+                  vy: 12,
+                  damage: 1,
+                  kind: 'venomSpit',
+                  radius: 2.1,
+                  life: 1.6,
+                  maxLife: 1.6,
+                })
+              })
+              emitPoisonCloud(lane, targetY, 4.4, 0, 7.2, 3.1)
+            } else if (chargePattern === 'scatter') {
               ;[-30, -16, 0, 16, 30].forEach((offset, index) => {
                 emitPoisonCloud(lane + offset, enemy.y + 16 + index * 2.2, 3.7, offset * 0.08, 9.5 + index * 0.55, 3.6)
               })
@@ -9826,9 +9984,9 @@ export function GradiusRaid({
               }
             }
             spawnSparks(enemy.x, enemy.y + 4, '#22d3ee', 44, 8)
-            addRipple(lane, enemy.y + 30, '#22d3ee', chargePattern === 'scatter' ? 20 : 16)
+            addRipple(lane, chargePattern === 'horizontal' || chargePattern === 'cross' ? targetY : enemy.y + 30, chargePattern === 'scatter' ? '#22d3ee' : chargePattern === 'horizontal' || chargePattern === 'cross' ? '#84cc16' : '#22d3ee', chargePattern === 'scatter' ? 20 : chargePattern === 'horizontal' ? 22 : 16)
             playGameSound('laser')
-            chargeCooldown = chargePattern === 'scatter' ? 6.6 + Math.random() * 1.4 : chargePattern === 'trident' ? 5.9 + Math.random() * 1.2 : 5.2 + Math.random() * 1.2
+            chargeCooldown = chargePattern === 'horizontal' ? 6.8 + Math.random() * 1.2 : chargePattern === 'cross' ? 6.2 + Math.random() * 1.1 : chargePattern === 'scatter' ? 6.6 + Math.random() * 1.4 : chargePattern === 'trident' ? 5.9 + Math.random() * 1.2 : 5.2 + Math.random() * 1.2
             fireCooldown = Math.max(fireCooldown, 1.7)
           }
         } else {
@@ -9836,20 +9994,33 @@ export function GradiusRaid({
           if (chargeCooldown <= 0) {
             const target = getNearestLivingPlayerThisTick(enemy)
             const hpRatio = enemy.hp / enemy.maxHp
+            const snakeSpecialStep = bossKind === 'snake' ? Math.max(0, Math.floor(beamVolleyLeft ?? 0)) : -1
             const roll = Math.random()
-            chargePattern = hpRatio < 0.38
-              ? roll < 0.28 ? 'pincer' : roll < 0.58 ? 'trident' : roll < 0.82 ? 'single' : 'scatter'
-              : roll < 0.38 ? 'single' : roll < 0.68 ? 'pincer' : roll < 0.9 ? 'trident' : 'scatter'
-            chargeTimer = chargePattern === 'scatter' ? 1.08 : 0.95
+            if (snakeSpecialStep >= 0 && snakeSpecialStep % 3 === 1) {
+              chargePattern = 'cross'
+            } else if (snakeSpecialStep >= 0 && snakeSpecialStep % 3 === 2) {
+              chargePattern = 'horizontal'
+            } else {
+              chargePattern = hpRatio < 0.38
+                ? roll < 0.28 ? 'pincer' : roll < 0.58 ? 'trident' : roll < 0.82 ? 'single' : 'scatter'
+                : roll < 0.38 ? 'single' : roll < 0.68 ? 'pincer' : roll < 0.9 ? 'trident' : 'scatter'
+            }
+            chargeTimer = chargePattern === 'horizontal' ? 1.18 : chargePattern === 'cross' ? 1.08 : chargePattern === 'scatter' ? 1.08 : 0.95
             chargeLane = clamp(target.x + (Math.random() - 0.5) * (chargePattern === 'scatter' ? 20 : 12), 14, 86)
+            chargeTargetY = chargePattern === 'horizontal'
+              ? clamp(target.y + (Math.random() - 0.5) * 12, 30, 86)
+              : chargePattern === 'cross'
+                ? clamp(target.y + 4, 26, 78)
+                : enemy.y + 32
             chargeCooldown = 999
-            addRipple(chargeLane, enemy.y + 32, '#22d3ee', chargePattern === 'scatter' ? 20 : 17)
+            if (bossKind === 'snake') beamVolleyLeft = snakeSpecialStep + 1
+            addRipple(chargeLane, chargePattern === 'horizontal' || chargePattern === 'cross' ? chargeTargetY : enemy.y + 32, chargePattern === 'horizontal' || chargePattern === 'cross' ? '#84cc16' : '#22d3ee', chargePattern === 'scatter' ? 20 : 17)
             spawnSparks(enemy.x, enemy.y + 3, '#38bdf8', 36, 7)
             playGameSound('countdown')
           }
         }
       }
-      const nextFire = enemy.fireCooldown - dt
+      const nextFire = fireCooldown - dt
       const bossInPause = enemy.isBoss && nowSeconds % 6 > 3
       if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause && (bossKind !== 'final' || mirageActive)) {
         fireEnemy(enemy, getNearestLivingPlayerThisTick(enemy), now)
