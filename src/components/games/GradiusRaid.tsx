@@ -9872,7 +9872,8 @@ export function GradiusRaid({
           }
         }
       }
-      if (enemy.isBoss && attackBossKind === 'squid' && enemy.y >= bossYTarget - 0.5) {
+      const squidSpecialReady = enemy.y >= Math.min(bossYTarget - 0.5, 16.5)
+      if (enemy.isBoss && attackBossKind === 'squid' && squidSpecialReady) {
         if (chargeTimer > 0) {
           const beforeCharge = chargeTimer
           chargeTimer = Math.max(0, chargeTimer - dt)
