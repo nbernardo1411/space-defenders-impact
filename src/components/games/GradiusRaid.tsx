@@ -528,7 +528,7 @@ const NUKE_BOSS_DAMAGE_MIN_RATIO = 0.16
 const NUKE_BOSS_DAMAGE_MAX_RATIO = 0.38
 const NUKE_BOSS_DAMAGE_MIN_FLOOR = 550
 const NUKE_BOSS_DAMAGE_MAX_FLOOR = 2400
-const MULTIPLAYER_BOSS_HP_MULTIPLIER = 4
+const MULTIPLAYER_BOSS_HP_MULTIPLIER = 2.5
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
 const STAGE_ENTRY_SECONDS = 1.18
@@ -980,7 +980,7 @@ function getEnemyCanvasSize(enemy: Enemy, viewportWidth: number) {
   if (enemy.isMiniBoss) return Math.min(viewportWidth * 0.15, 132)
   if (!enemy.isBoss) return Math.min(viewportWidth * 0.105, 82)
   if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.74, 680)
-  if (enemy.bossKind === 'squid') return Math.min(viewportWidth * 0.34, 340)
+  if (enemy.bossKind === 'squid') return viewportWidth <= 640 ? Math.min(viewportWidth * 0.42, 360) : Math.min(viewportWidth * 0.34, 340)
   if (enemy.bossKind === 'snake') return Math.min(viewportWidth * 0.62, 600)
   if (enemy.bossKind === 'super') return Math.min(viewportWidth * 0.48, 430)
   if (enemy.bossKind === 'gate') return Math.min(viewportWidth * 0.4, 360)
@@ -8666,8 +8666,8 @@ export function GradiusRaid({
     const bossKind: BossKind = stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
       bossKind === 'final' ? 13.4 :
-        bossKind === 'snake' ? 4.9 :
-          bossKind === 'squid' ? 4.1 :
+        bossKind === 'snake' ? 6.15 :
+          bossKind === 'squid' ? 5.6 :
         bossKind === 'super' ? 3.45 :
           bossKind === 'gate' ? 1.75 :
             bossKind === 'hydra' ? 1.62 :
@@ -8711,7 +8711,7 @@ export function GradiusRaid({
       amplitude: bossKind === 'final' ? 34 : bossKind === 'snake' ? 36 : bossKind === 'squid' ? 24 : bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
       trainSlot: 0,
       pathSpeed: 0.05,
-      chargeCooldown: bossKind === 'final' ? 3.2 : bossKind === 'snake' ? 3.4 : bossKind === 'squid' ? 1.4 : 999,
+      chargeCooldown: bossKind === 'final' ? 3.2 : bossKind === 'snake' ? 3.4 : bossKind === 'squid' ? 0.75 : 999,
       mirageKind: null,
       mirageTimer: 0,
       mirageCooldown: bossKind === 'final' ? 8 + Math.random() * 6 : 0,
@@ -9758,13 +9758,16 @@ export function GradiusRaid({
             }
           }
           const bubbleTarget = slapTarget ?? getNearestLivingPlayerThisTick(enemy)
-          const shouldBubble = chargeCooldown <= 0 && Math.random() < 0.38
+          const squidSpecialStep = bossKind === 'squid' ? Math.max(0, Math.floor(beamVolleyLeft ?? 0)) : 0
+          const forceStageSquidBubble = bossKind === 'squid' && squidSpecialStep % 4 === 0
+          const shouldBubble = chargeCooldown <= 0 && (forceStageSquidBubble || Math.random() < 0.38)
           if (shouldBubble) {
             chargeTimer = 0.78
             chargePattern = 'rotate'
             chargeLane = clamp(bubbleTarget.x, 8, 92)
             chargeTargetY = clamp(bubbleTarget.y, 12, 92)
             chargeCooldown = 999
+            if (bossKind === 'squid') beamVolleyLeft = squidSpecialStep + 1
             addRipple(enemy.x, enemy.y + 14, '#f472b6', 18)
             spawnSparks(enemy.x, enemy.y + 7, '#f0abfc', 34, 7)
             playGameSound('countdown')
@@ -9774,6 +9777,7 @@ export function GradiusRaid({
             chargeLane = clamp(slapTarget.x, 8, 92)
             chargeTargetY = clamp(slapTarget.y, 14, 92)
             chargeCooldown = 999
+            if (bossKind === 'squid') beamVolleyLeft = squidSpecialStep + 1
             addRipple(chargeLane, chargeTargetY, '#f472b6', 18)
             spawnSparks(enemy.x, enemy.y + 10, '#a855f7', 28, 7)
             playGameSound('countdown')
