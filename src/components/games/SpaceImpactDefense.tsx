@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type * as React from 'react'
-import { getGameAudioMixSettings, getGameSoundEnabled, playGameSound, setGameAudioMixSettings, setGameSoundEnabled, startBGM, stopBGM } from './sound'
-import type { AudioMixSettings } from './sound'
+import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, playGameSound, setGameAudioMixSettings, setGameSoundEnabled, setGraphicsQuality, startBGM, stopBGM } from './sound'
+import type { AudioMixSettings, GraphicsQuality } from './sound'
 import type { CoinOption } from './types'
 import {
   COLS,
@@ -64,7 +64,81 @@ type CommanderCooldowns = Record<CommanderAbilityKey, number>
 const COMMANDER_COOLDOWNS: CommanderCooldowns = { ion: 28, freeze: 34, repair: 46 }
 const HQ_MAX_LEVEL = 4
 
+type DefenseGraphicsProfile = {
+  starDensity: number
+  asteroidCount: number
+  maxParticles: number
+  maxExplosions: number
+  maxShockwaves: number
+  maxPortals: number
+  maxActionBursts: number
+  maxCoinFlows: number
+  showScanline: boolean
+  useSvgFilters: boolean
+  useHeavyGlows: boolean
+}
 
+function getDefenseGraphicsProfile(quality: GraphicsQuality, isMobileViewport: boolean): DefenseGraphicsProfile {
+  const mobileScale = isMobileViewport ? 0.72 : 1
+  if (quality === 'low') {
+    return {
+      starDensity: 5200,
+      asteroidCount: 0,
+      maxParticles: isMobileViewport ? 18 : 28,
+      maxExplosions: 2,
+      maxShockwaves: 0,
+      maxPortals: 1,
+      maxActionBursts: 0,
+      maxCoinFlows: 0,
+      showScanline: false,
+      useSvgFilters: false,
+      useHeavyGlows: false,
+    }
+  }
+  if (quality === 'medium') {
+    return {
+      starDensity: 3200,
+      asteroidCount: Math.floor(3 * mobileScale),
+      maxParticles: isMobileViewport ? 45 : 70,
+      maxExplosions: isMobileViewport ? 4 : 6,
+      maxShockwaves: isMobileViewport ? 2 : 3,
+      maxPortals: isMobileViewport ? 3 : 4,
+      maxActionBursts: isMobileViewport ? 2 : 3,
+      maxCoinFlows: isMobileViewport ? 4 : 6,
+      showScanline: false,
+      useSvgFilters: false,
+      useHeavyGlows: false,
+    }
+  }
+  if (quality === 'high') {
+    return {
+      starDensity: 2300,
+      asteroidCount: Math.floor(5 * mobileScale),
+      maxParticles: isMobileViewport ? 80 : 130,
+      maxExplosions: isMobileViewport ? 8 : 12,
+      maxShockwaves: isMobileViewport ? 6 : 8,
+      maxPortals: isMobileViewport ? 6 : 8,
+      maxActionBursts: isMobileViewport ? 5 : 8,
+      maxCoinFlows: isMobileViewport ? 10 : 16,
+      showScanline: true,
+      useSvgFilters: !isMobileViewport,
+      useHeavyGlows: true,
+    }
+  }
+  return {
+    starDensity: 1800,
+    asteroidCount: isMobileViewport ? 5 : 7,
+    maxParticles: isMobileViewport ? 80 : 180,
+    maxExplosions: isMobileViewport ? 8 : 999,
+    maxShockwaves: isMobileViewport ? 6 : 999,
+    maxPortals: isMobileViewport ? 6 : 999,
+    maxActionBursts: isMobileViewport ? 5 : 999,
+    maxCoinFlows: isMobileViewport ? 10 : 999,
+    showScanline: true,
+    useSvgFilters: !isMobileViewport,
+    useHeavyGlows: true,
+  }
+}
 
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -77,6 +151,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const [cell, setCell] = useState(() => calcCell(mobileLayoutMode))
   const [soundOn, setSoundOn] = useState(getGameSoundEnabled)
   const [audioMix, setAudioMix] = useState<AudioMixSettings>(getGameAudioMixSettings)
+  const [graphicsQuality, setGraphicsQualityState] = useState<GraphicsQuality>(getGraphicsQuality)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [isCompact, setIsCompact] = useState(() => getIsCompactLayout(mobileLayoutMode))
 
@@ -100,6 +175,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const spawnRRRef = useRef(0)  // round-robin spawn point index
   const frameRef = useRef<number>(0)
   const lastTimeRef = useRef<number>(0)
+  const graphicsQualityRef = useRef<GraphicsQuality>(graphicsQuality)
 
   // Per-stage dynamic path refs (updated when stage changes)
   const pathsRef = useRef<[number, number][][]>(generatePaths(1))
@@ -148,6 +224,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const [uiEndless, setUiEndless] = useState(false)
 
   const [uiLaserBeams, setUiLaserBeams] = useState<{towerId:number;x1:number;y1:number;x2:number;y2:number}[]>([])
+  const laserBeamsRef = useRef<{towerId:number;x1:number;y1:number;x2:number;y2:number}[]>([])
   const [autoPlayWave, setAutoPlayWave] = useState(false)
 
   // ── Polish animations state ────────────────────────────────────────────────
@@ -292,6 +369,12 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     if (soundOn && (key === 'bgm' || key === 'master')) {
       startBGM()
     }
+  }
+
+  function applyGraphicsQuality(quality: GraphicsQuality) {
+    graphicsQualityRef.current = quality
+    setGraphicsQuality(quality)
+    setGraphicsQualityState(quality)
   }
 
   async function applyMobileLayoutMode(mode: MobileLayoutMode) {
@@ -579,6 +662,8 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const gameLoop = useCallback((ts: number) => {
     const dt = Math.min((ts - (lastTimeRef.current || ts)) / 1000, 0.1)
     lastTimeRef.current = ts
+    const isMobileViewportNow = typeof window !== 'undefined' ? (window.innerWidth <= 900 || window.innerHeight <= 550) : false
+    const graphicsProfile = getDefenseGraphicsProfile(graphicsQualityRef.current, isMobileViewportNow)
 
     const state = stateRef.current
     if (state !== 'playing' && state !== 'wave') {
@@ -960,7 +1045,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       laserBeams.push({ towerId: tower.id, x1: towerCenter.x, y1: towerCenter.y, x2: beamEnd.x + 0.5, y2: beamEnd.y + 0.5 })
       if (tower.laserActive <= 0) { tower.laserActive = 0; tower.laserExhaust = 5 }
     }
-    setUiLaserBeams(laserBeams)
+    laserBeamsRef.current = laserBeams
 
     // ── Tower shooting (non-laser) ───────────────────────────────────────────
     for (const tower of towersRef.current) {
@@ -1144,31 +1229,37 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       p.y += p.vy * dt
     }
     particlesRef.current = particlesRef.current.filter(p => p.life < p.maxLife)
+    if (particlesRef.current.length > graphicsProfile.maxParticles) {
+      particlesRef.current = particlesRef.current.slice(-graphicsProfile.maxParticles)
+    }
 
     // ── Update floating text ────────────────────────────────────────────────
     for (const t of floatingTextRef.current) {
       t.time += dt
     }
     floatingTextRef.current = floatingTextRef.current.filter(t => t.time < t.maxTime)
+    const shouldCommitUi = true
 
     // ── Update Polish Animations ───────────────────────────────────────────
     // Wave announcement
-    setWaveAnnouncement(prev => {
-      if (!prev) return prev
-      const nextTime = prev.time + dt
-      if (nextTime >= prev.maxTime) return null
-      return { ...prev, time: nextTime }
-    })
+    if (shouldCommitUi) {
+      setWaveAnnouncement(prev => {
+        if (!prev) return prev
+        const nextTime = prev.time + dt
+        if (nextTime >= prev.maxTime) return null
+        return { ...prev, time: nextTime }
+      })
+    }
 
     // Screen flash
     if (screenFlashRef.current) {
       screenFlashRef.current.time += dt
       if (screenFlashRef.current.time >= screenFlashRef.current.maxTime) {
         screenFlashRef.current = null
-        setScreenFlashState(0)
+        if (shouldCommitUi) setScreenFlashState(0)
       } else {
         const progress = screenFlashRef.current.time / screenFlashRef.current.maxTime
-        setScreenFlashState(Math.max(0, 1 - progress))
+        if (shouldCommitUi) setScreenFlashState(Math.max(0, 1 - progress))
       }
     }
 
@@ -1177,10 +1268,10 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       bossScreenFlashRef.current.time += dt
       if (bossScreenFlashRef.current.time >= bossScreenFlashRef.current.maxTime) {
         bossScreenFlashRef.current = null
-        setBossScreenFlashState(0)
+        if (shouldCommitUi) setBossScreenFlashState(0)
       } else {
         const progress = bossScreenFlashRef.current.time / bossScreenFlashRef.current.maxTime
-        setBossScreenFlashState(Math.max(0, bossScreenFlashRef.current.intensity * (1 - progress)))
+        if (shouldCommitUi) setBossScreenFlashState(Math.max(0, bossScreenFlashRef.current.intensity * (1 - progress)))
       }
     }
 
@@ -1202,12 +1293,14 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
         stageTransitionRef.current.time = 0
       } else if (stageTransitionRef.current.phase === 'in' && progress >= 1) {
         stageTransitionRef.current = null
-        setStageTransitionState(null)
+        if (shouldCommitUi) setStageTransitionState(null)
       } else {
-        setStageTransitionState({
-          phase: stageTransitionRef.current.phase,
-          progress: stageTransitionRef.current.phase === 'show' ? 1 : Math.min(1, progress)
-        })
+        if (shouldCommitUi) {
+          setStageTransitionState({
+            phase: stageTransitionRef.current.phase,
+            progress: stageTransitionRef.current.phase === 'show' ? 1 : Math.min(1, progress)
+          })
+        }
       }
     }
 
@@ -1216,14 +1309,14 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       portal.time += dt
     }
     spawnPortalRef.current = spawnPortalRef.current.filter(p => p.time < p.maxTime)
-    setSpawnPortals([...spawnPortalRef.current])
+    if (shouldCommitUi) setSpawnPortals([...spawnPortalRef.current])
 
     // Tower action bursts
     for (const burst of towerActionBurstRef.current) {
       burst.time += dt
     }
     towerActionBurstRef.current = towerActionBurstRef.current.filter(b => b.time < b.maxTime)
-    setTowerActionBursts([...towerActionBurstRef.current])
+    if (shouldCommitUi) setTowerActionBursts([...towerActionBurstRef.current])
 
     // Health tween
     for (const [enemyId, tween] of healthTweenRef.current.entries()) {
@@ -1237,14 +1330,14 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
         enemyHealthDisplay.set(enemyId, tweenedHp)
       }
     }
-    setEnemyHealthDisplay(new Map(enemyHealthDisplay))
+    if (shouldCommitUi) setEnemyHealthDisplay(new Map(enemyHealthDisplay))
 
     // Coin flows
     for (const flow of coinFlowRef.current) {
       flow.time += dt
     }
     coinFlowRef.current = coinFlowRef.current.filter(f => f.time < f.maxTime)
-    setCoinFlows([...coinFlowRef.current])
+    if (shouldCommitUi) setCoinFlows([...coinFlowRef.current])
 
     // Tower creation time animation
     for (const [towerId, creationTime] of towerCreationTimeRef.current.entries()) {
@@ -1254,28 +1347,33 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     }
 
     // Victory effect
-    setVictoryEffect(prev => {
-      if (!prev) return prev
-      const nextTime = prev.time + dt
-      if (nextTime >= prev.maxTime) return null
-      return { ...prev, time: nextTime }
-    })
+    if (shouldCommitUi) {
+      setVictoryEffect(prev => {
+        if (!prev) return prev
+        const nextTime = prev.time + dt
+        if (nextTime >= prev.maxTime) return null
+        return { ...prev, time: nextTime }
+      })
+    }
 
     // ── Update UI ─────────────────────────────────────────────────────────
-    setUiGold(goldRef.current)
-    setUiLives(livesRef.current)
-    setUiHqLevel(hqLevelRef.current)
-    setUiScore(scoreRef.current)
-    setUiEnemies([...enemiesRef.current])
-    setUiBullets([...bulletsRef.current])
-    setUiScoutDrones([...scoutDronesRef.current])
-    setUiTowers([...towersRef.current])
-    setUiExplosions([...explosionsRef.current])
-    setUiShockwaves([...shockwavesRef.current])
-    setUiParticles([...particlesRef.current])
-    setUiFloatingText([...floatingTextRef.current])
-    setUiBossLightning([...bossLightningRef.current])
-    setUiCommanderCooldowns({ ...commanderCooldownsRef.current })
+    if (shouldCommitUi) {
+      setUiGold(goldRef.current)
+      setUiLives(livesRef.current)
+      setUiHqLevel(hqLevelRef.current)
+      setUiScore(scoreRef.current)
+      setUiEnemies([...enemiesRef.current])
+      setUiBullets([...bulletsRef.current])
+      setUiScoutDrones([...scoutDronesRef.current])
+      setUiTowers([...towersRef.current])
+      setUiLaserBeams([...laserBeamsRef.current])
+      setUiExplosions([...explosionsRef.current])
+      setUiShockwaves([...shockwavesRef.current])
+      setUiParticles([...particlesRef.current])
+      setUiFloatingText([...floatingTextRef.current])
+      setUiBossLightning([...bossLightningRef.current])
+      setUiCommanderCooldowns({ ...commanderCooldownsRef.current })
+    }
 
     frameRef.current = requestAnimationFrame(gameLoop)
   }, [soundOn, submitDefenseLeaderboardScore])
@@ -1731,16 +1829,18 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
     canvas.width = boardW
     canvas.height = boardH
+    const isMobileViewportNow = typeof window !== 'undefined' ? (window.innerWidth <= 900 || window.innerHeight <= 550) : false
+    const graphicsProfile = getDefenseGraphicsProfile(graphicsQualityRef.current, isMobileViewportNow)
 
-    const stars = Array.from({ length: Math.max(80, Math.floor((boardW * boardH) / 1800)) }, () => ({
+    const stars = Array.from({ length: Math.max(graphicsQualityRef.current === 'low' ? 24 : 56, Math.floor((boardW * boardH) / graphicsProfile.starDensity)) }, () => ({
       x: Math.random() * boardW,
       y: Math.random() * boardH,
-      r: 0.5 + Math.random() * 1.8,
+      r: 0.5 + Math.random() * (graphicsQualityRef.current === 'low' ? 1 : 1.8),
       v: 6 + Math.random() * 20,
       a: 0.25 + Math.random() * 0.6,
     }))
 
-    const asteroids = Array.from({ length: 7 }, () => ({
+    const asteroids = Array.from({ length: graphicsProfile.asteroidCount }, () => ({
       x: Math.random() * boardW,
       y: Math.random() * boardH,
       r: 8 + Math.random() * 15,
@@ -1810,7 +1910,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
     spaceAnimRef.current = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(spaceAnimRef.current)
-  }, [boardW, boardH])
+  }, [boardW, boardH, graphicsQuality])
 
   const nextWaveNum = uiWave + 1
   const nextWaveCfg = getWaveCfg(uiStage, nextWaveNum, uiEndless)
@@ -1819,17 +1919,18 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const isOver = uiState === 'gameover' || uiState === 'victory'
   // True for any phone/tablet (portrait or landscape) — wide landscape phones have small innerHeight.
   const isMobileViewport = typeof window !== 'undefined' ? (window.innerWidth <= 900 || window.innerHeight <= 550) : false
+  const graphicsProfile = getDefenseGraphicsProfile(graphicsQuality, isMobileViewport)
   // isLandscapeMobile: sidebar is on the right side but screen is small — needs compact items + own scroll.
   const isLandscapeMobile = isMobileViewport && !isCompact
   const activeOverlay = isOver || uiState === 'stage_complete'
-  const renderedLaserBeams = isMobileViewport ? uiLaserBeams.slice(0, 3) : uiLaserBeams
-  const renderedParticles = isMobileViewport ? uiParticles.slice(-80) : uiParticles
-  const renderedExplosions = isMobileViewport ? uiExplosions.slice(-8) : uiExplosions
-  const renderedShockwaves = isMobileViewport ? uiShockwaves.slice(-6) : uiShockwaves
-  const renderedPortals = isMobileViewport ? spawnPortals.slice(-6) : spawnPortals
-  const renderedActionBursts = isMobileViewport ? towerActionBursts.slice(-5) : towerActionBursts
-  const renderedCoinFlows = isMobileViewport ? coinFlows.slice(-10) : coinFlows
-  const victoryConfettiCount = isMobileViewport ? 8 : 20
+  const renderedLaserBeams = uiLaserBeams
+  const renderedParticles = uiParticles.slice(-graphicsProfile.maxParticles)
+  const renderedExplosions = uiExplosions.slice(-graphicsProfile.maxExplosions)
+  const renderedShockwaves = uiShockwaves.slice(-graphicsProfile.maxShockwaves)
+  const renderedPortals = spawnPortals.slice(-graphicsProfile.maxPortals)
+  const renderedActionBursts = towerActionBursts.slice(-graphicsProfile.maxActionBursts)
+  const renderedCoinFlows = coinFlows.slice(-graphicsProfile.maxCoinFlows)
+  const victoryConfettiCount = graphicsQuality === 'low' ? 0 : isMobileViewport ? 8 : 20
   const uiPathSet = new Set(uiPaths.flatMap(p => p.map(([c, r]) => `${c},${r}`)))
   // Collect all spawn starts and single finish
   const uiSpawnCells = new Set(uiPaths.map(p => p.length > 0 ? `${p[0][0]},${p[0][1]}` : ''))
@@ -1885,14 +1986,16 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       fontFamily: "'Orbitron','Rajdhani','Segoe UI',sans-serif",
       fontVariantNumeric: 'tabular-nums',
     }}>
-      <div style={{
-        position: 'fixed',
-        inset: 0,
-        pointerEvents: 'none',
-        background: 'repeating-linear-gradient(0deg, #00000000 0 10px, #00ff7a0a 10px 12px)',
-        animation: 'scanline 4s linear infinite',
-        zIndex: 0,
-      }} />
+      {graphicsProfile.showScanline && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          pointerEvents: 'none',
+          background: 'repeating-linear-gradient(0deg, #00000000 0 10px, #00ff7a0a 10px 12px)',
+          animation: 'scanline 4s linear infinite',
+          zIndex: 0,
+        }} />
+      )}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: (isCompact || isLandscapeMobile) ? 3 : 6, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1, flexShrink: 0 }}>
         <button onClick={closeDefenseGame} style={btnStyle('#3a120f', '#f9d7bf')} aria-label="Close">X</button>
@@ -2051,8 +2154,8 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               </defs>
               {renderedLaserBeams.map(b => (
                 <g key={b.towerId}>
-                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#dbecff" strokeWidth={isMobileViewport ? 2.8 : 4} strokeOpacity={isMobileViewport ? 0.2 : 0.25} filter={isMobileViewport ? undefined : 'url(#laserGlow)'} />
-                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#ffffff" strokeWidth={isMobileViewport ? 1.1 : 1.5} strokeOpacity={0.9} filter={isMobileViewport ? undefined : 'url(#laserGlow)'} />
+                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#dbecff" strokeWidth={isMobileViewport ? 2.8 : 4} strokeOpacity={isMobileViewport ? 0.2 : 0.25} filter={graphicsProfile.useSvgFilters ? 'url(#laserGlow)' : undefined} />
+                  <line x1={b.x1*cell} y1={b.y1*cell} x2={b.x2*cell} y2={b.y2*cell} stroke="#ffffff" strokeWidth={isMobileViewport ? 1.1 : 1.5} strokeOpacity={0.9} filter={graphicsProfile.useSvgFilters ? 'url(#laserGlow)' : undefined} />
                 </g>
               ))}
             </svg>
@@ -3252,6 +3355,35 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
             <div style={{ marginBottom: 12, color: '#8fa6bf', fontSize: '0.66rem', lineHeight: 1.45 }}>
               Orientation lock is best-effort on mobile browsers and depends on device/browser support.
+            </div>
+
+            <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ffd29f', marginBottom: 8 }}>GRAPHICS</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: 8 }}>
+                {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map(quality => (
+                  <button
+                    key={quality}
+                    type="button"
+                    onClick={() => applyGraphicsQuality(quality)}
+                    style={{
+                      border: `1px solid ${graphicsQuality === quality ? '#ffcf86' : '#30435e'}`,
+                      background: graphicsQuality === quality ? '#3a2817' : '#121c2c',
+                      color: graphicsQuality === quality ? '#fff2d8' : '#adc1d8',
+                      borderRadius: 8,
+                      padding: '8px 9px',
+                      cursor: 'pointer',
+                      fontWeight: 900,
+                      letterSpacing: 0.6,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {quality}
+                  </button>
+                ))}
+              </div>
+              <div style={{ color: '#8fa6bf', fontSize: '0.66rem', lineHeight: 1.45, marginTop: 8 }}>
+                Low limits particle bursts, glow filters, and moving background detail while keeping full frame rate.
+              </div>
             </div>
 
             <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>

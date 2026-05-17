@@ -1,4 +1,4 @@
-import { getGameSoundEnabled, playGameSound } from '../sound'
+import { getGameSoundEnabled, getGraphicsQuality, playGameSound } from '../sound'
 import type { Enemy, ParticleType } from './model'
 
 type MutableValueRef<T> = { current: T }
@@ -7,6 +7,20 @@ export function lerp(a: number, b: number, t: number) { return a + (b - a) * t }
 
 export function angleToDeg(fromX: number, fromY: number, toX: number, toY: number) {
   return Math.atan2(toY - fromY, toX - fromX) * 180 / Math.PI + 90
+}
+
+function getEffectScale() {
+  const quality = getGraphicsQuality()
+  if (quality === 'low') return 0.2
+  if (quality === 'medium') return 0.45
+  if (quality === 'high') return 0.75
+  return 1
+}
+
+function scaledCount(count: number) {
+  const scale = getEffectScale()
+  if (scale <= 0.2 && count <= 4) return 0
+  return Math.max(scale <= 0.2 ? 1 : 0, Math.floor(count * scale))
 }
 
 export function spawnImpactParticles(
@@ -18,7 +32,8 @@ export function spawnImpactParticles(
   speed: number,
   maxLife: number,
 ) {
-  for (let i = 0; i < count; i++) {
+  const particleCount = scaledCount(count)
+  for (let i = 0; i < particleCount; i++) {
     const angle = (-Math.PI / 2) + (Math.random() - 0.5) * 2.2
     const velocity = speed * (0.7 + Math.random() * 0.7)
     particles.push({
@@ -55,7 +70,8 @@ export function triggerEnemyDeath(
   const x = e.x + 0.5, y = e.y + 0.5
   
   // Death particles - main burst
-  const deathCount = isBoss ? 12 : (towerType === 'rocket' ? 9 : towerType === 'aoe' ? 6 : towerType === 'artillery' ? 8 : 5)
+  const effectScale = getEffectScale()
+  const deathCount = scaledCount(isBoss ? 12 : (towerType === 'rocket' ? 9 : towerType === 'aoe' ? 6 : towerType === 'artillery' ? 8 : 5))
   for (let i = 0; i < deathCount; i++) {
     const angle = (Math.PI * 2 * i) / deathCount + (Math.random() - 0.5) * 0.4
     const speed = isBoss ? 2.2 : 1.8
@@ -68,7 +84,7 @@ export function triggerEnemyDeath(
   }
   
   // Energy burst particles - inner burst for visual drama
-  const burstCount = isBoss ? 20 : 12
+  const burstCount = scaledCount(isBoss ? 20 : 12)
   for (let i = 0; i < burstCount; i++) {
     const angle = Math.random() * Math.PI * 2
     const speed = 0.4 + Math.random() * 1.5
@@ -81,7 +97,7 @@ export function triggerEnemyDeath(
   }
   
   // Ember particles - trailing effect
-  const emberCount = isBoss ? 15 : 8
+  const emberCount = scaledCount(isBoss ? 15 : 8)
   for (let i = 0; i < emberCount; i++) {
     const angle = Math.random() * Math.PI * 2
     const speed = 0.3 + Math.random() * 0.9
@@ -94,7 +110,7 @@ export function triggerEnemyDeath(
   }
   
   // Spark particles - quick bright flashes
-  const sparkCount = isBoss ? 12 : 6
+  const sparkCount = scaledCount(isBoss ? 12 : 6)
   for (let i = 0; i < sparkCount; i++) {
     const angle = Math.random() * Math.PI * 2
     const speed = 1.2 + Math.random() * 2.0
@@ -107,7 +123,9 @@ export function triggerEnemyDeath(
   }
 
   // Floating text
-  floatingText.push({ x: e.x, y: e.y, text: `+${e.reward}`, time: 0, maxTime: 2.0, color: '#ffd666' })
+  if (effectScale > 0.2 || isBoss) {
+    floatingText.push({ x: e.x, y: e.y, text: `+${e.reward}`, time: 0, maxTime: 2.0, color: '#ffd666' })
+  }
 
   // Play appropriate explosion sound
   const soundEnabled = getGameSoundEnabled()
@@ -123,7 +141,7 @@ export function triggerEnemyDeath(
   }
 
   // Add shockwave effect
-  if (shockwaves) {
+  if (shockwaves && effectScale > 0.2) {
     shockwaves.push({
       x: e.x + 0.5, y: e.y + 0.5,
       radius: isBoss ? 2.0 : 1.2,
@@ -134,10 +152,12 @@ export function triggerEnemyDeath(
   }
 
   // Coin flow animation
-  coinFlowRef.current.push({
-    fromX: e.x, fromY: e.y,
-    toX: 14, toY: -0.5,  // top-right corner
-    amount: e.reward,
-    time: 0, maxTime: 0.6
-  })
+  if (effectScale > 0.2) {
+    coinFlowRef.current.push({
+      fromX: e.x, fromY: e.y,
+      toX: 14, toY: -0.5,  // top-right corner
+      amount: e.reward,
+      time: 0, maxTime: 0.6
+    })
+  }
 }
