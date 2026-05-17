@@ -283,7 +283,7 @@ function App() {
               </div>
             </div>
 
-            <div className="start-screen__actions" aria-label="Game modes">
+            <div className={endlessUnlocked ? 'start-screen__actions' : 'start-screen__actions start-screen__actions--three'} aria-label="Game modes">
               <button className="start-screen__button" onClick={startCutscene}>
                 <span className="start-screen__button-kicker">Story Briefing</span>
                 <span className="start-screen__button-title">Normal Campaign</span>

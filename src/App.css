@@ -538,6 +538,13 @@ body {
   gap: 12px;
 }
 
+.start-screen__actions--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 760px;
+  width: 100%;
+  justify-self: center;
+}
+
 .start-screen__button {
   position: relative;
   min-height: 152px;

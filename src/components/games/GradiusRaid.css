@@ -2193,6 +2193,60 @@
   font-weight: 700;
 }
 
+.raid__boss-briefing-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.raid__boss-briefing-card {
+  display: grid;
+  grid-template-rows: 170px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(244, 114, 182, 0.3);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(244, 114, 182, 0.16), transparent 48%),
+    linear-gradient(180deg, rgba(49, 10, 74, 0.68), rgba(5, 8, 14, 0.82));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.raid__boss-briefing-preview {
+  display: block;
+  width: 100%;
+  height: 170px;
+}
+
+.raid__boss-briefing-copy {
+  padding: 0 14px 14px;
+}
+
+.raid__boss-briefing-copy span {
+  display: block;
+  color: #fda4af;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.12rem;
+  text-transform: uppercase;
+}
+
+.raid__boss-briefing-copy h3 {
+  margin: 4px 0 8px;
+  color: #ffffff;
+  font-size: 0.98rem;
+  letter-spacing: 0.04rem;
+  text-transform: uppercase;
+}
+
+.raid__boss-briefing-copy p {
+  margin: 7px 0 0;
+  color: #d8dee8;
+  font-size: 0.75rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .raid__briefing-progress {
   display: flex;
   justify-content: center;
@@ -2828,6 +2882,43 @@
   .raid__briefing-card-copy span {
     font-size: 0.64rem;
     line-height: 1.28;
+  }
+
+  .raid__boss-briefing-list {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .raid__boss-briefing-card {
+    grid-template-columns: 118px minmax(0, 1fr);
+    grid-template-rows: none;
+    align-items: center;
+    text-align: left;
+  }
+
+  .raid__boss-briefing-preview {
+    width: 118px;
+    height: 118px;
+  }
+
+  .raid__boss-briefing-copy {
+    padding: 10px 10px 10px 0;
+  }
+
+  .raid__boss-briefing-copy span {
+    font-size: 0.56rem;
+  }
+
+  .raid__boss-briefing-copy h3 {
+    margin: 3px 0 5px;
+    font-size: 0.76rem;
+  }
+
+  .raid__boss-briefing-copy p {
+    margin-top: 4px;
+    font-size: 0.62rem;
+    line-height: 1.25;
   }
 
   .raid__briefing-dot {
