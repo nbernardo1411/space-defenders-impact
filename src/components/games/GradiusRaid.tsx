@@ -588,7 +588,7 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
   const multiplayerScale = isMultiplayer ? 0.82 : 1
   if (quality === 'low') {
     return {
-      dprCap: 1,
+      dprCap: 1.25,
       maxSparks: isSmallViewport ? 10 : 14,
       sparkScale: 0.18,
       maxRipples: 2,
@@ -3099,8 +3099,11 @@ function drawSnakeBiteLungeModel(ctx: CanvasRenderingContext2D, x: number, y: nu
   ctx.restore()
 }
 
-function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, targetY: number, size: number, viewportWidth: number, time: number, chargeTimer: number, pattern: Enemy['chargePattern']) {
-  const warm = clamp(1 - chargeTimer / (pattern === 'horizontal' ? 1.18 : pattern === 'cross' ? 1.08 : 0.95), 0, 1)
+function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, targetY: number, size: number, viewportWidth: number, time: number, chargeTimer: number, pattern: Enemy['chargePattern'], retractTimer = 0) {
+  const chargeWarm = clamp(1 - chargeTimer / (pattern === 'horizontal' ? 1.18 : pattern === 'cross' ? 1.08 : 0.95), 0, 1)
+  const warm = pattern === 'cross' && chargeTimer <= 0 && retractTimer > 0
+    ? clamp(retractTimer / 0.42, 0, 1)
+    : chargeWarm
   const pulse = 0.45 + Math.sin(time / 85) * 0.18
   const laneX = targetX
   ctx.save()
@@ -4669,7 +4672,7 @@ function drawRaidEnemy(
       ctx.scale(floatScale, floatScale)
       if (displayBossKind === 'squid') drawGalacticSquidBoss(ctx, size, time)
       else if (displayBossKind === 'snake') {
-        const biteLungeActive = enemy.chargeTimer > 0 && enemy.chargePattern === 'cross'
+        const biteLungeActive = enemy.chargePattern === 'cross' && (enemy.chargeTimer > 0 || (enemy.beamVolleyRecovery ?? 0) > 0)
         drawGalacticSnakeBoss(ctx, size, time, biteLungeActive, biteLungeActive)
       }
       else {
@@ -4682,8 +4685,8 @@ function drawRaidEnemy(
       if (displayBossKind === 'squid' && enemy.chargeTimer > 0 && enemy.chargePattern !== 'rotate') {
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer)
       }
-      if (displayBossKind === 'snake' && enemy.chargeTimer > 0) {
-        drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, viewportWidth, time, enemy.chargeTimer, enemy.chargePattern)
+      if (displayBossKind === 'snake' && (enemy.chargeTimer > 0 || (enemy.chargePattern === 'cross' && (enemy.beamVolleyRecovery ?? 0) > 0))) {
+        drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, viewportWidth, time, enemy.chargeTimer, enemy.chargePattern, enemy.beamVolleyRecovery ?? 0)
       }
       if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
       drawBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
@@ -10022,6 +10025,7 @@ export function GradiusRaid({
                 })
               })
               emitPoisonCloud(lane, targetY, 4.4, 0, 7.2, 3.1)
+              beamVolleyRecovery = 0.42
             } else if (chargePattern === 'scatter') {
               ;[-30, -16, 0, 16, 30].forEach((offset, index) => {
                 emitPoisonCloud(lane + offset, enemy.y + 16 + index * 2.2, 3.7, offset * 0.08, 9.5 + index * 0.55, 3.6)
@@ -10084,7 +10088,8 @@ export function GradiusRaid({
       }
       const nextFire = fireCooldown - dt
       const bossInPause = enemy.isBoss && nowSeconds % 6 > 3
-      if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause && (bossKind !== 'final' || mirageActive)) {
+      const biteRetracting = attackBossKind === 'snake' && chargePattern === 'cross' && beamVolleyRecovery > 0
+      if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !biteRetracting && !bossInPause && (bossKind !== 'final' || mirageActive)) {
         fireEnemy(enemy, getNearestLivingPlayerThisTick(enemy), now)
       }
 
