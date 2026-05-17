@@ -6060,6 +6060,7 @@ export function GradiusRaid({
   const powerUpsRef = useRef<PowerUp[]>([])
   const sparksRef = useRef<Spark[]>([])
   const ripplesRef = useRef<Ripple[]>([])
+  const homingTargetsRef = useRef<Map<number, Enemy>>(new Map())
   const phaseRef = useRef<GamePhase>('select')
   const stageRef = useRef(1)
   const waveRef = useRef(1)
@@ -6092,6 +6093,8 @@ export function GradiusRaid({
   const raidBgmModeRef = useRef<RaidBgmMode | null>(null)
   const raidBgmStageRef = useRef(0)
   const raidBgmTrackRef = useRef<string | null>(null)
+  const startRaidBgmRef = useRef<(stage: number, mode?: RaidBgmMode) => void>(() => {})
+  const stopRaidBgmRef = useRef<() => void>(() => {})
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [briefingStep, setBriefingStep] = useState(0)
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
@@ -6422,6 +6425,9 @@ export function GradiusRaid({
     ripplesRef.current = state.ripples.map((ripple) => ({ ...ripple }))
     const prevPhase = phaseRef.current
     const prevStageTheme = stageRef.current
+    const prevBossMessage = bossMessageRef.current
+    const prevStageClear = stageClearRef.current
+    const prevNukeFlash = nukeFlashRef.current
     phaseRef.current = state.phase
     // Guest: when host transitions to victory, trigger the local blackout fade so the
     // cutscene fades in smoothly rather than appearing instantly.
@@ -6455,6 +6461,42 @@ export function GradiusRaid({
     asteroidWarningRef.current = state.asteroidWarning ?? 0
     randomEventRef.current = cloneRaidRandomEvent(state.randomEvent ?? null)
     remotePointerVisualRef.current = cloneVec(state.guestPointer)
+
+    if (session && !session.isHost) {
+      const bossActive = state.enemies.some((enemy) => enemy.isBoss) || state.bossMessage === 'incoming'
+      const nextBgmMode: RaidBgmMode | null = state.phase === 'victory'
+        ? 'ending'
+        : state.phase !== 'playing'
+          ? null
+          : bossActive
+            ? 'boss'
+            : state.stageClear > 0 || state.enemies.length > 0
+              ? 'combat'
+              : 'cruise'
+
+      if (nextBgmMode) {
+        startRaidBgmRef.current(state.stageTheme, nextBgmMode)
+      } else {
+        stopRaidBgmRef.current()
+      }
+
+      if (state.bossMessage === 'incoming' && prevBossMessage !== 'incoming') {
+        playGameSound('countdown')
+      }
+      if (state.bossMessage === 'clear' && prevBossMessage !== 'clear') {
+        playGameSound('levelup')
+        playGameSound('combo')
+      }
+      if (prevStageClear <= 0 && state.stageClear > 0 && state.phase === 'playing') {
+        playGameSound('score')
+      }
+      if (prevNukeFlash <= 0.05 && state.nukeFlash > 0.4) {
+        playGameSound('explosion_big')
+      }
+      if (prevPhase !== 'gameover' && state.phase === 'gameover') {
+        playGameSound('gameover')
+      }
+    }
 
     const ownPlayer = session?.isHost ? state.hostPlayer : state.guestPlayer ?? state.hostPlayer
     const allyPlayer = session?.isHost ? state.guestPlayer : state.hostPlayer
@@ -6804,11 +6846,7 @@ export function GradiusRaid({
           } else {
             multiplayerSessionRef.current = null
             socket.close()
-            if (raidBgmElementRef.current) {
-              raidBgmElementRef.current.pause()
-              raidBgmElementRef.current.currentTime = 0
-              raidBgmElementRef.current = null
-            }
+            stopRaidBgmRef.current()
             stopBGM()
             onClose()
           }
@@ -6947,6 +6985,9 @@ export function GradiusRaid({
       raidBgmTrackRef.current = null
     })
   }, [stopRaidBgm])
+
+  stopRaidBgmRef.current = stopRaidBgm
+  startRaidBgmRef.current = startRaidBgm
 
   const drawFxCanvas = useCallback((time = performance.now()) => {
     const canvas = fxCanvasRef.current
@@ -7505,7 +7546,10 @@ export function GradiusRaid({
     ctx.globalCompositeOperation = 'lighter'
 
     if (gfxProfile.drawRipples) {
-      for (const ripple of ripplesRef.current.slice(-gfxProfile.maxRipples)) {
+      const ripples = ripplesRef.current
+      const rippleStart = Math.max(0, ripples.length - gfxProfile.maxRipples)
+      for (let i = rippleStart; i < ripples.length; i += 1) {
+        const ripple = ripples[i]
         const progress = 1 - ripple.life / ripple.maxLife
         const radius = (ripple.size * 4) * (0.45 + progress * 1.6)
         ctx.globalAlpha = Math.max(0, ripple.life / ripple.maxLife) * 0.8
@@ -7557,7 +7601,10 @@ export function GradiusRaid({
       else drawOrb(shot, 'rgba(251,113,133,0.9)', 10)
     }
 
-    for (const spark of sparksRef.current.slice(-gfxProfile.maxSparks)) {
+    const sparks = sparksRef.current
+    const sparkStart = Math.max(0, sparks.length - gfxProfile.maxSparks)
+    for (let i = sparkStart; i < sparks.length; i += 1) {
+      const spark = sparks[i]
       ctx.globalAlpha = Math.max(0, spark.life / spark.maxLife)
       ctx.fillStyle = spark.color
       ctx.beginPath()
@@ -7993,6 +8040,7 @@ export function GradiusRaid({
       resetGuestPredictionState()
       phaseRef.current = 'playing'
       stopBGM()
+      startRaidBgmRef.current(stageRef.current, 'cruise')
       syncSnapshot()
     }
   }, [multiplayerSession, resetGame, resetGuestPredictionState, syncSnapshot])
@@ -9010,6 +9058,22 @@ export function GradiusRaid({
     if (remotePlayer && remotePlayer.hp > 0) updatePlayerTimers(remotePlayer, dt)
     if (player.hp > 0) firePlayer(player)
     if (remotePlayer && remotePlayer.hp > 0) firePlayer(remotePlayer)
+    const livingPlayersThisTick = remotePlayer
+      ? (player.hp > 0 ? (remotePlayer.hp > 0 ? [player, remotePlayer] : [player]) : remotePlayer.hp > 0 ? [remotePlayer] : [])
+      : (player.hp > 0 ? [player] : [])
+    const getNearestLivingPlayerThisTick = (origin: Vec) => {
+      let nearest: Player | null = null
+      let nearestDistance = Infinity
+      for (const livingPlayer of livingPlayersThisTick) {
+        if (livingPlayer.hp <= 0) continue
+        const distance = distSq(origin, livingPlayer)
+        if (distance < nearestDistance) {
+          nearest = livingPlayer
+          nearestDistance = distance
+        }
+      }
+      return nearest ?? player
+    }
 
     if (remotePlayer && multiplayerRemoteNukeRef.current > multiplayerHandledRemoteNukeRef.current) {
       multiplayerHandledRemoteNukeRef.current = multiplayerRemoteNukeRef.current
@@ -9209,7 +9273,8 @@ export function GradiusRaid({
 
     let homingTargets: Map<number, Enemy> | null = null
     if (shotsRef.current.some((shot) => shot.kind === 'homing')) {
-      homingTargets = new Map()
+      homingTargets = homingTargetsRef.current
+      homingTargets.clear()
       for (const enemy of enemiesRef.current) {
         if (enemy.hp > 0 && enemy.y >= -10) homingTargets.set(enemy.id, enemy)
       }
@@ -9266,7 +9331,7 @@ export function GradiusRaid({
       }
       if (shot.kind === 'squidBubble') {
         shot.retargetTime = Math.max(0, (shot.retargetTime ?? 0) - dt)
-        const target = getNearestLivingPlayer(shot)
+        const target = getNearestLivingPlayerThisTick(shot)
         const aimX = target.x - shot.x
         const aimY = target.y - shot.y
         const mag = Math.hypot(aimX, aimY) || 1
@@ -9398,7 +9463,7 @@ export function GradiusRaid({
             enemy.pattern === 2 ? enemy.originX + Math.sin(trainT * 0.72) * enemy.amplitude * 0.7 :
               enemy.originX + Math.cos(trainT) * enemy.amplitude
       const miniKind = enemy.miniBossKind ?? 'stalker'
-      const eliteTarget = enemy.isMiniBoss ? getNearestLivingPlayer(enemy) : player
+      const eliteTarget = enemy.isMiniBoss ? getNearestLivingPlayerThisTick(enemy) : player
       const miniBossX =
         miniKind === 'brood' ? enemy.originX + Math.sin(t * 0.72) * enemy.amplitude + Math.sin(t * 1.9) * 4 + (eliteTarget.x - enemy.originX) * 0.1 :
           miniKind === 'lancer' ? eliteTarget.x + Math.sin(t * 1.55) * enemy.amplitude :
@@ -9566,7 +9631,7 @@ export function GradiusRaid({
           chargeTimer = Math.max(0, chargeTimer - dt)
           if (beforeCharge > 0 && chargeTimer <= 0) {
             if (chargePattern === 'rotate') {
-              const target = getNearestLivingPlayer(enemy)
+              const target = getNearestLivingPlayerThisTick(enemy)
               const aimX = target.x - enemy.x
               const aimY = target.y - (enemy.y + 14)
               const mag = Math.hypot(aimX, aimY) || 1
@@ -9590,7 +9655,8 @@ export function GradiusRaid({
               chargeCooldown = 3.65 + Math.random() * 1.05
               fireCooldown = Math.max(fireCooldown, 1.25)
             } else {
-              for (const target of getLivingPlayers()) {
+              for (const target of livingPlayersThisTick) {
+                if (target.hp <= 0) continue
                 const inStrikeSpot =
                   Math.abs(target.x - chargeLane) < 8.5 &&
                   Math.abs(target.y - chargeTargetY) < 7.5
@@ -9609,12 +9675,17 @@ export function GradiusRaid({
           }
         } else {
           chargeCooldown = Math.max(0, chargeCooldown - dt)
-          const livingTargets = getLivingPlayers()
-          const slapTarget = livingTargets.reduce<Player | null>((best, target) => {
-            if (!best) return target
-            return distSq(enemy, target) < distSq(enemy, best) ? target : best
-          }, null)
-          const bubbleTarget = slapTarget ?? getNearestLivingPlayer(enemy)
+          let slapTarget: Player | null = null
+          let slapTargetDistance = Infinity
+          for (const target of livingPlayersThisTick) {
+            if (target.hp <= 0) continue
+            const distance = distSq(enemy, target)
+            if (distance < slapTargetDistance) {
+              slapTarget = target
+              slapTargetDistance = distance
+            }
+          }
+          const bubbleTarget = slapTarget ?? getNearestLivingPlayerThisTick(enemy)
           const shouldBubble = chargeCooldown <= 0 && Math.random() < 0.38
           if (shouldBubble) {
             chargeTimer = 0.78
@@ -9687,7 +9758,7 @@ export function GradiusRaid({
         } else {
           chargeCooldown = Math.max(0, chargeCooldown - dt)
           if (chargeCooldown <= 0) {
-            const target = getNearestLivingPlayer(enemy)
+            const target = getNearestLivingPlayerThisTick(enemy)
             const hpRatio = enemy.hp / enemy.maxHp
             const roll = Math.random()
             chargePattern = hpRatio < 0.38
@@ -9705,7 +9776,7 @@ export function GradiusRaid({
       const nextFire = enemy.fireCooldown - dt
       const bossInPause = enemy.isBoss && nowSeconds % 6 > 3
       if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !bossInPause && (bossKind !== 'final' || mirageActive)) {
-        fireEnemy(enemy, getNearestLivingPlayer(enemy), now)
+        fireEnemy(enemy, getNearestLivingPlayerThisTick(enemy), now)
       }
 
       enemy.x = enemy.isBoss
@@ -9758,7 +9829,7 @@ export function GradiusRaid({
     let livePowerUpCount = 0
     for (const powerUp of powerUps) {
       if (powerUp.type === 'levelup') {
-        const targetPlayer = getNearestLivingPlayer(powerUp)
+        const targetPlayer = getNearestLivingPlayerThisTick(powerUp)
         powerUp.x += (targetPlayer.x - powerUp.x) * Math.min(1, dt * 3.2)
         powerUp.y += powerUp.vy * dt + (targetPlayer.y - powerUp.y) * Math.min(1, dt * 0.8)
       } else {
@@ -10070,7 +10141,8 @@ export function GradiusRaid({
 
     for (const enemyShot of enemyShotsRef.current) {
       const hitRange = enemyShot.radius + PLAYER_RADIUS
-      for (const targetPlayer of getLivingPlayers()) {
+      for (const targetPlayer of livingPlayersThisTick) {
+        if (targetPlayer.hp <= 0) continue
         if (enemyShot.kind === 'beam' && enemyShot.life !== undefined) {
           const beamHitRange = enemyShot.radius * 0.82 + PLAYER_RADIUS * 0.72
           const beamHits = enemyShot.angle === undefined
@@ -10105,7 +10177,8 @@ export function GradiusRaid({
 
     for (const enemy of enemiesRef.current) {
       const hitRange = enemy.radius + PLAYER_RADIUS
-      for (const targetPlayer of getLivingPlayers()) {
+      for (const targetPlayer of livingPlayersThisTick) {
+        if (targetPlayer.hp <= 0) continue
         if (
           Math.abs(enemy.x - targetPlayer.x) <= hitRange &&
           Math.abs(enemy.y - targetPlayer.y) <= hitRange &&
@@ -10147,7 +10220,8 @@ export function GradiusRaid({
     for (const asteroid of asteroidsRef.current) {
       if (asteroid.hp <= 0) continue
       const hitRange = asteroid.radius + PLAYER_RADIUS
-      for (const targetPlayer of getLivingPlayers()) {
+      for (const targetPlayer of livingPlayersThisTick) {
+        if (targetPlayer.hp <= 0) continue
         if (
           Math.abs(asteroid.x - targetPlayer.x) <= hitRange &&
           Math.abs(asteroid.y - targetPlayer.y) <= hitRange &&
@@ -10162,7 +10236,8 @@ export function GradiusRaid({
 
     for (const meteor of meteorsRef.current) {
       const hitRange = meteor.radius + PLAYER_RADIUS
-      for (const targetPlayer of getLivingPlayers()) {
+      for (const targetPlayer of livingPlayersThisTick) {
+        if (targetPlayer.hp <= 0) continue
         if (
           Math.abs(meteor.x - targetPlayer.x) <= hitRange &&
           Math.abs(meteor.y - targetPlayer.y) <= hitRange &&
@@ -10180,7 +10255,8 @@ export function GradiusRaid({
 
     for (const strike of ionStrikesRef.current) {
       if (strike.warmup > 0) continue
-      for (const targetPlayer of getLivingPlayers()) {
+      for (const targetPlayer of livingPlayersThisTick) {
+        if (targetPlayer.hp <= 0) continue
         if (Math.abs(targetPlayer.x - strike.x) <= strike.width * 0.62 + PLAYER_RADIUS) {
           damagePlayer(1, targetPlayer)
         }
@@ -10189,7 +10265,8 @@ export function GradiusRaid({
 
     for (const wreck of wrecksRef.current) {
       if (wreck.hp <= 0) continue
-      for (const targetPlayer of getLivingPlayers()) {
+      for (const targetPlayer of livingPlayersThisTick) {
+        if (targetPlayer.hp <= 0) continue
         if (
           Math.abs(wreck.x - targetPlayer.x) <= wreck.width * 0.5 + PLAYER_RADIUS &&
           Math.abs(wreck.y - targetPlayer.y) <= wreck.height * 0.58 + PLAYER_RADIUS
@@ -10212,7 +10289,8 @@ export function GradiusRaid({
     for (const powerUp of powerUpsRef.current) {
       const pickupAssist = powerUp.type === 'levelup' ? 4.2 : 1.8
       const hitRange = powerUp.radius + PLAYER_RADIUS + pickupAssist
-      for (const targetPlayer of getLivingPlayers()) {
+      for (const targetPlayer of livingPlayersThisTick) {
+        if (targetPlayer.hp <= 0) continue
         if (
           Math.abs(powerUp.x - targetPlayer.x) <= hitRange &&
           Math.abs(powerUp.y - targetPlayer.y) <= hitRange &&

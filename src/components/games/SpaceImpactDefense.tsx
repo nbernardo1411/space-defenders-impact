@@ -83,13 +83,13 @@ function getDefenseGraphicsProfile(quality: GraphicsQuality, isMobileViewport: b
   if (quality === 'low') {
     return {
       starDensity: 5200,
-      asteroidCount: 0,
-      maxParticles: isMobileViewport ? 18 : 28,
-      maxExplosions: 2,
-      maxShockwaves: 0,
+      asteroidCount: 1,
+      maxParticles: isMobileViewport ? 22 : 34,
+      maxExplosions: isMobileViewport ? 2 : 3,
+      maxShockwaves: 1,
       maxPortals: 1,
-      maxActionBursts: 0,
-      maxCoinFlows: 0,
+      maxActionBursts: 1,
+      maxCoinFlows: isMobileViewport ? 1 : 2,
       showScanline: false,
       useSvgFilters: false,
       useHeavyGlows: false,
@@ -1930,7 +1930,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const renderedPortals = spawnPortals.slice(-graphicsProfile.maxPortals)
   const renderedActionBursts = towerActionBursts.slice(-graphicsProfile.maxActionBursts)
   const renderedCoinFlows = coinFlows.slice(-graphicsProfile.maxCoinFlows)
-  const victoryConfettiCount = graphicsQuality === 'low' ? 0 : isMobileViewport ? 8 : 20
+  const victoryConfettiCount = graphicsQuality === 'low' ? (isMobileViewport ? 4 : 6) : isMobileViewport ? 8 : 20
   const uiPathSet = new Set(uiPaths.flatMap(p => p.map(([c, r]) => `${c},${r}`)))
   // Collect all spawn starts and single finish
   const uiSpawnCells = new Set(uiPaths.map(p => p.length > 0 ? `${p[0][0]},${p[0][1]}` : ''))
@@ -2685,7 +2685,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 width: style.size, height: style.size,
                 borderRadius: '50%',
                 background: style.color,
-                boxShadow: isMobileViewport ? `0 0 ${3 + (1 - progress) * 2}px ${style.glow}` : `0 0 ${6 + (1 - progress) * 4}px ${style.glow}`,
+                boxShadow: graphicsProfile.useHeavyGlows
+                  ? (isMobileViewport ? `0 0 ${3 + (1 - progress) * 2}px ${style.glow}` : `0 0 ${6 + (1 - progress) * 4}px ${style.glow}`)
+                  : `0 0 ${2 + (1 - progress) * 2}px ${style.glow}`,
                 opacity: Math.min(1, opacity),
                 transform: `translate(-50%, -50%) scale(${scale})`,
                 pointerEvents: 'none',
@@ -2734,7 +2736,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 borderRadius: '50%',
                 border: `3px solid ${color.outer}`,
                 background: color.inner,
-                boxShadow: `inset 0 0 ${12 * scale}px ${color.outer}99, 0 0 ${20 * scale}px ${color.outer}`,
+                boxShadow: graphicsProfile.useHeavyGlows
+                  ? `inset 0 0 ${12 * scale}px ${color.outer}99, 0 0 ${20 * scale}px ${color.outer}`
+                  : `inset 0 0 ${6 * scale}px ${color.outer}77, 0 0 ${8 * scale}px ${color.outer}88`,
                 opacity,
                 pointerEvents: 'none',
                 transition: 'none',
@@ -2756,7 +2760,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 height: wave.radius * cell * scale,
                 borderRadius: '50%',
                 border: `${thickness}px solid rgba(255, 200, 100, ${opacity})`,
-                boxShadow: `0 0 ${15 * wave.intensity}px rgba(255, 150, 50, ${opacity * 0.8}), inset 0 0 ${10 * wave.intensity}px rgba(255, 200, 100, ${opacity * 0.5})`,
+                boxShadow: graphicsProfile.useHeavyGlows
+                  ? `0 0 ${15 * wave.intensity}px rgba(255, 150, 50, ${opacity * 0.8}), inset 0 0 ${10 * wave.intensity}px rgba(255, 200, 100, ${opacity * 0.5})`
+                  : `0 0 ${6 * wave.intensity}px rgba(255, 150, 50, ${opacity * 0.55})`,
                 pointerEvents: 'none',
                 transition: 'none',
               }} />
@@ -2817,7 +2823,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 borderRadius: '50%',
                 border: `2px solid #18e6c4`,
                 background: 'radial-gradient(circle, #18e6c466, transparent)',
-                boxShadow: `0 0 20px 8px #18e6c4${Math.round(opacity * 100).toString(16)}`,
+                boxShadow: graphicsProfile.useHeavyGlows
+                  ? `0 0 20px 8px #18e6c4${Math.round(opacity * 100).toString(16)}`
+                  : `0 0 8px 2px #18e6c4${Math.round(opacity * 100).toString(16)}`,
                 pointerEvents: 'none',
                 opacity,
               }} />
@@ -2841,7 +2849,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                   width: 8, height: 8,
                   borderRadius: '50%',
                   background: color,
-                  boxShadow: `0 0 8px ${color}`,
+                  boxShadow: graphicsProfile.useHeavyGlows ? `0 0 8px ${color}` : `0 0 3px ${color}`,
                   pointerEvents: 'none',
                   opacity,
                 }} />
@@ -2864,7 +2872,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 width: 16, height: 16,
                 borderRadius: '50%',
                 background: 'radial-gradient(circle, #ffd666, #ff9800)',
-                boxShadow: '0 0 12px #ffd666aa',
+                boxShadow: graphicsProfile.useHeavyGlows ? '0 0 12px #ffd666aa' : '0 0 4px #ffd66688',
                 pointerEvents: 'none',
                 opacity,
                 fontSize: '0.7rem',
@@ -2971,7 +2979,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                       strokeWidth="3"
                       fill="none"
                       strokeLinecap="round"
-                      filter="url(#lightningGlow)"
+                      filter={graphicsProfile.useSvgFilters ? 'url(#lightningGlow)' : undefined}
                     />
                     <path
                       d={path}
@@ -2984,15 +2992,17 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                   </g>
                 )
               })}
-              <defs>
-                <filter id="lightningGlow">
-                  <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-                  <feMerge>
-                    <feMergeNode in="coloredBlur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-              </defs>
+              {graphicsProfile.useSvgFilters && (
+                <defs>
+                  <filter id="lightningGlow">
+                    <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+                    <feMerge>
+                      <feMergeNode in="coloredBlur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+              )}
             </svg>
           )}
 
@@ -3060,7 +3070,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 width: 12, height: 12,
                 background: color,
                 borderRadius: '50%',
-                boxShadow: `0 0 10px ${color}`,
+                boxShadow: graphicsProfile.useHeavyGlows ? `0 0 10px ${color}` : `0 0 4px ${color}`,
                 pointerEvents: 'none',
                 opacity,
               }} />
@@ -3382,7 +3392,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 ))}
               </div>
               <div style={{ color: '#8fa6bf', fontSize: '0.66rem', lineHeight: 1.45, marginTop: 8 }}>
-                Low limits particle bursts, glow filters, and moving background detail while keeping full frame rate.
+                Low keeps full frame rate and recognizable effects, but uses fewer particles, simpler glow, and lighter background detail.
               </div>
             </div>
 

@@ -11,7 +11,7 @@ export function angleToDeg(fromX: number, fromY: number, toX: number, toY: numbe
 
 function getEffectScale() {
   const quality = getGraphicsQuality()
-  if (quality === 'low') return 0.2
+  if (quality === 'low') return 0.3
   if (quality === 'medium') return 0.45
   if (quality === 'high') return 0.75
   return 1
@@ -19,8 +19,8 @@ function getEffectScale() {
 
 function scaledCount(count: number) {
   const scale = getEffectScale()
-  if (scale <= 0.2 && count <= 4) return 0
-  return Math.max(scale <= 0.2 ? 1 : 0, Math.floor(count * scale))
+  if (count <= 0) return 0
+  return Math.max(1, Math.floor(count * scale))
 }
 
 export function spawnImpactParticles(
