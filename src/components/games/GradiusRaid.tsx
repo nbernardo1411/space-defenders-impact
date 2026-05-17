@@ -3093,7 +3093,8 @@ function drawSnakeBiteLungeModel(ctx: CanvasRenderingContext2D, x: number, y: nu
   ctx.save()
   ctx.translate(endX, endY)
   ctx.rotate(headAngle + Math.PI / 2)
-  drawSnakeTerrorHead(ctx, reach * 0.42, time, true)
+  drawSnakeHoodFlaps(ctx, size)
+  drawSnakeTerrorHead(ctx, size, time, true)
   ctx.restore()
   ctx.restore()
 }
@@ -3752,6 +3753,40 @@ function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: 
   ctx.restore()
 }
 
+function drawSnakeHoodFlaps(ctx: CanvasRenderingContext2D, size: number) {
+  for (const side of [-1, 1]) {
+    const hood = ctx.createLinearGradient(side * size * 0.02, -size * 0.42, side * size * 0.42, size * 0.02)
+    hood.addColorStop(0, '#fef3c7')
+    hood.addColorStop(0.34, '#6b7280')
+    hood.addColorStop(0.7, '#172033')
+    hood.addColorStop(1, '#020617')
+    ctx.fillStyle = hood
+    ctx.strokeStyle = 'rgba(254,243,199,0.64)'
+    ctx.lineWidth = Math.max(1.8, size * 0.007)
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.07, -size * 0.39)
+    ctx.bezierCurveTo(side * size * 0.42, -size * 0.34, side * size * 0.46, -size * 0.05, side * size * 0.24, size * 0.13)
+    ctx.lineTo(side * size * 0.08, size * 0.04)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.fillStyle = 'rgba(0,0,0,0.38)'
+    ctx.beginPath()
+    ctx.moveTo(side * size * 0.08, -size * 0.33)
+    ctx.lineTo(side * size * 0.24, -size * 0.2)
+    ctx.lineTo(side * size * 0.1, size * 0.02)
+    ctx.closePath()
+    ctx.fill()
+    for (let rib = 0; rib < 6; rib += 1) {
+      ctx.strokeStyle = 'rgba(34,211,238,0.26)'
+      ctx.beginPath()
+      ctx.moveTo(side * size * (0.1 + rib * 0.035), -size * (0.31 - rib * 0.04))
+      ctx.lineTo(side * size * (0.33 - rib * 0.018), -size * (0.18 - rib * 0.038))
+      ctx.stroke()
+    }
+  }
+}
+
 
 function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time: number, redEyeWarning = false, hideHead = false) {
   const seconds = time / 1000
@@ -3774,6 +3809,35 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
       x: Math.sin(angle) * radius + Math.sin(p * Math.PI * 7 + wave * 1.15) * size * (0.048 - p * 0.018),
       y: size * 0.58 - p * size * 0.92 + Math.cos(angle + Math.sin(wave + p * 4) * 0.18) * size * (0.095 - p * 0.024),
     })
+  }
+
+  if (hideHead) {
+    ctx.globalCompositeOperation = 'source-over'
+    for (let coil = 0; coil < 5; coil += 1) {
+      const p = coil / 4
+      const coilSize = size * (0.24 - p * 0.028)
+      const y = size * (0.16 - p * 0.085)
+      const coilGradient = ctx.createRadialGradient(-coilSize * 0.18, y - coilSize * 0.2, 1, 0, y, coilSize * 1.2)
+      coilGradient.addColorStop(0, '#fde68a')
+      coilGradient.addColorStop(0.28, '#64748b')
+      coilGradient.addColorStop(0.72, '#111827')
+      coilGradient.addColorStop(1, '#020617')
+      ctx.fillStyle = coilGradient
+      ctx.strokeStyle = coil % 2 === 0 ? 'rgba(190,242,100,0.52)' : 'rgba(34,211,238,0.28)'
+      ctx.lineWidth = Math.max(1.2, size * 0.004)
+      ctx.beginPath()
+      ctx.ellipse(Math.sin(seconds * 2.6 + coil) * size * 0.018, y, coilSize, coilSize * 0.44, Math.sin(seconds + coil) * 0.18, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+    ctx.globalCompositeOperation = 'lighter'
+    drawRadialEllipse(ctx, 0, -size * 0.09, size * 0.2, size * 0.12, [
+      [0, 'rgba(190,242,100,0.34)'],
+      [0.48, 'rgba(34,211,238,0.18)'],
+      [1, 'rgba(34,211,238,0)'],
+    ])
+    ctx.restore()
+    return
   }
 
   for (let i = 0; i < bodyPoints.length - 1; i += 1) {
@@ -3828,39 +3892,8 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
     ctx.stroke()
   }
 
-  for (const side of [-1, 1]) {
-    const hood = ctx.createLinearGradient(side * size * 0.02, -size * 0.42, side * size * 0.42, size * 0.02)
-    hood.addColorStop(0, '#fef3c7')
-    hood.addColorStop(0.34, '#6b7280')
-    hood.addColorStop(0.7, '#172033')
-    hood.addColorStop(1, '#020617')
-    ctx.fillStyle = hood
-    ctx.strokeStyle = 'rgba(254,243,199,0.64)'
-    ctx.lineWidth = Math.max(1.8, size * 0.007)
-    ctx.beginPath()
-    ctx.moveTo(side * size * 0.07, -size * 0.39)
-    ctx.bezierCurveTo(side * size * 0.42, -size * 0.34, side * size * 0.46, -size * 0.05, side * size * 0.24, size * 0.13)
-    ctx.lineTo(side * size * 0.08, size * 0.04)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
-    ctx.fillStyle = 'rgba(0,0,0,0.38)'
-    ctx.beginPath()
-    ctx.moveTo(side * size * 0.08, -size * 0.33)
-    ctx.lineTo(side * size * 0.24, -size * 0.2)
-    ctx.lineTo(side * size * 0.1, size * 0.02)
-    ctx.closePath()
-    ctx.fill()
-    for (let rib = 0; rib < 6; rib += 1) {
-      ctx.strokeStyle = 'rgba(34,211,238,0.26)'
-      ctx.beginPath()
-      ctx.moveTo(side * size * (0.1 + rib * 0.035), -size * (0.31 - rib * 0.04))
-      ctx.lineTo(side * size * (0.33 - rib * 0.018), -size * (0.18 - rib * 0.038))
-      ctx.stroke()
-    }
-  }
-
   if (!hideHead) {
+  drawSnakeHoodFlaps(ctx, size)
   const hoodGradient = ctx.createRadialGradient(-size * 0.04, -size * 0.36, 1, 0, -size * 0.2, size * 0.34)
   hoodGradient.addColorStop(0, '#fff7ad')
   hoodGradient.addColorStop(0.26, '#a3a3a3')
