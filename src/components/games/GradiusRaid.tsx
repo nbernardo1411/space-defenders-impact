@@ -10000,6 +10000,8 @@ export function GradiusRaid({
               chargePattern = 'cross'
             } else if (snakeSpecialStep >= 0 && snakeSpecialStep % 3 === 2) {
               chargePattern = 'horizontal'
+            } else if (bossKind === 'final' && attackBossKind === 'snake' && roll < 0.46) {
+              chargePattern = roll < 0.23 ? 'cross' : 'horizontal'
             } else {
               chargePattern = hpRatio < 0.38
                 ? roll < 0.28 ? 'pincer' : roll < 0.58 ? 'trident' : roll < 0.82 ? 'single' : 'scatter'
