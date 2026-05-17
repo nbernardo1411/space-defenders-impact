@@ -1205,6 +1205,21 @@ function compactPlayer(player: Player): Player {
   }
 }
 
+function getPlayerPickupAudioKind(previous: Player | null, next: Player | null): PowerKind | null {
+  if (!previous || !next || next.hp <= 0) return null
+  if (next.rank > previous.rank) return 'levelup'
+  if (next.hp > previous.hp) return 'repair'
+  if (next.forceField > previous.forceField + 0.25) return 'forcefield'
+  if (next.shield > previous.shield + 0.25) return 'shield'
+  if (next.optionTimer > previous.optionTimer + 0.25) return 'option'
+
+  for (const key of WEAPON_KEYS) {
+    if (next.weapons[key] > previous.weapons[key]) return key
+  }
+
+  return null
+}
+
 function isNetworkVisible(value: Vec) {
   return value.x > -MULTIPLAYER_ENTITY_MARGIN &&
     value.x < WIDTH + MULTIPLAYER_ENTITY_MARGIN &&
@@ -6093,6 +6108,8 @@ export function GradiusRaid({
   const raidBgmModeRef = useRef<RaidBgmMode | null>(null)
   const raidBgmStageRef = useRef(0)
   const raidBgmTrackRef = useRef<string | null>(null)
+  const raidBgmRequestedModeRef = useRef<RaidBgmMode | null>(null)
+  const raidBgmRequestedStageRef = useRef(0)
   const startRaidBgmRef = useRef<(stage: number, mode?: RaidBgmMode) => void>(() => {})
   const stopRaidBgmRef = useRef<() => void>(() => {})
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
@@ -6350,6 +6367,10 @@ export function GradiusRaid({
       multiplayerLastHostPacketTimeRef.current = now
     }
 
+    const prevHostPlayerForAudio = session && !session.isHost ? clonePlayer(playerRef.current) : null
+    const prevGuestPlayerForAudio = session && !session.isHost && remotePlayerRef.current ? clonePlayer(remotePlayerRef.current) : null
+    const prevEnemiesForAudio = session && !session.isHost ? enemiesRef.current.map(cloneEnemy) : []
+
     playerRef.current = session && !session.isHost
       ? reconcilePlayerVisual(playerRef.current, state.hostPlayer, MULTIPLAYER_REMOTE_CORRECTION_BLEND) ?? clonePlayer(state.hostPlayer)
       : clonePlayer(state.hostPlayer)
@@ -6495,6 +6516,24 @@ export function GradiusRaid({
       }
       if (prevPhase !== 'gameover' && state.phase === 'gameover') {
         playGameSound('gameover')
+      }
+      const hostPickupKind = getPlayerPickupAudioKind(prevHostPlayerForAudio, state.hostPlayer)
+      const guestPickupKind = getPlayerPickupAudioKind(prevGuestPlayerForAudio, state.guestPlayer)
+      const pickupKind = guestPickupKind ?? hostPickupKind
+      if (pickupKind) {
+        playPickupVoiceLine(pickupKind)
+        playGameSound('levelup')
+      }
+      if (prevHostPlayerForAudio && state.hostPlayer.hp < prevHostPlayerForAudio.hp && state.hostPlayer.hp > 0) {
+        playGameSound('hit')
+      }
+      if (prevGuestPlayerForAudio && state.guestPlayer && state.guestPlayer.hp < prevGuestPlayerForAudio.hp && state.guestPlayer.hp > 0) {
+        playGameSound('hit')
+      }
+      const nextEnemyIds = new Set(state.enemies.map((enemy) => enemy.id))
+      const destroyedEnemy = prevEnemiesForAudio.find((enemy) => enemy.hp > 0 && enemy.y > -10 && enemy.y < HEIGHT + 10 && !nextEnemyIds.has(enemy.id))
+      if (destroyedEnemy && state.phase === 'playing') {
+        playGameSound(destroyedEnemy.isBoss || destroyedEnemy.isMiniBoss ? 'explosion_big' : 'explosion')
       }
     }
 
@@ -6932,10 +6971,14 @@ export function GradiusRaid({
     raidBgmModeRef.current = null
     raidBgmStageRef.current = 0
     raidBgmTrackRef.current = null
+    raidBgmRequestedModeRef.current = null
+    raidBgmRequestedStageRef.current = 0
   }, [])
 
   const startRaidBgm = useCallback((stage: number, mode: RaidBgmMode = 'cruise') => {
     if (typeof window === 'undefined') return
+    raidBgmRequestedModeRef.current = mode
+    raidBgmRequestedStageRef.current = stage
     if (!getGameSoundEnabled()) {
       stopRaidBgm()
       return
@@ -6946,7 +6989,12 @@ export function GradiusRaid({
         mode === 'boss' ? RAID_BOSS_BGM_TRACK :
           RAID_DEFAULT_BGM_TRACK
     const trackChanged = raidBgmTrackRef.current !== track
-    if (raidBgmModeRef.current === mode && raidBgmStageRef.current === stage && raidBgmElementRef.current && !trackChanged) return
+    if (raidBgmModeRef.current === mode && raidBgmStageRef.current === stage && raidBgmElementRef.current && !trackChanged) {
+      if (raidBgmElementRef.current.paused) {
+        void raidBgmElementRef.current.play().catch(() => {})
+      }
+      return
+    }
 
     if (trackChanged && raidBgmElementRef.current) {
       raidBgmElementRef.current.pause()
@@ -6983,11 +7031,35 @@ export function GradiusRaid({
       raidBgmModeRef.current = null
       raidBgmStageRef.current = 0
       raidBgmTrackRef.current = null
+      raidBgmElementRef.current = null
     })
   }, [stopRaidBgm])
 
   stopRaidBgmRef.current = stopRaidBgm
   startRaidBgmRef.current = startRaidBgm
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const retryRaidAudio = () => {
+      if (!getGameSoundEnabled()) return
+      const requestedMode = raidBgmRequestedModeRef.current
+      const requestedStage = raidBgmRequestedStageRef.current
+      if (requestedMode) {
+        startRaidBgmRef.current(requestedStage || stageRef.current, requestedMode)
+      }
+    }
+
+    window.addEventListener('pointerdown', retryRaidAudio, { passive: true })
+    window.addEventListener('keydown', retryRaidAudio)
+    window.addEventListener('touchstart', retryRaidAudio, { passive: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', retryRaidAudio)
+      window.removeEventListener('keydown', retryRaidAudio)
+      window.removeEventListener('touchstart', retryRaidAudio)
+    }
+  }, [])
 
   const drawFxCanvas = useCallback((time = performance.now()) => {
     const canvas = fxCanvasRef.current
