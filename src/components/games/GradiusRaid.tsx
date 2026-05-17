@@ -3024,7 +3024,7 @@ function drawSnakeBiteLungeModel(ctx: CanvasRenderingContext2D, x: number, y: nu
   const seconds = time / 1000
   const reach = Math.min(size, 380)
   const startX = x
-  const startY = y + size * 0.06
+  const startY = y - size * 0.14
   const lunge = 0.16 + warm * 0.84
   const endX = startX + (targetX - startX) * lunge
   const endY = startY + (targetY - startY) * lunge
@@ -3093,12 +3093,12 @@ function drawSnakeBiteLungeModel(ctx: CanvasRenderingContext2D, x: number, y: nu
   ctx.save()
   ctx.translate(endX, endY)
   ctx.rotate(headAngle + Math.PI / 2)
-  drawSnakeTerrorHead(ctx, reach * 0.42, time)
+  drawSnakeTerrorHead(ctx, reach * 0.42, time, true)
   ctx.restore()
   ctx.restore()
 }
 
-function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, targetY: number, size: number, time: number, chargeTimer: number, pattern: Enemy['chargePattern']) {
+function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: number, targetX: number, targetY: number, size: number, viewportWidth: number, time: number, chargeTimer: number, pattern: Enemy['chargePattern']) {
   const warm = clamp(1 - chargeTimer / (pattern === 'horizontal' ? 1.18 : pattern === 'cross' ? 1.08 : 0.95), 0, 1)
   const pulse = 0.45 + Math.sin(time / 85) * 0.18
   const laneX = targetX
@@ -3109,22 +3109,24 @@ function drawSnakeVenomTelegraph(ctx: CanvasRenderingContext2D, x: number, y: nu
   if (pattern === 'horizontal') {
     const bandHeight = Math.max(18, size * 0.12)
     const wave = Math.sin(time / 130) * size * 0.018
+    const bandX = viewportWidth * 0.08
+    const bandWidth = viewportWidth * 0.84
     ctx.strokeStyle = `rgba(132,204,22,${0.24 + warm * 0.36})`
     ctx.fillStyle = `rgba(132,204,22,${0.05 + warm * 0.09})`
     ctx.lineWidth = Math.max(3, size * 0.012)
     ctx.beginPath()
-    ctx.roundRect?.(targetX - size * 0.46, targetY - bandHeight * 0.5, size * 0.92, bandHeight, bandHeight * 0.42)
+    ctx.roundRect?.(bandX, targetY - bandHeight * 0.5, bandWidth, bandHeight, bandHeight * 0.42)
     if (!ctx.roundRect) {
-      ctx.rect(targetX - size * 0.46, targetY - bandHeight * 0.5, size * 0.92, bandHeight)
+      ctx.rect(bandX, targetY - bandHeight * 0.5, bandWidth, bandHeight)
     }
     ctx.fill()
     ctx.stroke()
     for (let coil = 0; coil < 3; coil += 1) {
       ctx.beginPath()
       const offsetY = targetY + (coil - 1) * bandHeight * 0.22 + wave
-      ctx.moveTo(targetX - size * 0.42, offsetY)
+      ctx.moveTo(bandX + bandWidth * 0.03, offsetY)
       for (let segment = 0; segment <= 10; segment += 1) {
-        const px = targetX - size * 0.42 + (segment / 10) * size * 0.84
+        const px = bandX + bandWidth * (0.03 + (segment / 10) * 0.94)
         const py = offsetY + Math.sin(segment * 1.1 + time / 120 + coil) * bandHeight * 0.18
         ctx.lineTo(px, py)
       }
@@ -3696,12 +3698,12 @@ function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: 
     ctx.globalCompositeOperation = 'lighter'
     drawRadialEllipse(ctx, side * size * 0.085, -size * 0.18, size * 0.05, size * 0.058, [
       [0, 'rgba(255,255,255,0.96)'],
-      [0.28, redEyeWarning ? 'rgba(248,113,113,0.98)' : 'rgba(251,191,36,0.96)'],
-      [0.66, redEyeWarning ? 'rgba(220,38,38,0.82)' : 'rgba(249,115,22,0.68)'],
-      [1, redEyeWarning ? 'rgba(127,29,29,0)' : 'rgba(249,115,22,0)'],
+      [0.2, redEyeWarning ? 'rgba(254,202,202,1)' : 'rgba(251,191,36,0.96)'],
+      [0.48, redEyeWarning ? 'rgba(239,68,68,1)' : 'rgba(249,115,22,0.68)'],
+      [1, redEyeWarning ? 'rgba(153,27,27,0)' : 'rgba(249,115,22,0)'],
     ])
     ctx.globalCompositeOperation = 'source-over'
-    ctx.fillStyle = 'rgba(2,6,23,0.95)'
+    ctx.fillStyle = redEyeWarning ? 'rgba(127,29,29,0.98)' : 'rgba(2,6,23,0.95)'
     ctx.beginPath()
     ctx.ellipse(side * size * 0.085, -size * 0.18, size * 0.01, size * 0.037, 0, 0, Math.PI * 2)
     ctx.fill()
@@ -3751,7 +3753,7 @@ function drawSnakeTerrorHead(ctx: CanvasRenderingContext2D, size: number, time: 
 }
 
 
-function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time: number, redEyeWarning = false) {
+function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time: number, redEyeWarning = false, hideHead = false) {
   const seconds = time / 1000
   ctx.save()
 
@@ -3858,6 +3860,7 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
     }
   }
 
+  if (!hideHead) {
   const hoodGradient = ctx.createRadialGradient(-size * 0.04, -size * 0.36, 1, 0, -size * 0.2, size * 0.34)
   hoodGradient.addColorStop(0, '#fff7ad')
   hoodGradient.addColorStop(0.26, '#a3a3a3')
@@ -3962,11 +3965,11 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   for (const side of [-1, 1]) {
     drawRadialEllipse(ctx, side * size * 0.07, -size * 0.16, size * (redEyeWarning ? 0.066 : 0.048), size * (redEyeWarning ? 0.07 : 0.052), [
       [0, 'rgba(255,255,255,0.95)'],
-      [0.3, redEyeWarning ? 'rgba(248,113,113,0.98)' : 'rgba(251,191,36,0.95)'],
-      [0.62, redEyeWarning ? 'rgba(220,38,38,0.82)' : 'rgba(249,115,22,0.62)'],
-      [1, redEyeWarning ? 'rgba(127,29,29,0)' : 'rgba(249,115,22,0)'],
+      [0.18, redEyeWarning ? 'rgba(254,202,202,1)' : 'rgba(251,191,36,0.95)'],
+      [0.5, redEyeWarning ? 'rgba(239,68,68,1)' : 'rgba(249,115,22,0.62)'],
+      [1, redEyeWarning ? 'rgba(153,27,27,0)' : 'rgba(249,115,22,0)'],
     ])
-    ctx.fillStyle = '#0f172a'
+    ctx.fillStyle = redEyeWarning ? '#7f1d1d' : '#0f172a'
     ctx.beginPath()
     ctx.ellipse(side * size * 0.07, -size * 0.16, size * 0.009, size * 0.026, 0, 0, Math.PI * 2)
     ctx.fill()
@@ -3987,6 +3990,27 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   drawReferenceSnakeBossDetails(ctx, size, time)
   drawReferenceSnakeBossFinishPass(ctx, size, time)
   drawSnakeTerrorHead(ctx, size, time, redEyeWarning)
+  } else {
+    ctx.globalCompositeOperation = 'source-over'
+    const neck = ctx.createRadialGradient(0, -size * 0.12, 1, 0, -size * 0.04, size * 0.28)
+    neck.addColorStop(0, '#fde68a')
+    neck.addColorStop(0.32, '#64748b')
+    neck.addColorStop(0.72, '#111827')
+    neck.addColorStop(1, '#020617')
+    ctx.fillStyle = neck
+    ctx.strokeStyle = 'rgba(190,242,100,0.52)'
+    ctx.lineWidth = Math.max(1.5, size * 0.006)
+    ctx.beginPath()
+    ctx.ellipse(0, -size * 0.08, size * 0.18, size * 0.13, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.globalCompositeOperation = 'lighter'
+    drawRadialEllipse(ctx, 0, -size * 0.08, size * 0.12, size * 0.07, [
+      [0, 'rgba(190,242,100,0.34)'],
+      [0.55, 'rgba(34,211,238,0.18)'],
+      [1, 'rgba(34,211,238,0)'],
+    ])
+  }
   ctx.restore()
 }
 
@@ -4611,7 +4635,10 @@ function drawRaidEnemy(
       ctx.rotate(displayBossKind === 'snake' ? 0 : rotation * 0.45)
       ctx.scale(floatScale, floatScale)
       if (displayBossKind === 'squid') drawGalacticSquidBoss(ctx, size, time)
-      else if (displayBossKind === 'snake') drawGalacticSnakeBoss(ctx, size, time, enemy.chargeTimer > 0 && enemy.chargePattern === 'cross')
+      else if (displayBossKind === 'snake') {
+        const biteLungeActive = enemy.chargeTimer > 0 && enemy.chargePattern === 'cross'
+        drawGalacticSnakeBoss(ctx, size, time, biteLungeActive, biteLungeActive)
+      }
       else {
         const finalRage = clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1)
         drawInterstellarDreadshipBoss(ctx, size, time, finalRage)
@@ -4623,7 +4650,7 @@ function drawRaidEnemy(
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer)
       }
       if (displayBossKind === 'snake' && enemy.chargeTimer > 0) {
-        drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer, enemy.chargePattern)
+        drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, viewportWidth, time, enemy.chargeTimer, enemy.chargePattern)
       }
       if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
       drawBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
