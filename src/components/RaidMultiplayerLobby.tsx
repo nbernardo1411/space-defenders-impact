@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { TowerShip } from './games/towerDefense/sprites'
+import { getLanguageText, getRaidText, type LanguageCode } from '../i18n'
 
 type RoomPlayer = {
   id: string
@@ -33,6 +34,7 @@ export type RaidMultiplayerSession = {
 
 type RaidMultiplayerLobbyProps = {
   playerName: string
+  language: LanguageCode
   onBack: () => void
   onStart: (session: RaidMultiplayerSession) => void
 }
@@ -79,7 +81,10 @@ const getLobbyShipSize = (shipKey: string) => {
   return 48
 }
 
-export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultiplayerLobbyProps) {
+export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: RaidMultiplayerLobbyProps) {
+  const text = getLanguageText(language).lobby
+  const raidText = getRaidText(language)
+  const getLocalizedShipName = (shipKey: string) => raidText.ships[shipKey as keyof typeof raidText.ships]?.name ?? getShipName(shipKey)
   const socketRef = useRef<WebSocket | null>(null)
   const handoffRef = useRef(false)
   const roomRef = useRef<RoomSnapshot | null>(null)
@@ -89,7 +94,7 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
   const [joinCode, setJoinCode] = useState('')
   const [room, setRoom] = useState<RoomSnapshot | null>(null)
   const [peerId, setPeerId] = useState<string | null>(null)
-  const [status, setStatus] = useState('Choose host or join to link two pilots.')
+  const [status, setStatus] = useState<string>(text.statusInitial)
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
 
@@ -123,13 +128,13 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
   const connect = (onOpen: (socket: WebSocket) => void) => {
     const url = normalizeRelayUrl(relayUrl)
     if (!url) {
-      setError('Multiplayer service is not configured for this deployment.')
+      setError(text.noService)
       return
     }
 
     setError('')
     setConnecting(true)
-    setStatus('Connecting to multiplayer service...')
+    setStatus(text.connecting)
 
     socketRef.current?.close()
     const socket = new WebSocket(url)
@@ -137,7 +142,7 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
 
     socket.onopen = () => {
       setConnecting(false)
-      setStatus('Connected to multiplayer service.')
+      setStatus(text.connected)
       onOpen(socket)
     }
 
@@ -146,25 +151,25 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
         const message = JSON.parse(event.data) as RelayMessage
         handleRelayMessage(message)
       } catch {
-        setError('Multiplayer service sent an unreadable message.')
+        setError(text.unreadable)
       }
     }
 
     socket.onerror = () => {
       setConnecting(false)
-      setError('Could not reach the multiplayer service. Try again in a moment.')
+      setError(text.unreachable)
     }
 
     socket.onclose = () => {
       setConnecting(false)
-      setStatus('Disconnected from relay.')
+      setStatus(text.disconnected)
       socketRef.current = null
     }
   }
 
   const send = (socket: WebSocket | null, payload: Record<string, unknown>) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setError('Multiplayer service is not connected.')
+      setError(text.notConnected)
       return
     }
 
@@ -179,20 +184,20 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
 
     if (message.type === 'room-created') {
       setRoom(message.room)
-      setStatus('Room created. Share the room code with player two.')
+      setStatus(text.roomCreated)
       return
     }
 
     if (message.type === 'room-joined') {
       setRoom(message.room)
-      setStatus('Joined room. Mark ready when both pilots are in.')
+      setStatus(text.roomJoined)
       return
     }
 
     if (message.type === 'room-update') {
       setRoom(message.room)
       if (message.room?.players.length === 2) {
-        setStatus('Second pilot linked. Mark ready when both players are set.')
+        setStatus(text.secondLinked)
       }
       return
     }
@@ -219,7 +224,7 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
 
     if (message.type === 'left-room') {
       setRoom(null)
-      setStatus('Left room.')
+      setStatus(text.leftRoom)
       return
     }
 
@@ -237,7 +242,7 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
   const joinRoom = () => {
     const code = joinCode.trim().toUpperCase()
     if (!code) {
-      setError('Enter the host room code first.')
+      setError(text.enterCode)
       return
     }
 
@@ -272,23 +277,23 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
       <div className="mode-screen__stars" />
       <div className="mode-screen__panel raid-lobby">
         <button className="mode-screen__back" onClick={onBack}>
-          Back
+          {text.back}
         </button>
 
-        <div className="mode-screen__eyebrow">Rocket Raid Link</div>
-        <h1>Multiplayer</h1>
+        <div className="mode-screen__eyebrow">{text.eyebrow}</div>
+        <h1>{text.title}</h1>
         <p>
-          Host a two-player room online, then share the room code with the second pilot.
+          {text.copy}
         </p>
 
         <div className="raid-lobby__grid">
           <div className="raid-lobby__field raid-lobby__field--readonly">
-            <span>Pilot name</span>
+            <span>{getLanguageText(language).player.pilotName}</span>
             <strong>{playerName}</strong>
           </div>
         </div>
 
-        <div className="raid-lobby__ships" aria-label="Choose ship">
+        <div className="raid-lobby__ships" aria-label={text.chooseShip}>
           {SHIP_OPTIONS.map((ship) => (
             <button
               key={ship.key}
@@ -301,23 +306,23 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
               <span className="raid-lobby__ship-art" aria-hidden="true">
                 <TowerShip tType={ship.key} color={RAID_PLAYER_COLOR} size={getLobbyShipSize(ship.key)} />
               </span>
-              <span className="raid-lobby__ship-name">{ship.name}</span>
+              <span className="raid-lobby__ship-name">{getLocalizedShipName(ship.key)}</span>
             </button>
           ))}
         </div>
 
         <div className="raid-lobby__actions">
           <button disabled={connecting} onClick={hostRoom}>
-            Host Room
+            {text.hostRoom}
           </button>
           <label className="raid-lobby__join">
             <input
               value={joinCode}
-              placeholder="RAID-1234"
+              placeholder={text.roomPlaceholder}
               onChange={(event) => setJoinCode(event.target.value)}
             />
             <button disabled={connecting} onClick={joinRoom}>
-              Join
+              {text.join}
             </button>
           </label>
         </div>
@@ -330,7 +335,7 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
         {room ? (
           <div className="raid-lobby__room">
             <div className="raid-lobby__room-code">
-              <span>Room code</span>
+              <span>{text.roomCode}</span>
               <strong>{room.code}</strong>
             </div>
 
@@ -339,25 +344,25 @@ export function RaidMultiplayerLobby({ playerName, onBack, onStart }: RaidMultip
                 <div className="raid-lobby__player" key={player.id}>
                   <span>{player.name}</span>
                   <strong>
-                    {player.host ? 'Host' : 'Guest'} - {getShipName(player.shipKey)} - {player.ready ? 'Ready' : 'Waiting'}
+                    {player.host ? text.host : text.guest} - {getLocalizedShipName(player.shipKey)} - {player.ready ? text.ready : text.waiting}
                   </strong>
                 </div>
               ))}
             </div>
 
             <div className="raid-lobby__room-actions">
-              <button onClick={toggleReady}>{ownPlayer?.ready ? 'Cancel Ready' : 'Ready'}</button>
+              <button onClick={toggleReady}>{ownPlayer?.ready ? text.cancelReady : text.ready}</button>
               {canStart && ownPlayer?.host ? (
-                <button onClick={startCoop}>Start Co-op</button>
+                <button onClick={startCoop}>{text.startCoop}</button>
               ) : null}
               <button className="raid-lobby__secondary" onClick={leaveRoom}>
-                Leave
+                {text.leave}
               </button>
             </div>
 
             {canStart ? (
               <div className="raid-lobby__ready">
-                Both pilots are linked. Host can launch co-op.
+                {text.readyMessage}
               </div>
             ) : null}
           </div>

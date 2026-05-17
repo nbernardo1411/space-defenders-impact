@@ -5,6 +5,8 @@ import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPu
 import type { GraphicsQuality } from './sound'
 import { AlienShip, TowerShip } from './towerDefense/sprites'
 import { submitLeaderboardScore } from '../../leaderboards'
+import { getRaidText } from '../../i18n'
+import type { LanguageCode } from '../../i18n'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -330,64 +332,6 @@ const SHIP_OPTIONS: ShipOption[] = [
 
 type BriefingBossKind = Extract<BossKind, 'squid' | 'snake' | 'final'>
 
-type BriefingBossIntel = {
-  kind: BriefingBossKind
-  name: string
-  stage: string
-  behavior: string[]
-}
-
-type BriefingPanel = {
-  title: string
-  body: string
-  items?: string[]
-  bosses?: BriefingBossIntel[]
-}
-
-const BRIEFING_BOSS_INTEL: BriefingBossIntel[] = [
-  {
-    kind: 'squid',
-    name: 'Abyss Squid',
-    stage: 'Stage 5',
-    behavior: ['Marks your current ship position, then slaps that spot after a dodge window.', 'Launches splitting bubbles that drift, split, and chase again if ignored.'],
-  },
-  {
-    kind: 'snake',
-    name: 'Serpent Guardian',
-    stage: 'Stage 10',
-    behavior: ['Sweeps wide across the arena with a long body and lane pressure.', 'Forces movement discipline before the final-stage gauntlet.'],
-  },
-  {
-    kind: 'final',
-    name: 'Orbital Fortress',
-    stage: 'Stage 15',
-    behavior: ['Charges beam patterns with lane warnings before firing.', 'Can rage, shift attack tempo, and fake squid or serpent pressure.'],
-  },
-]
-
-const BRIEFING_PANELS: BriefingPanel[] = [
-  {
-    title: 'Mission',
-    body: 'Break through the alien blockade, survive all 15 stages, and destroy the final fortress guarding Earth orbit.',
-    items: ['Your ship fires automatically.', 'PC follows the mouse cursor.', 'Space or the NUKE icon launches a nuclear strike with a 60 second cooldown.', 'Mobile follows above your finger so your hand does not cover the ship.', 'Stages 5, 10, and 15 are guarded by larger boss threats.'],
-  },
-  {
-    title: 'Weapon Drops',
-    body: 'Weapon pickups stack within balanced limits and last for the whole stage, then reset after a boss clear.',
-    items: ['V Spread: max 2 stacks for wider fan shots.', 'L Laser: max 1 stack for piercing beam damage.', '* Scatter: max 2 stacks for angled burst coverage.', 'R Rocket: max 2 stacks for heavy side missiles.', 'H Homing: max 1 stack for seeker missiles.'],
-  },
-  {
-    title: 'Support Buffs',
-    body: 'Support pickups keep a run alive when the screen gets busy. Normal boss clears reset buffs, but the stage before a super boss preserves them.',
-    items: ['O Scouts: two side escorts copy your selected ship and fire with you.', 'S Shield: absorbs hits before hull damage.', 'F Force Field: five temporary armor bars and safe enemy ramming.', '+ Repair: restores hull by one bar.', 'LV Level Up: boss-only pickup that raises ship level and base ATK, then repairs 1 hull.'],
-  },
-  {
-    title: 'Boss Intel',
-    body: 'Big boss stages have readable attacks, but each one pressures space differently. Watch the warning shapes, then move before the hit lands.',
-    bosses: BRIEFING_BOSS_INTEL,
-  },
-]
-
 const BRIEFING_PICKUP_TYPES: Record<string, PowerKind> = {
   'V Spread': 'spread',
   'L Laser': 'laser',
@@ -400,12 +344,6 @@ const BRIEFING_PICKUP_TYPES: Record<string, PowerKind> = {
   '+ Repair': 'repair',
   'LV Level Up': 'levelup',
 }
-
-const ENDING_DEBRIEF_LINES = [
-  'You broke the alien blockade across fifteen combat zones.',
-  'The final fortress is gone, and Earth orbit is open again.',
-  'Survivors below watched your signal return through the atmosphere.',
-]
 
 const PICKUP_PREVIEW_SEEDS: Record<PowerKind, number> = {
   spread: 1,
@@ -6055,7 +5993,8 @@ function drawFingerGuide(ctx: CanvasRenderingContext2D, pointer: Vec | null, toX
 
 function getBriefingPickupType(item: string) {
   const label = item.split(':')[0]
-  return BRIEFING_PICKUP_TYPES[label] ?? null
+  const pickupKey = Object.keys(BRIEFING_PICKUP_TYPES).find((key) => label.startsWith(key))
+  return pickupKey ? BRIEFING_PICKUP_TYPES[pickupKey] : null
 }
 
 function PickupPreviewCanvas({ type }: { type: PowerKind }) {
@@ -6179,10 +6118,12 @@ export function GradiusRaid({
   onClose,
   multiplayerSession,
   playerName,
+  language = 'en',
 }: {
   onClose: () => void
   multiplayerSession?: RaidMultiplayerSession | null
   playerName: string
+  language?: LanguageCode
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const fxCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -10749,10 +10690,14 @@ export function GradiusRaid({
 
   const player = snapshot.player
   const playerBaseAttack = getPlayerBaseAttack(player)
+  const raidText = getRaidText(language)
+  const hudText = raidText.hud
+  const menuText = raidText.menu
+  const briefingPanels = raidText.briefingPanels
   const hpPips = Array.from({ length: player.maxHp }, (_, index) => index < player.hp)
   const forcePips = Array.from({ length: Math.max(FORCE_FIELD_ARMOR, Math.ceil(player.forceField)) }, (_, index) => index < player.forceField)
   const weaponEntries = WEAPON_KEYS.filter((key) => player.weapons[key] > 0)
-  const briefing = BRIEFING_PANELS[briefingStep] ?? BRIEFING_PANELS[0]
+  const briefing = briefingPanels[briefingStep] ?? briefingPanels[0]
   const stageClearProgress = snapshot.stageClear > 0 ? 1 - snapshot.stageClear / STAGE_CLEAR_SECONDS : 0
   const stageFlashOpacity =
     stageClearProgress > 0.66 && stageClearProgress < 0.9
@@ -10764,8 +10709,8 @@ export function GradiusRaid({
   const nukeCooldown = Math.ceil(snapshot.nukeCooldown)
   const nukeStageLocked = snapshot.phase === 'playing' && snapshot.stageClear > 0
   const nukeReady = snapshot.phase === 'playing' && !nukeStageLocked && snapshot.nukeCooldown <= 0
-  const nukeDisplay = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? `${nukeCooldown}s` : 'Nuke'
-  const nukeHint = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? 'Cooldown' : 'Space'
+  const nukeDisplay = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? `${nukeCooldown}s` : hudText.nuke
+  const nukeHint = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? hudText.cooldown : hudText.space
   const bossIncoming = snapshot.bossAlert > 0 && snapshot.bossMessage === 'incoming'
   const bossClear = snapshot.bossAlert > 0 && snapshot.bossMessage === 'clear'
   const isMultiplayer = Boolean(multiplayerSession)
@@ -10809,26 +10754,26 @@ export function GradiusRaid({
     >
       <div className="raid__hud">
         <div className="raid__stat">
-          <span>Score</span>
+          <span>{hudText.score}</span>
           <b>{player.score.toLocaleString()}</b>
         </div>
         <div className="raid__stat">
-          <span>Stage</span>
+          <span>{hudText.stage}</span>
           <b>{snapshot.stageTheme}</b>
         </div>
         <div className="raid__stat raid__stat--level">
-          <span>Level</span>
+          <span>{hudText.level}</span>
           <b>LV {player.rank} ATK {playerBaseAttack.toFixed(1)}</b>
         </div>
         <div className="raid__stat raid__stat--weapon">
-          <span>Stack</span>
+          <span>{hudText.stack}</span>
           <b>
             {weaponEntries.length
               ? weaponEntries.map((key) => `${key[0].toUpperCase()}${player.weapons[key]}`).join(' ')
-              : 'BASE'}
+              : hudText.base}
           </b>
         </div>
-        <div className="raid__hp" aria-label="Hull and force field">
+        <div className="raid__hp" aria-label={hudText.hullAndForce}>
           {hpPips.map((filled, index) => <i key={index} className={filled ? 'raid__pip raid__pip--filled' : 'raid__pip'} />)}
           {player.forceField > 0 && forcePips.map((filled, index) => (
             <i key={`force-${index}`} className={filled ? 'raid__pip raid__pip--force raid__pip--filled' : 'raid__pip raid__pip--force'} />
@@ -10839,7 +10784,7 @@ export function GradiusRaid({
           type="button"
           onClick={() => activateNuke()}
           disabled={!nukeReady}
-          aria-label={nukeReady ? 'Launch nuclear strike' : nukeStageLocked ? 'Nuclear strike unavailable during stage clear' : snapshot.phase === 'playing' ? `Nuclear strike cooling down ${nukeCooldown} seconds` : 'Nuclear strike available during combat'}
+          aria-label={nukeReady ? hudText.launchNuke : nukeStageLocked ? hudText.nukeLocked : snapshot.phase === 'playing' ? `${hudText.nukeCooling} ${nukeCooldown} ${hudText.seconds}` : hudText.nukeAvailable}
         >
           <span className="raid__nuke-mark" aria-hidden="true">
             <i />
@@ -10851,8 +10796,8 @@ export function GradiusRaid({
             <small>{nukeHint}</small>
           </span>
         </button>
-        <button className="raid__pause" type="button" onClick={pauseGame}>Pause</button>
-        <button className="raid__exit" type="button" onClick={onClose}>Exit</button>
+        <button className="raid__pause" type="button" onClick={pauseGame}>{hudText.pause}</button>
+        <button className="raid__exit" type="button" onClick={onClose}>{hudText.exit}</button>
       </div>
 
       {isMultiplayer && (
@@ -10871,35 +10816,35 @@ export function GradiusRaid({
           className="raid__nuke-quick"
           type="button"
           onClick={() => activateNuke()}
-          aria-label="Launch nuclear strike"
+          aria-label={hudText.launchNuke}
         >
           <span className="raid__nuke-quick-mark" aria-hidden="true">
             <i />
             <i />
             <i />
           </span>
-          <span className="raid__nuke-quick-text">Nuke</span>
+          <span className="raid__nuke-quick-text">{hudText.nuke}</span>
         </button>
       )}
 
       {bossIncoming && (
         <div className="raid__boss-warning" role="alert" aria-live="assertive">
           <div className="raid__boss-warning-panel raid__boss-warning-panel--top">
-            <span>Attention</span>
+            <span>{hudText.attention}</span>
           </div>
           <div className="raid__boss-warning-panel raid__boss-warning-panel--main">
             <i aria-hidden="true" />
-            <span>Security Alert</span>
+            <span>{hudText.securityAlert}</span>
             <i aria-hidden="true" />
           </div>
           <div className="raid__boss-warning-stripes" aria-hidden="true" />
-          <small>Boss vector incoming</small>
+          <small>{hudText.bossVectorIncoming}</small>
         </div>
       )}
 
       {bossClear && snapshot.phase !== 'victory' && (
         <div className="raid__boss-alert raid__boss-alert--clear">
-          Boss Destroyed
+          {hudText.bossDestroyed}
         </div>
       )}
 
@@ -10916,14 +10861,14 @@ export function GradiusRaid({
       {snapshot.phase !== 'playing' && snapshot.phase === 'paused' && (
         <div className="raid__overlay">
           <div className="raid__panel raid__panel--pause">
-            <div className="raid__kicker">Combat Hold</div>
-            <h2>Paused</h2>
+            <div className="raid__kicker">{menuText.combatHold}</div>
+            <h2>{menuText.paused}</h2>
             <div className="raid__records">
-              <span>Stage {snapshot.stageTheme}</span>
-              <span>Score {player.score.toLocaleString()}</span>
+              <span>{hudText.stage} {snapshot.stageTheme}</span>
+              <span>{hudText.score} {player.score.toLocaleString()}</span>
             </div>
             <div className="raid__gfx-row">
-              <span className="raid__gfx-label">Graphics</span>
+              <span className="raid__gfx-label">{menuText.graphics}</span>
               {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map((q) => (
                 <button
                   key={q}
@@ -10931,14 +10876,14 @@ export function GradiusRaid({
                   className={graphicsQuality === q ? 'raid__gfx-btn raid__gfx-btn--active' : 'raid__gfx-btn'}
                   onClick={() => applyGraphicsQuality(q)}
                 >
-                  {q[0].toUpperCase() + q.slice(1)}
+                  {menuText[q]}
                 </button>
               ))}
             </div>
             <div className="raid__pause-actions">
-              {canControlOverlay ? <button type="button" className="raid__start" onClick={resumeGame}>Continue</button> : null}
-              {canControlOverlay ? <button type="button" className="raid__menu-button" onClick={() => resetGame()}>Restart</button> : null}
-              <button type="button" className="raid__menu-button" onClick={onClose}>Exit</button>
+              {canControlOverlay ? <button type="button" className="raid__start" onClick={resumeGame}>{menuText.continue}</button> : null}
+              {canControlOverlay ? <button type="button" className="raid__menu-button" onClick={() => resetGame()}>{menuText.restart}</button> : null}
+              <button type="button" className="raid__menu-button" onClick={onClose}>{hudText.exit}</button>
             </div>
           </div>
         </div>
@@ -10947,10 +10892,10 @@ export function GradiusRaid({
       {snapshot.phase === 'briefing' && (
         <div className="raid__overlay">
           <div className="raid__panel raid__panel--briefing">
-            <div className="raid__kicker">Launch Briefing</div>
+            <div className="raid__kicker">{menuText.launchBriefing}</div>
             <h2>{briefing.title}</h2>
             <p className="raid__briefing-copy">{briefing.body}</p>
-            {briefing.items && (
+            {'items' in briefing && (
               <div className="raid__briefing-grid">
                 {briefing.items.map((item) => {
                   const pickupType = getBriefingPickupType(item)
@@ -10972,7 +10917,7 @@ export function GradiusRaid({
                 })}
               </div>
             )}
-            {briefing.bosses && (
+            {'bosses' in briefing && (
               <div className="raid__boss-briefing-list">
                 {briefing.bosses.map((boss) => (
                   <article key={boss.kind} className="raid__boss-briefing-card">
@@ -10986,14 +10931,14 @@ export function GradiusRaid({
                 ))}
               </div>
             )}
-            <div className="raid__briefing-progress" aria-label="Briefing progress">
-              {BRIEFING_PANELS.map((panel, index) => (
+            <div className="raid__briefing-progress" aria-label={menuText.briefingProgress}>
+              {briefingPanels.map((panel, index) => (
                 <button
                   key={panel.title}
                   type="button"
                   className={index === briefingStep ? 'raid__briefing-dot raid__briefing-dot--active' : 'raid__briefing-dot'}
                   onClick={() => setBriefingStep(index)}
-                  aria-label={`Show ${panel.title}`}
+                  aria-label={`${menuText.show} ${panel.title}`}
                 />
               ))}
             </div>
@@ -11006,22 +10951,22 @@ export function GradiusRaid({
                   syncSnapshot()
                 }}
               >
-                Back
+                {menuText.back}
               </button>
-              <button type="button" className="raid__menu-button" onClick={() => resetGame()}>Skip</button>
+              <button type="button" className="raid__menu-button" onClick={() => resetGame()}>{menuText.skip}</button>
               <button
                 type="button"
                 className="raid__start"
                 onClick={() => {
-                  if (briefingStep < BRIEFING_PANELS.length - 1) {
-                    setBriefingStep((step) => Math.min(BRIEFING_PANELS.length - 1, step + 1))
+                  if (briefingStep < briefingPanels.length - 1) {
+                    setBriefingStep((step) => Math.min(briefingPanels.length - 1, step + 1))
                     playGameSound('select')
                   } else {
                     resetGame()
                   }
                 }}
               >
-                {briefingStep < BRIEFING_PANELS.length - 1 ? 'Next' : 'Launch'}
+                {briefingStep < briefingPanels.length - 1 ? menuText.next : menuText.launch}
               </button>
             </div>
           </div>
@@ -11052,30 +10997,30 @@ export function GradiusRaid({
           </div>
 
           <div className="raid__ending-panel">
-            <div className="raid__kicker">Mission Complete</div>
-            <h2 id="raid-ending-title">Earth Line Secured</h2>
+            <div className="raid__kicker">{menuText.missionComplete}</div>
+            <h2 id="raid-ending-title">{menuText.earthLineSecured}</h2>
             <p>
-              Your ship burns through the quiet after the final blast, carrying the last combat signal home.
+              {menuText.endingCopy}
             </p>
-            <div className="raid__ending-log" aria-label="Mission debrief">
-              {ENDING_DEBRIEF_LINES.map((line, index) => (
+            <div className="raid__ending-log" aria-label={menuText.missionDebrief}>
+              {raidText.endingLines.map((line, index) => (
                 <span key={line} style={{ '--ending-line': index } as CSSProperties}>
                   {line}
                 </span>
               ))}
             </div>
             <div className="raid__ending-score">
-              <span>Final Score</span>
+              <span>{menuText.finalScore}</span>
               <strong>{finalScore.toLocaleString()}</strong>
             </div>
             <div className="raid__pause-actions raid__ending-actions">
               {canControlOverlay ? (
                 <button type="button" className="raid__start" onClick={() => resetGame(1)}>
-                  Start New Launch
+                  {menuText.startNewLaunch}
                 </button>
               ) : null}
               <button type="button" className="raid__menu-button" onClick={onClose}>
-                Close
+                {menuText.close}
               </button>
             </div>
           </div>
@@ -11085,20 +11030,25 @@ export function GradiusRaid({
       {snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
         <div className="raid__overlay">
           <div className="raid__panel">
-            <div className="raid__kicker">{snapshot.phase === 'gameover' ? 'Run Ended' : 'Choose Your Ship'}</div>
-            <h2>{snapshot.phase === 'gameover' ? 'Ship Destroyed' : 'Rocket Raid'}</h2>
+            <div className="raid__kicker">{snapshot.phase === 'gameover' ? menuText.runEnded : menuText.chooseShip}</div>
+            <h2>{snapshot.phase === 'gameover' ? menuText.shipDestroyed : menuText.rocketRaid}</h2>
             <div className="raid__ship-grid">
               {SHIP_OPTIONS.map((ship) => (
-                <button
-                  key={ship.key}
-                  type="button"
-                  className={selectedShipKey === ship.key ? 'raid__ship-card raid__ship-card--active' : 'raid__ship-card'}
-                  onClick={() => chooseShip(ship)}
-                >
-                  <TowerShip tType={ship.key} color={PLAYER_COLOR} size={getShipSpriteSize(ship.key, 'picker')} />
-                  <span>{ship.name}</span>
-                  <small>{ship.role}</small>
-                </button>
+                (() => {
+                  const shipCopy = raidText.ships[ship.key as keyof typeof raidText.ships] ?? ship
+                  return (
+                    <button
+                      key={ship.key}
+                      type="button"
+                      className={selectedShipKey === ship.key ? 'raid__ship-card raid__ship-card--active' : 'raid__ship-card'}
+                      onClick={() => chooseShip(ship)}
+                    >
+                      <TowerShip tType={ship.key} color={PLAYER_COLOR} size={getShipSpriteSize(ship.key, 'picker')} />
+                      <span>{shipCopy.name}</span>
+                      <small>{shipCopy.role}</small>
+                    </button>
+                  )
+                })()
               ))}
             </div>
             {!isMultiplayer && completedCampaign && (
@@ -11116,12 +11066,12 @@ export function GradiusRaid({
               </div>
             )}
             <div className="raid__records">
-              <span>Best {snapshot.highScore.toLocaleString()}</span>
-              {!isMultiplayer && snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>Checkpoint Stage {checkpointStage}</span> : <span>{isMultiplayer ? 'Co-op run' : 'PC follows cursor'}</span>}
-              <span>{isMultiplayer ? 'Both pilots must fall' : completedCampaign ? 'Stages 1-15 unlocked' : 'Mobile follows above finger'}</span>
+              <span>{menuText.best} {snapshot.highScore.toLocaleString()}</span>
+              {!isMultiplayer && snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>{menuText.checkpointStage} {checkpointStage}</span> : <span>{isMultiplayer ? menuText.coopRun : menuText.pcFollowsCursor}</span>}
+              <span>{isMultiplayer ? menuText.bothPilotsMustFall : completedCampaign ? menuText.stagesUnlocked : menuText.mobileFollowsFinger}</span>
             </div>
             <div className="raid__gfx-row">
-              <span className="raid__gfx-label">Graphics</span>
+              <span className="raid__gfx-label">{menuText.graphics}</span>
               {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map((q) => (
                 <button
                   key={q}
@@ -11129,14 +11079,14 @@ export function GradiusRaid({
                   className={graphicsQuality === q ? 'raid__gfx-btn raid__gfx-btn--active' : 'raid__gfx-btn'}
                   onClick={() => applyGraphicsQuality(q)}
                 >
-                  {q[0].toUpperCase() + q.slice(1)}
+                  {menuText[q]}
                 </button>
               ))}
             </div>
             <div className="raid__pause-actions">
               {!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
                 <button type="button" className="raid__start" onClick={() => resetGame(checkpointStage, true)}>
-                  Continue Stage {checkpointStage}
+                  {menuText.continueStage} {checkpointStage}
                 </button>
               )}
               {canControlOverlay ? (
@@ -11145,10 +11095,10 @@ export function GradiusRaid({
                   className={!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
                   onClick={snapshot.phase === 'gameover' ? () => resetGame(1) : openBriefing}
                 >
-                  {snapshot.phase === 'gameover' ? isMultiplayer ? 'Restart Co-op' : 'Restart Stage 1' : 'Start Raid'}
+                  {snapshot.phase === 'gameover' ? isMultiplayer ? menuText.restartCoop : menuText.restartStage1 : menuText.startRaid}
                 </button>
               ) : (
-                <button type="button" className="raid__start" onClick={onClose}>Exit Co-op</button>
+                <button type="button" className="raid__start" onClick={onClose}>{menuText.exitCoop}</button>
               )}
             </div>
           </div>

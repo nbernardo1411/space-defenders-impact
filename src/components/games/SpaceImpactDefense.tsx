@@ -29,6 +29,8 @@ import { angleToDeg, lerp, spawnImpactParticles, triggerEnemyDeath } from './tow
 import { AlienShip, EarthHQIcon, MothershipSpawnIcon, TowerShip } from './towerDefense/sprites'
 import { StatPill, btnStyle } from './towerDefense/ui'
 import { submitLeaderboardScore } from '../../leaderboards'
+import { getDefenseText } from '../../i18n'
+import type { LanguageCode } from '../../i18n'
 
 let _eid = 1
 let _tid = 1
@@ -142,7 +144,7 @@ function getDefenseGraphicsProfile(quality: GraphicsQuality, isMobileViewport: b
 
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'normal', playerName }: { availableCoins: CoinOption[]; onClose: () => void; initialMode?: 'normal' | 'endless'; playerName: string }) {
+export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'normal', playerName, language = 'en' }: { availableCoins: CoinOption[]; onClose: () => void; initialMode?: 'normal' | 'endless'; playerName: string; language?: LanguageCode }) {
   const [mobileLayoutMode, setMobileLayoutMode] = useState<MobileLayoutMode>(() => {
     if (typeof window === 'undefined') return 'auto'
     const raw = localStorage.getItem(MOBILE_LAYOUT_STORAGE_KEY)
@@ -1652,14 +1654,14 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       if (livesRef.current >= maxLives) { playGameSound('hit'); return }
       livesRef.current = Math.min(maxLives, livesRef.current + 4 + hqLevelRef.current * 2)
       setUiLives(livesRef.current)
-      floatingTextRef.current.push({ x: COLS - 1.2, y: ROWS - 1.2, text: '+REPAIR', time: 0, maxTime: 0.65, color: '#7dd3fc' })
+      floatingTextRef.current.push({ x: COLS - 1.2, y: ROWS - 1.2, text: `+${defenseText.controls.repair}`, time: 0, maxTime: 0.65, color: '#7dd3fc' })
       playGameSound('levelup')
     } else {
       const targets = enemiesRef.current.filter(isEnemyActive)
       if (targets.length === 0) { playGameSound('hit'); return }
       if (kind === 'freeze') {
         for (const e of targets) e.slowTimer = Math.max(e.slowTimer, 3.8 + hqLevelRef.current * 0.35)
-        floatingTextRef.current.push({ x: COLS / 2, y: 1.2, text: 'ORBITAL FREEZE', time: 0, maxTime: 0.75, color: '#7dd3fc' })
+        floatingTextRef.current.push({ x: COLS / 2, y: 1.2, text: defenseText.controls.freeze, time: 0, maxTime: 0.75, color: '#7dd3fc' })
         playGameSound('laser')
       } else {
         const dmg = 70 + uiStage * 12 + hqLevelRef.current * 22
@@ -1669,7 +1671,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
           handleEnemyDeath(e, 'ion', undefined, true)
         }
         screenFlashRef.current = { time: 0, maxTime: 0.25, intensity: 0.75 }
-        floatingTextRef.current.push({ x: COLS / 2, y: 1.2, text: 'ION STORM', time: 0, maxTime: 0.75, color: '#f0abfc' })
+        floatingTextRef.current.push({ x: COLS / 2, y: 1.2, text: defenseText.controls.ionStorm, time: 0, maxTime: 0.75, color: '#f0abfc' })
         playGameSound('explosion_big')
       }
     }
@@ -1913,6 +1915,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   }, [boardW, boardH, graphicsQuality])
 
   const nextWaveNum = uiWave + 1
+  const defenseText = getDefenseText(language)
+  const formatStageText = (template: string, stage: number) => template.replace('{stage}', String(stage))
+  const getTowerText = (key: TowerKey) => defenseText.towers[key]
   const nextWaveCfg = getWaveCfg(uiStage, nextWaveNum, uiEndless)
   const isBossNextWave = nextWaveCfg.isBoss
   const canStartWave = uiState === 'idle' || uiState === 'playing'
@@ -1939,11 +1944,11 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const hqUpgradeCost = uiHqLevel >= HQ_MAX_LEVEL ? 0 : 800 + uiHqLevel * 650
   const bossIntel = isBossNextWave
     ? isHeavyBossStage(uiStage, uiEndless)
-      ? 'INTEL: SIEGE BOSS'
-      : 'INTEL: BOSS WAVE'
+      ? defenseText.controls.intelSiege
+      : defenseText.controls.intelBoss
     : nextWaveNum >= 3
-      ? 'INTEL: ELITE CONTACTS'
-      : 'INTEL: CLEAR'
+      ? defenseText.controls.intelElite
+      : defenseText.controls.intelClear
   const commandButtonStyle = (bg: string, color: string, disabled = false): React.CSSProperties => ({
     ...btnStyle(disabled ? '#303642' : bg, color, true),
     ...(isCompact
@@ -1998,27 +2003,27 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       )}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: (isCompact || isLandscapeMobile) ? 3 : 6, width: '100%', maxWidth: chromeMaxW, position: 'relative', zIndex: 1, flexShrink: 0 }}>
-        <button onClick={closeDefenseGame} style={btnStyle('#3a120f', '#f9d7bf')} aria-label="Close">X</button>
+        <button onClick={closeDefenseGame} style={btnStyle('#3a120f', '#f9d7bf')} aria-label={defenseText.close}>X</button>
         <div style={{ flex: 1, textAlign: 'center', fontWeight: 900, fontSize: isCompact ? '0.9rem' : '1.05rem', color: '#ffcf86', letterSpacing: 1.6, whiteSpace: 'nowrap', textTransform: 'uppercase', textShadow: '0 0 12px #ff7b2f66' }}>
-          SPACE IMPACT DEFENDER
+          {defenseText.title}
         </div>
-        <button onClick={() => setShowSettingsModal(true)} style={btnStyle('#2d2148', '#d3c6ff')} aria-label="Settings">SETTINGS</button>
+        <button onClick={() => setShowSettingsModal(true)} style={btnStyle('#2d2148', '#d3c6ff')} aria-label={defenseText.settings}>{defenseText.settings}</button>
       </div>
 
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: (isCompact || isLandscapeMobile) ? 4 : 8, alignItems: 'stretch', width: '100%', maxWidth: chromeMaxW, marginBottom: (isCompact || isLandscapeMobile) ? 4 : 8, position: 'relative', zIndex: 1, flexShrink: 0 }}>
-        <StatPill icon="CR" val={uiGold} color="#ffd666" />
-        <StatPill icon="HP" val={uiLives} color="#fb7185" />
-        <StatPill icon="SC" val={uiScore} color="#18e6c4" />
-        <StatPill icon="HI" val={uiHighScore} color="#7c5dff" />
+        <StatPill icon={defenseText.stats.credits} val={uiGold} color="#ffd666" />
+        <StatPill icon={defenseText.stats.hull} val={uiLives} color="#fb7185" />
+        <StatPill icon={defenseText.stats.score} val={uiScore} color="#18e6c4" />
+        <StatPill icon={defenseText.stats.best} val={uiHighScore} color="#7c5dff" />
       </div>
 
       {/* Wave bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: (isCompact || isLandscapeMobile) ? 4 : 8, width: '100%', maxWidth: chromeMaxW, flexWrap: isCompact ? 'wrap' : 'nowrap', position: 'relative', zIndex: 1, background: '#101714', border: '1px solid #335545', borderRadius: 6, padding: (isCompact || isLandscapeMobile) ? '4px 6px' : '6px 8px', boxShadow: 'inset 0 0 0 1px #00000088', flexShrink: 0 }}>
         <span style={{ color: '#b9d7c8', fontSize: isCompact ? '0.75rem' : '0.86rem', whiteSpace: 'nowrap' }}>
           {uiEndless
-            ? <><b style={{ color: '#ff8800' }}>ENDLESS</b> | STAGE <b style={{ color: '#ff8800' }}>{uiStage}</b> | WAVE <b style={{ color: '#ffd666' }}>{uiWave}</b>/{WAVES_PER_STAGE}</>
-            : <>STAGE <b style={{ color: '#18e6c4' }}>{uiStage}</b>/{MAX_STAGES} | WAVE <b style={{ color: '#ffd666' }}>{uiWave}</b>/{WAVES_PER_STAGE}</>}
+            ? <><b style={{ color: '#ff8800' }}>{defenseText.mode.endless}</b> | {defenseText.mode.stage} <b style={{ color: '#ff8800' }}>{uiStage}</b> | {defenseText.mode.wave} <b style={{ color: '#ffd666' }}>{uiWave}</b>/{WAVES_PER_STAGE}</>
+            : <>{defenseText.mode.stage} <b style={{ color: '#18e6c4' }}>{uiStage}</b>/{MAX_STAGES} | {defenseText.mode.wave} <b style={{ color: '#ffd666' }}>{uiWave}</b>/{WAVES_PER_STAGE}</>}
         </span>
         <div style={{ flex: 1, minWidth: isCompact ? 130 : 220, height: 8, background: '#222', borderRadius: 2, border: '1px solid #3b5c4d' }}>
           <div style={{ width: `${((uiStage - 1) * WAVES_PER_STAGE + uiWave) / (MAX_STAGES * WAVES_PER_STAGE) * 100}%`, height: '100%', background: 'linear-gradient(90deg,#0feaa9,#7bffcb)', borderRadius: 2, transition: 'width 0.2s linear' }} />
@@ -2026,18 +2031,18 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
         {canStartWave && !isOver && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={startWave} style={btnStyle(isBossNextWave ? '#8a1f1f' : '#194a34', '#f8ffe7', true)}>
-              {isBossNextWave ? `BOSS WAVE ${nextWaveNum}` : uiState === 'idle' ? 'START WAVE 1' : `START WAVE ${nextWaveNum}`}
+              {isBossNextWave ? `${defenseText.controls.bossWave} ${nextWaveNum}` : uiState === 'idle' ? defenseText.controls.startWaveOne : `${defenseText.controls.startWave} ${nextWaveNum}`}
             </button>
-            <button onClick={() => setAutoPlayWave(!autoPlayWave)} title={autoPlayWave ? 'Disable auto-play' : 'Enable auto-play (auto-start waves)'} style={btnStyle(autoPlayWave ? '#6f5b2d' : '#3b3f45', '#fff', true)}>
-              {autoPlayWave ? 'AUTO' : 'MANUAL'}
+            <button onClick={() => setAutoPlayWave(!autoPlayWave)} title={autoPlayWave ? defenseText.controls.disableAuto : defenseText.controls.enableAuto} style={btnStyle(autoPlayWave ? '#6f5b2d' : '#3b3f45', '#fff', true)}>
+              {autoPlayWave ? defenseText.controls.auto : defenseText.controls.manual}
             </button>
           </div>
         )}
         {uiState === 'wave' && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <span style={{ color: '#ffd666', fontWeight: 700 }}>WAVE IN PROGRESS</span>
-            <button onClick={() => setAutoPlayWave(!autoPlayWave)} title={autoPlayWave ? 'Disable auto-play' : 'Enable auto-play (auto-start waves)'} style={btnStyle(autoPlayWave ? '#6f5b2d' : '#3b3f45', '#fff', true)}>
-              {autoPlayWave ? 'AUTO' : 'MANUAL'}
+            <span style={{ color: '#ffd666', fontWeight: 700 }}>{defenseText.controls.waveInProgress}</span>
+            <button onClick={() => setAutoPlayWave(!autoPlayWave)} title={autoPlayWave ? defenseText.controls.disableAuto : defenseText.controls.enableAuto} style={btnStyle(autoPlayWave ? '#6f5b2d' : '#3b3f45', '#fff', true)}>
+              {autoPlayWave ? defenseText.controls.auto : defenseText.controls.manual}
             </button>
           </div>
         )}
@@ -2058,16 +2063,16 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
         scrollbarWidth: isCompact ? 'thin' : undefined,
       }}>
         <button type="button" onClick={() => castCommanderAbility('ion')} disabled={uiCommanderCooldowns.ion > 0} style={commandButtonStyle('#5b1b68', '#fce7ff', uiCommanderCooldowns.ion > 0)}>
-          {uiCommanderCooldowns.ion > 0 ? `ION ${Math.ceil(uiCommanderCooldowns.ion)}` : 'ION STORM'}
+          {uiCommanderCooldowns.ion > 0 ? `${defenseText.controls.ion} ${Math.ceil(uiCommanderCooldowns.ion)}` : defenseText.controls.ionStorm}
         </button>
         <button type="button" onClick={() => castCommanderAbility('freeze')} disabled={uiCommanderCooldowns.freeze > 0} style={commandButtonStyle('#164e63', '#e0f7ff', uiCommanderCooldowns.freeze > 0)}>
-          {uiCommanderCooldowns.freeze > 0 ? `FREEZE ${Math.ceil(uiCommanderCooldowns.freeze)}` : 'FREEZE'}
+          {uiCommanderCooldowns.freeze > 0 ? `${defenseText.controls.freeze} ${Math.ceil(uiCommanderCooldowns.freeze)}` : defenseText.controls.freeze}
         </button>
         <button type="button" onClick={() => castCommanderAbility('repair')} disabled={uiCommanderCooldowns.repair > 0 || uiLives >= hqMaxLives} style={commandButtonStyle('#1d4d35', '#dfffea', uiCommanderCooldowns.repair > 0 || uiLives >= hqMaxLives)}>
-          {uiCommanderCooldowns.repair > 0 ? `REPAIR ${Math.ceil(uiCommanderCooldowns.repair)}` : `REPAIR ${uiLives}/${hqMaxLives}`}
+          {uiCommanderCooldowns.repair > 0 ? `${defenseText.controls.repair} ${Math.ceil(uiCommanderCooldowns.repair)}` : `${defenseText.controls.repair} ${uiLives}/${hqMaxLives}`}
         </button>
         <button type="button" onClick={upgradeHq} disabled={uiHqLevel >= HQ_MAX_LEVEL || uiGold < hqUpgradeCost} style={commandButtonStyle('#6b4d12', '#fff5c2', uiHqLevel >= HQ_MAX_LEVEL || uiGold < hqUpgradeCost)}>
-          {uiHqLevel >= HQ_MAX_LEVEL ? `HQ LV ${HQ_MAX_LEVEL}` : `HQ LV ${uiHqLevel} CR ${hqUpgradeCost}`}
+          {uiHqLevel >= HQ_MAX_LEVEL ? `${defenseText.controls.hq} LV ${HQ_MAX_LEVEL}` : `${defenseText.controls.hq} LV ${uiHqLevel} ${defenseText.towerActions.cr} ${hqUpgradeCost}`}
         </button>
         <div style={{ border: '1px solid #385264', borderRadius: 6, padding: isCompact ? '8px 9px' : '7px 8px', background: '#0d1520', color: isBossNextWave ? '#ffb4b4' : '#c6d1dd', fontSize: isCompact ? '0.66rem' : '0.76rem', fontWeight: 900, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: isCompact ? 132 : undefined, flex: isCompact ? '0 0 auto' : undefined }}>
           {bossIntel}
@@ -2324,34 +2329,34 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                   <button
                     type="button"
                     onClick={() => upgradeTower(t)}
-                    title={canUpgrade ? `Upgrade for ${upgradeCost} gold` : 'Max level reached'}
+                    title={canUpgrade ? `${defenseText.towerActions.upgradeTitle} ${upgradeCost} ${defenseText.towerActions.gold}` : defenseText.towerActions.maxLevelReached}
                     disabled={!canUpgrade || goldRef.current < upgradeCost}
                     style={actionButtonStyle('#6d48ff', !canUpgrade || goldRef.current < upgradeCost)}
                   >
-                    <span>{canUpgrade ? 'Upgrade' : 'Max'}</span>
-                    <span style={{ fontSize: '0.6rem', opacity: 0.9 }}>{canUpgrade ? `CR ${upgradeCost}` : `Lv ${MAX_TOWER_LEVEL}`}</span>
+                    <span>{canUpgrade ? defenseText.towerActions.upgrade : defenseText.towerActions.max}</span>
+                    <span style={{ fontSize: '0.6rem', opacity: 0.9 }}>{canUpgrade ? `${defenseText.towerActions.cr} ${upgradeCost}` : `${defenseText.towerActions.lv} ${MAX_TOWER_LEVEL}`}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => sellTower(t)}
-                    title={`Sell for ${sellValue} gold`}
+                    title={`${defenseText.towerActions.sellTitle} ${sellValue} ${defenseText.towerActions.gold}`}
                     style={actionButtonStyle('#fb7185')}
                   >
-                    <span>Sell</span>
-                    <span style={{ fontSize: '0.6rem', opacity: 0.9 }}>CR {sellValue}</span>
+                    <span>{defenseText.towerActions.sell}</span>
+                    <span style={{ fontSize: '0.6rem', opacity: 0.9 }}>{defenseText.towerActions.cr} {sellValue}</span>
                   </button>
                 </div>
 
                 {canUpgrade ? (
                   <div style={{ width: '100%' }}>
-                    <div style={{ color: '#c6d1dd', fontSize: '0.58rem', marginBottom: 2, letterSpacing: 0.35 }}>AUTO EXP {t.xp.toFixed(1)} / {levelXpNeed}</div>
+                    <div style={{ color: '#c6d1dd', fontSize: '0.58rem', marginBottom: 2, letterSpacing: 0.35 }}>{defenseText.towerActions.autoExp} {t.xp.toFixed(1)} / {levelXpNeed}</div>
                     <div style={{ width: '100%', height: 5, borderRadius: 3, background: '#131b28', border: '1px solid #3a485f' }}>
                       <div style={{ width: `${levelXpPct * 100}%`, height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,#18e6c4,#8bffdf)', boxShadow: '0 0 8px #18e6c477', transition: 'width 0.12s linear' }} />
                     </div>
                   </div>
                 ) : (
-                  <div style={{ color: '#ffd666', fontSize: '0.58rem', fontWeight: 800, textAlign: 'center' }}>MAX LEVEL REACHED</div>
+                  <div style={{ color: '#ffd666', fontSize: '0.58rem', fontWeight: 800, textAlign: 'center' }}>{defenseText.towerActions.maxLevelReached}</div>
                 )}
               </div>
             )
@@ -2388,7 +2393,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
               }}>
                 {isFinalBoss && <div style={{ fontSize: cell * 0.32, lineHeight: 1, marginBottom: 1 }}>💀</div>}
-                {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.28, lineHeight: 1, marginBottom: 1, color: '#fca5a5', fontWeight: 900, textShadow: '0 0 4px #ef4444' }}>BOSS</div>}
+                {e.isBoss && !isFinalBoss && <div style={{ fontSize: cell * 0.28, lineHeight: 1, marginBottom: 1, color: '#fca5a5', fontWeight: 900, textShadow: '0 0 4px #ef4444' }}>{defenseText.mode.boss}</div>}
                 {!e.isBoss && e.trait !== 'none' && (
                   <div style={{ color: e.trait === 'shielded' ? '#7dd3fc' : e.trait === 'armored' ? '#cbd5e1' : e.trait === 'phase' ? '#c084fc' : e.trait === 'splitter' ? '#f0abfc' : '#fbbf24', fontSize: Math.max(7, cell * 0.15), fontWeight: 900, lineHeight: 1, textShadow: '0 0 5px #000' }}>
                     {e.trait.toUpperCase()}
@@ -2458,7 +2463,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 )}
               </div>
               {isFinalBoss && (
-                <div style={{ position: 'absolute', top: sz / 2 + 2, left: -30, width: 60, textAlign: 'center', fontSize: cell * 0.18, color: '#cc00ff', fontWeight: 900, lineHeight: 1, textShadow: '0 0 6px #cc00ff' }}>SIEGE</div>
+                <div style={{ position: 'absolute', top: sz / 2 + 2, left: -30, width: 60, textAlign: 'center', fontSize: cell * 0.18, color: '#cc00ff', fontWeight: 900, lineHeight: 1, textShadow: '0 0 6px #cc00ff' }}>{defenseText.controls.intelSiege.replace('INTEL: ', '')}</div>
               )}
             </div>
             )
@@ -2797,13 +2802,13 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               pointerEvents: 'auto',
             }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
               {uiEndless
-                ? <div style={{ fontSize: '2rem', fontWeight: 900, color: '#ff8800' }}>🔥 Endless Stage {uiStage} Clear!</div>
-                : <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#ffd666' }}>🏅 Stage {uiStage} Complete!</div>}
+                ? <div style={{ fontSize: '2rem', fontWeight: 900, color: '#ff8800' }}>🔥 {formatStageText(defenseText.overlays.endlessStageClear, uiStage)}</div>
+                : <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#ffd666' }}>🏅 {formatStageText(defenseText.overlays.stageComplete, uiStage)}</div>}
               <div style={{ color: '#ddd', fontSize: '0.95rem', textAlign: 'center', padding: '0 20px' }}>
-                Gold carries over · Towers on new path refunded 70%{uiEndless ? <><br/><span style={{color:'#ff8800'}}>Enemies keep scaling… can you hold?</span></> : <><br/>A new path awaits you…</>}
+                {defenseText.overlays.carryover}{uiEndless ? <><br/><span style={{color:'#ff8800'}}>{defenseText.overlays.enemiesScaling}</span></> : <><br/>{defenseText.overlays.newPath}</>}
               </div>
               <button onClick={(e) => { e.stopPropagation(); advanceStage() }} style={btnStyle(uiEndless ? '#ff8800' : '#18e6c4', '#000', true)}>
-                {uiEndless ? `🔥 Endless Stage ${uiStage + 1} →` : `Enter Stage ${uiStage + 1} →`}
+                {uiEndless ? `🔥 ${defenseText.mode.endless} ${defenseText.mode.stage} ${uiStage + 1} →` : `${defenseText.overlays.enterStage} ${uiStage + 1} →`}
               </button>
             </div>
           )}
@@ -2908,7 +2913,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                   transform: `scale(${scale})`,
                   transformOrigin: 'center',
                 }}>
-                  WAVE {waveAnnouncement.wave}
+                  {defenseText.overlays.wave} {waveAnnouncement.wave}
                 </div>
               </div>
             )
@@ -3037,7 +3042,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                       opacity: textOpacity,
                       marginBottom: 16,
                     }}>
-                      STAGE {uiStage}
+                      {defenseText.overlays.stage} {uiStage}
                     </div>
                     <div style={{
                       fontSize: '1.2rem',
@@ -3045,7 +3050,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                       textShadow: '0 0 10px #ffd666',
                       opacity: textOpacity,
                     }}>
-                      Get Ready!
+                      {defenseText.overlays.getReady}
                     </div>
                   </div>
                 )}
@@ -3095,19 +3100,19 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               }}>
                 {uiState === 'victory' ? (
                   <>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#18e6c4' }}>🏆 VICTORY!</div>
-                    <div style={{ color: '#ddd', fontSize: '0.95rem' }}>All 10 stages conquered!</div>
-                    <div style={{ color: '#ff8800', fontWeight: 900, fontSize: '1rem', textTransform: 'uppercase', letterSpacing: 1 }}>You unlocked the endless mode</div>
-                    <div style={{ color: '#ffd666', fontWeight: 800, fontSize: '1.1rem' }}>Score: {uiScore.toLocaleString()}</div>
-                    <div style={{ color: '#aaa', fontSize: '0.85rem' }}>Best: {uiHighScore.toLocaleString()}</div>
-                    <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#18e6c4' }}>🏆 {defenseText.overlays.victory}</div>
+                    <div style={{ color: '#ddd', fontSize: '0.95rem' }}>{defenseText.overlays.conquered}</div>
+                    <div style={{ color: '#ff8800', fontWeight: 900, fontSize: '1rem', textTransform: 'uppercase', letterSpacing: 1 }}>{defenseText.overlays.unlockedEndless}</div>
+                    <div style={{ color: '#ffd666', fontWeight: 800, fontSize: '1.1rem' }}>{defenseText.overlays.score}: {uiScore.toLocaleString()}</div>
+                    <div style={{ color: '#aaa', fontSize: '0.85rem' }}>{defenseText.overlays.best}: {uiHighScore.toLocaleString()}</div>
+                    <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ {defenseText.overlays.playAgain}</button>
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#fb7185' }}>💥 GAME OVER</div>
-                    <div style={{ color: '#ddd', fontSize: '1.1rem' }}>Score: <b style={{ color: '#ffd666' }}>{uiScore.toLocaleString()}</b></div>
-                    <div style={{ color: '#aaa', fontSize: '0.9rem' }}>Best: {uiHighScore.toLocaleString()}</div>
-                    <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ Play Again</button>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#fb7185' }}>💥 {defenseText.overlays.gameOver}</div>
+                    <div style={{ color: '#ddd', fontSize: '1.1rem' }}>{defenseText.overlays.score}: <b style={{ color: '#ffd666' }}>{uiScore.toLocaleString()}</b></div>
+                    <div style={{ color: '#aaa', fontSize: '0.9rem' }}>{defenseText.overlays.best}: {uiHighScore.toLocaleString()}</div>
+                    <button type="button" onClick={restart} style={btnStyle('#18e6c4', '#000', true)}>↺ {defenseText.overlays.playAgain}</button>
                   </>
                 )}
               </div>
@@ -3117,10 +3122,11 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
         {/* Sidebar */}
         <div style={{ flex: isCompact ? 1 : isLandscapeMobile ? 1 : '0 0 auto', minWidth: isCompact ? boardW : 0, width: isCompact ? boardW : undefined, display: 'flex', flexDirection: 'column', gap: isCompact ? 3 : 6, minHeight: 0, overflow: 'hidden', maxHeight: isLandscapeMobile ? boardH : undefined, overflowY: isLandscapeMobile ? 'auto' : undefined }}>
-          {(!isCompact && !isLandscapeMobile) && <div style={{ color: '#aaa', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Deploy Ship</div>}
+          {(!isCompact && !isLandscapeMobile) && <div style={{ color: '#aaa', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>{defenseText.sidebar.deployShip}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: compactTowerShop ? 'repeat(5,minmax(0,1fr))' : isLandscapeMobile ? 'repeat(2,minmax(0,1fr))' : '1fr', gridTemplateRows: compactTowerShop ? 'repeat(2, 58px)' : undefined, gap: isCompact ? 4 : 5, flex: compactTowerShop ? '0 0 auto' : isCompact ? 1 : undefined, minHeight: isCompact ? 0 : undefined }}>
             {TOWER_TYPES.map(t => {
               const isDreadnoughtCapped = t.key === 'dreadnought' && dreadnoughtLimitReached
+              const towerCopy = getTowerText(t.key)
               return (
               <button
                 key={t.key}
@@ -3159,9 +3165,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                     }}>
                       <TowerShip tType={t.key} color={t.color} size={compactTowerShop ? 16 : 18} />
                     </div>
-                    <span style={{ fontWeight: 800, color: t.color, fontSize: compactTowerShop ? '0.55rem' : '0.68rem', textAlign: 'center', lineHeight: 1.05, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
+                    <span style={{ fontWeight: 800, color: t.color, fontSize: compactTowerShop ? '0.55rem' : '0.68rem', textAlign: 'center', lineHeight: 1.05, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{towerCopy.label}</span>
                     <span style={{ color: '#ffd666', fontSize: compactTowerShop ? '0.52rem' : '0.62rem', fontWeight: 700, lineHeight: 1 }}>{t.key === 'dreadnought' ? `${t.cost} ${dreadnoughtFieldCount}/${DREADNOUGHT_FIELD_LIMIT}` : t.cost}</span>
-                    {!compactTowerShop && <span style={{ color: '#888', fontSize: '0.55rem', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{t.desc}</span>}
+                    {!compactTowerShop && <span style={{ color: '#888', fontSize: '0.55rem', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{towerCopy.desc}</span>}
                   </div>
                 ) : (
                   /* Landscape mobile (2-col) and desktop (1-col): icon left, name + cost + desc on right */
@@ -3177,10 +3183,10 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontWeight: 800, color: t.color, fontSize: isLandscapeMobile ? '0.76rem' : '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
-                        <span style={{ color: '#ffd666', fontSize: isLandscapeMobile ? '0.68rem' : '0.76rem', whiteSpace: 'nowrap', flexShrink: 0 }}>CR {t.cost}{t.key === 'dreadnought' ? ` | ${dreadnoughtFieldCount}/${DREADNOUGHT_FIELD_LIMIT}` : ''}</span>
+                        <span style={{ fontWeight: 800, color: t.color, fontSize: isLandscapeMobile ? '0.76rem' : '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{towerCopy.label}</span>
+                        <span style={{ color: '#ffd666', fontSize: isLandscapeMobile ? '0.68rem' : '0.76rem', whiteSpace: 'nowrap', flexShrink: 0 }}>{defenseText.towerActions.cr} {t.cost}{t.key === 'dreadnought' ? ` | ${dreadnoughtFieldCount}/${DREADNOUGHT_FIELD_LIMIT}` : ''}</span>
                       </div>
-                      <div style={{ color: '#888', fontSize: isLandscapeMobile ? '0.62rem' : '0.7rem', marginTop: 2, lineHeight: 1.3, whiteSpace: isLandscapeMobile ? 'nowrap' : undefined, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.desc}</div>
+                      <div style={{ color: '#888', fontSize: isLandscapeMobile ? '0.62rem' : '0.7rem', marginTop: 2, lineHeight: 1.3, whiteSpace: isLandscapeMobile ? 'nowrap' : undefined, overflow: 'hidden', textOverflow: 'ellipsis' }}>{towerCopy.desc}</div>
                     </div>
                   </div>
                 )}
@@ -3218,16 +3224,16 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ color: selectedTowerDef.color, fontSize: '0.68rem', fontWeight: 900, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {selectedTowerDef.label}
+                      {getTowerText(selectedTowerDef.key).label}
                     </div>
                     <div style={{ color: '#a8b7c4', fontSize: '0.58rem', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {selectedTowerDef.desc}
+                      {getTowerText(selectedTowerDef.key).desc}
                     </div>
                   </div>
-                  <div style={{ color: '#ffd666', fontSize: '0.62rem', fontWeight: 900, whiteSpace: 'nowrap' }}>CR {selectedTowerDef.cost}</div>
+                  <div style={{ color: '#ffd666', fontSize: '0.62rem', fontWeight: 900, whiteSpace: 'nowrap' }}>{defenseText.towerActions.cr} {selectedTowerDef.cost}</div>
                 </>
               ) : (
-                <div style={{ color: '#7f958a', fontSize: '0.64rem', fontWeight: 800, textAlign: 'center' }}>Select a ship to view its role and cost</div>
+                <div style={{ color: '#7f958a', fontSize: '0.64rem', fontWeight: 800, textAlign: 'center' }}>{defenseText.sidebar.selectShip}</div>
               )}
             </div>
           )}
@@ -3254,12 +3260,12 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 <EarthHQIcon size={82} />
               </div>
               <div style={{ position: 'relative', minWidth: 0 }}>
-                <div style={{ color: '#dff7ff', fontWeight: 900, fontSize: '0.86rem', letterSpacing: 1, textShadow: '0 0 10px #38bdf866' }}>EARTH ORBITAL HQ</div>
+                <div style={{ color: '#dff7ff', fontWeight: 900, fontSize: '0.86rem', letterSpacing: 1, textShadow: '0 0 10px #38bdf866' }}>{defenseText.sidebar.earthHq}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 5, marginTop: 8 }}>
-                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>LEVEL <b style={{ color: '#ffd666' }}>{uiHqLevel}</b>/{HQ_MAX_LEVEL}</div>
-                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>HULL <b style={{ color: '#fb7185' }}>{uiLives}</b>/{hqMaxLives}</div>
-                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>MODE <b style={{ color: uiEndless ? '#ff8800' : '#18e6c4' }}>{uiEndless ? 'ENDLESS' : 'NORMAL'}</b></div>
-                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>NEXT <b style={{ color: isBossNextWave ? '#ffb4b4' : '#8bffdf' }}>{isBossNextWave ? 'BOSS' : 'WAVE'}</b></div>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>{defenseText.sidebar.level} <b style={{ color: '#ffd666' }}>{uiHqLevel}</b>/{HQ_MAX_LEVEL}</div>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>{defenseText.sidebar.hull} <b style={{ color: '#fb7185' }}>{uiLives}</b>/{hqMaxLives}</div>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>{defenseText.mode.modeLabel} <b style={{ color: uiEndless ? '#ff8800' : '#18e6c4' }}>{uiEndless ? defenseText.mode.endless : defenseText.mode.normal}</b></div>
+                  <div style={{ color: '#9cc3b3', fontSize: '0.62rem', fontWeight: 800 }}>{defenseText.mode.next} <b style={{ color: isBossNextWave ? '#ffb4b4' : '#8bffdf' }}>{isBossNextWave ? defenseText.mode.boss : defenseText.mode.wave}</b></div>
                 </div>
                 <div style={{ marginTop: 8, height: 7, borderRadius: 4, background: '#081018', border: '1px solid #24445c', overflow: 'hidden' }}>
                   <div style={{ width: `${Math.max(0, Math.min(100, (uiLives / hqMaxLives) * 100))}%`, height: '100%', background: 'linear-gradient(90deg,#fb7185,#ffd666,#7dd3fc)', boxShadow: '0 0 10px #7dd3fc88' }} />
@@ -3270,37 +3276,33 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
           {selectedTowerOnGrid && !isCompact && !isLandscapeMobile && (
             <div style={{ marginTop: 8, background: '#111', border: `2px solid ${selectedTowerOnGrid.towerDef.color}`, borderRadius: 8, padding: 10 }}>
-              <div style={{ color: selectedTowerOnGrid.towerDef.color, fontWeight: 800, fontSize: '0.9rem' }}>{selectedTowerOnGrid.towerDef.label} Lv{selectedTowerOnGrid.level}</div>
-              <div style={{ color: '#aaa', fontSize: '0.75rem', margin: '4px 0' }}>DMG: {(selectedTowerOnGrid.towerDef.dmg * (1 + (selectedTowerOnGrid.level - 1) * 0.5)).toFixed(0)} | Range: {selectedTowerOnGrid.towerDef.range}</div>
+              <div style={{ color: selectedTowerOnGrid.towerDef.color, fontWeight: 800, fontSize: '0.9rem' }}>{getTowerText(selectedTowerOnGrid.type).label} {defenseText.towerActions.lv}{selectedTowerOnGrid.level}</div>
+              <div style={{ color: '#aaa', fontSize: '0.75rem', margin: '4px 0' }}>{defenseText.sidebar.dmg}: {(selectedTowerOnGrid.towerDef.dmg * (1 + (selectedTowerOnGrid.level - 1) * 0.5)).toFixed(0)} | {defenseText.sidebar.range}: {selectedTowerOnGrid.towerDef.range}</div>
               {getTowerSynergy(selectedTowerOnGrid).active && (
-                <div style={{ color: '#8bffdf', fontSize: '0.7rem', fontWeight: 800, marginBottom: 4 }}>SYNERGY ONLINE</div>
+                <div style={{ color: '#8bffdf', fontSize: '0.7rem', fontWeight: 800, marginBottom: 4 }}>{defenseText.sidebar.synergyOnline}</div>
               )}
               {selectedTowerOnGrid.type === 'dreadnought' && (
-                <div style={{ color: '#fda4af', fontSize: '0.7rem', fontWeight: 800, marginBottom: 4 }}>DRONES: {getDreadnoughtScoutCount(selectedTowerOnGrid)} | ACTIVE {getDreadnoughtScoutAttackTime(selectedTowerOnGrid).toFixed(1)}s</div>
+                <div style={{ color: '#fda4af', fontSize: '0.7rem', fontWeight: 800, marginBottom: 4 }}>{defenseText.sidebar.drones}: {getDreadnoughtScoutCount(selectedTowerOnGrid)} | {defenseText.sidebar.active} {getDreadnoughtScoutAttackTime(selectedTowerOnGrid).toFixed(1)}s</div>
               )}
               {selectedTowerOnGrid.level < MAX_TOWER_LEVEL ? (
                 <div style={{ marginBottom: 6 }}>
-                  <div style={{ color: '#8fb9ad', fontSize: '0.68rem', marginBottom: 3 }}>Auto EXP: {selectedTowerOnGrid.xp.toFixed(1)} / {xpNeededForNextLevel(selectedTowerOnGrid.level)}</div>
+                  <div style={{ color: '#8fb9ad', fontSize: '0.68rem', marginBottom: 3 }}>{defenseText.sidebar.autoExp}: {selectedTowerOnGrid.xp.toFixed(1)} / {xpNeededForNextLevel(selectedTowerOnGrid.level)}</div>
                   <div style={{ width: '100%', height: 6, borderRadius: 3, background: '#1a2430', border: '1px solid #324254' }}>
                     <div style={{ width: `${Math.max(0, Math.min(100, (selectedTowerOnGrid.xp / xpNeededForNextLevel(selectedTowerOnGrid.level)) * 100))}%`, height: '100%', borderRadius: 3, background: 'linear-gradient(90deg,#18e6c4,#8bffdf)' }} />
                   </div>
                 </div>
               ) : (
-                <div style={{ color: '#ffd666', fontSize: '0.7rem', fontWeight: 700, marginBottom: 4 }}>MAX LEVEL</div>
+                <div style={{ color: '#ffd666', fontSize: '0.7rem', fontWeight: 700, marginBottom: 4 }}>{defenseText.sidebar.maxLevel}</div>
               )}
               <div style={{ color: '#7b8797', fontSize: '0.72rem' }}>
-                Use the board icons above the tower to upgrade or sell quickly.
+                {defenseText.sidebar.quickHint}
               </div>
             </div>
           )}
 
           {!isCompact && !isLandscapeMobile && (
             <div style={{ marginTop: 'auto', color: '#6f7e76', fontSize: '0.7rem', lineHeight: 1.45 }}>
-              <div>• Tap empty cell to deploy</div>
-              <div>• Drag ship to reposition (mouse or touch)</div>
-              <div>• Aliens reaching HQ cost lives</div>
-              <div>• Wave 5 is boss wave, stage 10 is all bosses</div>
-              <div>• Endless mode is launched from the title screen</div>
+              {defenseText.sidebar.hints.map((hint) => <div key={hint}>• {hint}</div>)}
             </div>
           )}
         </div>
@@ -3330,17 +3332,17 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             color: '#d7dde5',
           }} onMouseDown={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: '0.98rem', fontWeight: 900, letterSpacing: 1.1, color: '#d7ecff' }}>GAME SETTINGS</div>
-              <button type="button" onClick={() => setShowSettingsModal(false)} style={btnStyle('#2f3c4f', '#dce7f7', true)}>CLOSE</button>
+              <div style={{ fontSize: '0.98rem', fontWeight: 900, letterSpacing: 1.1, color: '#d7ecff' }}>{defenseText.settingsPanel.title}</div>
+              <button type="button" onClick={() => setShowSettingsModal(false)} style={btnStyle('#2f3c4f', '#dce7f7', true)}>{defenseText.settingsPanel.close}</button>
             </div>
 
             <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#9fc7ff', marginBottom: 8 }}>LAYOUT MODE</div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#9fc7ff', marginBottom: 8 }}>{defenseText.settingsPanel.layoutMode}</div>
               <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'repeat(3, minmax(0,1fr))', gap: 8 }}>
                 {([
-                  { key: 'auto', label: 'AUTO', desc: 'Match device orientation' },
-                  { key: 'portrait', label: 'PORTRAIT', desc: 'Board on top, shop below' },
-                  { key: 'landscape', label: 'LANDSCAPE', desc: 'Bigger board, shop on right' },
+                  { key: 'auto', label: defenseText.settingsPanel.layouts.auto.label, desc: defenseText.settingsPanel.layouts.auto.desc },
+                  { key: 'portrait', label: defenseText.settingsPanel.layouts.portrait.label, desc: defenseText.settingsPanel.layouts.portrait.desc },
+                  { key: 'landscape', label: defenseText.settingsPanel.layouts.landscape.label, desc: defenseText.settingsPanel.layouts.landscape.desc },
                 ] as const).map(mode => (
                   <button
                     key={mode.key}
@@ -3364,11 +3366,11 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             </div>
 
             <div style={{ marginBottom: 12, color: '#8fa6bf', fontSize: '0.66rem', lineHeight: 1.45 }}>
-              Orientation lock is best-effort on mobile browsers and depends on device/browser support.
+              {defenseText.settingsPanel.orientationNote}
             </div>
 
             <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ffd29f', marginBottom: 8 }}>GRAPHICS</div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ffd29f', marginBottom: 8 }}>{defenseText.settingsPanel.graphics}</div>
               <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: 8 }}>
                 {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map(quality => (
                   <button
@@ -3392,21 +3394,21 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
                 ))}
               </div>
               <div style={{ color: '#8fa6bf', fontSize: '0.66rem', lineHeight: 1.45, marginTop: 8 }}>
-                Low keeps full frame rate and recognizable effects, but uses fewer particles, simpler glow, and lighter background detail.
+                {defenseText.settingsPanel.graphicsNote}
               </div>
             </div>
 
             <div style={{ marginBottom: 12, background: '#0f1727', border: '1px solid #2f3b53', borderRadius: 8, padding: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#9ff2cc' }}>AUDIO</div>
-                <button type="button" onClick={toggleSound} style={btnStyle('#102b20', '#9ef2cc', true)}>{soundOn ? 'SFX ON' : 'SFX OFF'}</button>
+                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#9ff2cc' }}>{defenseText.settingsPanel.audio}</div>
+                <button type="button" onClick={toggleSound} style={btnStyle('#102b20', '#9ef2cc', true)}>{soundOn ? defenseText.settingsPanel.sfxOn : defenseText.settingsPanel.sfxOff}</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'repeat(2,minmax(0,1fr))', gap: 8, marginTop: 8 }}>
                 {([
-                  { key: 'bgm', label: 'BGM', color: '#7dd3fc' },
-                  { key: 'explosion', label: 'EXPLOSIONS', color: '#fb923c' },
-                  { key: 'beam', label: 'BEAMS', color: '#22d3ee' },
-                  { key: 'ui', label: 'UI', color: '#c4b5fd' },
+                  { key: 'bgm', label: defenseText.settingsPanel.audioLabels.bgm, color: '#7dd3fc' },
+                  { key: 'explosion', label: defenseText.settingsPanel.audioLabels.explosion, color: '#fb923c' },
+                  { key: 'beam', label: defenseText.settingsPanel.audioLabels.beam, color: '#22d3ee' },
+                  { key: 'ui', label: defenseText.settingsPanel.audioLabels.ui, color: '#c4b5fd' },
                 ] as const).map(control => (
                   <label key={control.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#d1d5db', fontSize: '0.72rem', letterSpacing: 0.8 }}>
                     <span style={{ color: control.color, fontWeight: 700 }}>{control.label}: {Math.round(audioMix[control.key] * 100)}%</span>
@@ -3424,7 +3426,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             </div>
 
             <div style={{ color: '#8ca2bb', fontSize: '0.68rem', lineHeight: 1.5 }}>
-              Changes are saved automatically and will persist next time you open the game.
+              {defenseText.settingsPanel.saved}
             </div>
           </div>
         </div>

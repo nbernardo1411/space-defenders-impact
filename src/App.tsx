@@ -6,6 +6,14 @@ import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
 import { ENDLESS_UNLOCK_STORAGE_KEY } from './components/games/towerDefense/config'
 import { AlienShip, TowerShip } from './components/games/towerDefense/sprites'
+import {
+  getInitialLanguage,
+  getLanguageText,
+  isLanguageCode,
+  LANGUAGE_OPTIONS,
+  saveLanguage,
+  type LanguageCode,
+} from './i18n'
 import { getStoredPlayerName, hasStoredPlayerName, saveStoredPlayerName } from './leaderboards'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
@@ -41,6 +49,7 @@ type ActiveGame = 'towerDefense' | 'rocketRaid'
 
 function App() {
   const [screen, setScreen] = useState<ScreenState>('title')
+  const [language, setLanguage] = useState<LanguageCode>(getInitialLanguage)
   const [gameMode, setGameMode] = useState<GameMode>('normal')
   const [activeGame, setActiveGame] = useState<ActiveGame>('towerDefense')
   const [raidMultiplayerSession, setRaidMultiplayerSession] = useState<RaidMultiplayerSession | null>(null)
@@ -50,7 +59,20 @@ function App() {
   const [showPlayerNamePrompt, setShowPlayerNamePrompt] = useState(() => !hasStoredPlayerName())
   const [endlessUnlocked, setEndlessUnlocked] = useState(() => localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
 
-  const currentScene = useMemo(() => CUTSCENE_SCENES[cutsceneIndex], [cutsceneIndex])
+  const text = useMemo(() => getLanguageText(language), [language])
+  const currentScene = useMemo(
+    () => ({
+      ...text.cutscene.scenes[cutsceneIndex],
+      accent: CUTSCENE_SCENES[cutsceneIndex].accent,
+    }),
+    [cutsceneIndex, text],
+  )
+
+  const handleLanguageChange = (nextLanguage: string) => {
+    if (!isLanguageCode(nextLanguage)) return
+    setLanguage(nextLanguage)
+    saveLanguage(nextLanguage)
+  }
 
   // =========================
   // MENU BGM CONTROL
@@ -179,17 +201,17 @@ function App() {
           savePlayerName()
         }}
       >
-        <span className="player-name-modal__eyebrow">Pilot Registration</span>
-        <h2 id="player-name-title">Choose your commander name</h2>
-        <p>This name is used for leaderboards and multiplayer rooms.</p>
+        <span className="player-name-modal__eyebrow">{text.player.registration}</span>
+        <h2 id="player-name-title">{text.player.chooseName}</h2>
+        <p>{text.player.nameUse}</p>
         <input
           autoFocus
           maxLength={18}
           value={playerNameDraft}
           onChange={(event) => setPlayerNameDraft(event.target.value)}
-          placeholder="Commander name"
+          placeholder={text.player.placeholder}
         />
-        <button type="submit" disabled={!playerNameDraft.trim()}>Confirm Name</button>
+        <button type="submit" disabled={!playerNameDraft.trim()}>{text.player.confirm}</button>
       </form>
     </div>
   ) : null
@@ -204,6 +226,16 @@ function App() {
   if (screen === 'title') {
     return (
       <div className="start-screen">
+        <label className="language-picker">
+          <span>{text.language}</span>
+          <select value={language} onChange={(event) => handleLanguageChange(event.target.value)}>
+            {LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="start-screen__stars" />
         <div className="start-screen__nebula start-screen__nebula--a" />
         <div className="start-screen__nebula start-screen__nebula--b" />
@@ -234,34 +266,34 @@ function App() {
           <div className="start-screen__command-panel">
             <div className="start-screen__brand">
               <span className="start-screen__signal" />
-              <span>Orbital Command Simulation</span>
-              <span className="start-screen__version">V1.0</span>
+              <span>{text.title.brand}</span>
+              <span className="start-screen__version">{text.title.version}</span>
             </div>
 
             <div className="start-screen__pilot">
-              <span>Commander</span>
+              <span>{text.player.commander}</span>
               <strong>{playerName}</strong>
-              <button onClick={() => setShowPlayerNamePrompt(true)}>Change</button>
+              <button onClick={() => setShowPlayerNamePrompt(true)}>{text.player.change}</button>
             </div>
 
             <div className="start-screen__title-lockup">
-              <div className="start-screen__eyebrow">Earth Defense Initiative</div>
-              <h1>Space Impact Defender</h1>
-              <p>Deploy warships. Defend Earth. Break alien fleets across shifting space lanes.</p>
+              <div className="start-screen__eyebrow">{text.title.eyebrow}</div>
+              <h1>{text.title.name}</h1>
+              <p>{text.title.subtitle}</p>
             </div>
 
             <div className="start-screen__status-grid" aria-label="Command status">
               <div className="start-screen__status">
-                <span>Sector</span>
+                <span>{text.title.sector}</span>
                 <strong>Sol-3</strong>
               </div>
               <div className="start-screen__status">
-                <span>Threat</span>
+                <span>{text.title.threat}</span>
                 <strong>Omega</strong>
               </div>
               <div className="start-screen__status">
-                <span>Fleet</span>
-                <strong>Ready</strong>
+                <span>{text.title.fleet}</span>
+                <strong>{text.title.ready}</strong>
               </div>
             </div>
 
@@ -285,32 +317,32 @@ function App() {
 
             <div className={endlessUnlocked ? 'start-screen__actions' : 'start-screen__actions start-screen__actions--three'} aria-label="Game modes">
               <button className="start-screen__button" onClick={startCutscene}>
-                <span className="start-screen__button-kicker">Story Briefing</span>
-                <span className="start-screen__button-title">Normal Campaign</span>
-                <span className="start-screen__button-copy">Hold the defense grid through escalating waves.</span>
+                <span className="start-screen__button-kicker">{text.title.storyKicker}</span>
+                <span className="start-screen__button-title">{text.title.normalTitle}</span>
+                <span className="start-screen__button-copy">{text.title.normalCopy}</span>
               </button>
               {endlessUnlocked && (
                 <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
-                  <span className="start-screen__button-kicker">Survival Run</span>
-                  <span className="start-screen__button-title">Endless Mode</span>
-                  <span className="start-screen__button-copy">Fight until the fleet is overwhelmed.</span>
+                  <span className="start-screen__button-kicker">{text.title.endlessKicker}</span>
+                  <span className="start-screen__button-title">{text.title.endlessTitle}</span>
+                  <span className="start-screen__button-copy">{text.title.endlessCopy}</span>
                 </button>
               )}
               <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
-                <span className="start-screen__button-kicker">Pilot Assault</span>
-                <span className="start-screen__button-title">Rocket Raid</span>
-                <span className="start-screen__button-copy">Launch into a direct side-scroll strike.</span>
+                <span className="start-screen__button-kicker">{text.title.raidKicker}</span>
+                <span className="start-screen__button-title">{text.title.raidTitle}</span>
+                <span className="start-screen__button-copy">{text.title.raidCopy}</span>
               </button>
               <button className="start-screen__button start-screen__button--leaderboards" onClick={() => setScreen('leaderboards')}>
-                <span className="start-screen__button-kicker">Online Records</span>
-                <span className="start-screen__button-title">Leaderboards</span>
-                <span className="start-screen__button-copy">View the top ten commanders across every mode.</span>
+                <span className="start-screen__button-kicker">{text.title.recordsKicker}</span>
+                <span className="start-screen__button-title">{text.title.recordsTitle}</span>
+                <span className="start-screen__button-copy">{text.title.recordsCopy}</span>
               </button>
             </div>
 
             <div className="start-screen__footer">
-              <span>(C) 2026 Zuki. All rights reserved.</span>
-              <span>Music credit: "Shelter" by Porter Robinson &amp; Madeon.</span>
+              <span>{text.title.copyright}</span>
+              <span>{text.title.musicCredit}</span>
             </div>
           </div>
         </div>
@@ -341,9 +373,9 @@ function App() {
           </div>
 
           <div className="cutscene__hud">
-            <div className="cutscene__tag">Command Feed</div>
+            <div className="cutscene__tag">{text.cutscene.commandFeed}</div>
             <button className="cutscene__skip" onClick={() => setScreen('game')}>
-              Skip Briefing
+              {text.cutscene.skip}
             </button>
           </div>
 
@@ -354,7 +386,7 @@ function App() {
 
             <div className="cutscene__meta">
               <div className="cutscene__progress">
-                {CUTSCENE_SCENES.map((scene, index) => (
+                {text.cutscene.scenes.map((scene, index) => (
                   <span
                     key={scene.title}
                     className={
@@ -366,7 +398,7 @@ function App() {
                 ))}
               </div>
               <div className="cutscene__hint">
-                Press Enter, Space, or Esc to deploy immediately
+                {text.cutscene.deployHint}
               </div>
             </div>
           </div>
@@ -382,21 +414,21 @@ function App() {
         <div className="mode-screen__stars" />
         <div className="mode-screen__panel">
           <button className="mode-screen__back" onClick={() => setScreen('title')}>
-            Back
+            {text.rocketMode.back}
           </button>
 
-          <div className="mode-screen__eyebrow">Pilot Assault</div>
-          <h1>Rocket Raid</h1>
-          <p>Launch solo now, or open an online two-player room.</p>
+          <div className="mode-screen__eyebrow">{text.rocketMode.eyebrow}</div>
+          <h1>{text.rocketMode.title}</h1>
+          <p>{text.rocketMode.copy}</p>
 
           <div className="mode-screen__actions">
             <button className="mode-screen__button" onClick={startRocketRaidSingle}>
-              <span>Single Player</span>
-              <strong>Start Raid</strong>
+              <span>{text.rocketMode.single}</span>
+              <strong>{text.rocketMode.start}</strong>
             </button>
             <button className="mode-screen__button mode-screen__button--accent" onClick={() => setScreen('raidMultiplayer')}>
-              <span>Two Players</span>
-              <strong>Multiplayer</strong>
+              <span>{text.rocketMode.twoPlayers}</span>
+              <strong>{text.rocketMode.multiplayer}</strong>
             </button>
           </div>
         </div>
@@ -409,7 +441,7 @@ function App() {
   if (screen === 'leaderboards') {
     return (
       <>
-        <LeaderboardsScreen playerName={playerName} onBack={() => setScreen('title')} />
+        <LeaderboardsScreen playerName={playerName} language={language} onBack={() => setScreen('title')} />
         {playerNamePrompt}
       </>
     )
@@ -420,6 +452,7 @@ function App() {
       <>
         <RaidMultiplayerLobby
           playerName={playerName}
+          language={language}
           onBack={() => setScreen('rocketMode')}
           onStart={(session) => {
             setRaidMultiplayerSession(session)
@@ -435,13 +468,14 @@ function App() {
   return (
     <div className="app">
       {activeGame === 'rocketRaid' ? (
-        <GradiusRaid onClose={closeGame} multiplayerSession={raidMultiplayerSession} playerName={playerName} />
+        <GradiusRaid onClose={closeGame} multiplayerSession={raidMultiplayerSession} playerName={playerName} language={language} />
       ) : (
         <SpaceImpactDefense
           availableCoins={DEFAULT_COINS}
           onClose={closeGame}
           initialMode={gameMode}
           playerName={playerName}
+          language={language}
         />
       )}
       {playerNamePrompt}

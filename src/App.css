@@ -37,6 +37,39 @@ body {
     linear-gradient(180deg, #03060d 0%, #07101f 48%, #03070d 100%);
 }
 
+.language-picker {
+  position: absolute;
+  z-index: 8;
+  top: max(14px, calc(env(safe-area-inset-top, 0px) + 12px));
+  right: max(14px, calc(env(safe-area-inset-right, 0px) + 12px));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  border-radius: 8px;
+  background: rgba(5, 14, 28, 0.82);
+  color: #b8cbd7;
+  font-family: 'Orbitron', 'Rajdhani', 'Segoe UI', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.language-picker select {
+  min-height: 30px;
+  border: 1px solid rgba(110, 245, 203, 0.28);
+  border-radius: 6px;
+  background: rgba(6, 20, 36, 0.95);
+  color: #eefcff;
+  font: inherit;
+  font-size: 0.72rem;
+  text-transform: none;
+  cursor: pointer;
+}
+
 .start-screen__stars,
 .start-screen__nebula,
 .start-screen__battlefield {
@@ -1932,6 +1965,16 @@ body {
     max-height: calc(100dvh - 12px);
     padding: max(44px, calc(env(safe-area-inset-top, 0px) + 16px)) 12px max(18px, calc(env(safe-area-inset-bottom, 0px) + 12px));
     scroll-padding-top: max(44px, calc(env(safe-area-inset-top, 0px) + 16px));
+  }
+
+  .language-picker {
+    left: 12px;
+    right: 12px;
+    justify-content: space-between;
+  }
+
+  .language-picker select {
+    max-width: 58%;
   }
 
   .start-screen__command-panel {
