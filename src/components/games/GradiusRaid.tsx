@@ -520,11 +520,18 @@ type RaidGraphicsProfile = {
   drawOptionShips: boolean
 }
 
+const raidGraphicsProfileCache = new Map<string, RaidGraphicsProfile>()
+
 function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boolean, isMultiplayer: boolean): RaidGraphicsProfile {
+  const cacheKey = `${quality}:${isSmallViewport ? 1 : 0}:${isMultiplayer ? 1 : 0}`
+  const cached = raidGraphicsProfileCache.get(cacheKey)
+  if (cached) return cached
+
   const smallScale = isSmallViewport ? 0.7 : 1
   const multiplayerScale = isMultiplayer ? 0.82 : 1
+  let profile: RaidGraphicsProfile
   if (quality === 'low') {
-    return {
+    profile = {
       dprCap: 1.25,
       maxSparks: isSmallViewport ? 10 : 14,
       sparkScale: 0.18,
@@ -538,9 +545,8 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       drawDecorativeOverlays: true,
       drawOptionShips: true,
     }
-  }
-  if (quality === 'medium') {
-    return {
+  } else if (quality === 'medium') {
+    profile = {
       dprCap: 1.25,
       maxSparks: Math.floor(24 * smallScale * multiplayerScale),
       sparkScale: 0.35,
@@ -554,9 +560,8 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       drawDecorativeOverlays: true,
       drawOptionShips: true,
     }
-  }
-  if (quality === 'high') {
-    return {
+  } else if (quality === 'high') {
+    profile = {
       dprCap: 1.5,
       maxSparks: Math.floor(34 * smallScale * multiplayerScale),
       sparkScale: 0.7,
@@ -570,21 +575,24 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       drawDecorativeOverlays: true,
       drawOptionShips: true,
     }
+  } else {
+    profile = {
+      dprCap: isMultiplayer ? 1.35 : 2,
+      maxSparks: MAX_SPARKS,
+      sparkScale: 1,
+      maxRipples: MAX_RIPPLES,
+      maxAsteroids: MAX_ASTEROIDS,
+      maxMeteors: MAX_METEORS,
+      maxIonStrikes: MAX_ION_STRIKES,
+      maxPowerUps: 999,
+      drawRipples: true,
+      drawAdvancedShotFx: true,
+      drawDecorativeOverlays: true,
+      drawOptionShips: true,
+    }
   }
-  return {
-    dprCap: isMultiplayer ? 1.35 : 2,
-    maxSparks: MAX_SPARKS,
-    sparkScale: 1,
-    maxRipples: MAX_RIPPLES,
-    maxAsteroids: MAX_ASTEROIDS,
-    maxMeteors: MAX_METEORS,
-    maxIonStrikes: MAX_ION_STRIKES,
-    maxPowerUps: 999,
-    drawRipples: true,
-    drawAdvancedShotFx: true,
-    drawDecorativeOverlays: true,
-    drawOptionShips: true,
-  }
+  raidGraphicsProfileCache.set(cacheKey, profile)
+  return profile
 }
 
 type CanvasSpriteEntry = {
@@ -592,6 +600,13 @@ type CanvasSpriteEntry = {
   loaded: boolean
   processedImage?: HTMLCanvasElement
 }
+
+type RaidBackgroundBaseCacheEntry = {
+  key: string
+  canvas: HTMLCanvasElement
+}
+
+let raidBackgroundBaseCache: RaidBackgroundBaseCacheEntry | null = null
 
 type CanvasSpriteProcessor = (image: HTMLImageElement) => HTMLCanvasElement | null
 
@@ -680,6 +695,18 @@ const BACKGROUND_SPEED_LINES = [
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function compactInPlace<T>(items: T[], keep: (item: T) => boolean) {
+  let liveCount = 0
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]
+    if (!keep(item)) continue
+    items[liveCount] = item
+    liveCount += 1
+  }
+  items.length = liveCount
+  return items
 }
 
 function getMaxActiveEliteEnemies(stage: number, isMultiplayer: boolean) {
@@ -994,6 +1021,12 @@ function getNormalAlienCanvasSprite(variant: number) {
   const existing = canvasSpriteCache.get(key)
   if (existing) return existing
   return makeImageCanvasSprite(key, getRaidAlienSpriteUrl(variant))
+}
+
+function warmRaidCanvasAssets() {
+  for (const ship of SHIP_OPTIONS) getShipCanvasSprite(ship.key)
+  for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) getNormalAlienCanvasSprite(variant)
+  for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) getRaidOtherCanvasSprite(key)
 }
 
 function getNormalAlienImageFilter(baseFilter: string, enemy: Enemy) {
@@ -2295,14 +2328,23 @@ function drawPlanetSurface(ctx: CanvasRenderingContext2D, palette: RaidPalette, 
   ctx.restore()
 }
 
-function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max', stageTheme = 1) {
-  const seconds = time / 1000
-  const { baseTop, baseMid, baseBottom, bgA, bgB, nebulaA, nebulaB, starTint, streak, planetA, planetB, planetC } = palette
-  const isLow = quality === 'low'
-  const isMedium = quality === 'medium'
-  const isHigh = quality === 'high'
-  const isSurfaceStage = stageTheme % 2 === 0
+function getRaidBackgroundBaseCacheKey(palette: RaidPalette, width: number, height: number, quality: GraphicsQuality, dpr: number) {
+  return [
+    Math.round(width),
+    Math.round(height),
+    dpr.toFixed(2),
+    quality,
+    palette.baseTop,
+    palette.baseMid,
+    palette.baseBottom,
+    palette.bgA,
+    palette.bgB,
+  ].join('|')
+}
 
+function drawRaidBackgroundBase(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, quality: GraphicsQuality) {
+  const { baseTop, baseMid, baseBottom, bgA, bgB } = palette
+  const isLow = quality === 'low'
   const base = ctx.createLinearGradient(0, 0, 0, height)
   base.addColorStop(0, baseTop)
   base.addColorStop(0.45, baseMid)
@@ -2314,6 +2356,41 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     drawRadialEllipse(ctx, width * 0.18, height * 0.16, width * 0.24, height * 0.24, [[0, bgA], [1, 'rgba(0,0,0,0)']])
     drawRadialEllipse(ctx, width * 0.76, height * 0.38, width * 0.26, height * 0.26, [[0, bgB], [1, 'rgba(0,0,0,0)']])
   }
+}
+
+function drawRaidBackgroundBaseLayer(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, quality: GraphicsQuality, dpr: number) {
+  if (typeof document === 'undefined') {
+    drawRaidBackgroundBase(ctx, palette, width, height, quality)
+    return
+  }
+
+  const key = getRaidBackgroundBaseCacheKey(palette, width, height, quality, dpr)
+  if (!raidBackgroundBaseCache || raidBackgroundBaseCache.key !== key) {
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.floor(width * dpr))
+    canvas.height = Math.max(1, Math.floor(height * dpr))
+    const baseCtx = canvas.getContext('2d')
+    if (!baseCtx) {
+      drawRaidBackgroundBase(ctx, palette, width, height, quality)
+      return
+    }
+    baseCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    drawRaidBackgroundBase(baseCtx, palette, width, height, quality)
+    raidBackgroundBaseCache = { key, canvas }
+  }
+
+  ctx.drawImage(raidBackgroundBaseCache.canvas, 0, 0, width, height)
+}
+
+function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max', stageTheme = 1, dpr = 1) {
+  const seconds = time / 1000
+  const { baseTop, baseMid, baseBottom, nebulaA, nebulaB, starTint, streak, planetA, planetB, planetC } = palette
+  const isLow = quality === 'low'
+  const isMedium = quality === 'medium'
+  const isHigh = quality === 'high'
+  const isSurfaceStage = stageTheme % 2 === 0
+
+  drawRaidBackgroundBaseLayer(ctx, palette, width, height, quality, dpr)
 
   if (!isLow) {
     ctx.save()
@@ -6099,7 +6176,7 @@ function drawMeteorHazard(
   const cometSprite = getRaidOtherCanvasSprite('comet')
   ctx.save()
   ctx.globalCompositeOperation = 'screen'
-  if (drawCanvasImageContain(ctx, cometSprite, x, y, size * 7.8, size * 3.8, 'brightness(1.2) contrast(1.18) saturate(1.14)', 0.9, Math.atan2(meteor.vy, meteor.vx) - Math.PI)) {
+  if (drawCanvasImageContain(ctx, cometSprite, x, y, size * 7.8, size * 3.8, 'brightness(1.2) contrast(1.18) saturate(1.14)', 0.9, Math.atan2(meteor.vy, meteor.vx) - Math.PI * 0.75)) {
     ctx.restore()
     return
   }
@@ -6561,6 +6638,7 @@ export function GradiusRaid({
   const touchPointerActiveRef = useRef(false)
   const selectedShipRef = useRef<ShipOption>(SHIP_OPTIONS[0])
   const progressRef = useRef(loadProgress())
+  const shipCosmeticsCacheRef = useRef(new Map<string, { progress: ReturnType<typeof loadProgress>, cosmetics: Required<ShipCosmeticEquipState> }>())
   const multiplayerSessionRef = useRef<RaidMultiplayerSession | null>(multiplayerSession ?? null)
   const multiplayerStartedRef = useRef(false)
   const multiplayerStateSeqRef = useRef(0)
@@ -6691,6 +6769,10 @@ export function GradiusRaid({
     multiplayerSessionRef.current = multiplayerSession ?? null
     if (multiplayerSession) coOpRunRef.current = true
   }, [multiplayerSession])
+
+  useEffect(() => {
+    warmRaidCanvasAssets()
+  }, [])
 
   const resetGuestPredictionState = useCallback(() => {
     guestPositionCorrectionRef.current = { x: 0, y: 0 }
@@ -6972,7 +7054,7 @@ export function GradiusRaid({
       // Expire locally predicted shots — confirmed shots from host have arrived
       if (guestLocalShotsRef.current.length > 0) {
         const expiry = now - getGuestShotTtlMs(multiplayerRttRef.current)
-        guestLocalShotsRef.current = guestLocalShotsRef.current.filter((s) => s.spawnedAt > expiry)
+    compactInPlace(guestLocalShotsRef.current, (shot) => shot.spawnedAt > expiry)
       }
     } else {
       remotePlayerRef.current = nextGuestPlayer
@@ -7463,7 +7545,8 @@ export function GradiusRaid({
         multiplayerLastGuestInputAtRef.current = performance.now()
         remotePointerTargetRef.current = cloneVec(input.target)
         remotePointerVisualRef.current = cloneVec(input.pointer)
-        remoteKeysRef.current = new Set(input.keys.map((key: string) => key.toLowerCase()))
+        remoteKeysRef.current.clear()
+        for (const key of input.keys as string[]) remoteKeysRef.current.add(key.toLowerCase())
         multiplayerRemoteNukeRef.current = input.nuke
         const remotePlayer = remotePlayerRef.current
         if (remotePlayer && remotePlayer.hp > 0 && input.position) {
@@ -7501,7 +7584,9 @@ export function GradiusRaid({
     const quality = graphicsQualityRef.current
     if (quality === 'low') return
     const profile = getRaidGraphicsProfile(quality, false, Boolean(multiplayerSessionRef.current))
-    if (ripplesRef.current.length >= profile.maxRipples) ripplesRef.current = ripplesRef.current.slice(-Math.max(0, profile.maxRipples - 1))
+    if (ripplesRef.current.length >= profile.maxRipples) {
+      ripplesRef.current.splice(0, ripplesRef.current.length - Math.max(0, profile.maxRipples - 1))
+    }
     ripplesRef.current.push({ id: rippleId++, x, y, color, size, life: 0.5, maxLife: 0.5 })
   }, [])
 
@@ -7604,6 +7689,15 @@ export function GradiusRaid({
     }
   }, [])
 
+  const getCachedEquippedCosmetics = (shipKey: string) => {
+    const progress = progressRef.current
+    const cached = shipCosmeticsCacheRef.current.get(shipKey)
+    if (cached?.progress === progress) return cached.cosmetics
+    const cosmetics = getEquippedShipCosmetics(progress, shipKey)
+    shipCosmeticsCacheRef.current.set(shipKey, { progress, cosmetics })
+    return cosmetics
+  }
+
   const drawFxCanvas = useCallback((time = performance.now()) => {
     const canvas = fxCanvasRef.current
     const root = rootRef.current
@@ -7642,7 +7736,7 @@ export function GradiusRaid({
       paletteRef.current = readRaidPalette(root)
     }
 
-    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality, stageRef.current)
+    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality, stageRef.current, dpr)
 
     const drawTrail = (shot: Shot, color: string, length: number, widthPx: number) => {
       const x = toX(shot.x)
@@ -8253,8 +8347,8 @@ export function GradiusRaid({
     const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
     if (gfxProfile.drawOptionShips && ownShipRef) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR)
     if (gfxProfile.drawOptionShips && allyShipRef) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
-    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getEquippedShipCosmetics(progressRef.current, ownShipRef.ship.key))
-    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getEquippedShipCosmetics(progressRef.current, allyShipRef.ship.key))
+    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key))
+    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key))
 
     for (const powerUp of powerUpsRef.current) {
       drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
@@ -8319,7 +8413,7 @@ export function GradiusRaid({
       })
     }
     if (sparksRef.current.length > profile.maxSparks) {
-      sparksRef.current = sparksRef.current.slice(-profile.maxSparks)
+      sparksRef.current.splice(0, sparksRef.current.length - profile.maxSparks)
     }
   }, [])
 
@@ -8533,6 +8627,7 @@ export function GradiusRaid({
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) return
     progressRef.current = loadProgress()
+    shipCosmeticsCacheRef.current.clear()
 
     const stage = clamp(startStage, 1, MAX_RAID_STAGE)
     const hostRoomPlayer = session?.players.find((roomPlayer) => roomPlayer.host)
@@ -10793,7 +10888,7 @@ export function GradiusRaid({
         }
       }
     }
-    shotsRef.current = shotsRef.current.filter((shot) => shot.y > -50)
+    compactInPlace(shotsRef.current, (shot) => shot.y > -50)
     if (bossDefeatedThisFrame) {
       const defeatedBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp <= 0)
       if (completedRun) {
@@ -10894,12 +10989,11 @@ export function GradiusRaid({
         }
       }
     }
-    const survivingEnemyShots = enemyShotsRef.current.filter((shot) => {
+    const enemyShotList = compactInPlace(enemyShotsRef.current, (shot) => {
       const margin = shot.kind === 'beam' && shot.life !== undefined ? 120 : shot.kind === 'squidBubble' || shot.kind === 'poisonCloud' ? 34 : 24
       return shot.y > -margin && shot.y < HEIGHT + margin && shot.x > -margin && shot.x < WIDTH + margin
     })
-    if (spawnedSquidBubbles.length > 0) survivingEnemyShots.push(...spawnedSquidBubbles)
-    enemyShotsRef.current = survivingEnemyShots
+    for (const bubble of spawnedSquidBubbles) enemyShotList.push(bubble)
 
     for (const enemy of enemiesRef.current) {
       const hitRange = enemy.radius + PLAYER_RADIUS
@@ -10977,7 +11071,7 @@ export function GradiusRaid({
         }
       }
     }
-    meteorsRef.current = meteorsRef.current.filter((meteor) => meteor.life > 0)
+    compactInPlace(meteorsRef.current, (meteor) => meteor.life > 0)
 
     for (const strike of ionStrikesRef.current) {
       if (strike.warmup > 0) continue
@@ -11004,13 +11098,15 @@ export function GradiusRaid({
         }
       }
     }
-    wrecksRef.current = wrecksRef.current.filter((wreck) => wreck.hp > 0)
+    compactInPlace(wrecksRef.current, (wreck) => wreck.hp > 0)
 
-    const survivingAsteroids = asteroidsRef.current.filter((asteroid) => asteroid.hp > 0)
+    const asteroidList = compactInPlace(asteroidsRef.current, (asteroid) => asteroid.hp > 0)
     if (spawnedAsteroids.length > 0) {
-      survivingAsteroids.push(...spawnedAsteroids.slice(0, Math.max(0, MAX_ASTEROIDS - survivingAsteroids.length)))
+      const room = Math.max(0, MAX_ASTEROIDS - asteroidList.length)
+      for (let index = 0; index < spawnedAsteroids.length && index < room; index += 1) {
+        asteroidList.push(spawnedAsteroids[index])
+      }
     }
-    asteroidsRef.current = survivingAsteroids
 
     for (const powerUp of powerUpsRef.current) {
       const pickupAssist = powerUp.type === 'levelup' ? 4.2 : 1.8
@@ -11051,7 +11147,7 @@ export function GradiusRaid({
         }
       }
     }
-    powerUpsRef.current = powerUpsRef.current.filter((powerUp) => powerUp.y < HEIGHT + 20)
+    compactInPlace(powerUpsRef.current, (powerUp) => powerUp.y < HEIGHT + 20)
 
     if (player.score > highScoreRef.current) {
       highScoreRef.current = player.score
@@ -11449,9 +11545,7 @@ export function GradiusRaid({
             <div className="raid__ending-stars raid__ending-stars--far" />
             <div className="raid__ending-stars raid__ending-stars--near" />
             <div className="raid__ending-sun" />
-            <div className="raid__ending-earth">
-              <span />
-            </div>
+            <div className="raid__ending-earth" />
             <div className="raid__ending-wake raid__ending-wake--host" />
             <div className="raid__ending-ship raid__ending-ship--host">
               <RaidShipSprite shipKey={player.ship.key} size={finaleShipSize} />
