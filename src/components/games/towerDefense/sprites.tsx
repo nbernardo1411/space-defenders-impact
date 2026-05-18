@@ -15,6 +15,7 @@ export function TowerShip({ tType, color, size, elite = false }: { tType: string
   const glass = `url(#${glassGrad})`
   const engine = `url(#${engineGrad})`
   const dark = '#172130'
+  const metal = '#617086'
 
   const defs = (
     <defs>
@@ -53,6 +54,23 @@ export function TowerShip({ tType, color, size, elite = false }: { tType: string
     <ellipse cx="23" cy="57" rx="3.8" ry="5" fill={engine} opacity="0.88" />
     <ellipse cx="32" cy="59" rx="3.5" ry="4.5" fill={engine} opacity="0.92" />
     <ellipse cx="41" cy="57" rx="3.8" ry="5" fill={engine} opacity="0.88" />
+  </>
+
+  const fighterSurfaceDetails = <>
+    <path d="M32 6 L32 55" stroke="#07111bcc" strokeWidth="0.9" opacity="0.42" />
+    <path d="M24 19 L32 15 L40 19 M22 30 L32 26 L42 30 M24 43 L32 39 L40 43" stroke="#ffffff70" strokeWidth="0.85" fill="none" strokeLinecap="round" opacity="0.58" />
+    <path d="M18 34 L27 31 M46 34 L37 31 M18 45 L27 40 M46 45 L37 40" stroke={core} strokeWidth="1.65" strokeLinecap="round" opacity="0.55" />
+    <path d="M22 24 L18 29 L20 34 L27 32 M42 24 L46 29 L44 34 L37 32" stroke="#07111b99" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <rect x="24" y="34" width="5" height="3" rx="0.7" fill={dark} opacity="0.58" />
+    <rect x="35" y="34" width="5" height="3" rx="0.7" fill={dark} opacity="0.58" />
+    <rect x="23" y="39" width="6" height="1.6" rx="0.7" fill="#07111bcc" opacity="0.7" />
+    <rect x="35" y="39" width="6" height="1.6" rx="0.7" fill="#07111bcc" opacity="0.7" />
+    <circle cx="25" cy="25" r="0.9" fill={metal} opacity="0.68" />
+    <circle cx="39" cy="25" r="0.9" fill={metal} opacity="0.68" />
+    <circle cx="22" cy="45" r="0.85" fill={metal} opacity="0.62" />
+    <circle cx="42" cy="45" r="0.85" fill={metal} opacity="0.62" />
+    <path d="M28 51 L32 55 L36 51" stroke={core} strokeWidth="1.2" fill="none" strokeLinecap="round" opacity="0.62" />
+    <path d="M14 50 L22 46 M50 50 L42 46" stroke="#ffffff55" strokeWidth="0.9" strokeLinecap="round" opacity="0.6" />
   </>
 
   const elitePanelDetails: Record<string, React.ReactNode> = {
@@ -451,6 +469,7 @@ export function TowerShip({ tType, color, size, elite = false }: { tType: string
     <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 0 5px #0008)' }}>
       {defs}
       {shapes[tType] ?? shapes.fast}
+      {fighterSurfaceDetails}
       {elite ? elitePanelDetails[tType] : null}
     </svg>
   )
