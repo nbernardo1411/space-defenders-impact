@@ -4991,26 +4991,6 @@ function drawPlayerEngine(ctx: CanvasRenderingContext2D, x: number, y: number, s
   ctx.restore()
 }
 
-function drawPlayerOverlay(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, rotation: number, scale: number) {
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.rotate(rotation)
-  ctx.scale(scale, scale)
-  ctx.globalAlpha = 0.24
-  ctx.globalCompositeOperation = 'multiply'
-  ctx.fillStyle = 'rgba(0,0,0,0.7)'
-  ctx.beginPath()
-  ctx.moveTo(0, -size * 0.38)
-  ctx.lineTo(size * 0.32, -size * 0.1)
-  ctx.lineTo(size * 0.24, size * 0.34)
-  ctx.lineTo(0, size * 0.43)
-  ctx.lineTo(-size * 0.24, size * 0.34)
-  ctx.lineTo(-size * 0.32, -size * 0.1)
-  ctx.closePath()
-  ctx.fill()
-  ctx.restore()
-}
-
 function drawInvulnerabilityShimmer(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number) {
   const pulse = 0.96 + Math.sin(time / 520) * 0.045
   ctx.save()
@@ -5331,7 +5311,6 @@ function drawRaidPlayer(
     masteryPaintColor,
   )
   if (!isDown && cosmetics.frame) drawMasteryFrame(ctx, x, y, size, time, player.ship.key)
-  drawPlayerOverlay(ctx, x, y, size, rotation, scale)
 }
 
 type MasteryVisualStyle = {
