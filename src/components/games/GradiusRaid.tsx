@@ -656,6 +656,14 @@ const RAID_OTHER_ASSET_PATHS = {
 } as const
 
 const RAID_FINAL_BOSS_ASSET_PATH = 'assets/aliens/final_boss.png'
+const RAID_ELITE_ASSET_PATHS = [
+  'assets/aliens/elite_0.png',
+  'assets/aliens/elite_1.png',
+  'assets/aliens/elite_2.png',
+  'assets/aliens/elite_3.png',
+  'assets/aliens/elite_4.png',
+] as const
+const RAID_ELITE_SPRITE_COUNT = RAID_ELITE_ASSET_PATHS.length
 
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
 
@@ -1074,9 +1082,18 @@ function getFinalBossCanvasSprite() {
   return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_FINAL_BOSS_ASSET_PATH))
 }
 
+function getEliteAlienCanvasSprite(variant: number) {
+  const index = Math.abs(Math.trunc(variant)) % RAID_ELITE_SPRITE_COUNT
+  const key = `elite-image:${index}`
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_ELITE_ASSET_PATHS[index]))
+}
+
 function warmRaidCanvasAssets() {
   for (const ship of SHIP_OPTIONS) getShipCanvasSprite(ship.key)
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) getNormalAlienCanvasSprite(variant)
+  for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) getEliteAlienCanvasSprite(variant)
   getFinalBossCanvasSprite()
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) getRaidOtherCanvasSprite(key)
 }
@@ -5223,7 +5240,7 @@ function drawRaidEnemy(
   }
 
   if (enemy.isMiniBoss) {
-    const sprite = getNormalAlienCanvasSprite(enemy.variant)
+    const sprite = getEliteAlienCanvasSprite(enemy.variant)
     const floatScale = 1 + Math.sin(time / 760 + enemy.phase) * 0.035
     const rotation = Math.sin(time / 900 + enemy.phase) * 1.4 * DEG
     drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.36), 1)
@@ -9503,7 +9520,7 @@ export function GradiusRaid({
       hp: isElite ? eliteHp : hp,
       maxHp: isElite ? eliteHp : hp,
       radius: isElite ? kind === 'brood' ? 6.4 : kind === 'lancer' ? 5.7 : 6 : 3.7,
-      variant: isElite ? enemyId % 6 : enemyId % RAID_ALIEN_SPRITE_COUNT,
+      variant: isElite ? enemyId % RAID_ELITE_SPRITE_COUNT : enemyId % RAID_ALIEN_SPRITE_COUNT,
       isBoss: false,
       isMiniBoss: isElite,
       fireCooldown: isElite ? kind === 'lancer' ? 0.95 : kind === 'brood' ? 1.28 : 1.08 : Math.max(1.25, 2.1 + Math.random() * 2.1 - wave * 0.04 - powerPressure * 0.025),
