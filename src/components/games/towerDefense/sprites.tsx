@@ -466,7 +466,7 @@ export function TowerShip({ tType, color, size, elite = false }: { tType: string
   }
 
   return (
-    <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 4px 10px #000a)' }}>
+    <svg width={s} height={s} viewBox="0 0 64 64" style={{ filter: 'drop-shadow(0 0 5px #0008)' }}>
       {defs}
       {shapes[tType] ?? shapes.fast}
       {fighterSurfaceDetails}
