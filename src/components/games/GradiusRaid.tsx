@@ -817,7 +817,7 @@ function getTowerCanvasSprite(shipKey: string, color: string, size: number, elit
 function getEnemySpriteMarkupSize(enemy: Enemy) {
   if (enemy.isMiniBoss) return 128
   if (!enemy.isBoss) return 64
-  if (enemy.bossKind === 'final') return 360
+  if (enemy.bossKind === 'final') return 340
   if (enemy.bossKind === 'squid') return 340
   if (enemy.bossKind === 'snake') return 320
   if (enemy.bossKind === 'super') return 310
@@ -913,7 +913,7 @@ function drawSpriteGlow(ctx: CanvasRenderingContext2D, x: number, y: number, siz
 function getEnemyCanvasSize(enemy: Enemy, viewportWidth: number) {
   if (enemy.isMiniBoss) return Math.min(viewportWidth * 0.15, 132)
   if (!enemy.isBoss) return Math.min(viewportWidth * 0.105, 82)
-  if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.74, 680)
+  if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.64, 620)
   if (enemy.bossKind === 'squid') return viewportWidth <= 640 ? Math.min(viewportWidth * 0.42, 360) : Math.min(viewportWidth * 0.34, 340)
   if (enemy.bossKind === 'snake') return Math.min(viewportWidth * 0.62, 600)
   if (enemy.bossKind === 'super') return Math.min(viewportWidth * 0.48, 430)
@@ -5140,11 +5140,11 @@ const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
     auraShape: 'cross',
   },
   spaceEt: {
-    core: 'rgba(245,158,11,0.9)',
-    edge: 'rgba(14,165,233,0.72)',
-    soft: 'rgba(245,158,11,0.2)',
-    accent: 'rgba(254,243,199,0.86)',
-    paint: '#f59e0b',
+    core: 'rgba(248,250,252,0.9)',
+    edge: 'rgba(15,23,42,0.82)',
+    soft: 'rgba(226,232,240,0.16)',
+    accent: 'rgba(17,24,39,0.84)',
+    paint: '#f8fafc',
     trailOffsets: [0],
     auraShape: 'stealth',
   },
@@ -8970,7 +8970,7 @@ export function GradiusRaid({
     const multiplayerBossMultiplier = multiplayerSessionRef.current ? MULTIPLAYER_BOSS_HP_MULTIPLIER : 1
     const hp = Math.round((1450 + wave * 180 + stagePressure * 320 + powerScore * 90) * hpMultiplier * multiplayerBossMultiplier)
     const radius =
-      bossKind === 'final' ? 27 :
+      bossKind === 'final' ? 25 :
         bossKind === 'squid' ? 22 :
           bossKind === 'snake' ? 11.8 :
             bossKind === 'super' ? 21 :
@@ -11313,6 +11313,9 @@ export function GradiusRaid({
               ) : (
                 <button type="button" className="raid__start" onClick={exitRaid}>{menuText.exitCoop}</button>
               )}
+              {snapshot.phase === 'gameover' && canControlOverlay ? (
+                <button type="button" className="raid__menu-button" onClick={exitRaid}>{hudText.exit}</button>
+              ) : null}
             </div>
           </div>
         </div>

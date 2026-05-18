@@ -4,10 +4,12 @@ import {
   getEquippedShipCosmetics,
   isShipCosmeticUnlocked,
   setShipCosmeticEquipped,
-  SHIP_COSMETIC_LEVELS,
+  SHIP_COSMETIC_SINGLE_RUN_SCORE,
+  SHIP_COSMETIC_TOTAL_SCORE,
   type AchievementId,
   type CodexId,
   type ProgressState,
+  type ShipMasteryRecord,
   type ShipCosmeticKey,
 } from '../progression'
 import { getLanguageText, getRaidText, getReleaseText, type LanguageCode } from '../i18n'
@@ -27,10 +29,82 @@ type ProgressionScreenProps = {
 
 const STAGE_COUNT = 15
 const ALL_COSMETICS_PREVIEW = { trail: true, aura: true, frame: true }
-const DEFENSE_ACHIEVEMENT_IDS: AchievementId[] = ['first_sortie', 'defense_clear', 'endless_survivor', 'boss_breaker']
-const RAID_ACHIEVEMENT_IDS: AchievementId[] = ['raid_clear', 'coop_wingman', 'nuke_saver', 'ship_specialist', 'squid_hunter', 'serpent_breaker', 'fortress_fall', 'arsenal_runner', 'ace_master', 'all_modes']
-const DEFENSE_CODEX_IDS: CodexId[] = ['earth_defense_grid', 'alien_swarm', 'endless_swarm']
-const RAID_CODEX_IDS: CodexId[] = ['elite_contacts', 'asteroid_cluster', 'abyss_squid', 'serpent_guardian', 'orbital_fortress', 'ship_hangar', 'pickup_arsenal', 'nuke_protocol', 'raid_events']
+const DEFENSE_ACHIEVEMENT_IDS: AchievementId[] = [
+  'first_sortie',
+  'defense_clear',
+  'defense_veteran',
+  'defense_legend',
+  'endless_survivor',
+  'endless_warden',
+  'endless_legend',
+  'boss_breaker',
+  'boss_executioner',
+  'swarm_reaper',
+  'swarm_extinction',
+  'supply_magnet',
+  'battle_hardened',
+  'score_chaser',
+  'score_legend',
+]
+const RAID_ACHIEVEMENT_IDS: AchievementId[] = [
+  'raid_clear',
+  'coop_wingman',
+  'coop_clear',
+  'coop_veteran',
+  'nuke_saver',
+  'nuke_commander',
+  'restraint_protocol',
+  'ship_specialist',
+  'ship_adept',
+  'ship_elite',
+  'ship_legend',
+  'fleet_captain',
+  'fleet_legend',
+  'squid_hunter',
+  'squid_breaker',
+  'serpent_breaker',
+  'serpent_slayer',
+  'fortress_fall',
+  'fortress_ace',
+  'campaign_marathon',
+  'arsenal_runner',
+  'ace_master',
+  'all_modes',
+]
+const DEFENSE_CODEX_IDS: CodexId[] = [
+  'earth_defense_grid',
+  'tower_command',
+  'alien_swarm',
+  'boss_anatomy',
+  'supply_routes',
+  'commander_records',
+  'endless_swarm',
+]
+const RAID_CODEX_IDS: CodexId[] = [
+  'elite_contacts',
+  'elite_hunter_cells',
+  'asteroid_cluster',
+  'asteroid_debris',
+  'rift_weather',
+  'derelict_wrecks',
+  'planetary_routes',
+  'abyss_squid',
+  'squid_biology',
+  'serpent_guardian',
+  'serpent_scales',
+  'orbital_fortress',
+  'fortress_beam_core',
+  'final_gauntlet',
+  'ship_hangar',
+  'mastery_lab',
+  'pilot_academy',
+  'weapon_lab',
+  'pickup_arsenal',
+  'nuke_protocol',
+  'nuke_failsafe',
+  'coop_link',
+  'raid_events',
+]
 
 export function ProgressionScreen({
   view,
@@ -99,7 +173,7 @@ export function ProgressionScreen({
                 {Object.entries(raidText.ships).map(([shipKey, ship]) => {
                   const mastery = progress.shipMastery[shipKey]
                   const level = mastery?.level ?? 1
-                  const cosmetics = getMasteryCosmetics(level, text)
+                  const cosmetics = getMasteryCosmetics(mastery, text)
                   const equippedCosmetics = getEquippedShipCosmetics(progress, shipKey)
                   const previewCosmetics = previewCosmeticShip === shipKey ? ALL_COSMETICS_PREVIEW : equippedCosmetics
                   return (
@@ -118,6 +192,7 @@ export function ProgressionScreen({
                         <b>{ship.name}</b>
                         <span>{text.masteryLevel} {level}</span>
                         <small>{text.masteryXp}: {(mastery?.xp ?? 0).toLocaleString()} · {text.masteryRuns}: {mastery?.runs ?? 0}</small>
+                        <small>{text.bestScores}: {(mastery?.bestScore ?? 0).toLocaleString()} · {text.victories}: {mastery?.victories ?? 0} · {text.totalScore}: {(mastery?.totalScore ?? 0).toLocaleString()}</small>
                       </div>
                       <div className="progress-cosmetics" aria-label={`${ship.name} ${text.masteryCosmetics}`}>
                         {cosmetics.map((cosmetic) => (
@@ -129,7 +204,7 @@ export function ProgressionScreen({
                             onClick={() => onProgressChange(setShipCosmeticEquipped(shipKey, cosmetic.key, !equippedCosmetics[cosmetic.key]))}
                           >
                             <span>{cosmetic.label}</span>
-                            <i>{cosmetic.unlocked ? equippedCosmetics[cosmetic.key] ? text.cosmeticEquipped : text.cosmeticEquip : `${text.cosmeticLocked} Lv ${SHIP_COSMETIC_LEVELS[cosmetic.key]}`}</i>
+                            <i>{cosmetic.unlocked ? equippedCosmetics[cosmetic.key] ? text.cosmeticEquipped : text.cosmeticEquip : `${text.cosmeticLocked}: ${cosmetic.requirement}`}</i>
                           </button>
                         ))}
                       </div>
@@ -282,11 +357,11 @@ function getViewTitle(view: ProgressionView, text: ReturnType<typeof getReleaseT
   return text.codex
 }
 
-function getMasteryCosmetics(level: number, text: ReturnType<typeof getReleaseText>): Array<{ key: ShipCosmeticKey; label: string; unlocked: boolean }> {
+function getMasteryCosmetics(mastery: ShipMasteryRecord | undefined, text: ReturnType<typeof getReleaseText>): Array<{ key: ShipCosmeticKey; label: string; unlocked: boolean; requirement: string }> {
   return [
-    { key: 'trail', label: text.cosmeticTrail, unlocked: isShipCosmeticUnlocked(level, 'trail') },
-    { key: 'aura', label: text.cosmeticAura, unlocked: isShipCosmeticUnlocked(level, 'aura') },
-    { key: 'frame', label: text.cosmeticFrame, unlocked: isShipCosmeticUnlocked(level, 'frame') },
+    { key: 'trail', label: text.cosmeticTrail, unlocked: isShipCosmeticUnlocked(mastery, 'trail'), requirement: `${SHIP_COSMETIC_SINGLE_RUN_SCORE.toLocaleString()} ${text.cosmeticSingleRun}` },
+    { key: 'aura', label: text.cosmeticAura, unlocked: isShipCosmeticUnlocked(mastery, 'aura'), requirement: text.cosmeticClearRaid },
+    { key: 'frame', label: text.cosmeticFrame, unlocked: isShipCosmeticUnlocked(mastery, 'frame'), requirement: `${SHIP_COSMETIC_TOTAL_SCORE.toLocaleString()} ${text.cosmeticTotalScore}` },
   ]
 }
 
@@ -308,7 +383,7 @@ function getMasteryPaintColor(shipKey: string) {
     laser: '#67e8f9',
     dreadnought: '#a855f7',
     xwing: '#fde047',
-    spaceEt: '#f59e0b',
+    spaceEt: '#f8fafc',
   }[shipKey] ?? '#6ef5cb'
 }
 

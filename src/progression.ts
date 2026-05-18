@@ -22,29 +22,71 @@ export type AchievementId =
   | 'defense_clear'
   | 'raid_clear'
   | 'boss_breaker'
+  | 'defense_veteran'
+  | 'defense_legend'
   | 'endless_survivor'
+  | 'endless_warden'
+  | 'endless_legend'
+  | 'swarm_reaper'
+  | 'swarm_extinction'
+  | 'boss_executioner'
+  | 'supply_magnet'
+  | 'battle_hardened'
+  | 'score_chaser'
+  | 'score_legend'
   | 'coop_wingman'
+  | 'coop_clear'
+  | 'coop_veteran'
   | 'nuke_saver'
+  | 'nuke_commander'
+  | 'restraint_protocol'
   | 'ship_specialist'
+  | 'ship_adept'
+  | 'ship_elite'
+  | 'ship_legend'
+  | 'fleet_captain'
+  | 'fleet_legend'
   | 'squid_hunter'
+  | 'squid_breaker'
   | 'serpent_breaker'
+  | 'serpent_slayer'
   | 'fortress_fall'
+  | 'fortress_ace'
+  | 'campaign_marathon'
   | 'arsenal_runner'
   | 'ace_master'
   | 'all_modes'
 
 export type CodexId =
   | 'earth_defense_grid'
+  | 'tower_command'
   | 'alien_swarm'
+  | 'boss_anatomy'
+  | 'supply_routes'
+  | 'commander_records'
+  | 'weapon_lab'
   | 'elite_contacts'
+  | 'elite_hunter_cells'
   | 'asteroid_cluster'
+  | 'asteroid_debris'
+  | 'rift_weather'
+  | 'derelict_wrecks'
+  | 'planetary_routes'
   | 'abyss_squid'
+  | 'squid_biology'
   | 'serpent_guardian'
+  | 'serpent_scales'
   | 'orbital_fortress'
+  | 'fortress_beam_core'
+  | 'final_gauntlet'
   | 'endless_swarm'
   | 'ship_hangar'
+  | 'mastery_lab'
+  | 'pilot_academy'
   | 'pickup_arsenal'
   | 'nuke_protocol'
+  | 'nuke_failsafe'
+  | 'coop_link'
   | 'raid_events'
 
 export type ShipMasteryRecord = {
@@ -52,6 +94,8 @@ export type ShipMasteryRecord = {
   level: number
   runs: number
   bestScore: number
+  totalScore: number
+  victories: number
 }
 
 export type ShipCosmeticKey = 'trail' | 'aura' | 'frame'
@@ -90,13 +134,37 @@ export const ACHIEVEMENT_IDS: AchievementId[] = [
   'defense_clear',
   'raid_clear',
   'boss_breaker',
+  'defense_veteran',
+  'defense_legend',
   'endless_survivor',
+  'endless_warden',
+  'endless_legend',
+  'swarm_reaper',
+  'swarm_extinction',
+  'boss_executioner',
+  'supply_magnet',
+  'battle_hardened',
+  'score_chaser',
+  'score_legend',
   'coop_wingman',
+  'coop_clear',
+  'coop_veteran',
   'nuke_saver',
+  'nuke_commander',
+  'restraint_protocol',
   'ship_specialist',
+  'ship_adept',
+  'ship_elite',
+  'ship_legend',
+  'fleet_captain',
+  'fleet_legend',
   'squid_hunter',
+  'squid_breaker',
   'serpent_breaker',
+  'serpent_slayer',
   'fortress_fall',
+  'fortress_ace',
+  'campaign_marathon',
   'arsenal_runner',
   'ace_master',
   'all_modes',
@@ -104,25 +172,40 @@ export const ACHIEVEMENT_IDS: AchievementId[] = [
 
 export const CODEX_IDS: CodexId[] = [
   'earth_defense_grid',
+  'tower_command',
   'alien_swarm',
+  'boss_anatomy',
+  'supply_routes',
+  'commander_records',
+  'weapon_lab',
   'elite_contacts',
+  'elite_hunter_cells',
   'asteroid_cluster',
+  'asteroid_debris',
+  'rift_weather',
+  'derelict_wrecks',
+  'planetary_routes',
   'abyss_squid',
+  'squid_biology',
   'serpent_guardian',
+  'serpent_scales',
   'orbital_fortress',
+  'fortress_beam_core',
+  'final_gauntlet',
   'endless_swarm',
   'ship_hangar',
+  'mastery_lab',
+  'pilot_academy',
   'pickup_arsenal',
   'nuke_protocol',
+  'nuke_failsafe',
+  'coop_link',
   'raid_events',
 ]
 
 export const SHIP_MASTERY_LEVEL_XP = 1600
-export const SHIP_COSMETIC_LEVELS: Record<ShipCosmeticKey, number> = {
-  trail: 2,
-  aura: 3,
-  frame: 5,
-}
+export const SHIP_COSMETIC_SINGLE_RUN_SCORE = 500000
+export const SHIP_COSMETIC_TOTAL_SCORE = 5000000
 
 const LEADERBOARD_MODES: LeaderboardMode[] = [
   'ship_defense_normal',
@@ -199,14 +282,19 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   let shipLevelUp = false
   let shipLevel: number | undefined
   if (result.shipKey) {
-    const current = progress.shipMastery[result.shipKey] ?? { xp: 0, level: 1, runs: 0, bestScore: 0 }
+    const current = progress.shipMastery[result.shipKey] ?? { xp: 0, level: 1, runs: 0, bestScore: 0, totalScore: 0, victories: 0 }
     const previousLevel = current.level
+    const runScore = Math.max(0, Math.floor(result.score))
     current.runs += 1
-    current.bestScore = Math.max(current.bestScore, Math.floor(result.score))
+    current.bestScore = Math.max(current.bestScore, runScore)
+    current.totalScore += runScore
+    if ((result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory') {
+      current.victories += 1
+    }
     current.xp += getShipMasteryXp(result)
     current.level = getShipMasteryLevelFromXp(current.xp)
     progress.shipMastery[result.shipKey] = current
-    progress.equippedCosmetics[result.shipKey] = autoEquipNewCosmetics(progress.equippedCosmetics[result.shipKey], current.level)
+    progress.equippedCosmetics[result.shipKey] = autoEquipNewCosmetics(progress.equippedCosmetics[result.shipKey], current)
     shipLevelUp = current.level > previousLevel
     shipLevel = current.level
   }
@@ -221,13 +309,37 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   unlockAchievement('defense_clear', result.mode === 'ship_defense_normal' && result.status === 'victory')
   unlockAchievement('raid_clear', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory')
   unlockAchievement('boss_breaker', progress.bossesDefeated >= 10)
+  unlockAchievement('defense_veteran', progress.bestStageByMode.ship_defense_normal >= 10)
+  unlockAchievement('defense_legend', result.mode === 'ship_defense_normal' && result.status === 'victory' && result.score >= 15000)
   unlockAchievement('endless_survivor', result.mode === 'ship_defense_endless' && result.stage >= 15)
+  unlockAchievement('endless_warden', result.mode === 'ship_defense_endless' && result.stage >= 25)
+  unlockAchievement('endless_legend', result.mode === 'ship_defense_endless' && result.stage >= 40)
+  unlockAchievement('swarm_reaper', progress.enemiesDestroyed >= 500)
+  unlockAchievement('swarm_extinction', progress.enemiesDestroyed >= 2500)
+  unlockAchievement('boss_executioner', progress.bossesDefeated >= 50)
+  unlockAchievement('supply_magnet', progress.pickupsCollected >= 150)
+  unlockAchievement('battle_hardened', progress.totalRuns >= 25)
+  unlockAchievement('score_chaser', progress.totalScore >= 100000)
+  unlockAchievement('score_legend', progress.totalScore >= 500000)
   unlockAchievement('coop_wingman', result.mode === 'gradius_multiplayer' && result.score > 0)
+  unlockAchievement('coop_clear', result.mode === 'gradius_multiplayer' && result.status === 'victory')
+  unlockAchievement('coop_veteran', result.mode === 'gradius_multiplayer' && result.stage >= 10)
   unlockAchievement('nuke_saver', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory' && (result.nukesUsed ?? 0) === 0)
+  unlockAchievement('nuke_commander', progress.nukesUsed >= 20)
+  unlockAchievement('restraint_protocol', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 10 && (result.nukesUsed ?? 0) === 0)
   unlockAchievement('ship_specialist', Object.values(progress.shipMastery).some((ship) => ship.level >= 3))
+  unlockAchievement('ship_adept', Object.values(progress.shipMastery).some((ship) => ship.level >= 8))
+  unlockAchievement('ship_elite', Object.values(progress.shipMastery).some((ship) => ship.level >= 12))
+  unlockAchievement('ship_legend', Object.values(progress.shipMastery).some((ship) => ship.level >= 16))
+  unlockAchievement('fleet_captain', Object.values(progress.shipMastery).filter((ship) => ship.runs > 0).length >= 4)
+  unlockAchievement('fleet_legend', Object.values(progress.shipMastery).filter((ship) => ship.level >= 5).length >= 3)
   unlockAchievement('squid_hunter', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 5)
+  unlockAchievement('squid_breaker', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 6)
   unlockAchievement('serpent_breaker', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 10)
+  unlockAchievement('serpent_slayer', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 11)
   unlockAchievement('fortress_fall', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory')
+  unlockAchievement('fortress_ace', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory' && result.score >= 30000)
+  unlockAchievement('campaign_marathon', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 12 && (result.durationMs ?? 0) >= 600000)
   unlockAchievement('arsenal_runner', progress.pickupsCollected >= 50)
   unlockAchievement('ace_master', Object.values(progress.shipMastery).some((ship) => ship.level >= 5))
   unlockAchievement('all_modes', LEADERBOARD_MODES.every((mode) => progress.bestScoreByMode[mode] > 0))
@@ -239,16 +351,34 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   }
 
   unlockCodex('earth_defense_grid', result.mode === 'ship_defense_normal' || result.mode === 'ship_defense_endless')
+  unlockCodex('tower_command', result.mode === 'ship_defense_normal' && result.stage >= 3)
   unlockCodex('alien_swarm', result.enemiesDestroyed !== undefined && result.enemiesDestroyed > 0)
+  unlockCodex('boss_anatomy', progress.bossesDefeated >= 5)
+  unlockCodex('supply_routes', progress.pickupsCollected >= 10)
+  unlockCodex('commander_records', progress.totalRuns >= 5)
+  unlockCodex('weapon_lab', progress.bestScoreByMode.gradius_solo > 0 || progress.bestScoreByMode.gradius_multiplayer > 0)
   unlockCodex('elite_contacts', result.stage >= 2 || progress.bossesDefeated >= 1)
+  unlockCodex('elite_hunter_cells', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 4)
   unlockCodex('asteroid_cluster', result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer')
+  unlockCodex('asteroid_debris', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 3)
+  unlockCodex('rift_weather', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 5)
+  unlockCodex('derelict_wrecks', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 6)
+  unlockCodex('planetary_routes', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 8)
   unlockCodex('abyss_squid', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 5)
+  unlockCodex('squid_biology', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 6)
   unlockCodex('serpent_guardian', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 10)
+  unlockCodex('serpent_scales', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 11)
   unlockCodex('orbital_fortress', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && (result.stage >= 15 || result.status === 'victory'))
+  unlockCodex('fortress_beam_core', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && (result.stage >= 15 || result.status === 'victory'))
+  unlockCodex('final_gauntlet', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory')
   unlockCodex('endless_swarm', result.mode === 'ship_defense_endless')
   unlockCodex('ship_hangar', Boolean(result.shipKey))
+  unlockCodex('mastery_lab', Object.values(progress.shipMastery).some((ship) => ship.level >= 3))
+  unlockCodex('pilot_academy', Object.values(progress.shipMastery).some((ship) => ship.runs >= 3))
   unlockCodex('pickup_arsenal', (result.pickupsCollected ?? 0) > 0 || progress.pickupsCollected > 0)
   unlockCodex('nuke_protocol', (result.nukesUsed ?? 0) > 0 || progress.nukesUsed > 0)
+  unlockCodex('nuke_failsafe', progress.nukesUsed >= 5)
+  unlockCodex('coop_link', result.mode === 'gradius_multiplayer' && result.score > 0)
   unlockCodex('raid_events', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 3)
 
   saveProgress(progress)
@@ -261,26 +391,29 @@ export function getCompletionPercent(progress: ProgressState) {
   return Math.round(((achievements + codex) / (ACHIEVEMENT_IDS.length + CODEX_IDS.length)) * 100)
 }
 
-export function isShipCosmeticUnlocked(level: number, cosmetic: ShipCosmeticKey) {
-  return level >= SHIP_COSMETIC_LEVELS[cosmetic]
+export function isShipCosmeticUnlocked(mastery: ShipMasteryRecord | undefined, cosmetic: ShipCosmeticKey) {
+  if (!mastery) return false
+  if (cosmetic === 'trail') return mastery.bestScore >= SHIP_COSMETIC_SINGLE_RUN_SCORE
+  if (cosmetic === 'aura') return mastery.victories > 0
+  return mastery.totalScore >= SHIP_COSMETIC_TOTAL_SCORE
 }
 
 export function getEquippedShipCosmetics(progress: ProgressState, shipKey: string): Required<ShipCosmeticEquipState> {
-  const level = progress.shipMastery[shipKey]?.level ?? 1
+  const mastery = progress.shipMastery[shipKey]
   const equipped = progress.equippedCosmetics[shipKey] ?? {}
   return {
-    trail: isShipCosmeticUnlocked(level, 'trail') && equipped.trail !== false,
-    aura: isShipCosmeticUnlocked(level, 'aura') && equipped.aura !== false,
-    frame: isShipCosmeticUnlocked(level, 'frame') && equipped.frame !== false,
+    trail: isShipCosmeticUnlocked(mastery, 'trail') && equipped.trail !== false,
+    aura: isShipCosmeticUnlocked(mastery, 'aura') && equipped.aura !== false,
+    frame: isShipCosmeticUnlocked(mastery, 'frame') && equipped.frame !== false,
   }
 }
 
 export function setShipCosmeticEquipped(shipKey: string, cosmetic: ShipCosmeticKey, equipped: boolean) {
   const progress = loadProgress()
-  const level = progress.shipMastery[shipKey]?.level ?? 1
+  const mastery = progress.shipMastery[shipKey]
   const nextEquipped = {
     ...(progress.equippedCosmetics[shipKey] ?? {}),
-    [cosmetic]: isShipCosmeticUnlocked(level, cosmetic) ? equipped : false,
+    [cosmetic]: isShipCosmeticUnlocked(mastery, cosmetic) ? equipped : false,
   }
   progress.equippedCosmetics = {
     ...progress.equippedCosmetics,
@@ -310,15 +443,15 @@ function getShipMasteryLevelCost(level: number) {
   return SHIP_MASTERY_LEVEL_XP + level * 520 + Math.floor(Math.max(0, level - 1) ** 1.35 * 120)
 }
 
-function autoEquipNewCosmetics(current: ShipCosmeticEquipState | undefined, level: number): ShipCosmeticEquipState {
+function autoEquipNewCosmetics(current: ShipCosmeticEquipState | undefined, mastery: ShipMasteryRecord): ShipCosmeticEquipState {
   const next: ShipCosmeticEquipState = {}
-  ;(Object.keys(SHIP_COSMETIC_LEVELS) as ShipCosmeticKey[]).forEach((cosmetic) => {
+  ;(['trail', 'aura', 'frame'] as ShipCosmeticKey[]).forEach((cosmetic) => {
     if (current?.[cosmetic] !== undefined) {
       next[cosmetic] = current[cosmetic]
     }
   })
-  ;(Object.keys(SHIP_COSMETIC_LEVELS) as ShipCosmeticKey[]).forEach((cosmetic) => {
-    if (isShipCosmeticUnlocked(level, cosmetic) && next[cosmetic] === undefined) {
+  ;(['trail', 'aura', 'frame'] as ShipCosmeticKey[]).forEach((cosmetic) => {
+    if (isShipCosmeticUnlocked(mastery, cosmetic) && next[cosmetic] === undefined) {
       next[cosmetic] = true
     }
   })
@@ -355,11 +488,15 @@ function normalizeProgress(value: unknown): ProgressState {
 function normalizeShipMastery(records: Record<string, ShipMasteryRecord>) {
   return Object.fromEntries(Object.entries(records).map(([shipKey, record]) => {
     const xp = Math.max(0, Math.floor(Number(record?.xp) || 0))
+    const bestScore = Math.max(0, Math.floor(Number(record?.bestScore) || 0))
+    const totalScore = Math.max(bestScore, Math.floor(Number(record?.totalScore) || 0))
     return [shipKey, {
       xp,
       level: getShipMasteryLevelFromXp(xp),
       runs: Math.max(0, Math.floor(Number(record?.runs) || 0)),
-      bestScore: Math.max(0, Math.floor(Number(record?.bestScore) || 0)),
+      bestScore,
+      totalScore,
+      victories: Math.max(0, Math.floor(Number(record?.victories) || 0)),
     }]
   }))
 }
@@ -370,7 +507,7 @@ function normalizeEquippedCosmetics(
 ) {
   const normalized: Record<string, ShipCosmeticEquipState> = {}
   Object.entries(shipMastery).forEach(([shipKey, mastery]) => {
-    normalized[shipKey] = autoEquipNewCosmetics(equippedCosmetics[shipKey], mastery.level)
+    normalized[shipKey] = autoEquipNewCosmetics(equippedCosmetics[shipKey], mastery)
   })
   return normalized
 }

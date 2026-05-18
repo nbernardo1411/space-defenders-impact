@@ -113,38 +113,43 @@ export function TowerShip({ tType, color, size, elite = false }: { tType: string
     const tailGL = `space-et-tail-l-${svgId}`
     const tailGR = `space-et-tail-r-${svgId}`
     const canopyG = `space-et-canopy-${svgId}`
+    const spaceJetAccent = elite ? core : '#6f899a'
+    const spaceJetWingTop = elite ? '#f8fafc' : '#7897a9'
+    const spaceJetBodySide = elite ? '#dce6ec' : '#334657'
+    const spaceJetCenter = elite ? '#ffffff' : '#b9cbd6'
+    const spaceJetCanopy = elite ? '#e2e8f0' : '#1a5577'
 
     return (
       <svg width={s} height={s} viewBox="0 0 680 766" style={{ filter: 'drop-shadow(0 8px 18px #000b)' }}>
         <defs>
           <linearGradient id={fuseG} x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor="#0d141b" />
-            <stop offset="22%" stopColor={core} stopOpacity="0.62" />
-            <stop offset="50%" stopColor="#f8fafc" />
-            <stop offset="78%" stopColor={core} stopOpacity="0.62" />
+            <stop offset="24%" stopColor={spaceJetBodySide} />
+            <stop offset="50%" stopColor={spaceJetCenter} />
+            <stop offset="76%" stopColor={spaceJetBodySide} />
             <stop offset="100%" stopColor="#0d141b" />
           </linearGradient>
           <linearGradient id={wingGL} x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={core} stopOpacity="0.82" />
+            <stop offset="0%" stopColor={spaceJetWingTop} />
             <stop offset="46%" stopColor="#273944" />
             <stop offset="100%" stopColor="#080d12" />
           </linearGradient>
           <linearGradient id={wingGR} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={core} stopOpacity="0.82" />
+            <stop offset="0%" stopColor={spaceJetWingTop} />
             <stop offset="46%" stopColor="#273944" />
             <stop offset="100%" stopColor="#080d12" />
           </linearGradient>
           <linearGradient id={tailGL} x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={core} stopOpacity="0.78" />
+            <stop offset="0%" stopColor={spaceJetAccent} />
             <stop offset="100%" stopColor="#101923" />
           </linearGradient>
           <linearGradient id={tailGR} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={core} stopOpacity="0.78" />
+            <stop offset="0%" stopColor={spaceJetAccent} />
             <stop offset="100%" stopColor="#101923" />
           </linearGradient>
           <linearGradient id={canopyG} x1="0.2" y1="0" x2="0.8" y2="1">
             <stop offset="0%" stopColor="#a8e8ff" stopOpacity="0.9" />
-            <stop offset="48%" stopColor={core} stopOpacity="0.88" />
+            <stop offset="48%" stopColor={spaceJetCanopy} stopOpacity="0.86" />
             <stop offset="100%" stopColor="#04080c" stopOpacity="0.96" />
           </linearGradient>
         </defs>
@@ -166,7 +171,7 @@ export function TowerShip({ tType, color, size, elite = false }: { tType: string
         <path d="M448 391 L625 575 L616 613 L449 575 L378 450 Z" fill={`url(#${wingGR})`} opacity="0.92" />
         <path d="M87 588 L236 472 L286 454 L227 554 L86 614 Z" fill="#dce6ec" opacity="0.28" />
         <path d="M593 588 L444 472 L394 454 L453 554 L594 614 Z" fill="#dce6ec" opacity="0.28" />
-        <path d="M76 607 L234 548 M604 607 L446 548" stroke={core} strokeWidth="7" strokeLinecap="round" opacity="0.82" />
+        <path d="M76 607 L234 548 M604 607 L446 548" stroke={spaceJetAccent} strokeWidth="7" strokeLinecap="round" opacity={elite ? 0.92 : 0.72} />
 
         <path d="M305 620 L248 710 L308 722 L328 663 Z" fill={`url(#${tailGL})`} stroke="#dce6ec" strokeWidth="4" strokeLinejoin="round" />
         <path d="M375 620 L432 710 L372 722 L352 663 Z" fill={`url(#${tailGR})`} stroke="#dce6ec" strokeWidth="4" strokeLinejoin="round" />
@@ -180,13 +185,13 @@ export function TowerShip({ tType, color, size, elite = false }: { tType: string
         <path d="M280 360 L318 336 L314 430 L272 456 Z M400 360 L362 336 L366 430 L408 456 Z" fill="#02070a" opacity="0.72" />
         <path d="M318 428 H362 L354 618 L340 688 L326 618 Z" fill="#020617" opacity="0.36" />
         <path d="M340 72 V672 M286 350 H394 M302 488 H378 M320 600 H360" stroke="#0f172a" strokeWidth="4" opacity="0.42" />
-        <path d="M318 310 L340 278 L362 310 M256 520 L316 474 M424 520 L364 474 M284 626 L340 664 L396 626" stroke={core} strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.86" />
+        <path d="M318 310 L340 278 L362 310 M256 520 L316 474 M424 520 L364 474 M284 626 L340 664 L396 626" stroke={spaceJetAccent} strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={elite ? 0.78 : 0.52} />
         <path d="M294 350 L320 388 M386 350 L360 388" stroke="#ecfeff" strokeWidth="5" strokeLinecap="round" opacity="0.72" />
         {elite && (
           <g opacity="0.72">
-            <path d="M340 110 V650" stroke={core} strokeWidth="7" strokeLinecap="round" />
-            <path d="M232 522 L304 480 M448 522 L376 480 M252 618 L318 590 M428 618 L362 590" stroke={core} strokeWidth="8" strokeLinecap="round" />
-            <path d="M286 374 L340 340 L394 374 M292 458 H388 M304 560 H376" stroke="#fff7ed" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.72" />
+            <path d="M340 110 V650" stroke="#111827" strokeWidth="7" strokeLinecap="round" />
+            <path d="M232 522 L304 480 M448 522 L376 480 M252 618 L318 590 M428 618 L362 590" stroke="#111827" strokeWidth="8" strokeLinecap="round" />
+            <path d="M286 374 L340 340 L394 374 M292 458 H388 M304 560 H376" stroke="#f8fafc" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.82" />
           </g>
         )}
         <path d="M312 626 L340 704 L368 626" stroke="#e2e8f0" strokeWidth="6" fill="none" strokeLinecap="round" opacity="0.6" />

@@ -1581,19 +1581,17 @@
   text-align: center;
   text-transform: uppercase;
   pointer-events: none;
-  filter: drop-shadow(0 0 12px rgba(239, 35, 60, 0.44));
-  animation: raidBossWarningPulse 1.1s ease-in-out infinite alternate;
 }
 
 .raid__boss-warning::before {
   content: '';
-  position: fixed;
-  inset: 0;
+  position: absolute;
+  inset: -14px -18px;
   z-index: -2;
   background:
-    radial-gradient(circle at 50% 38%, rgba(239, 35, 60, 0.11), transparent 31%),
-    linear-gradient(180deg, rgba(239, 35, 60, 0.06), transparent 25%, transparent 74%, rgba(239, 35, 60, 0.05));
-  opacity: 0.46;
+    radial-gradient(circle at 50% 44%, rgba(239, 35, 60, 0.14), transparent 62%),
+    linear-gradient(180deg, transparent, rgba(239, 35, 60, 0.08), transparent);
+  opacity: 0.74;
 }
 
 .raid__boss-warning::after {
@@ -1602,7 +1600,7 @@
   inset: 2px 0 auto;
   height: 2px;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.78), rgba(239, 35, 60, 0.9), transparent);
-  box-shadow: 0 0 14px rgba(239, 35, 60, 0.8);
+  box-shadow: 0 0 8px rgba(239, 35, 60, 0.48);
 }
 
 .raid__boss-warning-panel {
@@ -1611,11 +1609,11 @@
   border: 2px solid #ef233c;
   background:
     linear-gradient(90deg, rgba(239, 35, 60, 0.2), rgba(17, 5, 9, 0.94) 20% 80%, rgba(239, 35, 60, 0.2)),
-    repeating-linear-gradient(135deg, rgba(239, 35, 60, 0.22) 0 12px, transparent 12px 24px);
+    linear-gradient(135deg, rgba(239, 35, 60, 0.16), transparent 44%, rgba(239, 35, 60, 0.12));
   box-shadow:
     inset 0 0 0 2px rgba(0, 0, 0, 0.68),
     inset 0 0 20px rgba(239, 35, 60, 0.24),
-    0 0 18px rgba(239, 35, 60, 0.36);
+    0 0 12px rgba(239, 35, 60, 0.22);
 }
 
 .raid__boss-warning-panel::before,
@@ -1694,9 +1692,8 @@
   height: 24px;
   border: 1px solid rgba(239, 35, 60, 0.82);
   background:
-    repeating-linear-gradient(135deg, #ef233c 0 12px, #1f0307 12px 22px);
+    linear-gradient(135deg, #ef233c 0 14%, #1f0307 14% 28%, #ef233c 28% 42%, #1f0307 42% 56%, #ef233c 56% 70%, #1f0307 70% 84%, #ef233c 84%);
   box-shadow: 0 0 10px rgba(239, 35, 60, 0.24), inset 0 0 0 2px rgba(0, 0, 0, 0.62);
-  animation: raidBossWarningStripes 0.9s linear infinite;
 }
 
 .raid__boss-warning small {
