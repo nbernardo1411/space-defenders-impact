@@ -596,6 +596,7 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
 }
 
 type CanvasSpriteEntry = {
+  cacheKey: string
   image: HTMLImageElement
   loaded: boolean
   processedImage?: HTMLCanvasElement
@@ -606,7 +607,18 @@ type RaidBackgroundBaseCacheEntry = {
   canvas: HTMLCanvasElement
 }
 
+type RaidStarfieldCacheEntry = {
+  key: string
+  farCanvas: HTMLCanvasElement
+  farLayerHeight: number
+  nearTrailCanvas: HTMLCanvasElement | null
+  nearLayerHeight: number
+}
+
 let raidBackgroundBaseCache: RaidBackgroundBaseCacheEntry | null = null
+let raidStarfieldCache: RaidStarfieldCacheEntry | null = null
+const FILTERED_CANVAS_SPRITE_CACHE_LIMIT = 128
+const filteredCanvasSpriteCache = new Map<string, HTMLCanvasElement>()
 
 type CanvasSpriteProcessor = (image: HTMLImageElement) => HTMLCanvasElement | null
 
@@ -971,7 +983,7 @@ function makeImageCanvasSprite(cacheKey: string, src: string, processor?: Canvas
   if (existing) return existing
 
   const image = new Image()
-  const entry: CanvasSpriteEntry = { image, loaded: false }
+  const entry: CanvasSpriteEntry = { cacheKey, image, loaded: false }
   image.decoding = 'async'
   image.onload = () => {
     if (processor) {
@@ -1000,6 +1012,36 @@ function getCanvasSpriteDimensions(sprite: CanvasSpriteEntry) {
   const width = 'naturalWidth' in source ? source.naturalWidth : source.width
   const height = 'naturalHeight' in source ? source.naturalHeight : source.height
   return { source, width, height }
+}
+
+function shouldCacheCanvasFilter(filter: string) {
+  return filter !== 'none' && !filter.includes('blur(') && !filter.includes('hue-rotate')
+}
+
+function getFilteredCanvasSpriteSource(sprite: CanvasSpriteEntry, source: CanvasImageSource, width: number, height: number, filter: string) {
+  if (!shouldCacheCanvasFilter(filter) || typeof document === 'undefined' || width <= 0 || height <= 0) return null
+
+  const cacheKey = `${sprite.cacheKey}|${Math.round(width)}x${Math.round(height)}|${filter}`
+  const cached = filteredCanvasSpriteCache.get(cacheKey)
+  if (cached) return cached
+
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(width))
+  canvas.height = Math.max(1, Math.round(height))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.filter = filter
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
+  ctx.filter = 'none'
+
+  if (filteredCanvasSpriteCache.size >= FILTERED_CANVAS_SPRITE_CACHE_LIMIT) {
+    const oldestKey = filteredCanvasSpriteCache.keys().next().value
+    if (oldestKey) filteredCanvasSpriteCache.delete(oldestKey)
+  }
+  filteredCanvasSpriteCache.set(cacheKey, canvas)
+  return canvas
 }
 
 function getRaidOtherCanvasSprite(key: RaidOtherAssetKey) {
@@ -1077,11 +1119,13 @@ function drawCanvasSprite(
   ctx.rotate(rotation)
   ctx.scale(scale, scale)
   ctx.globalAlpha *= alpha
-  ctx.filter = filter
   if (sprite.loaded && sprite.image.complete) {
-    const { source } = getCanvasSpriteDimensions(sprite)
-    ctx.drawImage(source, -size / 2, -size / 2, size, size)
+    const { source, width, height } = getCanvasSpriteDimensions(sprite)
+    const filteredSource = getFilteredCanvasSpriteSource(sprite, source, width, height, filter)
+    ctx.filter = filteredSource ? 'none' : filter
+    ctx.drawImage(filteredSource ?? source, -size / 2, -size / 2, size, size)
   } else {
+    ctx.filter = filter
     drawSpriteFallback(ctx, size, fallbackColor)
   }
   ctx.restore()
@@ -1104,10 +1148,10 @@ function drawCanvasSpriteContain(
   ctx.rotate(rotation)
   ctx.scale(scale, scale)
   ctx.globalAlpha *= alpha
-  ctx.filter = filter
   if (sprite.loaded && sprite.image.complete) {
     const { source, width, height } = getCanvasSpriteDimensions(sprite)
     if (width <= 0 || height <= 0) {
+      ctx.filter = filter
       drawSpriteFallback(ctx, size, fallbackColor)
       ctx.restore()
       return
@@ -1115,8 +1159,11 @@ function drawCanvasSpriteContain(
     const aspect = width / height
     const drawWidth = aspect > 1 ? size : size * aspect
     const drawHeight = aspect > 1 ? size / aspect : size
-    ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+    const filteredSource = getFilteredCanvasSpriteSource(sprite, source, width, height, filter)
+    ctx.filter = filteredSource ? 'none' : filter
+    ctx.drawImage(filteredSource ?? source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
   } else {
+    ctx.filter = filter
     drawSpriteFallback(ctx, size, fallbackColor)
   }
   ctx.restore()
@@ -1147,8 +1194,9 @@ function drawCanvasImageContain(
   ctx.translate(x, y)
   ctx.rotate(rotation)
   ctx.globalAlpha *= alpha
-  ctx.filter = filter
-  ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+  const filteredSource = getFilteredCanvasSpriteSource(sprite, source, sourceWidth, sourceHeight, filter)
+  ctx.filter = filteredSource ? 'none' : filter
+  ctx.drawImage(filteredSource ?? source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
   ctx.restore()
   return true
 }
@@ -2342,6 +2390,17 @@ function getRaidBackgroundBaseCacheKey(palette: RaidPalette, width: number, heig
   ].join('|')
 }
 
+function makeRaidLayerCanvas(width: number, height: number, dpr: number) {
+  if (typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.ceil(width * dpr))
+  canvas.height = Math.max(1, Math.ceil(height * dpr))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  return { canvas, ctx }
+}
+
 function drawRaidBackgroundBase(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, quality: GraphicsQuality) {
   const { baseTop, baseMid, baseBottom, bgA, bgB } = palette
   const isLow = quality === 'low'
@@ -2380,6 +2439,99 @@ function drawRaidBackgroundBaseLayer(ctx: CanvasRenderingContext2D, palette: Rai
   }
 
   ctx.drawImage(raidBackgroundBaseCache.canvas, 0, 0, width, height)
+}
+
+function getRaidStarfieldCacheKey(width: number, height: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
+  return [
+    Math.round(width),
+    Math.round(height),
+    dpr.toFixed(2),
+    quality,
+    starTint,
+    streak,
+  ].join('|')
+}
+
+function drawScrollingBackgroundLayer(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, width: number, height: number, layerHeight: number, offset: number) {
+  if (layerHeight <= 0) return
+  const y = ((offset % layerHeight) + layerHeight) % layerHeight
+  ctx.drawImage(canvas, 0, y, width, layerHeight)
+  ctx.drawImage(canvas, 0, y - layerHeight, width, layerHeight)
+  if (y < height) ctx.drawImage(canvas, 0, y + layerHeight, width, layerHeight)
+}
+
+function getRaidStarfieldCache(width: number, height: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
+  const key = getRaidStarfieldCacheKey(width, height, quality, dpr, starTint, streak)
+  if (raidStarfieldCache?.key === key) return raidStarfieldCache
+  if (typeof document === 'undefined') return null
+
+  const isLow = quality === 'low'
+  const isMedium = quality === 'medium'
+  const isHigh = quality === 'high'
+  const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
+  const farLayerHeight = height * 1.26
+  const nearLayerHeight = height * 1.38
+  const farLayer = makeRaidLayerCanvas(width, farLayerHeight, dpr)
+  if (!farLayer) return null
+
+  for (let index = 0; index < starLimit; index += 1) {
+    const star = BACKGROUND_STARS[index]
+    const x = star.x * width
+    const y = star.y * farLayerHeight
+    farLayer.ctx.globalAlpha = star.alpha * 0.52
+    farLayer.ctx.fillStyle = star.tint > 0.66 ? starTint : star.tint > 0.33 ? 'rgba(125,211,252,0.55)' : 'rgba(255,255,255,0.76)'
+    farLayer.ctx.beginPath()
+    farLayer.ctx.arc(x, y, star.size * 0.62, 0, Math.PI * 2)
+    farLayer.ctx.fill()
+  }
+
+  let nearTrailCanvas: HTMLCanvasElement | null = null
+  if (!isLow && !isMedium) {
+    const nearLayer = makeRaidLayerCanvas(width, nearLayerHeight, dpr)
+    if (nearLayer) {
+      for (let index = 0; index < starLimit; index += 1) {
+        const star = BACKGROUND_STARS[index]
+        if (star.tint <= 0.58) continue
+        const x = star.x * width
+        const y = star.y * nearLayerHeight
+        nearLayer.ctx.globalAlpha = star.alpha * 0.42
+        const trail = nearLayer.ctx.createLinearGradient(x, y - 18, x, y + 28)
+        trail.addColorStop(0, 'rgba(255,255,255,0)')
+        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)')
+        trail.addColorStop(1, 'rgba(255,255,255,0)')
+        nearLayer.ctx.strokeStyle = trail
+        nearLayer.ctx.lineWidth = Math.max(1, star.size * 0.8)
+        nearLayer.ctx.beginPath()
+        nearLayer.ctx.moveTo(x, y - 18)
+        nearLayer.ctx.lineTo(x, y + 28)
+        nearLayer.ctx.stroke()
+      }
+      nearTrailCanvas = nearLayer.canvas
+    }
+  }
+
+  raidStarfieldCache = {
+    key,
+    farCanvas: farLayer.canvas,
+    farLayerHeight,
+    nearTrailCanvas,
+    nearLayerHeight,
+  }
+  return raidStarfieldCache
+}
+
+function drawRaidStarfield(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
+  const cache = getRaidStarfieldCache(width, height, quality, dpr, starTint, streak)
+  if (!cache) return false
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  drawScrollingBackgroundLayer(ctx, cache.farCanvas, width, height, cache.farLayerHeight, seconds * 15 - height * 0.13)
+  if (cache.nearTrailCanvas) {
+    drawScrollingBackgroundLayer(ctx, cache.nearTrailCanvas, width, height, cache.nearLayerHeight, seconds * 72 - height * 0.19)
+  }
+  ctx.restore()
+  return true
 }
 
 function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max', stageTheme = 1, dpr = 1) {
@@ -2448,36 +2600,11 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     ctx.restore()
   }
 
-  ctx.save()
-  ctx.globalCompositeOperation = 'lighter'
-  const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
-  for (let index = 0; index < starLimit; index += 1) {
-    const star = BACKGROUND_STARS[index]
-    const farY = ((star.y * height * 1.26 + seconds * 15) % (height * 1.26)) - height * 0.13
-    const nearY = ((star.y * height * 1.38 + seconds * 72) % (height * 1.38)) - height * 0.19
-    const x = star.x * width
-    ctx.globalAlpha = star.alpha * 0.52
-    ctx.fillStyle = star.tint > 0.66 ? starTint : star.tint > 0.33 ? 'rgba(125,211,252,0.55)' : 'rgba(255,255,255,0.76)'
-    ctx.beginPath()
-    ctx.arc(x, farY, star.size * 0.62, 0, Math.PI * 2)
-    ctx.fill()
-
-    if (!isLow && !isMedium && star.tint > 0.58) {
-      ctx.globalAlpha = star.alpha * 0.42
-      const trail = ctx.createLinearGradient(x, nearY - 18, x, nearY + 28)
-      trail.addColorStop(0, 'rgba(255,255,255,0)')
-      trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)')
-      trail.addColorStop(1, 'rgba(255,255,255,0)')
-      ctx.strokeStyle = trail
-      ctx.lineWidth = Math.max(1, star.size * 0.8)
-      ctx.beginPath()
-      ctx.moveTo(x, nearY - 18)
-      ctx.lineTo(x, nearY + 28)
-      ctx.stroke()
-    }
-  }
+  const drewCachedStarfield = drawRaidStarfield(ctx, width, height, seconds, quality, dpr, starTint, streak)
 
   if (!isLow) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
     const speedLineLimit = isMedium ? 2 : BACKGROUND_SPEED_LINES.length
     for (let index = 0; index < speedLineLimit; index += 1) {
       const line = BACKGROUND_SPEED_LINES[index]
@@ -2500,8 +2627,40 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
       ctx.lineTo(x, y + line.length)
       ctx.stroke()
     }
+    ctx.restore()
   }
-  ctx.restore()
+
+  if (!drewCachedStarfield) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
+    for (let index = 0; index < starLimit; index += 1) {
+      const star = BACKGROUND_STARS[index]
+      const farY = ((star.y * height * 1.26 + seconds * 15) % (height * 1.26)) - height * 0.13
+      const nearY = ((star.y * height * 1.38 + seconds * 72) % (height * 1.38)) - height * 0.19
+      const x = star.x * width
+      ctx.globalAlpha = star.alpha * 0.52
+      ctx.fillStyle = star.tint > 0.66 ? starTint : star.tint > 0.33 ? 'rgba(125,211,252,0.55)' : 'rgba(255,255,255,0.76)'
+      ctx.beginPath()
+      ctx.arc(x, farY, star.size * 0.62, 0, Math.PI * 2)
+      ctx.fill()
+
+      if (!isLow && !isMedium && star.tint > 0.58) {
+        ctx.globalAlpha = star.alpha * 0.42
+        const trail = ctx.createLinearGradient(x, nearY - 18, x, nearY + 28)
+        trail.addColorStop(0, 'rgba(255,255,255,0)')
+        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)')
+        trail.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.strokeStyle = trail
+        ctx.lineWidth = Math.max(1, star.size * 0.8)
+        ctx.beginPath()
+        ctx.moveTo(x, nearY - 18)
+        ctx.lineTo(x, nearY + 28)
+        ctx.stroke()
+      }
+    }
+    ctx.restore()
+  }
 
   const planetBase = height * 1.3
   const planet1Y = ((seconds / 28 + 0.9) % 1) * planetBase - height * 0.1
