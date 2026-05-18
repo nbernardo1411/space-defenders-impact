@@ -176,9 +176,9 @@
 }
 
 .progress-ship-preview__ship--rocket {
-  --mastery-core: rgba(148,163,184,0.86);
-  --mastery-edge: rgba(239,35,60,0.62);
-  --mastery-soft: rgba(15,23,42,0.42);
+  --mastery-core: rgba(34,211,238,0.82);
+  --mastery-edge: rgba(15,23,42,0.92);
+  --mastery-soft: rgba(14,165,233,0.2);
   --mastery-mark: rgba(226,232,240,0.86);
 }
 
@@ -218,10 +218,10 @@
 }
 
 .progress-ship-preview__ship--spaceEt {
-  --mastery-core: rgba(245,158,11,0.92);
-  --mastery-edge: rgba(125,249,255,0.72);
-  --mastery-soft: rgba(245,158,11,0.22);
-  --mastery-mark: rgba(254,243,199,0.98);
+  --mastery-core: rgba(248,250,252,0.9);
+  --mastery-edge: rgba(56,189,248,0.7);
+  --mastery-soft: rgba(148,163,184,0.16);
+  --mastery-mark: rgba(15,23,42,0.86);
 }
 
 .progress-ship-preview__ship svg {
@@ -246,14 +246,25 @@
 .progress-ship-preview__ship--aura::before {
   content: '';
   position: absolute;
-  z-index: 1;
-  inset: 0 21px -13px;
+  z-index: 0;
+  inset: -2px;
   background:
-    linear-gradient(180deg, transparent 0 12%, var(--mastery-core) 38%, var(--mastery-soft) 70%, transparent),
-    radial-gradient(ellipse at 50% 78%, var(--mastery-soft), transparent 68%);
-  clip-path: polygon(50% 0, 62% 31%, 70% 67%, 56% 100%, 50% 88%, 44% 100%, 30% 67%, 38% 31%);
-  filter: blur(0.2px) drop-shadow(0 0 14px var(--mastery-soft));
-  opacity: 0.82;
+    radial-gradient(ellipse at 50% 48%, var(--mastery-core), var(--mastery-soft) 46%, transparent 72%);
+  border-radius: 50%;
+  filter: blur(14px);
+  opacity: 0.62;
+  transform-origin: 50% 48%;
+  animation: masteryAuraPulse 1.7s ease-in-out infinite alternate;
+}
+
+.progress-ship-preview__ship--aura svg {
+  filter:
+    drop-shadow(0 0 22px var(--mastery-core))
+    drop-shadow(0 0 13px var(--mastery-edge))
+    drop-shadow(0 0 6px var(--mastery-mark))
+    saturate(1.75)
+    brightness(1.16);
+  animation: masteryShipGlow 1.7s ease-in-out infinite alternate;
 }
 
 .progress-ship-preview__ship--frame {
@@ -494,5 +505,25 @@
 
   .stage-nodes {
     grid-template-columns: repeat(5, minmax(34px, 1fr));
+  }
+}
+
+@keyframes masteryAuraPulse {
+  from {
+    opacity: 0.48;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 0.78;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes masteryShipGlow {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.018);
   }
 }

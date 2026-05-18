@@ -5033,10 +5033,11 @@ function drawRaidPlayer(
   const rotation = isDown ? 28 * DEG : 0
   const scale = isDown ? 0.88 : 1
   const alpha = isDown ? 0.3 : 1
+  const masteryPaintColor = cosmetics.frame ? getMasteryPaintColor(player.ship.key, color) : color
 
   if (!isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, y, size, time, color, player.ship.key)
   if (!isDown) drawPlayerEngine(ctx, x, y, size, time)
-  if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, size, time, player.ship.key)
+  if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, size, time, player.ship.key, masteryPaintColor, cosmetics.frame)
 
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
   else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
@@ -5049,7 +5050,6 @@ function drawRaidPlayer(
     else drawPlasmaForceField(ctx, x, y, size, time, forceCharge)
   }
 
-  const masteryPaintColor = cosmetics.frame ? getMasteryPaintColor(player.ship.key, color) : color
   const sprite = getTowerCanvasSprite(player.ship.key, masteryPaintColor, getShipSpriteSize(player.ship.key, 'player'), cosmetics.frame)
   const spriteGlow = player.forceField > 0
     ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
@@ -5086,10 +5086,10 @@ type MasteryVisualStyle = {
 
 const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
   rocket: {
-    core: 'rgba(203,213,225,0.82)',
-    edge: 'rgba(239,35,60,0.62)',
-    soft: 'rgba(15,23,42,0.22)',
-    accent: 'rgba(248,250,252,0.72)',
+    core: 'rgba(34,211,238,0.78)',
+    edge: 'rgba(15,23,42,0.9)',
+    soft: 'rgba(14,165,233,0.18)',
+    accent: 'rgba(226,232,240,0.76)',
     paint: '#38bdf8',
     trailOffsets: [-0.14, 0.14],
     auraShape: 'comet',
@@ -5141,9 +5141,9 @@ const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
   },
   spaceEt: {
     core: 'rgba(248,250,252,0.9)',
-    edge: 'rgba(15,23,42,0.82)',
-    soft: 'rgba(226,232,240,0.16)',
-    accent: 'rgba(17,24,39,0.84)',
+    edge: 'rgba(56,189,248,0.7)',
+    soft: 'rgba(148,163,184,0.16)',
+    accent: 'rgba(15,23,42,0.86)',
     paint: '#f8fafc',
     trailOffsets: [0],
     auraShape: 'stealth',
@@ -5199,30 +5199,16 @@ function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: num
   ctx.restore()
 }
 
-function drawMasteryAura(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string) {
+function drawMasteryAura(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string, color: string, elite: boolean) {
   const style = getMasteryVisualStyle(shipKey, PLAYER_COLOR)
-  const pulse = 0.88 + Math.sin(time / 260) * 0.08
+  const pulse = 0.95 + Math.sin(time / 260) * 0.12
+  const sprite = getTowerCanvasSprite(shipKey, color, Math.round(size), elite)
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  const sheath = ctx.createLinearGradient(x, y - size * 0.5, x, y + size * 0.72)
-  sheath.addColorStop(0, 'rgba(255,255,255,0)')
-  sheath.addColorStop(0.24, style.core)
-  sheath.addColorStop(0.62, style.soft)
-  sheath.addColorStop(1, 'rgba(255,255,255,0)')
-  ctx.fillStyle = sheath
-  ctx.globalAlpha = 0.42 * pulse
-  ctx.beginPath()
-  ctx.moveTo(x, y - size * 0.58)
-  ctx.bezierCurveTo(x + size * 0.2, y - size * 0.18, x + size * 0.18, y + size * 0.34, x, y + size * 0.72)
-  ctx.bezierCurveTo(x - size * 0.18, y + size * 0.34, x - size * 0.2, y - size * 0.18, x, y - size * 0.58)
-  ctx.fill()
-  ctx.globalAlpha = 0.7 * pulse
-  ctx.strokeStyle = style.core
-  ctx.lineWidth = Math.max(1, size * 0.011)
-  ctx.beginPath()
-  ctx.moveTo(x, y - size * 0.48)
-  ctx.bezierCurveTo(x + Math.sin(time / 180) * size * 0.05, y - size * 0.08, x - Math.sin(time / 210) * size * 0.04, y + size * 0.28, x, y + size * 0.62)
-  ctx.stroke()
+  drawCanvasSprite(ctx, sprite, x, y, size * 1.32, `blur(${Math.max(8, size * 0.11)}px) brightness(1.9) saturate(2.35)`, 0.5 * pulse, 0, 1, style.paint)
+  drawCanvasSprite(ctx, sprite, x, y, size * 1.2, `blur(${Math.max(4.5, size * 0.062)}px) brightness(2.05) saturate(2.55)`, 0.66 * pulse, 0, 1, style.paint)
+  drawCanvasSprite(ctx, sprite, x, y, size * 1.09, `blur(${Math.max(1.7, size * 0.022)}px) brightness(1.72) saturate(2.1)`, 0.42 * pulse, 0, 1, style.paint)
+  drawCanvasSprite(ctx, sprite, x, y, size * 1.015, 'brightness(1.35) saturate(1.9)', 0.2 * pulse, 0, 1, style.paint)
   ctx.restore()
 }
 
