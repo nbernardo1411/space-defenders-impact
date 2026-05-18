@@ -655,6 +655,8 @@ const RAID_OTHER_ASSET_PATHS = {
   planet3: 'assets/others/planet_3.webp',
 } as const
 
+const RAID_FINAL_BOSS_ASSET_PATH = 'assets/aliens/final_boss.png'
+
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
 
 const DEFAULT_RAID_PALETTE: RaidPalette = {
@@ -1065,9 +1067,17 @@ function getNormalAlienCanvasSprite(variant: number) {
   return makeImageCanvasSprite(key, getRaidAlienSpriteUrl(variant))
 }
 
+function getFinalBossCanvasSprite() {
+  const key = 'alien-image:final-boss'
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_FINAL_BOSS_ASSET_PATH))
+}
+
 function warmRaidCanvasAssets() {
   for (const ship of SHIP_OPTIONS) getShipCanvasSprite(ship.key)
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) getNormalAlienCanvasSprite(variant)
+  getFinalBossCanvasSprite()
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) getRaidOtherCanvasSprite(key)
 }
 
@@ -1213,15 +1223,16 @@ function drawSpriteGlow(ctx: CanvasRenderingContext2D, x: number, y: number, siz
 }
 
 function getEnemyCanvasSize(enemy: Enemy, viewportWidth: number) {
-  if (enemy.isMiniBoss) return Math.min(viewportWidth * 0.15, 132)
-  if (!enemy.isBoss) return Math.min(viewportWidth * 0.105, 82)
+  const isMobileView = viewportWidth <= 640
+  if (enemy.isMiniBoss) return isMobileView ? Math.min(viewportWidth * 0.18, 150) : Math.min(viewportWidth * 0.15, 132)
+  if (!enemy.isBoss) return isMobileView ? Math.min(viewportWidth * 0.125, 92) : Math.min(viewportWidth * 0.105, 82)
   if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.64, 620)
-  if (enemy.bossKind === 'squid') return viewportWidth <= 640 ? Math.min(viewportWidth * 0.42, 360) : Math.min(viewportWidth * 0.34, 340)
-  if (enemy.bossKind === 'snake') return Math.min(viewportWidth * 0.62, 600)
-  if (enemy.bossKind === 'super') return Math.min(viewportWidth * 0.48, 430)
-  if (enemy.bossKind === 'gate') return Math.min(viewportWidth * 0.4, 360)
-  if (enemy.bossKind === 'hydra') return Math.min(viewportWidth * 0.35, 305)
-  return Math.min(viewportWidth * 0.3, 260)
+  if (enemy.bossKind === 'squid') return isMobileView ? Math.min(viewportWidth * 0.46, 380) : Math.min(viewportWidth * 0.34, 340)
+  if (enemy.bossKind === 'snake') return Math.min(viewportWidth * (isMobileView ? 0.66 : 0.62), 600)
+  if (enemy.bossKind === 'super') return Math.min(viewportWidth * (isMobileView ? 0.52 : 0.48), 430)
+  if (enemy.bossKind === 'gate') return Math.min(viewportWidth * (isMobileView ? 0.44 : 0.4), 360)
+  if (enemy.bossKind === 'hydra') return Math.min(viewportWidth * (isMobileView ? 0.39 : 0.35), 305)
+  return Math.min(viewportWidth * (isMobileView ? 0.34 : 0.3), 260)
 }
 
 function distSq(a: Vec, b: Vec) {
@@ -4825,6 +4836,84 @@ function drawInterstellarDreadshipBoss(ctx: CanvasRenderingContext2D, size: numb
 
   ctx.restore()
 }
+
+function drawFinalBossSpriteBody(ctx: CanvasRenderingContext2D, size: number, time: number, rage = 0) {
+  const sprite = getFinalBossCanvasSprite()
+  if (!sprite.loaded || !sprite.image.complete) {
+    drawInterstellarDreadshipBoss(ctx, size, time, rage)
+    return
+  }
+
+  const seconds = time / 1000
+  const coreRage = clamp(rage, 0, 1)
+  const pulse = 0.78 + Math.sin(seconds * (2.8 + coreRage * 1.1)) * 0.16
+  const slowPulse = 0.7 + Math.sin(seconds * 1.2) * 0.16
+  const spriteSize = size * 1.08
+  const spin = seconds * (0.055 + coreRage * 0.018)
+  const coreColor = coreRage > 0.08 ? '#f87171' : '#38bdf8'
+  const coreGlow = coreRage > 0.08 ? 'rgba(248,113,113,ALPHA)' : 'rgba(56,189,248,ALPHA)'
+
+  ctx.save()
+  drawRadialEllipse(ctx, 0, size * 0.03, size * (0.66 + coreRage * 0.06), size * (0.68 + coreRage * 0.06), [
+    [0, `rgba(255,255,255,${0.07 + pulse * 0.04})`],
+    [0.35, coreRage > 0.08 ? 'rgba(248,113,113,0.24)' : 'rgba(56,189,248,0.18)'],
+    [0.68, 'rgba(251,191,36,0.1)'],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  drawBossDust(ctx, size, coreGlow, 24, 13.4, 0.86, 0.86)
+
+  drawSpriteGlow(ctx, 0, 0, spriteSize, coreRage > 0.08 ? 'rgba(248,113,113,0.34)' : 'rgba(56,189,248,0.28)', 1)
+  ctx.shadowColor = coreRage > 0.08 ? 'rgba(248,113,113,0.62)' : 'rgba(56,189,248,0.58)'
+  ctx.shadowBlur = size * (0.055 + coreRage * 0.025)
+  drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize, 'brightness(1.12) contrast(1.14) saturate(1.22)', 1, spin, 1, coreColor)
+  ctx.shadowBlur = 0
+
+  ctx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(ctx, 0, size * 0.03, size * (0.12 + coreRage * 0.04), size * (0.12 + coreRage * 0.04), [
+    [0, `rgba(255,255,255,${0.72 + pulse * 0.18})`],
+    [0.22, coreRage > 0.08 ? `rgba(248,113,113,${0.62 + pulse * 0.2})` : `rgba(56,189,248,${0.6 + pulse * 0.18})`],
+    [0.64, coreRage > 0.08 ? `rgba(185,28,28,${0.28 + pulse * 0.2})` : `rgba(14,165,233,${0.25 + pulse * 0.18})`],
+    [1, coreRage > 0.08 ? 'rgba(127,29,29,0)' : 'rgba(14,165,233,0)'],
+  ])
+  ctx.strokeStyle = coreRage > 0.08 ? `rgba(252,165,165,${0.36 + pulse * 0.28})` : `rgba(125,249,255,${0.34 + pulse * 0.26})`
+  ctx.lineWidth = Math.max(1.4, size * 0.005)
+  for (let ring = 0; ring < 4; ring += 1) {
+    ctx.beginPath()
+    ctx.ellipse(0, size * 0.03, size * (0.1 + ring * 0.045), size * (0.035 + ring * 0.018), seconds * (0.25 + ring * 0.05), 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  for (let drone = 0; drone < 10; drone += 1) {
+    const angle = drone / 10 * Math.PI * 2 + seconds * 0.28
+    const dx = Math.cos(angle) * size * (0.62 + Math.sin(drone) * 0.035)
+    const dy = size * 0.02 + Math.sin(angle) * size * 0.46
+    ctx.save()
+    ctx.translate(dx, dy)
+    ctx.rotate(angle + Math.PI / 2)
+    ctx.fillStyle = `rgba(14,165,233,${0.28 + slowPulse * 0.1})`
+    ctx.strokeStyle = coreRage > 0.08 ? 'rgba(252,165,165,0.76)' : 'rgba(125,249,255,0.78)'
+    ctx.lineWidth = Math.max(0.8, size * 0.003)
+    ctx.beginPath()
+    ctx.ellipse(0, 0, size * 0.04, size * 0.01, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  ctx.strokeStyle = coreRage > 0.08 ? `rgba(252,165,165,${0.36 + pulse * 0.18})` : `rgba(125,249,255,${0.44 + pulse * 0.16})`
+  ctx.lineWidth = Math.max(2, size * 0.007)
+  ctx.beginPath()
+  ctx.moveTo(0, size * 0.42)
+  ctx.lineTo(0, size * 0.78)
+  ctx.stroke()
+  drawRadialEllipse(ctx, 0, size * 0.67, size * 0.06, size * 0.22, [
+    [0, 'rgba(255,255,255,0.56)'],
+    [0.28, coreRage > 0.08 ? 'rgba(248,113,113,0.58)' : 'rgba(34,211,238,0.6)'],
+    [1, coreRage > 0.08 ? 'rgba(248,113,113,0)' : 'rgba(34,211,238,0)'],
+  ])
+  ctx.restore()
+}
+
 function drawFinalBossRageCore(ctx: CanvasRenderingContext2D, size: number, time: number, rage: number) {
   if (rage <= 0.02) return
   const seconds = time / 1000
@@ -5106,7 +5195,7 @@ function drawRaidEnemy(
       }
       else {
         const finalRage = clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1)
-        drawInterstellarDreadshipBoss(ctx, size, time, finalRage)
+        drawFinalBossSpriteBody(ctx, size, time, finalRage)
         drawFinalBossRageCore(ctx, size, time, finalRage)
       }
       if (displayBossKind === 'final') drawBossRichDetailOverlay(ctx, size, time, displayBossKind, enemy.color)
@@ -6738,7 +6827,7 @@ function BossBriefingCanvas({ kind }: { kind: BriefingBossKind }) {
       else if (kind === 'snake') drawGalacticSnakeBoss(ctx, size, time)
       else {
         const briefingRage = 0.45 + Math.sin(time / 900) * 0.18
-        drawInterstellarDreadshipBoss(ctx, size, time, briefingRage)
+        drawFinalBossSpriteBody(ctx, size, time, briefingRage)
         drawFinalBossRageCore(ctx, size, time, briefingRage)
         drawBossRichDetailOverlay(ctx, size, time, 'final', BOSS_COLORS.final)
       }
@@ -10353,10 +10442,10 @@ export function GradiusRaid({
                   bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
                     bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
                       bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
-                        bossKind === 'final' ? 50 + Math.sin(t * (0.36 + finalRage * 0.32)) * (31 + finalRage * 7) + Math.sin(t * (1.45 + finalRage * 0.75)) * (7 + finalRage * 6) :
+                        bossKind === 'final' ? 50 + Math.sin(t * (0.26 + finalRage * 0.08)) * (24 + finalRage * 2.5) + Math.sin(t * (0.92 + finalRage * 0.18)) * (3.5 + finalRage * 1.5) :
                           50 + Math.sin(t * 0.42) * 30
       const bossYTarget =
-        bossKind === 'final' ? 17 + Math.sin(t * (0.72 + finalRage * 0.55)) * (3 + finalRage * 3.2) :
+        bossKind === 'final' ? 17 + Math.sin(t * (0.52 + finalRage * 0.16)) * (2.2 + finalRage * 0.9) :
           bossKind === 'squid' ? 18 + Math.sin(t * 0.75) * 3 :
             bossKind === 'snake' ? 19 + Math.sin(t * 1.3) * 4 :
               bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
