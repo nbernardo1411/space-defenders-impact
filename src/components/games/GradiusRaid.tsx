@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM } from './sound'
 import type { GraphicsQuality } from './sound'
 import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
-import { AlienShip } from './towerDefense/sprites'
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
@@ -592,7 +590,6 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
 type CanvasSpriteEntry = {
   image: HTMLImageElement
   loaded: boolean
-  objectUrl?: string
   processedImage?: HTMLCanvasElement
 }
 
@@ -793,34 +790,6 @@ function drawRadialEllipse(
   ctx.arc(0, 0, radiusY, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
-}
-
-function makeCanvasSprite(cacheKey: string, markup: string) {
-  const existing = canvasSpriteCache.get(cacheKey)
-  if (existing) return existing
-
-  const image = new Image()
-  const entry: CanvasSpriteEntry = { image, loaded: false }
-  const markupWithoutSvgFilter = markup
-    .replace(/\sstyle="filter:[^"]*"/g, '')
-    .replace(/filter:\s*drop-shadow\([^)]*\);?/g, '')
-  const svgMarkup = markupWithoutSvgFilter.startsWith('<svg') && !markupWithoutSvgFilter.includes('xmlns=')
-    ? markupWithoutSvgFilter.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')
-    : markupWithoutSvgFilter
-  image.decoding = 'async'
-  image.onload = () => {
-    entry.loaded = true
-    if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl)
-  }
-  image.onerror = () => {
-    entry.loaded = false
-    if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl)
-  }
-  const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' })
-  entry.objectUrl = URL.createObjectURL(blob)
-  image.src = entry.objectUrl
-  canvasSpriteCache.set(cacheKey, entry)
-  return entry
 }
 
 function makeSpriteProcessingCanvas(image: HTMLImageElement, maxSize: number, crop?: { x: number; y: number; width: number; height: number }) {
@@ -1033,42 +1002,6 @@ function getNormalAlienImageFilter(baseFilter: string, enemy: Enemy) {
   const patternShift = (enemy.pattern - 1.5) * 5
   const brightness = 1 + ((enemy.id % 5) - 2) * 0.018
   return `${baseFilter} hue-rotate(${Math.round(hueOffsets[index] + patternShift)}deg) brightness(${brightness.toFixed(2)}) saturate(1.08)`
-}
-
-function getEnemySpriteMarkupSize(enemy: Enemy) {
-  if (enemy.isMiniBoss) return 128
-  if (!enemy.isBoss) return 64
-  if (enemy.bossKind === 'final') return 340
-  if (enemy.bossKind === 'squid') return 340
-  if (enemy.bossKind === 'snake') return 320
-  if (enemy.bossKind === 'super') return 310
-  if (enemy.bossKind === 'gate') return 250
-  if (enemy.bossKind === 'hydra') return 215
-  return 184
-}
-
-function getEnemyCanvasSprite(enemy: Enemy) {
-  const size = getEnemySpriteMarkupSize(enemy)
-  const bossKind = enemy.bossKind ?? 'none'
-  const miniBossKind = enemy.miniBossKind ?? 'none'
-  const key = `alien:${enemy.variant % 6}:${enemy.isBoss ? 1 : 0}:${enemy.isMiniBoss ? 1 : 0}:${bossKind}:${miniBossKind}:${enemy.color}:${size}`
-  const existing = canvasSpriteCache.get(key)
-  if (existing) return existing
-  return makeCanvasSprite(
-    key,
-    renderToStaticMarkup(
-      <AlienShip
-        variant={enemy.variant}
-        isBoss={enemy.isBoss}
-        isMiniBoss={enemy.isMiniBoss}
-        isFinalBoss={enemy.bossKind === 'final'}
-        bossKind={enemy.bossKind ?? undefined}
-        miniBossKind={enemy.miniBossKind ?? undefined}
-        color={enemy.color}
-        size={size}
-      />,
-    ),
-  )
 }
 
 function drawSpriteFallback(ctx: CanvasRenderingContext2D, size: number, color: string) {

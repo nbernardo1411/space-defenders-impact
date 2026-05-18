@@ -10,8 +10,29 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dev-dist
 godot/
 *.local
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# TypeScript / Vite generated artifacts
+*.tsbuildinfo
+vite.config.d.ts
+.vite/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+.temp/
 
 # Editor directories and files
 .vscode/*
