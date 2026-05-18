@@ -1,6 +1,8 @@
 import './App.css'
 import { LeaderboardsScreen } from './components/LeaderboardsScreen'
+import { ProgressionScreen } from './components/ProgressionScreen'
 import { RaidMultiplayerLobby, type RaidMultiplayerSession } from './components/RaidMultiplayerLobby'
+import { RunResultsOverlay } from './components/RunResultsOverlay'
 import { GradiusRaid } from './components/games/GradiusRaid'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
@@ -9,12 +11,14 @@ import { AlienShip, TowerShip } from './components/games/towerDefense/sprites'
 import {
   getInitialLanguage,
   getLanguageText,
+  getReleaseText,
   isLanguageCode,
   LANGUAGE_OPTIONS,
   saveLanguage,
   type LanguageCode,
 } from './i18n'
 import { getStoredPlayerName, hasStoredPlayerName, saveStoredPlayerName } from './leaderboards'
+import { loadProgress, recordRunResult, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed — kept for prop compatibility)
@@ -43,9 +47,12 @@ const CUTSCENE_SCENES = [
   },
 ] as const
 
-type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidMultiplayer' | 'leaderboards'
+type ProgressionView = 'profile' | 'achievements' | 'codex' | 'stageMap'
+type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidMultiplayer' | 'leaderboards' | ProgressionView
 type GameMode = 'normal' | 'endless'
 type ActiveGame = 'towerDefense' | 'rocketRaid'
+
+const PROGRESSION_VIEWS: ProgressionView[] = ['profile', 'achievements', 'codex', 'stageMap']
 
 function App() {
   const [screen, setScreen] = useState<ScreenState>('title')
@@ -58,8 +65,11 @@ function App() {
   const [playerNameDraft, setPlayerNameDraft] = useState(playerName === 'Pilot' && !hasStoredPlayerName() ? '' : playerName)
   const [showPlayerNamePrompt, setShowPlayerNamePrompt] = useState(() => !hasStoredPlayerName())
   const [endlessUnlocked, setEndlessUnlocked] = useState(() => localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
+  const [progress, setProgress] = useState<ProgressState>(() => loadProgress())
+  const [lastRunUpdate, setLastRunUpdate] = useState<{ result: RunResult; update: ProgressUpdate } | null>(null)
 
   const text = useMemo(() => getLanguageText(language), [language])
+  const releaseText = useMemo(() => getReleaseText(language), [language])
   const currentScene = useMemo(
     () => ({
       ...text.cutscene.scenes[cutsceneIndex],
@@ -184,6 +194,12 @@ function App() {
     setScreen('game')
   }
 
+  const handleRunComplete = (result: RunResult) => {
+    const update = recordRunResult(result)
+    setProgress(update.progress)
+    setLastRunUpdate({ result, update })
+  }
+
   const savePlayerName = () => {
     if (!playerNameDraft.trim()) return
     const nextName = saveStoredPlayerName(playerNameDraft)
@@ -218,10 +234,20 @@ function App() {
 
   const closeGame = () => {
     setEndlessUnlocked(localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
+    setProgress(loadProgress())
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
     setScreen('title')
   }
+
+  const runResultsOverlay = lastRunUpdate ? (
+    <RunResultsOverlay
+      result={lastRunUpdate.result}
+      update={lastRunUpdate.update}
+      language={language}
+      onClose={() => setLastRunUpdate(null)}
+    />
+  ) : null
 
   if (screen === 'title') {
     return (
@@ -340,6 +366,13 @@ function App() {
               </button>
             </div>
 
+            <div className="start-screen__command-deck" aria-label={releaseText.deckTitle}>
+              <button type="button" onClick={() => setScreen('profile')}>{releaseText.profile}</button>
+              <button type="button" onClick={() => setScreen('achievements')}>{releaseText.achievements}</button>
+              <button type="button" onClick={() => setScreen('codex')}>{releaseText.codex}</button>
+              <button type="button" onClick={() => setScreen('stageMap')}>{releaseText.stageMap}</button>
+            </div>
+
             <div className="start-screen__footer">
               <span>{text.title.copyright}</span>
               <span>{text.title.musicCredit}</span>
@@ -347,6 +380,7 @@ function App() {
           </div>
         </div>
         {playerNamePrompt}
+        {runResultsOverlay}
       </div>
     )
   }
@@ -404,6 +438,7 @@ function App() {
           </div>
         </div>
         {playerNamePrompt}
+        {runResultsOverlay}
       </>
     )
   }
@@ -434,6 +469,7 @@ function App() {
         </div>
 
         {playerNamePrompt}
+        {runResultsOverlay}
       </div>
     )
   }
@@ -443,6 +479,24 @@ function App() {
       <>
         <LeaderboardsScreen playerName={playerName} language={language} onBack={() => setScreen('title')} />
         {playerNamePrompt}
+        {runResultsOverlay}
+      </>
+    )
+  }
+
+  if (PROGRESSION_VIEWS.includes(screen as ProgressionView)) {
+    return (
+      <>
+        <ProgressionScreen
+          view={screen as ProgressionView}
+          progress={progress}
+          language={language}
+          playerName={playerName}
+          onBack={() => setScreen('title')}
+          onProgressChange={setProgress}
+        />
+        {playerNamePrompt}
+        {runResultsOverlay}
       </>
     )
   }
@@ -461,6 +515,7 @@ function App() {
           }}
         />
         {playerNamePrompt}
+        {runResultsOverlay}
       </>
     )
   }
@@ -468,7 +523,13 @@ function App() {
   return (
     <div className="app">
       {activeGame === 'rocketRaid' ? (
-        <GradiusRaid onClose={closeGame} multiplayerSession={raidMultiplayerSession} playerName={playerName} language={language} />
+        <GradiusRaid
+          onClose={closeGame}
+          multiplayerSession={raidMultiplayerSession}
+          playerName={playerName}
+          language={language}
+          onRunComplete={handleRunComplete}
+        />
       ) : (
         <SpaceImpactDefense
           availableCoins={DEFAULT_COINS}
@@ -476,9 +537,11 @@ function App() {
           initialMode={gameMode}
           playerName={playerName}
           language={language}
+          onRunComplete={handleRunComplete}
         />
       )}
       {playerNamePrompt}
+      {runResultsOverlay}
     </div>
   )
 }

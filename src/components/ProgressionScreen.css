@@ -1,0 +1,498 @@
+.progress-screen {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(34, 211, 238, 0.15), transparent 30%),
+    radial-gradient(circle at 78% 70%, rgba(244, 63, 94, 0.12), transparent 28%),
+    linear-gradient(180deg, #030712, #080b15 48%, #030409);
+}
+
+.progress-screen__stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.85) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(125,211,252,0.65) 0 1px, transparent 1.5px);
+  background-size: 140px 140px, 230px 230px;
+  opacity: 0.62;
+  animation: driftStars 18s linear infinite;
+  pointer-events: none;
+}
+
+.progress-panel {
+  position: relative;
+  z-index: 1;
+  width: min(1040px, 100%);
+  max-height: min(88vh, 820px);
+  overflow: auto;
+  border: 1px solid rgba(239, 35, 60, 0.62);
+  border-radius: 8px;
+  background: rgba(6, 8, 18, 0.92);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255,255,255,0.04);
+  padding: 24px;
+  color: #eef2ff;
+  font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+}
+
+.progress-panel__back {
+  min-width: 88px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 6px;
+  background: #0c1424;
+  color: #dbeafe;
+  padding: 8px 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.progress-panel__header {
+  margin: 16px 0 22px;
+  text-align: center;
+}
+
+.progress-panel__header span,
+.progress-card > span,
+.unlock-card > span {
+  color: #6ef5cb;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.progress-panel__header h1 {
+  margin: 6px 0;
+  font-size: clamp(2.2rem, 7vw, 4.8rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.progress-panel__header p,
+.progress-card p,
+.unlock-card p,
+.stage-map p {
+  color: #b9c7d8;
+  margin: 0;
+}
+
+.progress-grid,
+.unlock-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.progress-card,
+.unlock-card,
+.stage-lane {
+  min-height: 0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(4, 8, 16, 0.95));
+  padding: 14px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+}
+
+.progress-card {
+  align-self: start;
+  height: fit-content;
+}
+
+.progress-card--wide {
+  grid-column: span 2;
+}
+
+.progress-card--scores {
+  grid-column: 1 / -1;
+}
+
+.progress-card--mastery {
+  grid-column: 1 / -1;
+}
+
+.progress-card strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 1.45rem;
+  color: #fff;
+}
+
+.progress-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.progress-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding-bottom: 6px;
+}
+
+.progress-ship-mastery {
+  display: grid !important;
+  grid-template-columns: 96px minmax(140px, 0.7fr) minmax(260px, 1.7fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+}
+
+.progress-ship-preview {
+  display: grid;
+  place-items: center;
+  min-height: 92px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.progress-ship-preview--active {
+  background: radial-gradient(circle, rgba(110, 245, 203, 0.08), transparent 68%);
+}
+
+.progress-ship-preview__ship {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 86px;
+  height: 86px;
+  --mastery-core: rgba(110,245,203,0.72);
+  --mastery-edge: rgba(239,35,60,0.5);
+  --mastery-soft: rgba(110,245,203,0.16);
+  --mastery-mark: rgba(255,255,255,0.72);
+}
+
+.progress-ship-preview__ship--rocket {
+  --mastery-core: rgba(148,163,184,0.86);
+  --mastery-edge: rgba(239,35,60,0.62);
+  --mastery-soft: rgba(15,23,42,0.42);
+  --mastery-mark: rgba(226,232,240,0.86);
+}
+
+.progress-ship-preview__ship--fast {
+  --mastery-core: rgba(255,255,255,0.92);
+  --mastery-edge: rgba(239,35,60,0.72);
+  --mastery-soft: rgba(244,63,94,0.18);
+  --mastery-mark: rgba(255,255,255,0.96);
+}
+
+.progress-ship-preview__ship--gatling {
+  --mastery-core: rgba(251,146,60,0.82);
+  --mastery-edge: rgba(239,35,60,0.64);
+  --mastery-soft: rgba(251,146,60,0.18);
+  --mastery-mark: rgba(254,215,170,0.9);
+}
+
+.progress-ship-preview__ship--laser {
+  --mastery-core: rgba(34,211,238,0.86);
+  --mastery-edge: rgba(248,250,252,0.72);
+  --mastery-soft: rgba(34,211,238,0.18);
+  --mastery-mark: rgba(236,254,255,0.96);
+}
+
+.progress-ship-preview__ship--dreadnought {
+  --mastery-core: rgba(168,85,247,0.8);
+  --mastery-edge: rgba(15,23,42,0.88);
+  --mastery-soft: rgba(88,28,135,0.28);
+  --mastery-mark: rgba(216,180,254,0.9);
+}
+
+.progress-ship-preview__ship--xwing {
+  --mastery-core: rgba(250,204,21,0.82);
+  --mastery-edge: rgba(248,250,252,0.78);
+  --mastery-soft: rgba(250,204,21,0.16);
+  --mastery-mark: rgba(254,240,138,0.92);
+}
+
+.progress-ship-preview__ship--spaceEt {
+  --mastery-core: rgba(245,158,11,0.92);
+  --mastery-edge: rgba(125,249,255,0.72);
+  --mastery-soft: rgba(245,158,11,0.22);
+  --mastery-mark: rgba(254,243,199,0.98);
+}
+
+.progress-ship-preview__ship svg {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 0 12px rgba(239, 35, 60, 0.2));
+}
+
+.progress-ship-preview__ship--trail::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  bottom: -16px;
+  width: 28px;
+  height: 64px;
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.72), var(--mastery-core) 22%, var(--mastery-edge) 48%, transparent 72%);
+  filter: blur(0.4px);
+}
+
+.progress-ship-preview__ship--aura::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0 21px -13px;
+  background:
+    linear-gradient(180deg, transparent 0 12%, var(--mastery-core) 38%, var(--mastery-soft) 70%, transparent),
+    radial-gradient(ellipse at 50% 78%, var(--mastery-soft), transparent 68%);
+  clip-path: polygon(50% 0, 62% 31%, 70% 67%, 56% 100%, 50% 88%, 44% 100%, 30% 67%, 38% 31%);
+  filter: blur(0.2px) drop-shadow(0 0 14px var(--mastery-soft));
+  opacity: 0.82;
+}
+
+.progress-ship-preview__ship--frame {
+  border: 0;
+  border-radius: 8px;
+  background:
+    radial-gradient(ellipse at 50% 46%, var(--mastery-soft), transparent 58%);
+  box-shadow:
+    inset 0 0 20px var(--mastery-soft),
+    0 0 18px var(--mastery-soft);
+}
+
+.progress-ship-preview__ship--frame svg {
+  filter:
+    drop-shadow(0 0 14px var(--mastery-soft))
+    drop-shadow(0 0 5px var(--mastery-edge))
+    drop-shadow(0 1px 0 var(--mastery-mark))
+    saturate(2.05)
+    contrast(1.22)
+    brightness(1.14);
+}
+
+.progress-ship-info {
+  display: grid;
+  gap: 4px;
+}
+
+.progress-ship-info small {
+  color: #8ea3b8;
+  font-weight: 800;
+}
+
+.progress-cosmetics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.progress-cosmetic {
+  min-height: 48px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(4, 8, 16, 0.72);
+  color: #7f8ea3;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-align: left;
+}
+
+.progress-cosmetic:not(:disabled) {
+  cursor: pointer;
+}
+
+.progress-cosmetic span,
+.progress-cosmetic i {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.progress-cosmetic i {
+  color: #7f8ea3;
+  font-style: normal;
+  font-size: 0.62rem;
+}
+
+.progress-cosmetic--unlocked {
+  border-color: rgba(110, 245, 203, 0.34);
+  color: #dffdf5;
+}
+
+.progress-cosmetic--equipped {
+  border-color: rgba(110, 245, 203, 0.66);
+  background: rgba(20, 184, 166, 0.14);
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(110, 245, 203, 0.1);
+}
+
+.progress-cosmetic--equipped i {
+  color: #6ef5cb;
+}
+
+.unlock-sections {
+  display: grid;
+  gap: 20px;
+}
+
+.unlock-section {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(110, 245, 203, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.54), rgba(3, 7, 18, 0.68));
+  padding: 16px;
+}
+
+.unlock-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.unlock-section__header span {
+  color: #6ef5cb;
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.unlock-section__header b {
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.unlock-grid--large {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.unlock-grid--large .unlock-card {
+  min-height: 166px;
+  padding: 18px;
+}
+
+.unlock-grid--large .unlock-card strong {
+  font-size: 1.32rem;
+}
+
+.unlock-grid--large .unlock-card p {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.unlock-card {
+  min-height: 138px;
+  opacity: 0.62;
+}
+
+.unlock-card--unlocked {
+  opacity: 1;
+  border-color: rgba(110, 245, 203, 0.42);
+  box-shadow: inset 0 0 22px rgba(20, 184, 166, 0.08);
+}
+
+.unlock-card strong {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: 1.1rem;
+}
+
+.stage-map__lanes {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.stage-lane h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.stage-nodes {
+  display: grid;
+  grid-template-columns: repeat(15, minmax(32px, 1fr));
+  gap: 6px;
+}
+
+.stage-node {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 6px;
+  background: #0b1120;
+  color: #94a3b8;
+  font-weight: 900;
+}
+
+.stage-node--done {
+  border-color: rgba(110, 245, 203, 0.62);
+  background: rgba(20, 184, 166, 0.18);
+  color: #ecfeff;
+}
+
+@media (max-width: 760px) {
+  .progress-screen {
+    padding: 8px;
+    align-items: stretch;
+  }
+
+  .progress-panel {
+    max-height: calc(100dvh - 16px);
+    padding: 14px;
+  }
+
+  .progress-grid,
+  .unlock-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-card--wide {
+    grid-column: auto;
+  }
+
+  .progress-card--scores,
+  .progress-card--mastery {
+    grid-column: auto;
+  }
+
+  .unlock-section {
+    padding: 12px;
+  }
+
+  .unlock-section__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .unlock-grid--large {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-ship-mastery {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .progress-cosmetics {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stage-nodes {
+    grid-template-columns: repeat(5, minmax(34px, 1fr));
+  }
+}

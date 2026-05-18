@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import type * as React from 'react'
 
-export function TowerShip({ tType, color, size }: { tType: string; color: string; size: number }) {
+export function TowerShip({ tType, color, size, elite = false }: { tType: string; color: string; size: number; elite?: boolean }) {
   const s = size
   const svgId = useId().replace(/:/g, '')
   const paintGrad = `tower-paint-${svgId}`
@@ -20,14 +20,14 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
   const defs = (
     <defs>
       <linearGradient id={hullGrad} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#f8fbff" />
-        <stop offset="55%" stopColor="#ced9e7" />
-        <stop offset="100%" stopColor="#7e8ea5" />
+        <stop offset="0%" stopColor={elite ? '#ffffff' : '#f8fbff'} />
+        <stop offset="48%" stopColor={elite ? core : '#ced9e7'} stopOpacity={elite ? 0.74 : 1} />
+        <stop offset="100%" stopColor={elite ? '#111827' : '#7e8ea5'} />
       </linearGradient>
       <linearGradient id={paintGrad} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#ffffff" stopOpacity="0.98" />
         <stop offset="18%" stopColor={core} stopOpacity="0.98" />
-        <stop offset="100%" stopColor={core} stopOpacity="0.4" />
+        <stop offset="100%" stopColor={core} stopOpacity={elite ? 0.82 : 0.4} />
       </linearGradient>
       <linearGradient id={glassGrad} x1="0" y1="0" x2="0.7" y2="1">
         <stop offset="0%" stopColor="#f8feff" />
@@ -36,7 +36,7 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
       </linearGradient>
       <radialGradient id={engineGrad} cx="0.5" cy="0.45" r="0.7">
         <stop offset="0%" stopColor="#f8fafc" stopOpacity="0.72" />
-        <stop offset="34%" stopColor="#94a3b8" stopOpacity="0.68" />
+        <stop offset="34%" stopColor={elite ? core : '#94a3b8'} stopOpacity="0.68" />
         <stop offset="72%" stopColor="#334155" stopOpacity="0.76" />
         <stop offset="100%" stopColor="#020617" stopOpacity="0" />
       </radialGradient>
@@ -73,6 +73,39 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
     <path d="M14 50 L22 46 M50 50 L42 46" stroke="#ffffff55" strokeWidth="0.9" strokeLinecap="round" opacity="0.6" />
   </>
 
+  const elitePanelDetails: Record<string, React.ReactNode> = {
+    rocket: <>
+      <path d="M23 25 L32 18 L41 25 M21 40 L32 34 L43 40" stroke={core} strokeWidth="1.25" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.82" />
+      <path d="M12 47 L25 41 M52 47 L39 41" stroke="#f8fafc" strokeWidth="0.9" strokeLinecap="round" opacity="0.58" />
+      <path d="M28 53 H36" stroke={core} strokeWidth="1.4" strokeLinecap="round" opacity="0.7" />
+    </>,
+    fast: <>
+      <path d="M27 24 L32 18 L37 24 M26 37 L32 32 L38 37" stroke={core} strokeWidth="1.2" fill="none" strokeLinecap="round" opacity="0.82" />
+      <path d="M9 53 L25 42 M55 53 L39 42" stroke="#f8fafc" strokeWidth="0.95" strokeLinecap="round" opacity="0.62" />
+      <path d="M29 53 H35" stroke={core} strokeWidth="1.3" strokeLinecap="round" opacity="0.72" />
+    </>,
+    gatling: <>
+      <path d="M23 35 H41 M25 45 H39" stroke={core} strokeWidth="1.35" strokeLinecap="round" opacity="0.84" />
+      <path d="M17 39 L26 36 M47 39 L38 36" stroke="#f8fafc" strokeWidth="0.9" strokeLinecap="round" opacity="0.6" />
+      <path d="M29 10 L32 6 L35 10" stroke={core} strokeWidth="1.2" fill="none" strokeLinecap="round" opacity="0.72" />
+    </>,
+    laser: <>
+      <path d="M32 8 V53" stroke="#f8fafc" strokeWidth="1" strokeLinecap="round" opacity="0.72" />
+      <path d="M22 27 L32 19 L42 27 M24 43 L32 50 L40 43" stroke={core} strokeWidth="1.35" fill="none" strokeLinecap="round" opacity="0.84" />
+      <path d="M9 55 L23 43 M55 55 L41 43" stroke="#f8fafc" strokeWidth="0.9" strokeLinecap="round" opacity="0.58" />
+    </>,
+    dreadnought: <>
+      <path d="M18 36 H46 M22 47 H42" stroke={core} strokeWidth="1.3" strokeLinecap="round" opacity="0.76" />
+      <path d="M14 45 L28 35 M50 45 L36 35" stroke="#f8fafc" strokeWidth="0.9" strokeLinecap="round" opacity="0.55" />
+      <path d="M32 13 V56" stroke={core} strokeWidth="1.1" strokeLinecap="round" opacity="0.68" />
+    </>,
+    xwing: <>
+      <path d="M9 58 L27 48 M55 58 L37 48 M10 47 L27 37 M54 47 L37 37" stroke={core} strokeWidth="1.45" strokeLinecap="round" opacity="0.86" />
+      <path d="M26 31 L32 25 L38 31 M27 45 L32 41 L37 45" stroke="#f8fafc" strokeWidth="0.95" fill="none" strokeLinecap="round" opacity="0.62" />
+      <path d="M32 7 V56" stroke={core} strokeWidth="0.9" strokeLinecap="round" opacity="0.54" />
+    </>,
+  }
+
   if (tType === 'spaceEt') {
     const fuseG = `space-et-fuse-${svgId}`
     const wingGL = `space-et-wing-l-${svgId}`
@@ -86,32 +119,32 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
         <defs>
           <linearGradient id={fuseG} x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor="#0d141b" />
-            <stop offset="24%" stopColor="#334657" />
-            <stop offset="50%" stopColor="#b9cbd6" />
-            <stop offset="76%" stopColor="#334657" />
+            <stop offset="22%" stopColor={core} stopOpacity="0.62" />
+            <stop offset="50%" stopColor="#f8fafc" />
+            <stop offset="78%" stopColor={core} stopOpacity="0.62" />
             <stop offset="100%" stopColor="#0d141b" />
           </linearGradient>
           <linearGradient id={wingGL} x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#7897a9" />
+            <stop offset="0%" stopColor={core} stopOpacity="0.82" />
             <stop offset="46%" stopColor="#273944" />
             <stop offset="100%" stopColor="#080d12" />
           </linearGradient>
           <linearGradient id={wingGR} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#7897a9" />
+            <stop offset="0%" stopColor={core} stopOpacity="0.82" />
             <stop offset="46%" stopColor="#273944" />
             <stop offset="100%" stopColor="#080d12" />
           </linearGradient>
           <linearGradient id={tailGL} x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6f899a" />
+            <stop offset="0%" stopColor={core} stopOpacity="0.78" />
             <stop offset="100%" stopColor="#101923" />
           </linearGradient>
           <linearGradient id={tailGR} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#6f899a" />
+            <stop offset="0%" stopColor={core} stopOpacity="0.78" />
             <stop offset="100%" stopColor="#101923" />
           </linearGradient>
           <linearGradient id={canopyG} x1="0.2" y1="0" x2="0.8" y2="1">
             <stop offset="0%" stopColor="#a8e8ff" stopOpacity="0.9" />
-            <stop offset="48%" stopColor="#1a5577" stopOpacity="0.86" />
+            <stop offset="48%" stopColor={core} stopOpacity="0.88" />
             <stop offset="100%" stopColor="#04080c" stopOpacity="0.96" />
           </linearGradient>
         </defs>
@@ -133,7 +166,7 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
         <path d="M448 391 L625 575 L616 613 L449 575 L378 450 Z" fill={`url(#${wingGR})`} opacity="0.92" />
         <path d="M87 588 L236 472 L286 454 L227 554 L86 614 Z" fill="#dce6ec" opacity="0.28" />
         <path d="M593 588 L444 472 L394 454 L453 554 L594 614 Z" fill="#dce6ec" opacity="0.28" />
-        <path d="M76 607 L234 548 M604 607 L446 548" stroke="#ecfeff" strokeWidth="6" strokeLinecap="round" opacity="0.72" />
+        <path d="M76 607 L234 548 M604 607 L446 548" stroke={core} strokeWidth="7" strokeLinecap="round" opacity="0.82" />
 
         <path d="M305 620 L248 710 L308 722 L328 663 Z" fill={`url(#${tailGL})`} stroke="#dce6ec" strokeWidth="4" strokeLinejoin="round" />
         <path d="M375 620 L432 710 L372 722 L352 663 Z" fill={`url(#${tailGR})`} stroke="#dce6ec" strokeWidth="4" strokeLinejoin="round" />
@@ -147,6 +180,15 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
         <path d="M280 360 L318 336 L314 430 L272 456 Z M400 360 L362 336 L366 430 L408 456 Z" fill="#02070a" opacity="0.72" />
         <path d="M318 428 H362 L354 618 L340 688 L326 618 Z" fill="#020617" opacity="0.36" />
         <path d="M340 72 V672 M286 350 H394 M302 488 H378 M320 600 H360" stroke="#0f172a" strokeWidth="4" opacity="0.42" />
+        <path d="M318 310 L340 278 L362 310 M256 520 L316 474 M424 520 L364 474 M284 626 L340 664 L396 626" stroke={core} strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.86" />
+        <path d="M294 350 L320 388 M386 350 L360 388" stroke="#ecfeff" strokeWidth="5" strokeLinecap="round" opacity="0.72" />
+        {elite && (
+          <g opacity="0.72">
+            <path d="M340 110 V650" stroke={core} strokeWidth="7" strokeLinecap="round" />
+            <path d="M232 522 L304 480 M448 522 L376 480 M252 618 L318 590 M428 618 L362 590" stroke={core} strokeWidth="8" strokeLinecap="round" />
+            <path d="M286 374 L340 340 L394 374 M292 458 H388 M304 560 H376" stroke="#fff7ed" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.72" />
+          </g>
+        )}
         <path d="M312 626 L340 704 L368 626" stroke="#e2e8f0" strokeWidth="6" fill="none" strokeLinecap="round" opacity="0.6" />
         <path d="M302 646 H378 L360 708 H320 Z" fill="#02070a" stroke="#dce6ec" strokeWidth="4" strokeLinejoin="round" />
       </svg>
@@ -423,6 +465,7 @@ export function TowerShip({ tType, color, size }: { tType: string; color: string
       {defs}
       {shapes[tType] ?? shapes.fast}
       {fighterSurfaceDetails}
+      {elite ? elitePanelDetails[tType] : null}
     </svg>
   )
 }

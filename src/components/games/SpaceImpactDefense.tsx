@@ -31,6 +31,7 @@ import { StatPill, btnStyle } from './towerDefense/ui'
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getDefenseText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
+import type { RunResult, RunStatus } from '../../progression'
 
 let _eid = 1
 let _tid = 1
@@ -144,7 +145,7 @@ function getDefenseGraphicsProfile(quality: GraphicsQuality, isMobileViewport: b
 
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'normal', playerName, language = 'en' }: { availableCoins: CoinOption[]; onClose: () => void; initialMode?: 'normal' | 'endless'; playerName: string; language?: LanguageCode }) {
+export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'normal', playerName, language = 'en', onRunComplete }: { availableCoins: CoinOption[]; onClose: () => void; initialMode?: 'normal' | 'endless'; playerName: string; language?: LanguageCode; onRunComplete?: (result: RunResult) => void }) {
   const [mobileLayoutMode, setMobileLayoutMode] = useState<MobileLayoutMode>(() => {
     if (typeof window === 'undefined') return 'auto'
     const raw = localStorage.getItem(MOBILE_LAYOUT_STORAGE_KEY)
@@ -168,6 +169,10 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   const waveRef = useRef(0)
   const scoreRef = useRef(0)
   const leaderboardSubmittedRef = useRef(false)
+  const runStartTimeRef = useRef(performance.now())
+  const runReportedRef = useRef(false)
+  const enemiesDestroyedRef = useRef(0)
+  const bossesDefeatedRef = useRef(0)
   const stateRef = useRef<GameState>('idle')
   const stageRef = useRef(1)
   const spawnQueueRef = useRef(0)
@@ -636,6 +641,8 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
 
   function handleEnemyDeath(e: Enemy, towerType: string, sourceTower: Tower | undefined, comboSound = false) {
     if (e.hp > 0 || e.dead) return
+    enemiesDestroyedRef.current += 1
+    if (e.isBoss) bossesDefeatedRef.current += 1
     if (sourceTower) grantTowerXp(sourceTower, e.isBoss ? 40 : 1.5)
     spawnSplitterChildren(e)
     triggerEnemyDeath(e, towerType, e.isBoss, goldRef, scoreRef, particlesRef.current, floatingTextRef.current, screenFlashRef, coinFlowRef, setScreenFlashState, shockwavesRef.current)
@@ -654,12 +661,31 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     })
   }, [playerName])
 
+  const reportDefenseRunComplete = useCallback((status: RunStatus) => {
+    if (runReportedRef.current || scoreRef.current <= 0) return
+    runReportedRef.current = true
+    onRunComplete?.({
+      mode: endlessRef.current ? 'ship_defense_endless' : 'ship_defense_normal',
+      status,
+      playerName,
+      score: scoreRef.current,
+      stage: stageRef.current,
+      wave: waveRef.current,
+      durationMs: performance.now() - runStartTimeRef.current,
+      enemiesDestroyed: enemiesDestroyedRef.current,
+      bossesDefeated: bossesDefeatedRef.current,
+      pickupsCollected: 0,
+      nukesUsed: 0,
+    })
+  }, [onRunComplete, playerName])
+
   const closeDefenseGame = useCallback(() => {
     if (endlessRef.current) {
       submitDefenseLeaderboardScore(scoreRef.current)
+      reportDefenseRunComplete('exit')
     }
     onClose()
-  }, [onClose, submitDefenseLeaderboardScore])
+  }, [onClose, reportDefenseRunComplete, submitDefenseLeaderboardScore])
 
   const gameLoop = useCallback((ts: number) => {
     const dt = Math.min((ts - (lastTimeRef.current || ts)) / 1000, 0.1)
@@ -739,6 +765,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
             setUiHighScore(s)
           }
           submitDefenseLeaderboardScore(s)
+          reportDefenseRunComplete('victory')
           localStorage.setItem(ENDLESS_UNLOCK_STORAGE_KEY, 'true')
           // Trigger victory effect
           setVictoryEffect({time: 0, maxTime: 2.0})
@@ -780,6 +807,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
               setUiHighScore(s)
             }
             submitDefenseLeaderboardScore(s)
+            reportDefenseRunComplete('gameover')
           }
           break
         }
@@ -1378,7 +1406,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     }
 
     frameRef.current = requestAnimationFrame(gameLoop)
-  }, [soundOn, submitDefenseLeaderboardScore])
+  }, [soundOn, reportDefenseRunComplete, submitDefenseLeaderboardScore])
 
   useEffect(() => {
     frameRef.current = requestAnimationFrame(gameLoop)
@@ -1405,6 +1433,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     pathSetRef.current = new Set(ps.flat().map(([c, r]) => `${c},${r}`))
     scoreRef.current = 0
     leaderboardSubmittedRef.current = false
+    resetRunTracking()
     spawnQueueRef.current = 0
     bossQueueRef.current = 0
     normalEscortQueueRef.current = 0
@@ -1790,6 +1819,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     pathSetRef.current = new Set(ps.flat().map(([c, r]) => `${c},${r}`))
     scoreRef.current = 0
     leaderboardSubmittedRef.current = false
+    resetRunTracking()
     spawnQueueRef.current = 0
     bossQueueRef.current = 0
     normalEscortQueueRef.current = 0
@@ -1813,6 +1843,13 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
     setUiScoutDrones([])
     setUiTowers([])
     setSelectedTowerOnGrid(null)
+  }
+
+  function resetRunTracking() {
+    runStartTimeRef.current = performance.now()
+    runReportedRef.current = false
+    enemiesDestroyedRef.current = 0
+    bossesDefeatedRef.current = 0
   }
 
   const boardW = cell * COLS

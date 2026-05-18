@@ -578,6 +578,40 @@ body {
   justify-self: center;
 }
 
+.start-screen__command-deck {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.start-screen__command-deck button {
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid rgba(147, 197, 253, 0.26);
+  border-radius: 7px;
+  background: rgba(5, 13, 27, 0.72);
+  color: #dbeafe;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.05rem;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.start-screen__command-deck button:hover,
+.start-screen__command-deck button:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(110, 245, 203, 0.55);
+  background: rgba(10, 30, 52, 0.9);
+  color: #ffffff;
+}
+
 .start-screen__button {
   position: relative;
   min-height: 152px;
@@ -1196,6 +1230,126 @@ body {
   cursor: not-allowed;
   filter: grayscale(0.65);
   opacity: 0.56;
+}
+
+.result-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 34;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 6, 15, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+.result-overlay__panel {
+  width: min(100%, 720px);
+  max-height: min(86vh, 760px);
+  overflow-y: auto;
+  display: grid;
+  gap: 16px;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid rgba(110, 245, 203, 0.38);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(110, 245, 203, 0.16), transparent 32%),
+    linear-gradient(145deg, rgba(11, 27, 45, 0.98), rgba(5, 10, 22, 0.98));
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.55),
+    0 0 34px rgba(110, 245, 203, 0.12);
+  color: #eefcff;
+}
+
+.result-overlay__panel > span,
+.result-overlay__unlocks h3 {
+  margin: 0;
+  color: #6ef5cb;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.16rem;
+  text-transform: uppercase;
+}
+
+.result-overlay__panel h2 {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 4rem);
+  line-height: 0.96;
+  letter-spacing: 0;
+}
+
+.result-overlay__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.result-overlay__stats div,
+.result-overlay__unlocks {
+  min-width: 0;
+  border: 1px solid rgba(147, 197, 253, 0.22);
+  border-radius: 8px;
+  background: rgba(5, 13, 27, 0.68);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.result-overlay__stats div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.result-overlay__stats b {
+  color: #8aa1b7;
+  font-size: 0.66rem;
+  letter-spacing: 0.08rem;
+  text-transform: uppercase;
+}
+
+.result-overlay__stats strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #ffffff;
+  font-size: 1.02rem;
+}
+
+.result-overlay__unlocks {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.result-overlay__unlocks div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.result-overlay__unlocks span {
+  padding: 7px 10px;
+  border: 1px solid rgba(110, 245, 203, 0.3);
+  border-radius: 999px;
+  background: rgba(110, 245, 203, 0.1);
+  color: #dffdf5;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.result-overlay__unlocks p {
+  margin: 0;
+  color: #aebfd0;
+}
+
+.result-overlay__panel > button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #6ef5cb, #8bc7ff);
+  color: #04121c;
+  font: inherit;
+  font-weight: 900;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .leaderboards-screen {
@@ -1917,6 +2071,14 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .start-screen__command-deck {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .result-overlay__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .leaderboards-screen__modes {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2054,6 +2216,28 @@ body {
 
   .start-screen__button-copy {
     font-size: 0.8rem;
+  }
+
+  .start-screen__command-deck {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .start-screen__command-deck button {
+    min-height: 40px;
+    font-size: 0.62rem;
+  }
+
+  .result-overlay {
+    padding: 10px;
+  }
+
+  .result-overlay__panel {
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  .result-overlay__stats {
+    grid-template-columns: 1fr;
   }
 
   .start-screen__footer {

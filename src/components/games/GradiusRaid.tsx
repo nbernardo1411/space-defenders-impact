@@ -7,6 +7,7 @@ import { AlienShip, TowerShip } from './towerDefense/sprites'
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
+import { getEquippedShipCosmetics, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -517,7 +518,6 @@ type RaidGraphicsProfile = {
   drawRipples: boolean
   drawAdvancedShotFx: boolean
   drawDecorativeOverlays: boolean
-  drawFingerGuide: boolean
   drawOptionShips: boolean
 }
 
@@ -537,7 +537,6 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       drawRipples: false,
       drawAdvancedShotFx: true,
       drawDecorativeOverlays: true,
-      drawFingerGuide: false,
       drawOptionShips: true,
     }
   }
@@ -554,7 +553,6 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       drawRipples: true,
       drawAdvancedShotFx: true,
       drawDecorativeOverlays: true,
-      drawFingerGuide: true,
       drawOptionShips: true,
     }
   }
@@ -571,7 +569,6 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       drawRipples: true,
       drawAdvancedShotFx: true,
       drawDecorativeOverlays: true,
-      drawFingerGuide: true,
       drawOptionShips: true,
     }
   }
@@ -587,7 +584,6 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
     drawRipples: true,
     drawAdvancedShotFx: true,
     drawDecorativeOverlays: true,
-    drawFingerGuide: true,
     drawOptionShips: true,
   }
 }
@@ -811,11 +807,11 @@ function makeCanvasSprite(cacheKey: string, markup: string) {
   return entry
 }
 
-function getTowerCanvasSprite(shipKey: string, color: string, size: number) {
-  const key = `tower:${shipKey}:${color}:${size}`
+function getTowerCanvasSprite(shipKey: string, color: string, size: number, elite = false) {
+  const key = `tower:${shipKey}:${color}:${size}:${elite ? 1 : 0}`
   const existing = canvasSpriteCache.get(key)
   if (existing) return existing
-  return makeCanvasSprite(key, renderToStaticMarkup(<TowerShip tType={shipKey} color={color} size={size} />))
+  return makeCanvasSprite(key, renderToStaticMarkup(<TowerShip tType={shipKey} color={color} size={size} elite={elite} />))
 }
 
 function getEnemySpriteMarkupSize(enemy: Enemy) {
@@ -5028,6 +5024,7 @@ function drawRaidPlayer(
   viewportWidth: number,
   time: number,
   color = PLAYER_COLOR,
+  cosmetics: Required<ShipCosmeticEquipState> = { trail: false, aura: false, frame: false },
 ) {
   const x = toX(player.x)
   const y = toY(player.y)
@@ -5037,7 +5034,9 @@ function drawRaidPlayer(
   const scale = isDown ? 0.88 : 1
   const alpha = isDown ? 0.3 : 1
 
+  if (!isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, y, size, time, color, player.ship.key)
   if (!isDown) drawPlayerEngine(ctx, x, y, size, time)
+  if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, size, time, player.ship.key)
 
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
   else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
@@ -5050,24 +5049,209 @@ function drawRaidPlayer(
     else drawPlasmaForceField(ctx, x, y, size, time, forceCharge)
   }
 
-  const sprite = getTowerCanvasSprite(player.ship.key, color, getShipSpriteSize(player.ship.key, 'player'))
+  const masteryPaintColor = cosmetics.frame ? getMasteryPaintColor(player.ship.key, color) : color
+  const sprite = getTowerCanvasSprite(player.ship.key, masteryPaintColor, getShipSpriteSize(player.ship.key, 'player'), cosmetics.frame)
   const spriteGlow = player.forceField > 0
     ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
     : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : null
   if (spriteGlow) drawSpriteGlow(ctx, x, y, size, spriteGlow, 1)
+  const spriteFilter = cosmetics.frame
+    ? 'brightness(1.28) contrast(1.42) saturate(2.25)'
+    : 'brightness(1.12) contrast(1.14) saturate(1.26)'
   drawCanvasSprite(
     ctx,
     sprite,
     x,
     y,
     size,
-    'brightness(1.12) contrast(1.14) saturate(1.26)',
+    spriteFilter,
     alpha,
     rotation,
     scale,
-    color,
+    masteryPaintColor,
   )
+  if (!isDown && cosmetics.frame) drawMasteryFrame(ctx, x, y, size, time, player.ship.key)
   drawPlayerOverlay(ctx, x, y, size, rotation, scale)
+}
+
+type MasteryVisualStyle = {
+  core: string
+  edge: string
+  soft: string
+  accent: string
+  paint: string
+  trailOffsets: number[]
+  auraShape: 'comet' | 'blade' | 'diamond' | 'triangle' | 'cross' | 'stealth'
+}
+
+const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
+  rocket: {
+    core: 'rgba(203,213,225,0.82)',
+    edge: 'rgba(239,35,60,0.62)',
+    soft: 'rgba(15,23,42,0.22)',
+    accent: 'rgba(248,250,252,0.72)',
+    paint: '#38bdf8',
+    trailOffsets: [-0.14, 0.14],
+    auraShape: 'comet',
+  },
+  fast: {
+    core: 'rgba(255,255,255,0.9)',
+    edge: 'rgba(239,35,60,0.76)',
+    soft: 'rgba(244,63,94,0.2)',
+    accent: 'rgba(226,232,240,0.84)',
+    paint: '#ffffff',
+    trailOffsets: [-0.12, 0, 0.12],
+    auraShape: 'blade',
+  },
+  gatling: {
+    core: 'rgba(251,146,60,0.82)',
+    edge: 'rgba(239,35,60,0.7)',
+    soft: 'rgba(251,146,60,0.2)',
+    accent: 'rgba(254,215,170,0.76)',
+    paint: '#fb923c',
+    trailOffsets: [-0.19, -0.06, 0.06, 0.19],
+    auraShape: 'cross',
+  },
+  laser: {
+    core: 'rgba(34,211,238,0.86)',
+    edge: 'rgba(248,250,252,0.78)',
+    soft: 'rgba(34,211,238,0.18)',
+    accent: 'rgba(165,243,252,0.82)',
+    paint: '#67e8f9',
+    trailOffsets: [-0.08, 0.08],
+    auraShape: 'diamond',
+  },
+  dreadnought: {
+    core: 'rgba(168,85,247,0.72)',
+    edge: 'rgba(30,41,59,0.92)',
+    soft: 'rgba(88,28,135,0.24)',
+    accent: 'rgba(216,180,254,0.7)',
+    paint: '#a855f7',
+    trailOffsets: [-0.27, -0.09, 0.09, 0.27],
+    auraShape: 'triangle',
+  },
+  xwing: {
+    core: 'rgba(250,204,21,0.78)',
+    edge: 'rgba(248,250,252,0.86)',
+    soft: 'rgba(250,204,21,0.16)',
+    accent: 'rgba(239,68,68,0.66)',
+    paint: '#fde047',
+    trailOffsets: [-0.28, -0.12, 0.12, 0.28],
+    auraShape: 'cross',
+  },
+  spaceEt: {
+    core: 'rgba(245,158,11,0.9)',
+    edge: 'rgba(14,165,233,0.72)',
+    soft: 'rgba(245,158,11,0.2)',
+    accent: 'rgba(254,243,199,0.86)',
+    paint: '#f59e0b',
+    trailOffsets: [0],
+    auraShape: 'stealth',
+  },
+}
+
+function getMasteryVisualStyle(shipKey: string, color: string): MasteryVisualStyle {
+  return MASTERY_VISUAL_STYLES[shipKey] ?? {
+    core: color === ALLY_PLAYER_COLOR ? 'rgba(34,211,238,0.76)' : 'rgba(248,113,113,0.72)',
+    edge: color === ALLY_PLAYER_COLOR ? 'rgba(165,243,252,0.72)' : 'rgba(252,165,165,0.72)',
+    soft: color === ALLY_PLAYER_COLOR ? 'rgba(34,211,238,0.16)' : 'rgba(248,113,113,0.16)',
+    accent: 'rgba(255,255,255,0.76)',
+    paint: color,
+    trailOffsets: [-0.16, 0, 0.16],
+    auraShape: 'comet',
+  }
+}
+
+function getMasteryPaintColor(shipKey: string, fallbackColor: string) {
+  return MASTERY_VISUAL_STYLES[shipKey]?.paint ?? fallbackColor
+}
+
+function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color: string, shipKey: string) {
+  const style = getMasteryVisualStyle(shipKey, color)
+  const pulse = 0.82 + Math.sin(time / 190) * 0.12
+  const tailScale = shipKey === 'spaceEt' ? 1.38 : shipKey === 'dreadnought' ? 0.84 : 1
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+  style.trailOffsets.forEach((offset, index) => {
+    const startX = x + offset * size
+    const startY = y + size * 0.34
+    const endY = y + size * (0.9 + index * 0.045) * tailScale
+    const trail = ctx.createLinearGradient(startX, startY, startX, endY)
+    trail.addColorStop(0, style.accent)
+    trail.addColorStop(0.24, style.core)
+    trail.addColorStop(0.62, style.edge)
+    trail.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.strokeStyle = trail
+    ctx.lineWidth = Math.max(1.6, size * (shipKey === 'spaceEt' ? 0.018 : 0.024 - index * 0.002)) * pulse
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.bezierCurveTo(
+      startX + Math.sin(time / 160 + index) * size * 0.04,
+      y + size * 0.58,
+      startX - offset * size * 0.6,
+      y + size * 0.76 * tailScale,
+      startX,
+      endY,
+    )
+    ctx.stroke()
+  })
+  ctx.restore()
+}
+
+function drawMasteryAura(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string) {
+  const style = getMasteryVisualStyle(shipKey, PLAYER_COLOR)
+  const pulse = 0.88 + Math.sin(time / 260) * 0.08
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  const sheath = ctx.createLinearGradient(x, y - size * 0.5, x, y + size * 0.72)
+  sheath.addColorStop(0, 'rgba(255,255,255,0)')
+  sheath.addColorStop(0.24, style.core)
+  sheath.addColorStop(0.62, style.soft)
+  sheath.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = sheath
+  ctx.globalAlpha = 0.42 * pulse
+  ctx.beginPath()
+  ctx.moveTo(x, y - size * 0.58)
+  ctx.bezierCurveTo(x + size * 0.2, y - size * 0.18, x + size * 0.18, y + size * 0.34, x, y + size * 0.72)
+  ctx.bezierCurveTo(x - size * 0.18, y + size * 0.34, x - size * 0.2, y - size * 0.18, x, y - size * 0.58)
+  ctx.fill()
+  ctx.globalAlpha = 0.7 * pulse
+  ctx.strokeStyle = style.core
+  ctx.lineWidth = Math.max(1, size * 0.011)
+  ctx.beginPath()
+  ctx.moveTo(x, y - size * 0.48)
+  ctx.bezierCurveTo(x + Math.sin(time / 180) * size * 0.05, y - size * 0.08, x - Math.sin(time / 210) * size * 0.04, y + size * 0.28, x, y + size * 0.62)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawMasteryFrame(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string) {
+  const style = getMasteryVisualStyle(shipKey, PLAYER_COLOR)
+  const shimmer = 0.44 + Math.sin(time / 210) * 0.08
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.globalAlpha = shimmer
+  ctx.strokeStyle = style.edge
+  ctx.lineWidth = Math.max(1.2, size * 0.014)
+  ;[-1, 1].forEach((side) => {
+    ctx.beginPath()
+    ctx.moveTo(x + side * size * 0.18, y + size * 0.44)
+    ctx.lineTo(x + side * size * 0.34, y + size * 0.55)
+    ctx.stroke()
+  })
+  ctx.globalAlpha = 0.24
+  ctx.strokeStyle = style.core
+  ctx.lineWidth = Math.max(0.8, size * 0.008)
+  ;[-1, 1].forEach((side) => {
+    ctx.beginPath()
+    ctx.moveTo(x + side * size * 0.1, y + size * 0.36)
+    ctx.lineTo(x + side * size * 0.25, y + size * 0.48)
+    ctx.stroke()
+  })
+  ctx.restore()
 }
 
 function traceRegularPolygon(ctx: CanvasRenderingContext2D, sides: number, radius: number, rotation = -Math.PI / 2) {
@@ -5968,29 +6152,6 @@ function drawFinalChargeLines(
 
   ctx.restore()
 }
-function drawFingerGuide(ctx: CanvasRenderingContext2D, pointer: Vec | null, toX: (value: number) => number, toY: (value: number) => number) {
-  if (!pointer) return
-  const x = toX(pointer.x)
-  const y = toY(pointer.y)
-  ctx.save()
-  ctx.strokeStyle = 'rgba(248,113,113,0.28)'
-  ctx.fillStyle = 'rgba(248,113,113,0.16)'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.arc(x, y, 29, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-  const gradient = ctx.createLinearGradient(x, y - 86, x, y - 8)
-  gradient.addColorStop(0, 'rgba(248,113,113,0.5)')
-  gradient.addColorStop(1, 'rgba(248,113,113,0)')
-  ctx.strokeStyle = gradient
-  ctx.beginPath()
-  ctx.moveTo(x, y - 86)
-  ctx.lineTo(x, y - 8)
-  ctx.stroke()
-  ctx.restore()
-}
-
 function getBriefingPickupType(item: string) {
   const label = item.split(':')[0]
   const pickupKey = Object.keys(BRIEFING_PICKUP_TYPES).find((key) => label.startsWith(key))
@@ -6119,11 +6280,13 @@ export function GradiusRaid({
   multiplayerSession,
   playerName,
   language = 'en',
+  onRunComplete,
 }: {
   onClose: () => void
   multiplayerSession?: RaidMultiplayerSession | null
   playerName: string
   language?: LanguageCode
+  onRunComplete?: (result: RunResult) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const fxCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -6140,6 +6303,7 @@ export function GradiusRaid({
   const pointerVisualRef = useRef<Vec | null>(null)
   const touchPointerActiveRef = useRef(false)
   const selectedShipRef = useRef<ShipOption>(SHIP_OPTIONS[0])
+  const progressRef = useRef(loadProgress())
   const multiplayerSessionRef = useRef<RaidMultiplayerSession | null>(multiplayerSession ?? null)
   const multiplayerStartedRef = useRef(false)
   const multiplayerStateSeqRef = useRef(0)
@@ -6181,6 +6345,12 @@ export function GradiusRaid({
   const firePlayerRef = useRef<(player: Player) => void>((_p: Player) => {})
   const playerRef = useRef<Player>(getInitialPlayer())
   const leaderboardSubmittedRef = useRef(false)
+  const runStartTimeRef = useRef(performance.now())
+  const runReportedRef = useRef(false)
+  const enemiesDestroyedRef = useRef(0)
+  const bossesDefeatedRef = useRef(0)
+  const pickupsCollectedRef = useRef(0)
+  const nukesUsedRef = useRef(0)
   const shotsRef = useRef<Shot[]>([])
   const enemyShotsRef = useRef<Shot[]>([])
   const enemiesRef = useRef<Enemy[]>([])
@@ -7826,18 +7996,14 @@ export function GradiusRaid({
     const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
     if (gfxProfile.drawOptionShips && ownShipRef) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR)
     if (gfxProfile.drawOptionShips && allyShipRef) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
-    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR)
-    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
+    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getEquippedShipCosmetics(progressRef.current, ownShipRef.ship.key))
+    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getEquippedShipCosmetics(progressRef.current, allyShipRef.ship.key))
 
     for (const powerUp of powerUpsRef.current) {
       drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
     }
 
     drawFinalChargeLines(ctx, enemiesRef.current, toX, cssWidth, cssHeight, time)
-
-    if (phaseRef.current === 'playing' && gfxProfile.drawFingerGuide) {
-      drawFingerGuide(ctx, pointerVisualRef.current, toX, toY)
-    }
 
     for (const meteor of meteorsRef.current) {
       drawMeteorHazard(ctx, meteor, toX, toY, cssWidth)
@@ -7992,6 +8158,7 @@ export function GradiusRaid({
       }
 
       destroyed += 1
+      enemiesDestroyedRef.current += 1
       const scoreValue = 95 + waveRef.current * 14
       player.score += scoreValue
       if (remotePlayerRef.current) {
@@ -8101,12 +8268,14 @@ export function GradiusRaid({
     addRipple(player.x, player.y, '#fef3c7', 13)
     spawnSparks(player.x, player.y, '#fb923c', 26, 6)
     playGameSound('rocket')
+    nukesUsedRef.current += 1
     syncSnapshot()
   }, [addRipple, spawnSparks, syncSnapshot])
 
   const resetGame = useCallback((startStage = 1, fullyBuffed = false) => {
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) return
+    progressRef.current = loadProgress()
 
     const stage = clamp(startStage, 1, MAX_RAID_STAGE)
     const hostRoomPlayer = session?.players.find((roomPlayer) => roomPlayer.host)
@@ -8173,6 +8342,12 @@ export function GradiusRaid({
     nukeStrikeRef.current = null
     nukeBlastOriginRef.current = { x: 50, y: 46 }
     leaderboardSubmittedRef.current = false
+    runStartTimeRef.current = performance.now()
+    runReportedRef.current = false
+    enemiesDestroyedRef.current = 0
+    bossesDefeatedRef.current = 0
+    pickupsCollectedRef.current = 0
+    nukesUsedRef.current = 0
     remotePointerTargetRef.current = null
     remotePointerVisualRef.current = null
     remoteKeysRef.current = new Set()
@@ -8909,6 +9084,39 @@ export function GradiusRaid({
     })
   }, [playerName])
 
+  const reportRaidRunComplete = useCallback((status: RunStatus) => {
+    if (runReportedRef.current) return
+    const score = Math.max(playerRef.current.score, remotePlayerRef.current?.score ?? 0)
+    if (score <= 0) return
+
+    const session = multiplayerSessionRef.current
+    const commanderName = session
+      ? session.players.map((roomPlayer) => roomPlayer.name).join(' + ')
+      : playerName
+
+    runReportedRef.current = true
+    onRunComplete?.({
+      mode: session ? 'gradius_multiplayer' : 'gradius_solo',
+      status,
+      playerName: commanderName,
+      score,
+      stage: stageRef.current,
+      shipKey: selectedShipRef.current.key,
+      durationMs: performance.now() - runStartTimeRef.current,
+      enemiesDestroyed: enemiesDestroyedRef.current,
+      bossesDefeated: bossesDefeatedRef.current,
+      pickupsCollected: pickupsCollectedRef.current,
+      nukesUsed: nukesUsedRef.current,
+    })
+  }, [onRunComplete, playerName])
+
+  const exitRaid = useCallback(() => {
+    if (phaseRef.current === 'victory') reportRaidRunComplete('victory')
+    else if (phaseRef.current === 'gameover') reportRaidRunComplete('gameover')
+    else if (phaseRef.current === 'playing' || phaseRef.current === 'paused') reportRaidRunComplete('exit')
+    onClose()
+  }, [onClose, reportRaidRunComplete])
+
   const damagePlayer = useCallback((amount: number, targetPlayer = playerRef.current) => {
     const player = targetPlayer
     if (player.hp <= 0 || player.invuln > 0) return
@@ -8955,8 +9163,9 @@ export function GradiusRaid({
         saveHighScore(player.score)
       }
       submitRaidLeaderboardScore(Math.max(playerRef.current.score, remotePlayerRef.current?.score ?? 0))
+      reportRaidRunComplete('gameover')
     }
-  }, [addRipple, spawnSparks, stopRaidBgm, submitRaidLeaderboardScore])
+  }, [addRipple, reportRaidRunComplete, spawnSparks, stopRaidBgm, submitRaidLeaderboardScore])
 
   const destroyPlayerByBossCollision = useCallback((targetPlayer: Player) => {
     const player = targetPlayer
@@ -8983,7 +9192,8 @@ export function GradiusRaid({
       saveHighScore(finalScore)
     }
     submitRaidLeaderboardScore(finalScore)
-  }, [addRipple, spawnSparks, stopRaidBgm, submitRaidLeaderboardScore])
+    reportRaidRunComplete('gameover')
+  }, [addRipple, reportRaidRunComplete, spawnSparks, stopRaidBgm, submitRaidLeaderboardScore])
 
   const fireEnemy = useCallback((enemy: Enemy, player: Player, time = performance.now()) => {
     if (enemy.isBoss) {
@@ -9174,6 +9384,7 @@ export function GradiusRaid({
           phaseRef.current = 'victory'
           victoryBlackoutRef.current = VICTORY_BLACKOUT_SECONDS
           startRaidBgm(MAX_RAID_STAGE, 'ending')
+          reportRaidRunComplete('victory')
           return
         }
         const pendingNextStage = pendingNextStageRef.current
@@ -10278,6 +10489,8 @@ export function GradiusRaid({
             addRipple(enemy.x, enemy.y, '#facc15', 7)
           }
           if (enemy.hp <= 0) {
+            enemiesDestroyedRef.current += 1
+            if (enemy.isBoss) bossesDefeatedRef.current += 1
             const scoreValue = enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
             player.score += scoreValue
             if (remotePlayerRef.current) {
@@ -10553,6 +10766,7 @@ export function GradiusRaid({
           distSq(powerUp, targetPlayer) <= hitRange * hitRange
         ) {
           powerUp.y = HEIGHT + 99
+          pickupsCollectedRef.current += 1
           if (powerUp.type === 'levelup') {
             levelUpPlayer(targetPlayer)
           } else if (powerUp.type === 'repair') {
@@ -10588,7 +10802,7 @@ export function GradiusRaid({
     if (remotePlayerRef.current && remotePlayerRef.current.score > highScoreRef.current) {
       highScoreRef.current = remotePlayerRef.current.score
     }
-  }, [activateNuke, addRipple, damagePlayer, destroyPlayerByBossCollision, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore])
+  }, [activateNuke, addRipple, damagePlayer, destroyPlayerByBossCollision, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, reportRaidRunComplete, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore])
 
   useEffect(() => {
     const tick = (time: number) => {
@@ -10638,7 +10852,7 @@ export function GradiusRaid({
           phaseRef.current = 'select'
           syncSnapshot()
         }
-        else onClose()
+        else exitRaid()
       }
       if (event.code === 'Space' && phaseRef.current === 'playing') {
         event.preventDefault()
@@ -10654,7 +10868,7 @@ export function GradiusRaid({
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [activateNuke, onClose, pauseGame, resetGame, resumeGame, syncSnapshot])
+  }, [activateNuke, exitRaid, pauseGame, resetGame, resumeGame, syncSnapshot])
 
   useEffect(() => () => {
     stopBGM()
@@ -10797,7 +11011,6 @@ export function GradiusRaid({
           </span>
         </button>
         <button className="raid__pause" type="button" onClick={pauseGame}>{hudText.pause}</button>
-        <button className="raid__exit" type="button" onClick={onClose}>{hudText.exit}</button>
       </div>
 
       {isMultiplayer && (
@@ -10883,7 +11096,7 @@ export function GradiusRaid({
             <div className="raid__pause-actions">
               {canControlOverlay ? <button type="button" className="raid__start" onClick={resumeGame}>{menuText.continue}</button> : null}
               {canControlOverlay ? <button type="button" className="raid__menu-button" onClick={() => resetGame()}>{menuText.restart}</button> : null}
-              <button type="button" className="raid__menu-button" onClick={onClose}>{hudText.exit}</button>
+              <button type="button" className="raid__menu-button" onClick={exitRaid}>{hudText.exit}</button>
             </div>
           </div>
         </div>
@@ -11019,7 +11232,7 @@ export function GradiusRaid({
                   {menuText.startNewLaunch}
                 </button>
               ) : null}
-              <button type="button" className="raid__menu-button" onClick={onClose}>
+              <button type="button" className="raid__menu-button" onClick={exitRaid}>
                 {menuText.close}
               </button>
             </div>
@@ -11098,7 +11311,7 @@ export function GradiusRaid({
                   {snapshot.phase === 'gameover' ? isMultiplayer ? menuText.restartCoop : menuText.restartStage1 : menuText.startRaid}
                 </button>
               ) : (
-                <button type="button" className="raid__start" onClick={onClose}>{menuText.exitCoop}</button>
+                <button type="button" className="raid__start" onClick={exitRaid}>{menuText.exitCoop}</button>
               )}
             </div>
           </div>
