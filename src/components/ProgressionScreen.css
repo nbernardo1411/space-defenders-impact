@@ -224,10 +224,18 @@
   --mastery-mark: rgba(15,23,42,0.86);
 }
 
-.progress-ship-preview__ship svg {
+.progress-ship-preview__ship svg,
+.progress-ship-preview__ship img {
   position: relative;
   z-index: 2;
   filter: drop-shadow(0 0 12px rgba(239, 35, 60, 0.2));
+}
+
+.progress-ship-preview__ship img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
 }
 
 .progress-ship-preview__ship--trail::after {
@@ -257,7 +265,8 @@
   animation: masteryAuraPulse 1.7s ease-in-out infinite alternate;
 }
 
-.progress-ship-preview__ship--aura svg {
+.progress-ship-preview__ship--aura svg,
+.progress-ship-preview__ship--aura img {
   filter:
     drop-shadow(0 0 22px var(--mastery-core))
     drop-shadow(0 0 13px var(--mastery-edge))
@@ -277,7 +286,8 @@
     0 0 18px var(--mastery-soft);
 }
 
-.progress-ship-preview__ship--frame svg {
+.progress-ship-preview__ship--frame svg,
+.progress-ship-preview__ship--frame img {
   filter:
     drop-shadow(0 0 14px var(--mastery-soft))
     drop-shadow(0 0 5px var(--mastery-edge))

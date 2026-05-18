@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { TowerShip } from './games/towerDefense/sprites'
+import { RaidShipSprite } from './games/RaidShipSprite'
 import { getLanguageText, getRaidText, type LanguageCode } from '../i18n'
 
 type RoomPlayer = {
@@ -72,7 +72,6 @@ const SHIP_OPTIONS = [
 ]
 
 const getShipName = (shipKey: string) => SHIP_OPTIONS.find((ship) => ship.key === shipKey)?.name ?? 'Black Comet'
-const RAID_PLAYER_COLOR = '#ef233c'
 
 const getLobbyShipSize = (shipKey: string) => {
   if (shipKey === 'dreadnought') return 52
@@ -304,7 +303,7 @@ export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: 
               disabled={Boolean(ownPlayer?.ready)}
             >
               <span className="raid-lobby__ship-art" aria-hidden="true">
-                <TowerShip tType={ship.key} color={RAID_PLAYER_COLOR} size={getLobbyShipSize(ship.key)} />
+                <RaidShipSprite shipKey={ship.key} size={getLobbyShipSize(ship.key)} />
               </span>
               <span className="raid-lobby__ship-name">{getLocalizedShipName(ship.key)}</span>
             </button>

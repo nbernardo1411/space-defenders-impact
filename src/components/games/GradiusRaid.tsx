@@ -3,7 +3,8 @@ import type { CSSProperties } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM } from './sound'
 import type { GraphicsQuality } from './sound'
-import { AlienShip, TowerShip } from './towerDefense/sprites'
+import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
+import { AlienShip } from './towerDefense/sprites'
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
@@ -592,7 +593,10 @@ type CanvasSpriteEntry = {
   image: HTMLImageElement
   loaded: boolean
   objectUrl?: string
+  processedImage?: HTMLCanvasElement
 }
+
+type CanvasSpriteProcessor = (image: HTMLImageElement) => HTMLCanvasElement | null
 
 type RaidPalette = {
   baseTop: string
@@ -616,6 +620,18 @@ type RaidPalette = {
 const canvasSpriteCache = new Map<string, CanvasSpriteEntry>()
 const homingMissileSpriteCache = new Map<number, HTMLCanvasElement>()
 const honeycombShieldSpriteCache = new Map<number, HTMLCanvasElement>()
+
+const RAID_OTHER_ASSET_PATHS = {
+  asteroid: 'assets/others/asteroid.webp',
+  comet: 'assets/others/comet.png',
+  galaxy: 'assets/others/galaxy.png',
+  galaxy2: 'assets/others/galaxy_2.png',
+  planet1: 'assets/others/planet_1.png',
+  planet2: 'assets/others/planet_2.webp',
+  planet3: 'assets/others/planet_3.webp',
+} as const
+
+type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
 
 const DEFAULT_RAID_PALETTE: RaidPalette = {
   baseTop: '#020307',
@@ -807,11 +823,216 @@ function makeCanvasSprite(cacheKey: string, markup: string) {
   return entry
 }
 
-function getTowerCanvasSprite(shipKey: string, color: string, size: number, elite = false) {
-  const key = `tower:${shipKey}:${color}:${size}:${elite ? 1 : 0}`
+function makeSpriteProcessingCanvas(image: HTMLImageElement, maxSize: number, crop?: { x: number; y: number; width: number; height: number }) {
+  const sourceWidth = crop?.width ?? image.naturalWidth
+  const sourceHeight = crop?.height ?? image.naturalHeight
+  const scale = Math.min(1, maxSize / Math.max(sourceWidth, sourceHeight))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(sourceWidth * scale))
+  canvas.height = Math.max(1, Math.round(sourceHeight * scale))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(
+    image,
+    crop?.x ?? 0,
+    crop?.y ?? 0,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    canvas.width,
+    canvas.height,
+  )
+  return canvas
+}
+
+function applyAlphaKey(canvas: HTMLCanvasElement, getAlphaScale: (red: number, green: number, blue: number, alpha: number, x: number, y: number) => number) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  for (let index = 0; index < data.length; index += 4) {
+    const x = (index / 4) % canvas.width
+    const y = Math.floor(index / 4 / canvas.width)
+    const alphaScale = clamp(getAlphaScale(data[index], data[index + 1], data[index + 2], data[index + 3], x, y), 0, 1)
+    data[index + 3] = Math.round(data[index + 3] * alphaScale)
+  }
+  ctx.putImageData(imageData, 0, 0)
+  return canvas
+}
+
+function processAsteroidAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 620)
+  if (!canvas) return null
+  return applyAlphaKey(canvas, (red, green, blue) => {
+    const min = Math.min(red, green, blue)
+    const max = Math.max(red, green, blue)
+    if (min > 244 && max - min < 18) return 0
+    if (min > 220 && max - min < 24) return (244 - min) / 24
+    return 1
+  })
+}
+
+function processCometAsset(image: HTMLImageElement) {
+  const cropY = Math.round(image.naturalHeight * 0.18)
+  const cropHeight = Math.round(image.naturalHeight * 0.78)
+  const canvas = makeSpriteProcessingCanvas(image, 720, { x: 0, y: cropY, width: image.naturalWidth, height: cropHeight })
+  if (!canvas) return null
+  return applyAlphaKey(canvas, (red, green, blue) => {
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    if (luma < 18) return 0
+    if (luma < 76) return (luma - 18) / 58
+    return 1
+  })
+}
+
+function processGalaxyAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 920)
+  if (!canvas) return null
+  return applyAlphaKey(canvas, (red, green, blue) => {
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    if (luma < 10) return 0
+    if (luma < 52) return (luma - 10) / 42
+    return 1
+  })
+}
+
+function processGalaxy2Asset(image: HTMLImageElement) {
+  const crop = {
+    x: Math.round(image.naturalWidth * 0.075),
+    y: Math.round(image.naturalHeight * 0.035),
+    width: Math.round(image.naturalWidth * 0.845),
+    height: Math.round(image.naturalHeight * 0.845),
+  }
+  const canvas = makeSpriteProcessingCanvas(image, 920, crop)
+  if (!canvas) return null
+  return applyAlphaKey(canvas, (red, green, blue) => {
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    if (luma < 8) return 0
+    if (luma < 44) return (luma - 8) / 36
+    return 1
+  })
+}
+
+function processPlanetAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 900)
+  if (!canvas) return null
+  const centerX = canvas.width * 0.51
+  const centerY = canvas.height * 0.5
+  const radius = Math.min(canvas.width, canvas.height) * 0.43
+  const feather = Math.max(8, radius * 0.045)
+  return applyAlphaKey(canvas, (_red, _green, _blue, _alpha, x, y) => {
+    const distance = Math.hypot(x - centerX, y - centerY)
+    if (distance >= radius) return 0
+    if (distance > radius - feather) return (radius - distance) / feather
+    return 1
+  })
+}
+
+function processPurplePlanetAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 620)
+  if (!canvas) return null
+  const centerX = canvas.width * 0.44
+  const centerY = canvas.height * 0.54
+  const radius = Math.min(canvas.width, canvas.height) * 0.44
+  const feather = Math.max(8, radius * 0.06)
+  return applyAlphaKey(canvas, (red, green, blue, _alpha, x, y) => {
+    const distance = Math.hypot(x - centerX, y - centerY)
+    if (distance >= radius) return 0
+    if (distance > radius - feather) return (radius - distance) / feather
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    if (luma < 8) return 0
+    return 1
+  })
+}
+
+function processRingedPlanetAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 720)
+  if (!canvas) return null
+  return applyAlphaKey(canvas, (red, green, blue) => {
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    if (luma < 10) return 0
+    if (luma < 42) return (luma - 10) / 32
+    return 1
+  })
+}
+
+function getOtherAssetProcessor(key: RaidOtherAssetKey): CanvasSpriteProcessor | undefined {
+  if (key === 'asteroid') return processAsteroidAsset
+  if (key === 'comet') return processCometAsset
+  if (key === 'galaxy') return processGalaxyAsset
+  if (key === 'galaxy2') return processGalaxy2Asset
+  if (key === 'planet1') return processPlanetAsset
+  if (key === 'planet2') return processRingedPlanetAsset
+  if (key === 'planet3') return processPurplePlanetAsset
+  return undefined
+}
+
+function makeImageCanvasSprite(cacheKey: string, src: string, processor?: CanvasSpriteProcessor) {
+  const existing = canvasSpriteCache.get(cacheKey)
+  if (existing) return existing
+
+  const image = new Image()
+  const entry: CanvasSpriteEntry = { image, loaded: false }
+  image.decoding = 'async'
+  image.onload = () => {
+    if (processor) {
+      try {
+        entry.processedImage = processor(image) ?? undefined
+      } catch {
+        entry.processedImage = undefined
+      }
+    }
+    entry.loaded = true
+  }
+  image.onerror = () => {
+    entry.loaded = false
+  }
+  image.src = src
+  canvasSpriteCache.set(cacheKey, entry)
+  return entry
+}
+
+function getCanvasSpriteSource(sprite: CanvasSpriteEntry) {
+  return sprite.processedImage ?? sprite.image
+}
+
+function getCanvasSpriteDimensions(sprite: CanvasSpriteEntry) {
+  const source = getCanvasSpriteSource(sprite)
+  const width = 'naturalWidth' in source ? source.naturalWidth : source.width
+  const height = 'naturalHeight' in source ? source.naturalHeight : source.height
+  return { source, width, height }
+}
+
+function getRaidOtherCanvasSprite(key: RaidOtherAssetKey) {
+  const cacheKey = `other-image:${key}`
+  const existing = canvasSpriteCache.get(cacheKey)
+  if (existing) return existing
+  return makeImageCanvasSprite(cacheKey, getPublicAssetUrl(RAID_OTHER_ASSET_PATHS[key]), getOtherAssetProcessor(key))
+}
+
+function getShipCanvasSprite(shipKey: string) {
+  const key = `ship-image:${shipKey}`
   const existing = canvasSpriteCache.get(key)
   if (existing) return existing
-  return makeCanvasSprite(key, renderToStaticMarkup(<TowerShip tType={shipKey} color={color} size={size} elite={elite} />))
+  return makeImageCanvasSprite(key, getRaidShipSpriteUrl(shipKey))
+}
+
+function getNormalAlienCanvasSprite(variant: number) {
+  const key = `alien-image:${Math.abs(Math.trunc(variant)) % RAID_ALIEN_SPRITE_COUNT}`
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeImageCanvasSprite(key, getRaidAlienSpriteUrl(variant))
+}
+
+function getNormalAlienImageFilter(baseFilter: string, enemy: Enemy) {
+  const hueOffsets = [-18, 24, -8, 36, -30, 12, 44, -40]
+  const index = Math.abs(Math.trunc(enemy.variant)) % hueOffsets.length
+  const patternShift = (enemy.pattern - 1.5) * 5
+  const brightness = 1 + ((enemy.id % 5) - 2) * 0.018
+  return `${baseFilter} hue-rotate(${Math.round(hueOffsets[index] + patternShift)}deg) brightness(${brightness.toFixed(2)}) saturate(1.08)`
 }
 
 function getEnemySpriteMarkupSize(enemy: Enemy) {
@@ -892,11 +1113,78 @@ function drawCanvasSprite(
   ctx.globalAlpha *= alpha
   ctx.filter = filter
   if (sprite.loaded && sprite.image.complete) {
-    ctx.drawImage(sprite.image, -size / 2, -size / 2, size, size)
+    const { source } = getCanvasSpriteDimensions(sprite)
+    ctx.drawImage(source, -size / 2, -size / 2, size, size)
   } else {
     drawSpriteFallback(ctx, size, fallbackColor)
   }
   ctx.restore()
+}
+
+function drawCanvasSpriteContain(
+  ctx: CanvasRenderingContext2D,
+  sprite: CanvasSpriteEntry,
+  x: number,
+  y: number,
+  size: number,
+  filter: string,
+  alpha = 1,
+  rotation = 0,
+  scale = 1,
+  fallbackColor = PLAYER_COLOR,
+) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(rotation)
+  ctx.scale(scale, scale)
+  ctx.globalAlpha *= alpha
+  ctx.filter = filter
+  if (sprite.loaded && sprite.image.complete) {
+    const { source, width, height } = getCanvasSpriteDimensions(sprite)
+    if (width <= 0 || height <= 0) {
+      drawSpriteFallback(ctx, size, fallbackColor)
+      ctx.restore()
+      return
+    }
+    const aspect = width / height
+    const drawWidth = aspect > 1 ? size : size * aspect
+    const drawHeight = aspect > 1 ? size / aspect : size
+    ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+  } else {
+    drawSpriteFallback(ctx, size, fallbackColor)
+  }
+  ctx.restore()
+}
+
+function drawCanvasImageContain(
+  ctx: CanvasRenderingContext2D,
+  sprite: CanvasSpriteEntry,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  filter = 'none',
+  alpha = 1,
+  rotation = 0,
+) {
+  if (!sprite.loaded || !sprite.image.complete) return false
+  const { source, width: sourceWidth, height: sourceHeight } = getCanvasSpriteDimensions(sprite)
+  if (sourceWidth <= 0 || sourceHeight <= 0) return false
+  const aspect = sourceWidth / sourceHeight
+  let drawWidth = width
+  let drawHeight = width / aspect
+  if (drawHeight > height) {
+    drawHeight = height
+    drawWidth = height * aspect
+  }
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(rotation)
+  ctx.globalAlpha *= alpha
+  ctx.filter = filter
+  ctx.drawImage(source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+  ctx.restore()
+  return true
 }
 
 function drawSpriteGlow(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string, alpha: number) {
@@ -1886,6 +2174,9 @@ function drawAsteroidShape(
   rotation: number,
   alpha: number,
 ) {
+  const asteroidSprite = getRaidOtherCanvasSprite('asteroid')
+  if (drawCanvasImageContain(ctx, asteroidSprite, x, y, width * 1.18, height * 1.18, 'brightness(0.86) contrast(1.16) saturate(0.9)', alpha, rotation)) return
+
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(rotation)
@@ -2114,6 +2405,39 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   }
   ctx.restore()
 
+  if (!isLow) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    const galaxySprite = getRaidOtherCanvasSprite(stageTheme % 3 === 0 ? 'galaxy2' : 'galaxy')
+    const galaxyDrift = Math.sin(seconds / 18)
+    drawCanvasImageContain(
+      ctx,
+      galaxySprite,
+      width * (stageTheme % 3 === 0 ? 0.72 : 0.28) + galaxyDrift * width * 0.012,
+      height * (stageTheme % 3 === 0 ? 0.28 : 0.64) + Math.cos(seconds / 22) * height * 0.01,
+      width * (isMedium ? 0.46 : 0.62),
+      height * (isMedium ? 0.28 : 0.38),
+      stageTheme % 3 === 0 ? 'brightness(0.58) contrast(1.06) saturate(0.82)' : 'brightness(0.72) contrast(1.12) saturate(1.04)',
+      isMedium ? 0.24 : 0.34,
+      (stageTheme % 3 === 0 ? 8 : -12) * DEG,
+    )
+    if (!isMedium) {
+      const secondGalaxySprite = getRaidOtherCanvasSprite(stageTheme % 3 === 0 ? 'galaxy' : 'galaxy2')
+      drawCanvasImageContain(
+        ctx,
+        secondGalaxySprite,
+        width * (stageTheme % 3 === 0 ? 0.22 : 0.8) - galaxyDrift * width * 0.01,
+        height * (stageTheme % 3 === 0 ? 0.68 : 0.22),
+        width * 0.34,
+        height * 0.22,
+        'brightness(0.42) contrast(1.08) saturate(0.72)',
+        0.16,
+        (stageTheme % 3 === 0 ? -16 : 10) * DEG,
+      )
+    }
+    ctx.restore()
+  }
+
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
@@ -2183,18 +2507,20 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     }
     ctx.save()
     ctx.globalAlpha = 1
-    drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9fafb'], [0.5, planetA], [1, baseTop]])
-    if (!isMedium) {
-      ctx.strokeStyle = 'rgba(167,139,250,0.28)'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.ellipse(width * 0.92, planet1Y, planet1R * 1.28, planet1R * 0.28, -8 * DEG, 0, Math.PI * 2)
-      ctx.stroke()
+    const planet1Sprite = getRaidOtherCanvasSprite('planet1')
+    if (!drawCanvasImageContain(ctx, planet1Sprite, width * 0.92, planet1Y, planet1R * 2.25, planet1R * 2.25, 'brightness(0.78) contrast(1.08) saturate(0.86)', 0.86, seconds * 0.01)) {
+      drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9fafb'], [0.5, planetA], [1, baseTop]])
     }
     ctx.globalAlpha = 0.82
-    drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#f8fafc'], [0.55, planetB], [1, baseBottom]])
+    const planet2Sprite = getRaidOtherCanvasSprite('planet2')
+    if (!drawCanvasImageContain(ctx, planet2Sprite, width * 0.05, planet2Y, planet2R * 2.8, planet2R * 2.8, 'brightness(0.8) contrast(1.08) saturate(0.86)', 0.7, -18 * DEG)) {
+      drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#f8fafc'], [0.55, planetB], [1, baseBottom]])
+    }
     if (!isMedium) {
-      drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#e0f2fe'], [0.55, planetC], [1, baseMid]])
+      const planet3Sprite = getRaidOtherCanvasSprite('planet3')
+      if (!drawCanvasImageContain(ctx, planet3Sprite, width * 0.24, planet3Y, planet3R * 2.25, planet3R * 2.25, 'brightness(0.66) contrast(1.12) saturate(0.9)', 0.56, -seconds * 0.012)) {
+        drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#e0f2fe'], [0.55, planetC], [1, baseMid]])
+      }
     }
     ctx.restore()
   }
@@ -4627,11 +4953,11 @@ function drawRaidEnemy(
       drawBossBar(ctx, enemy, x, y, size)
       return
     }
-    const sprite = getEnemyCanvasSprite(enemy)
+    const sprite = getNormalAlienCanvasSprite(enemy.variant)
     const bossFilter = enemy.bossKind === 'super'
         ? 'brightness(1.12) contrast(1.16) saturate(1.32)'
         : 'brightness(1.16) contrast(1.16) saturate(1.32)'
-    drawCanvasSprite(ctx, sprite, x, y, size, bossFilter, 1, rotation, floatScale, enemy.color)
+    drawCanvasSpriteContain(ctx, sprite, x, y, size, bossFilter, 1, rotation, floatScale, enemy.color)
     if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
     drawBossReticle(ctx, x, y, size, time, false)
     drawBossBar(ctx, enemy, x, y, size)
@@ -4639,19 +4965,19 @@ function drawRaidEnemy(
   }
 
   if (enemy.isMiniBoss) {
-    const sprite = getEnemyCanvasSprite(enemy)
+    const sprite = getNormalAlienCanvasSprite(enemy.variant)
     const floatScale = 1 + Math.sin(time / 760 + enemy.phase) * 0.035
     const rotation = Math.sin(time / 900 + enemy.phase) * 1.4 * DEG
-    drawSpriteGlow(ctx, x, y, size, 'rgba(168,85,247,0.36)', 1)
-    drawCanvasSprite(ctx, sprite, x, y, size, 'brightness(1.18) contrast(1.2) saturate(1.45)', 1, rotation, floatScale, enemy.color)
+    drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.36), 1)
+    drawCanvasSpriteContain(ctx, sprite, x, y, size, 'brightness(1.18) contrast(1.2) saturate(1.45)', 1, rotation, floatScale, enemy.color)
     if (enemy.shieldTime > 0 || enemy.y < 8) drawBossShield(ctx, x, y, size * 0.78, time, enemy.color)
     drawBossBar(ctx, enemy, x, y, size * 0.82)
     return
   }
 
-  const sprite = getEnemyCanvasSprite(enemy)
+  const sprite = getNormalAlienCanvasSprite(enemy.variant)
   drawSpriteGlow(ctx, x, y, size, 'rgba(239,35,60,0.34)', 1)
-  drawCanvasSprite(ctx, sprite, x, y, size, normalEnemyFilter, 1, 0, 1, enemy.color)
+  drawCanvasSpriteContain(ctx, sprite, x, y, size, getNormalAlienImageFilter(normalEnemyFilter, enemy), 1, 0, 1, enemy.color)
 }
 
 function drawRaidOptions(
@@ -4669,7 +4995,7 @@ function drawRaidOptions(
   const drawSupportPair = (shipKey: string, offset: number, yOffset: number, maxBox: number, scale: number, filter: string) => {
     const optionShipSize = getShipSpriteSize(shipKey, 'option')
     const drawSize = Math.min(optionShipSize * scale, maxBox)
-    const sprite = getTowerCanvasSprite(shipKey, color, optionShipSize)
+    const sprite = getShipCanvasSprite(shipKey)
 
     for (const side of [-1, 1]) {
       const x = toX(clamp(player.x + offset * side, 4, 96))
@@ -5037,7 +5363,7 @@ function drawRaidPlayer(
 
   if (!isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, y, size, time, color, player.ship.key)
   if (!isDown) drawPlayerEngine(ctx, x, y, size, time)
-  if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, size, time, player.ship.key, masteryPaintColor, cosmetics.frame)
+  if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, size, time, player.ship.key, masteryPaintColor)
 
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
   else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
@@ -5050,11 +5376,12 @@ function drawRaidPlayer(
     else drawPlasmaForceField(ctx, x, y, size, time, forceCharge)
   }
 
-  const sprite = getTowerCanvasSprite(player.ship.key, masteryPaintColor, getShipSpriteSize(player.ship.key, 'player'), cosmetics.frame)
+  const sprite = getShipCanvasSprite(player.ship.key)
   const spriteGlow = player.forceField > 0
     ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
     : player.shield > 0 ? 'rgba(252,211,77,0.24)' : player.invuln > 0 ? 'rgba(226,232,240,0.16)' : null
   if (spriteGlow) drawSpriteGlow(ctx, x, y, size, spriteGlow, 1)
+  else if (!isDown) drawSpriteGlow(ctx, x, y, size, hexToRgba(color, 0.16), 0.85)
   const spriteFilter = cosmetics.frame
     ? 'brightness(1.28) contrast(1.42) saturate(2.25)'
     : 'brightness(1.12) contrast(1.14) saturate(1.26)'
@@ -5199,10 +5526,10 @@ function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: num
   ctx.restore()
 }
 
-function drawMasteryAura(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string, color: string, elite: boolean) {
-  const style = getMasteryVisualStyle(shipKey, PLAYER_COLOR)
+function drawMasteryAura(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string, color: string) {
+  const style = getMasteryVisualStyle(shipKey, color)
   const pulse = 0.95 + Math.sin(time / 260) * 0.12
-  const sprite = getTowerCanvasSprite(shipKey, color, Math.round(size), elite)
+  const sprite = getShipCanvasSprite(shipKey)
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   drawCanvasSprite(ctx, sprite, x, y, size * 1.32, `blur(${Math.max(8, size * 0.11)}px) brightness(1.9) saturate(2.35)`, 0.5 * pulse, 0, 1, style.paint)
@@ -5660,6 +5987,30 @@ function drawAsteroidHazard(
   const healthGlow = clamp(asteroid.hp / asteroid.maxHp, 0, 1)
   const points = asteroid.tier === 2 ? 12 : 9
 
+  const asteroidSprite = getRaidOtherCanvasSprite('asteroid')
+  if (asteroidSprite.loaded && asteroidSprite.image.complete) {
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate((asteroid.spin + time * 0.012) * DEG)
+    ctx.shadowBlur = asteroid.tier === 2 ? 16 : 8
+    ctx.shadowColor = 'rgba(251,146,60,0.22)'
+    const drewAsteroidImage = drawCanvasImageContain(ctx, asteroidSprite, 0, 0, size, size * 0.9, 'brightness(0.84) contrast(1.2) saturate(0.92)', 1)
+    ctx.shadowBlur = 0
+    if (drewAsteroidImage && healthGlow < 0.6) {
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.globalAlpha = (0.62 - healthGlow) * 1.1
+      ctx.strokeStyle = asteroid.tier === 2 ? 'rgba(251,146,60,0.9)' : 'rgba(251,191,36,0.74)'
+      ctx.lineWidth = Math.max(1, size * 0.024)
+      ctx.beginPath()
+      ctx.moveTo(-size * 0.24, -size * 0.18)
+      ctx.lineTo(size * 0.08, size * 0.02)
+      ctx.lineTo(size * 0.28, -size * 0.12)
+      ctx.stroke()
+    }
+    ctx.restore()
+    if (drewAsteroidImage) return
+  }
+
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate((asteroid.spin + time * 0.012) * DEG)
@@ -5833,6 +6184,14 @@ function drawMeteorHazard(
   const y = toY(meteor.y)
   const size = Math.max(8, viewportWidth * 0.018 * meteor.radius)
   const tail = size * 4.8
+  const cometSprite = getRaidOtherCanvasSprite('comet')
+  ctx.save()
+  ctx.globalCompositeOperation = 'screen'
+  if (drawCanvasImageContain(ctx, cometSprite, x, y, size * 7.8, size * 3.8, 'brightness(1.2) contrast(1.18) saturate(1.14)', 0.9, Math.atan2(meteor.vy, meteor.vx) - Math.PI)) {
+    ctx.restore()
+    return
+  }
+  ctx.restore()
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(Math.atan2(meteor.vy, meteor.vx))
@@ -8889,7 +9248,7 @@ export function GradiusRaid({
       hp: isElite ? eliteHp : hp,
       maxHp: isElite ? eliteHp : hp,
       radius: isElite ? kind === 'brood' ? 6.4 : kind === 'lancer' ? 5.7 : 6 : 3.7,
-      variant: enemyId % 6,
+      variant: isElite ? enemyId % 6 : enemyId % RAID_ALIEN_SPRITE_COUNT,
       isBoss: false,
       isMiniBoss: isElite,
       fireCooldown: isElite ? kind === 'lancer' ? 0.95 : kind === 'brood' ? 1.28 : 1.08 : Math.max(1.25, 2.1 + Math.random() * 2.1 - wave * 0.04 - powerPressure * 0.025),
@@ -11183,13 +11542,13 @@ export function GradiusRaid({
             </div>
             <div className="raid__ending-wake raid__ending-wake--host" />
             <div className="raid__ending-ship raid__ending-ship--host">
-              <TowerShip tType={player.ship.key} color={PLAYER_COLOR} size={finaleShipSize} />
+              <RaidShipSprite shipKey={player.ship.key} size={finaleShipSize} />
             </div>
             {snapshot.allyPlayer ? (
               <>
                 <div className="raid__ending-wake raid__ending-wake--ally" />
                 <div className="raid__ending-ship raid__ending-ship--ally">
-                  <TowerShip tType={snapshot.allyPlayer.ship.key} color={ALLY_PLAYER_COLOR} size={finaleAllyShipSize} />
+                  <RaidShipSprite shipKey={snapshot.allyPlayer.ship.key} size={finaleAllyShipSize} />
                 </div>
               </>
             ) : null}
@@ -11242,7 +11601,7 @@ export function GradiusRaid({
                       className={selectedShipKey === ship.key ? 'raid__ship-card raid__ship-card--active' : 'raid__ship-card'}
                       onClick={() => chooseShip(ship)}
                     >
-                      <TowerShip tType={ship.key} color={PLAYER_COLOR} size={getShipSpriteSize(ship.key, 'picker')} />
+                      <RaidShipSprite shipKey={ship.key} size={getShipSpriteSize(ship.key, 'picker')} />
                       <span>{shipCopy.name}</span>
                       <small>{shipCopy.role}</small>
                     </button>

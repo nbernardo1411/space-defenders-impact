@@ -13,7 +13,7 @@ import {
   type ShipCosmeticKey,
 } from '../progression'
 import { getLanguageText, getRaidText, getReleaseText, type LanguageCode } from '../i18n'
-import { TowerShip } from './games/towerDefense/sprites'
+import { RaidShipSprite } from './games/RaidShipSprite'
 import './ProgressionScreen.css'
 
 type ProgressionView = 'profile' | 'achievements' | 'codex' | 'stageMap'
@@ -185,7 +185,7 @@ export function ProgressionScreen({
                         onClick={() => setPreviewCosmeticShip(previewCosmeticShip === shipKey ? null : shipKey)}
                       >
                         <div className={getPreviewClass(previewCosmetics, shipKey)}>
-                          <TowerShip tType={shipKey} color={previewCosmetics.frame ? getMasteryPaintColor(shipKey) : '#ef233c'} size={72} elite={previewCosmetics.frame} />
+                          <RaidShipSprite shipKey={shipKey} size={72} />
                         </div>
                       </button>
                       <div className="progress-ship-info">
@@ -373,18 +373,6 @@ function getPreviewClass(equipped: ReturnType<typeof getEquippedShipCosmetics>, 
     equipped.aura ? 'progress-ship-preview__ship--aura' : '',
     equipped.frame ? 'progress-ship-preview__ship--frame' : '',
   ].filter(Boolean).join(' ')
-}
-
-function getMasteryPaintColor(shipKey: string) {
-  return {
-    rocket: '#38bdf8',
-    fast: '#ffffff',
-    gatling: '#fb923c',
-    laser: '#67e8f9',
-    dreadnought: '#a855f7',
-    xwing: '#fde047',
-    spaceEt: '#f8fafc',
-  }[shipKey] ?? '#6ef5cb'
 }
 
 function formatTime(seconds: number) {

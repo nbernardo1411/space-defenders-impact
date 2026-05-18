@@ -249,10 +249,17 @@ body {
   filter: drop-shadow(0 0 22px rgba(125, 211, 252, 0.24));
 }
 
-.start-screen__sprite-ship svg {
+.start-screen__sprite-ship svg,
+.start-screen__sprite-ship img {
   display: block;
   width: 100%;
   height: auto;
+}
+
+.start-screen__asset-sprite {
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
 }
 
 .start-screen__sprite-ship--rocket {
@@ -538,9 +545,11 @@ body {
   animation: hangarShipBob 2.8s ease-in-out infinite alternate;
 }
 
-.start-screen__hangar-ship svg {
+.start-screen__hangar-ship svg,
+.start-screen__hangar-ship img {
   display: block;
   max-width: 100%;
+  max-height: 64px;
   height: auto;
 }
 
@@ -1735,7 +1744,8 @@ body {
   background: radial-gradient(circle at 50% 42%, rgba(56, 189, 248, 0.14), rgba(2, 6, 23, 0.04) 68%);
 }
 
-.raid-lobby__ship-art svg {
+.raid-lobby__ship-art svg,
+.raid-lobby__ship-art img {
   display: block;
   max-width: 56px;
   max-height: 56px;
@@ -2059,7 +2069,8 @@ body {
     gap: 6px;
   }
 
-  .start-screen__hangar-ship svg {
+  .start-screen__hangar-ship svg,
+  .start-screen__hangar-ship img {
     max-height: 58px;
   }
 
@@ -2197,11 +2208,13 @@ body {
     bottom: 9px;
   }
 
-  .start-screen__hangar-ship svg {
+  .start-screen__hangar-ship svg,
+  .start-screen__hangar-ship img {
     max-height: 42px;
   }
 
-  .start-screen__hangar-ship--four svg {
+  .start-screen__hangar-ship--four svg,
+  .start-screen__hangar-ship--four img {
     max-height: 48px;
   }
 

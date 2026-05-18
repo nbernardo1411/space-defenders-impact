@@ -4,10 +4,10 @@ import { ProgressionScreen } from './components/ProgressionScreen'
 import { RaidMultiplayerLobby, type RaidMultiplayerSession } from './components/RaidMultiplayerLobby'
 import { RunResultsOverlay } from './components/RunResultsOverlay'
 import { GradiusRaid } from './components/games/GradiusRaid'
+import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl } from './components/games/RaidShipSprite'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
 import { ENDLESS_UNLOCK_STORAGE_KEY } from './components/games/towerDefense/config'
-import { AlienShip, TowerShip } from './components/games/towerDefense/sprites'
 import {
   getInitialLanguage,
   getLanguageText,
@@ -53,6 +53,30 @@ type GameMode = 'normal' | 'endless'
 type ActiveGame = 'towerDefense' | 'rocketRaid'
 
 const PROGRESSION_VIEWS: ProgressionView[] = ['profile', 'achievements', 'codex', 'stageMap']
+
+function MenuShipSprite({ shipKey }: { shipKey: string }) {
+  return (
+    <img
+      className="start-screen__asset-sprite"
+      src={getRaidShipSpriteUrl(shipKey)}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
+  )
+}
+
+function MenuAlienSprite({ variant }: { variant: number }) {
+  return (
+    <img
+      className="start-screen__asset-sprite"
+      src={getRaidAlienSpriteUrl(variant)}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
+  )
+}
 
 function App() {
   const [screen, setScreen] = useState<ScreenState>('title')
@@ -271,19 +295,19 @@ function App() {
           <div className="start-screen__beam start-screen__beam--c" />
           <div className="start-screen__sprite-fleet" aria-hidden="true">
             <div className="start-screen__sprite-ship start-screen__sprite-ship--rocket">
-              <TowerShip tType="rocket" color="#ef233c" size={132} />
+              <MenuShipSprite shipKey="rocket" />
             </div>
             <div className="start-screen__sprite-ship start-screen__sprite-ship--xwing">
-              <TowerShip tType="xwing" color="#38bdf8" size={108} />
+              <MenuShipSprite shipKey="xwing" />
             </div>
             <div className="start-screen__sprite-ship start-screen__sprite-ship--dreadnought">
-              <TowerShip tType="dreadnought" color="#f97316" size={150} />
+              <MenuShipSprite shipKey="dreadnought" />
             </div>
             <div className="start-screen__sprite-ship start-screen__sprite-ship--alien-a">
-              <AlienShip variant={1} isBoss={false} isFinalBoss={false} color="#a855f7" size={96} />
+              <MenuAlienSprite variant={1} />
             </div>
             <div className="start-screen__sprite-ship start-screen__sprite-ship--alien-b">
-              <AlienShip variant={3} isBoss={true} isFinalBoss={false} bossKind="carrier" color="#ef4444" size={138} />
+              <MenuAlienSprite variant={3} />
             </div>
           </div>
         </div>
@@ -325,19 +349,19 @@ function App() {
 
             <div className="start-screen__hangar" aria-hidden="true">
               <div className="start-screen__hangar-ship start-screen__hangar-ship--one">
-                <TowerShip tType="fast" color="#ef233c" size={58} />
+                <MenuShipSprite shipKey="fast" />
               </div>
               <div className="start-screen__hangar-ship start-screen__hangar-ship--two">
-                <TowerShip tType="gatling" color="#f97316" size={60} />
+                <MenuShipSprite shipKey="gatling" />
               </div>
               <div className="start-screen__hangar-ship start-screen__hangar-ship--three">
-                <TowerShip tType="laser" color="#38bdf8" size={58} />
+                <MenuShipSprite shipKey="laser" />
               </div>
               <div className="start-screen__hangar-ship start-screen__hangar-ship--four">
-                <TowerShip tType="spaceEt" color="#22c55e" size={64} />
+                <MenuShipSprite shipKey="spaceEt" />
               </div>
               <div className="start-screen__hangar-ship start-screen__hangar-ship--enemy">
-                <AlienShip variant={2} isBoss={false} isFinalBoss={false} color="#d946ef" size={54} />
+                <MenuAlienSprite variant={2} />
               </div>
             </div>
 
