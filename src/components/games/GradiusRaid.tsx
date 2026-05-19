@@ -437,7 +437,7 @@ const MULTIPLAYER_MAX_ION_STRIKES = 8
 const MULTIPLAYER_MAX_WRECKS = 3
 const MULTIPLAYER_MAX_POWERUPS = 16
 const MULTIPLAYER_MAX_SPARKS = 16
-const MULTIPLAYER_MAX_RIPPLES = 12
+const MULTIPLAYER_MAX_RIPPLES = 6
 const MULTIPLAYER_ENTITY_MARGIN = 22
 const MULTIPLAYER_MAX_VISUAL_VELOCITY = 130
 const MULTIPLAYER_SOFT_CORRECTION_DISTANCE_SQ = 900
@@ -479,7 +479,7 @@ const FINAL_BOSS_BEAM_PINCER_RADIUS = 5.4
 const FINAL_BOSS_BEAM_TRIDENT_RADIUS = 4.35
 const FINAL_BOSS_BEAM_SCATTER_RADIUS = 4.7
 const MAX_SPARKS = 45
-const MAX_RIPPLES = 10
+const MAX_RIPPLES = 6
 const MAX_ASTEROIDS = 16
 const MAX_METEORS = 18
 const MAX_ION_STRIKES = 8
@@ -536,7 +536,7 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       dprCap: 1.25,
       maxSparks: isSmallViewport ? 10 : 14,
       sparkScale: 0.18,
-      maxRipples: 2,
+      maxRipples: 0,
       maxAsteroids: isSmallViewport ? 5 : 7,
       maxMeteors: isSmallViewport ? 6 : 8,
       maxIonStrikes: 3,
@@ -551,7 +551,7 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       dprCap: 1.25,
       maxSparks: Math.floor(24 * smallScale * multiplayerScale),
       sparkScale: 0.35,
-      maxRipples: Math.floor(5 * smallScale),
+      maxRipples: Math.max(2, Math.floor(3 * smallScale)),
       maxAsteroids: Math.floor(10 * smallScale),
       maxMeteors: Math.floor(12 * smallScale),
       maxIonStrikes: 5,
@@ -566,7 +566,7 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       dprCap: 1.5,
       maxSparks: Math.floor(34 * smallScale * multiplayerScale),
       sparkScale: 0.7,
-      maxRipples: Math.floor(8 * smallScale),
+      maxRipples: Math.max(3, Math.floor(4 * smallScale)),
       maxAsteroids: Math.floor(14 * smallScale),
       maxMeteors: Math.floor(16 * smallScale),
       maxIonStrikes: 7,
@@ -581,7 +581,7 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
       dprCap: isMultiplayer ? 1.35 : 2,
       maxSparks: MAX_SPARKS,
       sparkScale: 1,
-      maxRipples: MAX_RIPPLES,
+      maxRipples: isMultiplayer ? 4 : MAX_RIPPLES,
       maxAsteroids: MAX_ASTEROIDS,
       maxMeteors: MAX_METEORS,
       maxIonStrikes: MAX_ION_STRIKES,
@@ -618,8 +618,9 @@ type RaidStarfieldCacheEntry = {
 
 let raidBackgroundBaseCache: RaidBackgroundBaseCacheEntry | null = null
 let raidStarfieldCache: RaidStarfieldCacheEntry | null = null
-const FILTERED_CANVAS_SPRITE_CACHE_LIMIT = 128
+const FILTERED_CANVAS_SPRITE_CACHE_LIMIT = 256
 const filteredCanvasSpriteCache = new Map<string, HTMLCanvasElement>()
+const canvasPatternCache = new WeakMap<CanvasRenderingContext2D, WeakMap<HTMLCanvasElement, CanvasPattern | null>>()
 
 type CanvasSpriteProcessor = (image: HTMLImageElement) => HTMLCanvasElement | null
 
@@ -1111,7 +1112,7 @@ function getCanvasSpriteDimensions(sprite: CanvasSpriteEntry) {
 }
 
 function shouldCacheCanvasFilter(filter: string) {
-  return filter !== 'none' && !filter.includes('blur(') && !filter.includes('hue-rotate')
+  return filter !== 'none' && !filter.includes('blur(')
 }
 
 function getFilteredCanvasSpriteSource(sprite: CanvasSpriteEntry, source: CanvasImageSource, width: number, height: number, filter: string) {
@@ -1138,6 +1139,18 @@ function getFilteredCanvasSpriteSource(sprite: CanvasSpriteEntry, source: Canvas
   }
   filteredCanvasSpriteCache.set(cacheKey, canvas)
   return canvas
+}
+
+function getCachedCanvasPattern(ctx: CanvasRenderingContext2D, texture: HTMLCanvasElement) {
+  let contextPatterns = canvasPatternCache.get(ctx)
+  if (!contextPatterns) {
+    contextPatterns = new WeakMap<HTMLCanvasElement, CanvasPattern | null>()
+    canvasPatternCache.set(ctx, contextPatterns)
+  }
+  if (contextPatterns.has(texture)) return contextPatterns.get(texture) ?? null
+  const pattern = ctx.createPattern(texture, 'repeat')
+  contextPatterns.set(texture, pattern)
+  return pattern
 }
 
 function getRaidOtherCanvasSprite(key: RaidOtherAssetKey) {
@@ -3214,7 +3227,7 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
   ctx.restore()
 }function getNormalEnemyFilter(time: number) {
   const pulse = 0.88 + ((Math.sin(time / 700) + 1) / 2) * 0.3
-  return `brightness(${1.16 * pulse}) contrast(1.12) saturate(1.28)`
+  return `brightness(${(1.16 * pulse).toFixed(2)}) contrast(1.12) saturate(1.28)`
 }
 
 function drawBossDust(ctx: CanvasRenderingContext2D, size: number, color: string, count: number, seed: number, spreadX = 0.7, spreadY = 0.7) {
@@ -4084,7 +4097,7 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
         ctx.beginPath()
         ctx.ellipse(0, 0, radius * 1.26 * pulse, radius * 0.78, 0, 0, Math.PI * 2)
         ctx.clip()
-        const pattern = ctx.createPattern(tentacleTexture, 'repeat')
+        const pattern = getCachedCanvasPattern(ctx, tentacleTexture)
         if (pattern) {
           const scrollX = ((phase * 47 + segment * 11 + time / 100) % tentacleTexture.width) - tentacleTexture.width
           const scrollY = ((phase * 31 + segment * 7 + time / 155) % tentacleTexture.height) - tentacleTexture.height
@@ -4376,7 +4389,7 @@ function drawCobraTexturedBodySegment(
     ctx.beginPath()
     ctx.ellipse(0, 0, radiusX * 0.96, radiusY * 0.92, 0, 0, Math.PI * 2)
     ctx.clip()
-    const pattern = ctx.createPattern(texture, 'repeat')
+    const pattern = getCachedCanvasPattern(ctx, texture)
     if (pattern) {
       const scrollX = ((phase * 43 + time / 85) % texture.width) - texture.width
       const scrollY = ((phase * 29 + time / 130) % texture.height) - texture.height
@@ -5352,29 +5365,22 @@ function drawStageBossIntroEffect(ctx: CanvasRenderingContext2D, size: number, t
 }
 
 function drawEnemyHitFlash(ctx: CanvasRenderingContext2D, size: number, flash = 0, color = '#fca5a5') {
-  const strength = clamp(flash / 0.22, 0, 1)
+  const strength = clamp(flash / 0.18, 0, 1)
   if (strength <= 0.02) return
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  ctx.globalAlpha = strength
-  drawRadialEllipse(ctx, 0, 0, size * 0.34, size * 0.3, [
-    [0, 'rgba(255,255,255,0.52)'],
-    [0.36, hexToRgba(color, 0.34)],
-    [1, hexToRgba(color, 0)],
-  ])
-  ctx.strokeStyle = `rgba(255,255,255,${0.22 + strength * 0.42})`
-  ctx.lineWidth = Math.max(1, size * 0.004)
-  for (let arc = 0; arc < 3; arc += 1) {
-    ctx.beginPath()
-    ctx.ellipse(0, 0, size * (0.18 + arc * 0.09), size * (0.06 + arc * 0.035), timeSafeRotation(strength, arc), 0, Math.PI * 2)
-    ctx.stroke()
-  }
+  ctx.globalAlpha = strength * 0.42
+  ctx.strokeStyle = hexToRgba(color, 0.34)
+  ctx.lineWidth = Math.max(0.8, size * 0.0022)
+  const slash = size * 0.09
+  ctx.beginPath()
+  ctx.moveTo(-slash, -slash * 0.22)
+  ctx.lineTo(slash, slash * 0.22)
+  ctx.moveTo(-slash * 0.26, slash)
+  ctx.lineTo(slash * 0.26, -slash)
+  ctx.stroke()
   ctx.restore()
-}
-
-function timeSafeRotation(strength: number, phase: number) {
-  return (phase + strength * 0.5) * Math.PI * 0.33
 }
 
 function drawBossRichDetailOverlay(ctx: CanvasRenderingContext2D, size: number, time: number, kind: BossKind | MirageBossKind | null, color: string) {
@@ -8267,7 +8273,8 @@ export function GradiusRaid({
     if (ripplesRef.current.length >= profile.maxRipples) {
       ripplesRef.current.splice(0, ripplesRef.current.length - Math.max(0, profile.maxRipples - 1))
     }
-    ripplesRef.current.push({ id: rippleId++, x, y, color, size, life: 0.5, maxLife: 0.5 })
+    const rippleLife = 0.32
+    ripplesRef.current.push({ id: rippleId++, x, y, color, size: size * 0.72, life: rippleLife, maxLife: rippleLife })
   }, [])
 
   const stopRaidBgm = useCallback(() => {
@@ -8940,10 +8947,10 @@ export function GradiusRaid({
       for (let i = rippleStart; i < ripples.length; i += 1) {
         const ripple = ripples[i]
         const progress = 1 - ripple.life / ripple.maxLife
-        const radius = (ripple.size * 4) * (0.45 + progress * 1.6)
-        ctx.globalAlpha = Math.max(0, ripple.life / ripple.maxLife) * 0.8
+        const radius = (ripple.size * 2.7) * (0.35 + progress * 1.05)
+        ctx.globalAlpha = Math.max(0, ripple.life / ripple.maxLife) * 0.42
         ctx.strokeStyle = ripple.color
-        ctx.lineWidth = 2
+        ctx.lineWidth = 1.25
         ctx.beginPath()
         ctx.arc(toX(ripple.x), toY(ripple.y), radius, 0, Math.PI * 2)
         ctx.stroke()
