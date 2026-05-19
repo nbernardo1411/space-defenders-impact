@@ -45,6 +45,26 @@ export default defineConfig({
                     {
                         urlPattern: function (_a) {
                             var request = _a.request, url = _a.url;
+                            return request.destination === 'image' ||
+                                url.pathname.includes('/assets/ships/') ||
+                                url.pathname.includes('/assets/aliens/') ||
+                                url.pathname.includes('/assets/others/');
+                        },
+                        handler: 'CacheFirst',
+                        options: {
+                            cacheName: 'space-defender-raid-images-v1',
+                            expiration: {
+                                maxEntries: 128,
+                                maxAgeSeconds: 60 * 60 * 24 * 30,
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200],
+                            },
+                        },
+                    },
+                    {
+                        urlPattern: function (_a) {
+                            var request = _a.request, url = _a.url;
                             return request.destination === 'audio' || url.pathname.includes('/audio/');
                         },
                         handler: 'CacheFirst',
