@@ -106,6 +106,7 @@ export type MesiahShipColor = 'black' | 'white'
 export type ProgressState = {
   version: 1
   towerDefenseEndlessUnlocked: boolean
+  gradiusRaidEndlessUnlocked: boolean
   mesiahShipColor: MesiahShipColor
   totalRuns: number
   totalScore: number
@@ -222,6 +223,7 @@ export function createEmptyProgress(): ProgressState {
   return {
     version: 1,
     towerDefenseEndlessUnlocked: getStoredTowerDefenseEndlessUnlock(),
+    gradiusRaidEndlessUnlocked: false,
     mesiahShipColor: 'black',
     totalRuns: 0,
     totalScore: 0,
@@ -285,6 +287,9 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   if (result.status === 'victory') progress.victories += 1
   if (result.mode === 'ship_defense_normal' && result.status === 'victory') {
     progress.towerDefenseEndlessUnlocked = true
+  }
+  if ((result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory') {
+    progress.gradiusRaidEndlessUnlocked = true
   }
 
   progress.bestScoreByMode[result.mode] = Math.max(progress.bestScoreByMode[result.mode] ?? 0, Math.floor(result.score))
@@ -417,6 +422,17 @@ export function hasProgressionUnlockOverride() {
   return isLocalProgressionTestHost() || isCreatorProgressionUser()
 }
 
+export function isGradiusRaidEndlessUnlocked(progress: ProgressState) {
+  if (hasProgressionUnlockOverride()) return true
+  return Boolean(
+    progress.gradiusRaidEndlessUnlocked ||
+    progress.achievements.raid_clear ||
+    progress.achievements.fortress_fall ||
+    (progress.bestStageByMode.gradius_solo ?? 0) >= 15 ||
+    (progress.bestStageByMode.gradius_multiplayer ?? 0) >= 15
+  )
+}
+
 export function getStoredTowerDefenseEndlessUnlock() {
   if (typeof window === 'undefined') return false
   return window.localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true'
@@ -519,6 +535,7 @@ export function normalizeProgress(value: unknown): ProgressState {
     ...data,
     version: 1,
     towerDefenseEndlessUnlocked: Boolean(data.towerDefenseEndlessUnlocked || getStoredTowerDefenseEndlessUnlock()),
+    gradiusRaidEndlessUnlocked: Boolean(data.gradiusRaidEndlessUnlocked || data.achievements?.raid_clear || data.achievements?.fortress_fall || (data.bestStageByMode?.gradius_solo ?? 0) >= 15 || (data.bestStageByMode?.gradius_multiplayer ?? 0) >= 15),
     mesiahShipColor: data.mesiahShipColor === 'white' ? 'white' : 'black',
     totalRuns: Math.max(0, Math.floor(Number(data.totalRuns) || 0)),
     totalScore: Math.max(0, Math.floor(Number(data.totalScore) || 0)),

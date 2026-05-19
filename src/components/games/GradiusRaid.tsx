@@ -6,7 +6,7 @@ import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAI
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
-import { getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
+import { getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isGradiusRaidEndlessUnlocked, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -17,6 +17,7 @@ type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 's
 type MirageBossKind = 'squid' | 'snake'
 type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
+type RaidMode = 'campaign' | 'endless'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
 type RaidRandomEventKind = 'meteor' | 'solar' | 'rift' | 'wreck' | 'ambush' | 'ion'
 
@@ -232,6 +233,7 @@ type Snapshot = {
   nukeFlash: number
   asteroidWarning: number
   randomEvent: RaidRandomEvent | null
+  raidMode: RaidMode
 }
 
 type MultiplayerInput = {
@@ -329,6 +331,17 @@ const BOSS_COLORS: Record<BossKind, string> = {
   snake: '#e11d48',
   final: '#120617',
 }
+const ENDLESS_BOSS_POOL: BossKind[] = ['carrier', 'orb', 'serpent', 'mantis', 'hydra', 'gate', 'super', 'squid', 'snake', 'final']
+
+function pickEndlessBossKind(stage: number, wave: number): BossKind {
+  const danger = Math.max(stage, wave)
+  if (danger >= 8 && danger % 5 === 0 && Math.random() < 0.42) return 'final'
+  if (danger >= 5 && Math.random() < 0.22) return Math.random() < 0.5 ? 'squid' : 'snake'
+  if (danger >= 4 && Math.random() < 0.18) return 'super'
+  const pool = danger >= 10 ? ENDLESS_BOSS_POOL : ENDLESS_BOSS_POOL.filter((kind) => kind !== 'final')
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
 const RAID_DEFAULT_BGM_TRACK = getPublicAssetUrl('audio/bgm_scifi_loop.ogg')
 const RAID_BOSS_BGM_TRACK = getPublicAssetUrl('audio/sfx_boss_battle.wav')
 const RAID_ENDING_BGM_TRACK = getPublicAssetUrl('audio/bgm_shelter.wav')
@@ -436,7 +449,7 @@ const MESIAH_DRONE_FIRE_INTERVAL_SECONDS = 0.1
 const MESIAH_DRONE_MIN_FIRE_RANGE = 7.5
 const MESIAH_DRONE_MAX_FIRE_RANGE = 19
 const MESIAH_ROCKET_FIRE_INTERVAL_SECONDS = 0.36
-const MESIAH_DRONE_HOME_OFFSET = 12
+const MESIAH_DRONE_HOME_OFFSET = 11.6
 const NORMAL_POWER_DROP_COOLDOWN = 3.8
 const POWER_PITY_KILLS = 12
 const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
@@ -1716,7 +1729,7 @@ function getRaidPlayerVisualShipKey(player: Player, progress: ReturnType<typeof 
 }
 
 function hasClearedRaidInProgress(progress: ReturnType<typeof loadProgress>) {
-  return Boolean(progress.achievements.raid_clear || progress.achievements.fortress_fall)
+  return isGradiusRaidEndlessUnlocked(progress)
 }
 
 function cloneVec(value: Vec | null | undefined): Vec | null {
@@ -5368,7 +5381,7 @@ function getMesiahDroneTarget(player: Player, enemies: Enemy[], lockedTargetId: 
 function getMesiahDroneHome(player: Player, side: number, homeOffset = 7) {
   return {
     x: clamp(player.x + homeOffset * side, 4, 96),
-    y: player.y + 1.6,
+    y: player.y + 5.2,
   }
 }
 
@@ -5458,8 +5471,9 @@ function drawRaidOptions(
   color = PLAYER_COLOR,
 ) {
   const isArk = player.ship.key === 'dreadnought'
-  const isMesiahSortie = player.ship.key === 'mesiah' && player.mesiahDroneTimer > 0
-  if (player.optionTimer <= 0 && !isArk && !isMesiahSortie) return
+  const isMesiah = player.ship.key === 'mesiah' && player.hp > 0
+  const isMesiahSortie = isMesiah && player.mesiahDroneTimer > 0
+  if (player.optionTimer <= 0 && !isArk && !isMesiah) return
 
   const drawSupportPair = (shipKey: string, offset: number, yOffset: number, maxBox: number, scale: number, filter: string) => {
     const optionShipSize = getShipSpriteSize(shipKey, 'option')
@@ -5495,14 +5509,19 @@ function drawRaidOptions(
     return
   }
 
-  if (isMesiahSortie) {
+  if (isMesiah) {
     const sprite = getShipCanvasSprite('rocket')
-    const drawSize = Math.min(getShipSpriteSize('rocket', 'option') * 1.14, viewportWidth < 860 ? 35 : 48)
+    const drawSize = Math.min(getShipSpriteSize('rocket', 'option') * (viewportWidth < 860 ? 1.14 : 1.28), viewportWidth < 860 ? 35 : 54)
     for (const drone of normalizeMesiahDrones(player)) {
-      if (!drone.active) continue
+      const idle = !isMesiahSortie || !drone.active
       const x = toX(drone.x)
-      const y = toY(drone.y) + Math.sin(time / 135 + drone.side) * 0.8
-      drawCanvasSprite(ctx, sprite, x, y, drawSize, 'brightness(1.08) contrast(1.18) saturate(1.35)', 1, drone.rotation, 1, color)
+      const y = toY(drone.y) + Math.sin(time / (idle ? 520 : 135) + drone.side) * (idle ? 1.4 : 0.8)
+      const alpha = idle ? 0.72 : 1
+      const scale = idle ? 0.9 : 1
+      const filter = idle
+        ? 'brightness(0.86) contrast(1.08) saturate(0.92)'
+        : 'brightness(1.08) contrast(1.18) saturate(1.35)'
+      drawCanvasSprite(ctx, sprite, x, y, drawSize, filter, alpha, idle ? 0 : drone.rotation, scale, color)
     }
   }
 
@@ -7181,6 +7200,7 @@ export function GradiusRaid({
   const ripplesRef = useRef<Ripple[]>([])
   const homingTargetsRef = useRef<Map<number, Enemy>>(new Map())
   const phaseRef = useRef<GamePhase>('select')
+  const raidModeRef = useRef<RaidMode>('campaign')
   const stageRef = useRef(1)
   const waveRef = useRef(1)
   const spawnTimerRef = useRef(0.5)
@@ -7241,6 +7261,7 @@ export function GradiusRaid({
     nukeFlash: 0,
     asteroidWarning: 0,
     randomEvent: null,
+    raidMode: 'campaign',
   }))
   const [multiplayerConnection, setMultiplayerConnection] = useState<{
     quality: MultiplayerConnectionQuality
@@ -7280,6 +7301,7 @@ export function GradiusRaid({
     const randomEventBucket = randomEvent ? `${randomEvent.kind}:${Math.ceil(randomEvent.warning * 4)}:${Math.ceil(randomEvent.age * 2)}` : ''
     const snapshotKey = [
       phaseRef.current,
+      raidModeRef.current,
       stageRef.current,
       waveRef.current,
       bossAlertBucket,
@@ -7335,6 +7357,7 @@ export function GradiusRaid({
       nukeFlash: nukeFlashRef.current,
       asteroidWarning: asteroidWarningRef.current,
       randomEvent: cloneRaidRandomEvent(randomEventRef.current),
+      raidMode: raidModeRef.current,
     })
   }, [])
 
@@ -7673,6 +7696,7 @@ export function GradiusRaid({
       nukeFlash: state.nukeFlash,
       asteroidWarning: state.asteroidWarning ?? 0,
       randomEvent: cloneRaidRandomEvent(state.randomEvent ?? null),
+      raidMode: 'campaign',
     })
   }, [resetGuestPredictionState])
 
@@ -9108,14 +9132,15 @@ export function GradiusRaid({
     syncSnapshot()
   }, [addRipple, spawnSparks, syncSnapshot])
 
-  const resetGame = useCallback(async (startStage = 1, fullyBuffed = false) => {
+  const resetGame = useCallback(async (startStage = 1, fullyBuffed = false, mode: RaidMode = raidModeRef.current) => {
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) return
     await preloadRaidCanvasAssets()
     progressRef.current = loadProgress()
     shipCosmeticsCacheRef.current.clear()
 
-    const stage = clamp(startStage, 1, MAX_RAID_STAGE)
+    const isEndless = mode === 'endless'
+    const stage = isEndless ? Math.max(1, Math.floor(startStage)) : clamp(startStage, 1, MAX_RAID_STAGE)
     const hostRoomPlayer = session?.players.find((roomPlayer) => roomPlayer.host)
     const guestRoomPlayer = session?.players.find((roomPlayer) => !roomPlayer.host)
     const hostShip = getShipByKey(hostRoomPlayer?.shipKey, selectedShipRef.current)
@@ -9155,11 +9180,12 @@ export function GradiusRaid({
     sparksRef.current = []
     ripplesRef.current = []
     phaseRef.current = 'playing'
+    raidModeRef.current = mode
     stageRef.current = stage
     waveRef.current = stage
     spawnTimerRef.current = 1.25
     formationTimerRef.current = 3.4
-    bossTimerRef.current = stage === MAX_RAID_STAGE ? 24 : 36
+    bossTimerRef.current = isEndless ? 28 + Math.random() * 18 : stage === MAX_RAID_STAGE ? 24 : 36
     spawnLockRef.current = 0
     powerDropCooldownRef.current = 0
     killsSincePowerRef.current = 0
@@ -9251,6 +9277,7 @@ export function GradiusRaid({
   const openBriefing = useCallback(() => {
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) return
+    raidModeRef.current = 'campaign'
     phaseRef.current = 'briefing'
     setBriefingStep(0)
     playGameSound('select')
@@ -9890,7 +9917,9 @@ export function GradiusRaid({
     const player = playerRef.current
     const powerScore = getPowerScore(playerRef.current)
     const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
-    const bossKind: BossKind = stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
+    const bossKind: BossKind = raidModeRef.current === 'endless'
+      ? pickEndlessBossKind(stage, wave)
+      : stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
       bossKind === 'final' ? 13.4 :
         bossKind === 'snake' ? 8.25 :
@@ -11445,7 +11474,7 @@ export function GradiusRaid({
             if (enemy.isBoss) {
               bossDefeatedThisFrame = true
               const clearedStage = stageRef.current
-              if (clearedStage >= MAX_RAID_STAGE) {
+              if (raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
                 completedRun = true
                 victoryPendingRef.current = true
                 unlockedStageRef.current = MAX_RAID_STAGE
@@ -11459,9 +11488,11 @@ export function GradiusRaid({
                 const nextStage = clearedStage + 1
                 preserveLoadoutForSuperBoss = nextStage % 5 === 0
                 pendingNextStageRef.current = nextStage
-                unlockedStageRef.current = Math.max(unlockedStageRef.current, nextStage)
-                if (!coOpRunRef.current) saveUnlockedStage(unlockedStageRef.current)
-                if (!coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
+                if (raidModeRef.current !== 'endless') {
+                  unlockedStageRef.current = Math.max(unlockedStageRef.current, Math.min(nextStage, MAX_RAID_STAGE))
+                  if (!coOpRunRef.current) saveUnlockedStage(unlockedStageRef.current)
+                }
+                if (raidModeRef.current !== 'endless' && !coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
                   saveCheckpointStage(nextStage)
                 }
                 bossAlertRef.current = 2.4
@@ -11872,6 +11903,7 @@ export function GradiusRaid({
   const bossIncoming = snapshot.bossAlert > 0 && snapshot.bossMessage === 'incoming'
   const bossClear = snapshot.bossAlert > 0 && snapshot.bossMessage === 'clear'
   const isMultiplayer = Boolean(multiplayerSession)
+  const isEndlessRun = snapshot.raidMode === 'endless'
   const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
   const [graphicsQuality, setGraphicsQualityState] = useState<GraphicsQuality>(() => getGraphicsQuality())
   const applyGraphicsQuality = (q: GraphicsQuality) => {
@@ -12009,7 +12041,7 @@ export function GradiusRaid({
       )}
 
       {snapshot.stageClear > 0 && (
-        snapshot.stageTheme >= MAX_RAID_STAGE
+        snapshot.raidMode !== 'endless' && snapshot.stageTheme >= MAX_RAID_STAGE
           // Final-stage fly-through: black fade instead of white flash — leads into ending cutscene
           ? <div className="raid__stage-flash" style={{
               opacity: stageClearProgress > 0.58 ? Math.min(1, (stageClearProgress - 0.58) / 0.32) : 0,
@@ -12206,6 +12238,11 @@ export function GradiusRaid({
                   {menuText.startNewLaunch}
                 </button>
               ) : null}
+              {!isMultiplayer && completedCampaign && canControlOverlay ? (
+                <button type="button" className="raid__menu-button" onClick={() => resetGame(1, false, 'endless')}>
+                  Endless Flight
+                </button>
+              ) : null}
               <button type="button" className="raid__menu-button" onClick={exitRaid}>
                 {menuText.close}
               </button>
@@ -12264,7 +12301,7 @@ export function GradiusRaid({
             <div className="raid__records">
               <span>{menuText.best} {snapshot.highScore.toLocaleString()}</span>
               {!isMultiplayer && snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>{menuText.checkpointStage} {checkpointStage}</span> : <span>{isMultiplayer ? menuText.coopRun : menuText.pcFollowsCursor}</span>}
-              <span>{isMultiplayer ? menuText.bothPilotsMustFall : completedCampaign ? menuText.stagesUnlocked : menuText.mobileFollowsFinger}</span>
+              <span>{isMultiplayer ? menuText.bothPilotsMustFall : isEndlessRun ? 'Endless Flight' : completedCampaign ? 'Endless Flight unlocked' : menuText.mobileFollowsFinger}</span>
             </div>
             <div className="raid__gfx-row">
               <span className="raid__gfx-label">{menuText.graphics}</span>
@@ -12291,11 +12328,14 @@ export function GradiusRaid({
                   className={!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
                   onClick={snapshot.phase === 'gameover' ? () => resetGame(1) : openBriefing}
                 >
-                  {snapshot.phase === 'gameover' ? isMultiplayer ? menuText.restartCoop : menuText.restartStage1 : menuText.startRaid}
+                  {snapshot.phase === 'gameover' ? isMultiplayer ? menuText.restartCoop : isEndlessRun ? 'Restart Endless' : menuText.restartStage1 : menuText.startRaid}
                 </button>
               ) : (
                 <button type="button" className="raid__start" onClick={exitRaid}>{menuText.exitCoop}</button>
               )}
+              {!isMultiplayer && completedCampaign && canControlOverlay ? (
+                <button type="button" className="raid__menu-button" onClick={() => resetGame(1, false, 'endless')}>Endless Flight</button>
+              ) : null}
               {snapshot.phase === 'gameover' && canControlOverlay ? (
                 <button type="button" className="raid__menu-button" onClick={exitRaid}>{hudText.exit}</button>
               ) : null}
