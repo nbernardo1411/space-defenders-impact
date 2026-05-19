@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM } from './sound'
 import type { GraphicsQuality } from './sound'
-import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
+import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
@@ -98,6 +98,7 @@ type Enemy = Vec & {
   mirageKind?: MirageBossKind | null
   mirageTimer?: number
   mirageCooldown?: number
+  hitFlash?: number
   chargePattern: 'single' | 'pincer' | 'trident' | 'scatter' | 'diagonal' | 'horizontal' | 'cross' | 'rotate'
 }
 
@@ -330,7 +331,7 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'spaceEt', name: 'Space Jet', role: 'Comet-tail microfighter', speed: 1.24, hp: 3, fireRate: 1.28 },
 ]
 
-type BriefingBossKind = Extract<BossKind, 'squid' | 'snake' | 'final'>
+export type BriefingBossKind = Extract<BossKind, 'squid' | 'snake' | 'final'>
 
 const BRIEFING_PICKUP_TYPES: Record<string, PowerKind> = {
   'V Spread': 'spread',
@@ -662,15 +663,6 @@ const RAID_FINAL_BOSS_CORE_OFFSET_X = -0.007
 const RAID_FINAL_BOSS_CORE_OFFSET_Y = -0.039
 const RAID_SQUID_BOSS_ASSET_PATH = 'assets/aliens/squid_boss.png'
 const RAID_COBRA_BOSS_ASSET_PATH = 'assets/aliens/cobra_boss.png'
-const RAID_ELITE_ASSET_PATHS = [
-  'assets/aliens/elite_0.png',
-  'assets/aliens/elite_1.png',
-  'assets/aliens/elite_2.png',
-  'assets/aliens/elite_3.png',
-  'assets/aliens/elite_4.png',
-] as const
-const RAID_ELITE_SPRITE_COUNT = RAID_ELITE_ASSET_PATHS.length
-
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
 
 const DEFAULT_RAID_PALETTE: RaidPalette = {
@@ -1195,7 +1187,7 @@ function getEliteAlienCanvasSprite(variant: number) {
   const key = `elite-image:${index}`
   const existing = canvasSpriteCache.get(key)
   if (existing) return existing
-  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_ELITE_ASSET_PATHS[index]))
+  return makeImageCanvasSprite(key, getRaidEliteSpriteUrl(index))
 }
 
 function warmRaidCanvasAssets() {
@@ -1705,6 +1697,7 @@ function interpolateEnemyVisual(previous: Enemy, next: Enemy, t: number) {
   visual.chargeTimer = Math.max(0, previous.chargeTimer + (next.chargeTimer - previous.chargeTimer) * t)
   visual.chargeLane = previous.chargeLane + (next.chargeLane - previous.chargeLane) * t
   visual.chargeTargetY = (previous.chargeTargetY ?? previous.y) + ((next.chargeTargetY ?? next.y) - (previous.chargeTargetY ?? previous.y)) * t
+  visual.hitFlash = Math.max(0, (previous.hitFlash ?? 0) + ((next.hitFlash ?? 0) - (previous.hitFlash ?? 0)) * t)
   return visual
 }
 
@@ -5278,6 +5271,112 @@ function hexToRgba(hex: string, alpha: number) {
   const b = value & 255
   return `rgba(${r},${g},${b},${alpha})`
 }
+
+function easeOutCubic(value: number) {
+  const t = clamp(value, 0, 1)
+  return 1 - Math.pow(1 - t, 3)
+}
+
+function getStageBossIntroProgress(enemy: Enemy, kind: BossKind | MirageBossKind | null) {
+  if (kind !== 'squid' && kind !== 'snake' && kind !== 'final') return 1
+  const startY = kind === 'final' ? -30 : -27
+  const targetY = kind === 'final' ? 17 : kind === 'snake' ? 19 : 18
+  return easeOutCubic((enemy.y - startY) / (targetY - startY))
+}
+
+function drawStageBossIntroEffect(ctx: CanvasRenderingContext2D, size: number, time: number, kind: BriefingBossKind, progress: number) {
+  const reveal = 1 - clamp(progress, 0, 1)
+  if (reveal <= 0.02) return
+
+  const seconds = time / 1000
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = clamp(reveal * 1.15, 0, 1)
+  if (kind === 'squid') {
+    ctx.strokeStyle = 'rgba(244,114,182,0.52)'
+    ctx.lineWidth = Math.max(1.2, size * 0.005)
+    for (const side of [-1, 1]) {
+      for (let limb = 0; limb < 4; limb += 1) {
+        const spread = side * size * (0.1 + limb * 0.055)
+        const lift = size * (0.32 + limb * 0.04) * (0.35 + progress * 0.65)
+        ctx.beginPath()
+        ctx.moveTo(side * size * 0.04, size * 0.1)
+        ctx.bezierCurveTo(spread * 0.45, size * (0.15 + limb * 0.025), spread * 0.82, lift * 0.58, spread, lift)
+        ctx.stroke()
+      }
+    }
+    drawRadialEllipse(ctx, 0, size * 0.12, size * (0.5 + reveal * 0.18), size * (0.18 + reveal * 0.08), [
+      [0, 'rgba(255,255,255,0.22)'],
+      [0.38, 'rgba(217,70,239,0.18)'],
+      [1, 'rgba(217,70,239,0)'],
+    ])
+  } else if (kind === 'snake') {
+    ctx.strokeStyle = 'rgba(251,113,133,0.48)'
+    ctx.lineWidth = Math.max(1.4, size * 0.006)
+    for (let coil = 0; coil < 5; coil += 1) {
+      ctx.beginPath()
+      ctx.ellipse(
+        Math.sin(seconds * 2 + coil) * size * 0.025,
+        size * (0.24 - coil * 0.075),
+        size * (0.26 - coil * 0.02) * (0.45 + progress * 0.55),
+        size * (0.06 + coil * 0.006),
+        seconds * 0.35 + coil * 0.48,
+        0,
+        Math.PI * 2,
+      )
+      ctx.stroke()
+    }
+    drawRadialEllipse(ctx, 0, -size * 0.16, size * (0.22 + reveal * 0.16), size * (0.1 + reveal * 0.08), [
+      [0, 'rgba(255,255,255,0.28)'],
+      [0.42, 'rgba(225,29,72,0.22)'],
+      [1, 'rgba(225,29,72,0)'],
+    ])
+  } else {
+    const orbitalSprite = getEliteAlienCanvasSprite(4)
+    ctx.strokeStyle = 'rgba(56,189,248,0.38)'
+    ctx.lineWidth = Math.max(1.2, size * 0.0045)
+    for (let ring = 0; ring < 3; ring += 1) {
+      ctx.beginPath()
+      ctx.ellipse(0, 0, size * (0.34 + ring * 0.12) * (1 + reveal * 0.42), size * (0.22 + ring * 0.08) * (1 + reveal * 0.38), seconds * (0.2 + ring * 0.09), 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    for (let node = 0; node < 8; node += 1) {
+      const angle = node / 8 * Math.PI * 2 + seconds * 0.42
+      const radius = size * (0.42 + reveal * 0.28)
+      const x = Math.cos(angle) * radius
+      const y = Math.sin(angle) * radius * 0.68
+      drawCanvasSpriteContain(ctx, orbitalSprite, x, y, size * 0.06, 'brightness(1.14) contrast(1.18) saturate(1.25)', 0.72, angle + Math.PI / 2, 1, '#38bdf8')
+    }
+  }
+  ctx.restore()
+}
+
+function drawEnemyHitFlash(ctx: CanvasRenderingContext2D, size: number, flash = 0, color = '#fca5a5') {
+  const strength = clamp(flash / 0.22, 0, 1)
+  if (strength <= 0.02) return
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = strength
+  drawRadialEllipse(ctx, 0, 0, size * 0.34, size * 0.3, [
+    [0, 'rgba(255,255,255,0.52)'],
+    [0.36, hexToRgba(color, 0.34)],
+    [1, hexToRgba(color, 0)],
+  ])
+  ctx.strokeStyle = `rgba(255,255,255,${0.22 + strength * 0.42})`
+  ctx.lineWidth = Math.max(1, size * 0.004)
+  for (let arc = 0; arc < 3; arc += 1) {
+    ctx.beginPath()
+    ctx.ellipse(0, 0, size * (0.18 + arc * 0.09), size * (0.06 + arc * 0.035), timeSafeRotation(strength, arc), 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function timeSafeRotation(strength: number, phase: number) {
+  return (phase + strength * 0.5) * Math.PI * 0.33
+}
+
 function drawBossRichDetailOverlay(ctx: CanvasRenderingContext2D, size: number, time: number, kind: BossKind | MirageBossKind | null, color: string) {
   const seconds = time / 1000
   const pulse = 0.72 + Math.sin(seconds * 4.1) * 0.2
@@ -5495,10 +5594,14 @@ function drawRaidEnemy(
       : enemy.bossKind
     drawBossAura(ctx, enemy, x, y, size, time)
     if (displayBossKind === 'squid' || displayBossKind === 'snake' || displayBossKind === 'final') {
+      const introProgress = getStageBossIntroProgress(enemy, displayBossKind)
+      const introScale = 0.74 + introProgress * 0.26
       ctx.save()
       ctx.translate(x, y)
+      drawStageBossIntroEffect(ctx, size, time, displayBossKind, introProgress)
       ctx.rotate(displayBossKind === 'snake' ? 0 : rotation * 0.45)
-      ctx.scale(floatScale, floatScale)
+      ctx.globalAlpha *= 0.58 + introProgress * 0.42
+      ctx.scale(floatScale * introScale, floatScale * introScale)
       if (displayBossKind === 'squid') drawGalacticSquidBoss(ctx, size, time)
       else if (displayBossKind === 'snake') {
         const biteLungeActive = enemy.chargePattern === 'cross' && (enemy.chargeTimer > 0 || (enemy.beamVolleyRecovery ?? 0) > 0)
@@ -5510,6 +5613,7 @@ function drawRaidEnemy(
         drawFinalBossRageCore(ctx, size, time, finalRage)
       }
       if (displayBossKind === 'final') drawBossRichDetailOverlay(ctx, size, time, displayBossKind, enemy.color)
+      drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.bossKind === 'final' ? '#fbbf24' : enemy.bossKind === 'squid' ? '#f472b6' : '#f43f5e')
       ctx.restore()
       if (displayBossKind === 'squid' && enemy.chargeTimer > 0 && enemy.chargePattern !== 'rotate') {
         drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer)
@@ -5531,6 +5635,10 @@ function drawRaidEnemy(
         : 'brightness(1.16) contrast(1.18) saturate(1.34)'
     drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.34), 1)
     drawCanvasSpriteContain(ctx, sprite, x, y, size * 1.04, bossFilter, 1, rotation, floatScale, enemy.color)
+    ctx.save()
+    ctx.translate(x, y)
+    drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.color)
+    ctx.restore()
     if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
     drawBossReticle(ctx, x, y, size, time, false)
     drawBossBar(ctx, enemy, x, y, size)
@@ -5543,6 +5651,10 @@ function drawRaidEnemy(
     const rotation = Math.sin(time / 900 + enemy.phase) * 1.4 * DEG
     drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.36), 1)
     drawCanvasSpriteContain(ctx, sprite, x, y, size, 'brightness(1.18) contrast(1.2) saturate(1.45)', 1, rotation, floatScale, enemy.color)
+    ctx.save()
+    ctx.translate(x, y)
+    drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.color)
+    ctx.restore()
     if (enemy.shieldTime > 0 || enemy.y < 8) drawBossShield(ctx, x, y, size * 0.78, time, enemy.color)
     drawBossBar(ctx, enemy, x, y, size * 0.82)
     return
@@ -5551,6 +5663,10 @@ function drawRaidEnemy(
   const sprite = getNormalAlienCanvasSprite(enemy.variant)
   drawSpriteGlow(ctx, x, y, size, 'rgba(239,35,60,0.34)', 1)
   drawCanvasSpriteContain(ctx, sprite, x, y, size, getNormalAlienImageFilter(normalEnemyFilter, enemy), 1, 0, 1, enemy.color)
+  ctx.save()
+  ctx.translate(x, y)
+  drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.color)
+  ctx.restore()
 }
 
 function drawRaidOptions(
@@ -7105,7 +7221,7 @@ function PickupPreviewCanvas({ type }: { type: PowerKind }) {
   return <canvas className="raid__pickup-preview" ref={canvasRef} aria-hidden="true" />
 }
 
-function BossBriefingCanvas({ kind }: { kind: BriefingBossKind }) {
+export function BossBriefingCanvas({ kind }: { kind: BriefingBossKind }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -7885,6 +8001,7 @@ export function GradiusRaid({
       for (const enemy of enemiesRef.current) {
         enemy.phase += dt
         enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
+        enemy.hitFlash = Math.max(0, (enemy.hitFlash ?? 0) - dt)
         enemy.chargeTimer = Math.max(0, enemy.chargeTimer - dt)
         if (enemy.isBoss) {
           enemy.y = Math.min(enemy.y + Math.max(0, enemy.vy) * dt, 42)
@@ -11198,6 +11315,7 @@ export function GradiusRaid({
       enemy.mirageKind = mirageKind
       enemy.mirageTimer = mirageTimer
       enemy.mirageCooldown = mirageCooldown
+      enemy.hitFlash = Math.max(0, (enemy.hitFlash ?? 0) - dt)
       const enemyMargin = enemy.isBoss || enemy.isMiniBoss ? 90 : 28
       const enemyOnField = enemy.y > -enemyMargin && enemy.y < HEIGHT + enemyMargin && enemy.x > -enemyMargin && enemy.x < WIDTH + enemyMargin
       if ((enemy.isBoss || enemy.isMiniBoss || enemyOnField) && enemy.hp > 0) {
@@ -11380,8 +11498,12 @@ export function GradiusRaid({
           const bossShielded = (enemy.isBoss && (enemy.shieldTime > 0 || enemy.y < 15)) || (enemy.isMiniBoss && (enemy.shieldTime > 0 || enemy.y < 8))
           if (!bossShielded) {
             enemy.hp -= shot.damage
+            enemy.hitFlash = Math.max(enemy.hitFlash ?? 0, enemy.isBoss ? 0.24 : enemy.isMiniBoss ? 0.18 : 0.12)
           }
-          spawnSparks(enemy.x, enemy.y, bossShielded ? '#fbbf24' : enemy.isBoss ? '#fca5a5' : enemy.isMiniBoss ? '#c084fc' : '#ef4444', enemy.isBoss || enemy.isMiniBoss ? 5 : 3, enemy.isBoss || enemy.isMiniBoss ? 5 : 3)
+          spawnSparks(shot.x, shot.y, bossShielded ? '#fbbf24' : enemy.isBoss ? '#fff7ad' : enemy.isMiniBoss ? '#e9d5ff' : '#fca5a5', enemy.isBoss ? 10 : enemy.isMiniBoss ? 7 : 4, enemy.isBoss || enemy.isMiniBoss ? 6 : 4)
+          if (!bossShielded && (enemy.isBoss || enemy.isMiniBoss)) {
+            addRipple(shot.x, shot.y, enemy.isBoss ? '#fca5a5' : '#c084fc', enemy.isBoss ? 7 : 5)
+          }
           if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
@@ -12049,8 +12171,7 @@ export function GradiusRaid({
             {'bosses' in briefing && (
               <div className="raid__boss-briefing-list">
                 {briefing.bosses.map((boss) => (
-                  <article key={boss.kind} className="raid__boss-briefing-card">
-                    <BossBriefingCanvas kind={boss.kind} />
+                  <article key={boss.kind} className="raid__boss-briefing-card raid__boss-briefing-card--intel">
                     <div className="raid__boss-briefing-copy">
                       <span>{boss.stage}</span>
                       <h3>{boss.name}</h3>

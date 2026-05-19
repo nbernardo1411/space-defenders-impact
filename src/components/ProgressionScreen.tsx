@@ -13,6 +13,8 @@ import {
   type ShipCosmeticKey,
 } from '../progression'
 import { getLanguageText, getRaidText, getReleaseText, type LanguageCode } from '../i18n'
+import { BossBriefingCanvas, type BriefingBossKind } from './games/GradiusRaid'
+import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT } from './games/RaidShipSprite'
 import { RaidShipSprite } from './games/RaidShipSprite'
 import './ProgressionScreen.css'
 
@@ -29,6 +31,31 @@ type ProgressionScreenProps = {
 
 const STAGE_COUNT = 15
 const ALL_COSMETICS_PREVIEW = { trail: true, aura: true, frame: true }
+const NORMAL_ALIEN_VARIANTS = Array.from({ length: RAID_ALIEN_SPRITE_COUNT }, (_, index) => index)
+const ELITE_ALIEN_VARIANTS = Array.from({ length: RAID_ELITE_SPRITE_COUNT }, (_, index) => index)
+const NORMAL_ALIEN_UNLOCK_STAGES = [1, 1, 2, 3, 4, 6, 8, 12]
+const ELITE_ALIEN_UNLOCK_STAGES = [2, 4, 6, 8, 11]
+const NORMAL_ALIEN_FILTERS = [
+  'hue-rotate(-18deg) saturate(1.16)',
+  'hue-rotate(24deg) saturate(1.22)',
+  'hue-rotate(-8deg) saturate(1.08)',
+  'hue-rotate(36deg) saturate(1.18)',
+  'hue-rotate(-30deg) saturate(1.2)',
+  'hue-rotate(12deg) saturate(1.16)',
+  'hue-rotate(44deg) saturate(1.24)',
+  'hue-rotate(-40deg) saturate(1.12)',
+]
+type StageBossEntry = {
+  kind: BriefingBossKind
+  name: string
+  stage: string
+  behavior: readonly string[]
+}
+const RAID_BOSS_STAGES: Record<BriefingBossKind, number> = {
+  squid: 5,
+  snake: 10,
+  final: 15,
+}
 const DEFENSE_ACHIEVEMENT_IDS: AchievementId[] = [
   'first_sortie',
   'defense_clear',
@@ -119,6 +146,7 @@ export function ProgressionScreen({
   const raidText = getRaidText(language)
   const title = getViewTitle(view, text)
   const [previewCosmeticShip, setPreviewCosmeticShip] = useState<string | null>(null)
+  const stageBossEntries = getStageBossEntries(raidText.briefingPanels)
 
   return (
     <div className="progress-screen">
@@ -262,13 +290,138 @@ export function ProgressionScreen({
           <div className="stage-map">
             <p>{text.stageMapCopy}</p>
             <div className="stage-map__lanes">
-              <StageLane title={languageText.leaderboards.modes.ship_defense_normal.title} best={progress.bestStageByMode.ship_defense_normal} />
-              <StageLane title={languageText.leaderboards.modes.gradius_solo.title} best={progress.bestStageByMode.gradius_solo} />
+              <StageLane
+                title={languageText.leaderboards.modes.ship_defense_normal.title}
+                best={progress.bestStageByMode.ship_defense_normal}
+                text={text}
+              />
+              <StageLane
+                title={languageText.leaderboards.modes.gradius_solo.title}
+                best={progress.bestStageByMode.gradius_solo}
+                text={text}
+                stageBossEntries={stageBossEntries}
+              />
             </div>
+            <EnemyAlmanac text={text} progress={progress} stageBossEntries={stageBossEntries} />
           </div>
         )}
       </section>
     </div>
+  )
+}
+
+function EnemyAlmanac({
+  text,
+  progress,
+  stageBossEntries,
+}: {
+  text: ReturnType<typeof getReleaseText>
+  progress: ProgressState
+  stageBossEntries: StageBossEntry[]
+}) {
+  const raidBestStage = getRaidBestStage(progress)
+
+  return (
+    <section className="enemy-almanac" aria-labelledby="enemy-almanac-title">
+      <header className="enemy-almanac__header">
+        <span>{text.enemyAlmanac.kicker}</span>
+        <h2 id="enemy-almanac-title">{text.enemyAlmanac.title}</h2>
+        <p>{text.enemyAlmanac.copy}</p>
+      </header>
+
+      <section className="enemy-almanac__group">
+        <header>
+          <span>{text.enemyAlmanac.normal}</span>
+          <p>{text.enemyAlmanac.normalDesc}</p>
+        </header>
+        <div className="enemy-almanac__grid">
+          {NORMAL_ALIEN_VARIANTS.map((variant) => {
+            const unlockStage = NORMAL_ALIEN_UNLOCK_STAGES[variant] ?? 1
+            const encountered = raidBestStage >= unlockStage
+            return (
+              <article className={encountered ? 'enemy-almanac__entry' : 'enemy-almanac__entry enemy-almanac__entry--locked'} key={variant}>
+                <img
+                  src={getRaidAlienSpriteUrl(variant)}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  style={{ filter: encountered ? `${NORMAL_ALIEN_FILTERS[variant]} drop-shadow(0 0 16px rgba(34, 211, 238, 0.18))` : undefined }}
+                />
+                <strong>{text.enemyAlmanac.normalNames[variant] ?? `${text.enemyAlmanac.variantLabel} ${variant + 1}`}</strong>
+                <small>{encountered ? `${text.stage} ${unlockStage}` : text.enemyAlmanac.unencountered}</small>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="enemy-almanac__group">
+        <header>
+          <span>{text.enemyAlmanac.elite}</span>
+          <p>{text.enemyAlmanac.eliteDesc}</p>
+        </header>
+        <div className="enemy-almanac__grid enemy-almanac__grid--elite">
+          {ELITE_ALIEN_VARIANTS.map((variant) => {
+            const unlockStage = ELITE_ALIEN_UNLOCK_STAGES[variant] ?? 2
+            const encountered = raidBestStage >= unlockStage
+            return (
+              <article className={encountered ? 'enemy-almanac__entry enemy-almanac__entry--elite' : 'enemy-almanac__entry enemy-almanac__entry--elite enemy-almanac__entry--locked'} key={variant}>
+                <img src={getRaidEliteSpriteUrl(variant)} alt="" aria-hidden="true" draggable={false} />
+                <strong>{text.enemyAlmanac.eliteNames[variant] ?? `${text.enemyAlmanac.eliteLabel} ${variant + 1}`}</strong>
+                <small>{encountered ? `${text.stage} ${unlockStage}` : text.enemyAlmanac.unencountered}</small>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="enemy-almanac__group">
+        <header>
+          <span>{text.enemyAlmanac.bossPool}</span>
+          <p>{text.enemyAlmanac.bossPoolDesc}</p>
+        </header>
+        <div className="enemy-almanac__sprite-strip" aria-hidden="true">
+          {NORMAL_ALIEN_VARIANTS.slice(0, 4).map((variant) => {
+            const encountered = raidBestStage >= (NORMAL_ALIEN_UNLOCK_STAGES[variant] ?? 1)
+            return (
+              <span key={`normal-${variant}`} className={encountered ? 'enemy-almanac__pool-sprite' : 'enemy-almanac__pool-sprite enemy-almanac__pool-sprite--locked'}>
+                <img src={getRaidAlienSpriteUrl(variant)} alt="" draggable={false} />
+              </span>
+            )
+          })}
+          {ELITE_ALIEN_VARIANTS.slice(0, 4).map((variant) => {
+            const encountered = raidBestStage >= (ELITE_ALIEN_UNLOCK_STAGES[variant] ?? 2)
+            return (
+              <span key={`elite-${variant}`} className={encountered ? 'enemy-almanac__pool-sprite' : 'enemy-almanac__pool-sprite enemy-almanac__pool-sprite--locked'}>
+                <img src={getRaidEliteSpriteUrl(variant)} alt="" draggable={false} />
+              </span>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="enemy-almanac__group">
+        <header>
+          <span>{text.enemyAlmanac.stageBosses}</span>
+          <p>{text.enemyAlmanac.stageBossesDesc}</p>
+        </header>
+        <div className="enemy-almanac__boss-grid">
+          {stageBossEntries.map((boss) => {
+            const encountered = raidBestStage >= RAID_BOSS_STAGES[boss.kind]
+            return (
+              <article key={boss.kind} className={encountered ? 'enemy-almanac__boss-card' : 'enemy-almanac__boss-card enemy-almanac__boss-card--locked'}>
+                {encountered ? <BossBriefingCanvas kind={boss.kind} /> : <div className="enemy-almanac__boss-locked" aria-hidden="true"><span /></div>}
+                <div>
+                  <span>{boss.stage}</span>
+                  <h3>{encountered ? boss.name : text.enemyAlmanac.unknownBoss}</h3>
+                  {encountered ? boss.behavior.map((line) => <p key={line}>{line}</p>) : <p>{text.enemyAlmanac.unencountered}</p>}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+    </section>
   )
 }
 
@@ -332,22 +485,89 @@ function UnlockCard({
   )
 }
 
-function StageLane({ title, best }: { title: string; best: number }) {
+function StageLane({
+  title,
+  best,
+  text,
+  stageBossEntries = [],
+}: {
+  title: string
+  best: number
+  text: ReturnType<typeof getReleaseText>
+  stageBossEntries?: StageBossEntry[]
+}) {
+  const currentStage = clampStage(best > 0 ? best : 1)
+  const bossByStage = getStageBossMap(stageBossEntries)
+
   return (
     <article className="stage-lane">
-      <h2>{title}</h2>
+      <header className="stage-lane__header">
+        <h2>{title}</h2>
+        <span>{text.stageCurrent} {currentStage}</span>
+      </header>
       <div className="stage-nodes">
         {Array.from({ length: STAGE_COUNT }, (_, index) => {
           const stage = index + 1
+          const boss = bossByStage.get(stage)
+          const isDone = stage <= best
+          const isCurrent = stage === currentStage
+          const bossEncountered = boss ? stage <= best : false
+          const bossLabel = boss ? (bossEncountered ? boss.name : text.enemyAlmanac.unknownBoss) : ''
           return (
-            <span key={stage} className={stage <= best ? 'stage-node stage-node--done' : 'stage-node'}>
-              {stage}
+            <span
+              key={stage}
+              className={[
+                'stage-node',
+                isDone ? 'stage-node--done' : '',
+                isCurrent ? 'stage-node--current' : '',
+                boss ? 'stage-node--boss' : '',
+                boss && !bossEncountered ? 'stage-node--boss-locked' : '',
+              ].filter(Boolean).join(' ')}
+              aria-label={`${title} ${text.stage} ${stage}${isCurrent ? `, ${text.stageCurrent}` : ''}${boss ? `, ${text.bossSignal}: ${bossLabel}` : ''}`}
+            >
+              <span className="stage-node__route" aria-hidden="true" />
+              {boss && bossEncountered && (
+                <span className="stage-node__boss-hologram" aria-hidden="true">
+                  <BossBriefingCanvas kind={boss.kind} />
+                </span>
+              )}
+              {boss && !bossEncountered && <span className="stage-node__boss-unknown" aria-hidden="true" />}
+              <span className="stage-node__number">{stage}</span>
+              {boss && <span className="stage-node__boss-label">{text.bossSignal}</span>}
+              {isCurrent && <span className="stage-node__pin" aria-hidden="true" />}
             </span>
           )
         })}
       </div>
     </article>
   )
+}
+
+function clampStage(stage: number) {
+  return Math.min(STAGE_COUNT, Math.max(1, Math.floor(stage)))
+}
+
+function getStageBossEntries(briefingPanels: ReturnType<typeof getRaidText>['briefingPanels']) {
+  const entries: StageBossEntry[] = []
+  for (const panel of briefingPanels) {
+    if (!('bosses' in panel)) continue
+    for (const boss of panel.bosses as readonly StageBossEntry[]) {
+      entries.push(boss)
+    }
+  }
+  return entries
+}
+
+function getStageBossMap(stageBossEntries: StageBossEntry[]) {
+  const map = new Map<number, StageBossEntry>()
+  for (const boss of stageBossEntries) {
+    map.set(RAID_BOSS_STAGES[boss.kind], boss)
+  }
+  return map
+}
+
+function getRaidBestStage(progress: ProgressState) {
+  return Math.max(progress.bestStageByMode.gradius_solo, progress.bestStageByMode.gradius_multiplayer)
 }
 
 function getViewTitle(view: ProgressionView, text: ReturnType<typeof getReleaseText>) {

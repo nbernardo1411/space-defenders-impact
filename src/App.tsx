@@ -366,6 +366,11 @@ function App() {
             </div>
 
             <div className={endlessUnlocked ? 'start-screen__actions' : 'start-screen__actions start-screen__actions--three'} aria-label="Game modes">
+              <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
+                <span className="start-screen__button-kicker">{text.title.raidKicker}</span>
+                <span className="start-screen__button-title">{text.title.raidTitle}</span>
+                <span className="start-screen__button-copy">{text.title.raidCopy}</span>
+              </button>
               <button className="start-screen__button" onClick={startCutscene}>
                 <span className="start-screen__button-kicker">{text.title.storyKicker}</span>
                 <span className="start-screen__button-title">{text.title.normalTitle}</span>
@@ -378,11 +383,6 @@ function App() {
                   <span className="start-screen__button-copy">{text.title.endlessCopy}</span>
                 </button>
               )}
-              <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
-                <span className="start-screen__button-kicker">{text.title.raidKicker}</span>
-                <span className="start-screen__button-title">{text.title.raidTitle}</span>
-                <span className="start-screen__button-copy">{text.title.raidCopy}</span>
-              </button>
               <button className="start-screen__button start-screen__button--leaderboards" onClick={() => setScreen('leaderboards')}>
                 <span className="start-screen__button-kicker">{text.title.recordsKicker}</span>
                 <span className="start-screen__button-title">{text.title.recordsTitle}</span>
