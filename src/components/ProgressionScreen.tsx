@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getCompletionPercent,
   getEquippedShipCosmetics,
+  isLocalProgressionTestHost,
   isShipCosmeticUnlocked,
   setShipCosmeticEquipped,
   SHIP_COSMETIC_SINGLE_RUN_SCORE,
@@ -10,12 +11,12 @@ import {
   type CodexId,
   type ProgressState,
   type ShipMasteryRecord,
+  type ShipCosmeticEquipState,
   type ShipCosmeticKey,
 } from '../progression'
 import { getLanguageText, getRaidText, getReleaseText, type LanguageCode } from '../i18n'
 import { BossBriefingCanvas, type BriefingBossKind } from './games/GradiusRaid'
-import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT } from './games/RaidShipSprite'
-import { RaidShipSprite } from './games/RaidShipSprite'
+import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT } from './games/RaidShipSprite'
 import './ProgressionScreen.css'
 
 type ProgressionView = 'profile' | 'achievements' | 'codex' | 'stageMap'
@@ -34,6 +35,9 @@ const NORMAL_ALIEN_VARIANTS = Array.from({ length: RAID_ALIEN_SPRITE_COUNT }, (_
 const ELITE_ALIEN_VARIANTS = Array.from({ length: RAID_ELITE_SPRITE_COUNT }, (_, index) => index)
 const NORMAL_ALIEN_UNLOCK_STAGES = [1, 1, 2, 3, 4, 6, 8, 12]
 const ELITE_ALIEN_UNLOCK_STAGES = [2, 4, 6, 8, 11]
+const SHIP_PREVIEW_CANVAS_WIDTH = 104
+const SHIP_PREVIEW_CANVAS_HEIGHT = 118
+const SHIP_PREVIEW_SIZE = 72
 const NORMAL_ALIEN_FILTERS = [
   'hue-rotate(-18deg) saturate(1.16)',
   'hue-rotate(24deg) saturate(1.22)',
@@ -44,6 +48,58 @@ const NORMAL_ALIEN_FILTERS = [
   'hue-rotate(44deg) saturate(1.24)',
   'hue-rotate(-40deg) saturate(1.12)',
 ]
+
+type ShipPreviewVisualStyle = {
+  core: string
+  edge: string
+  soft: string
+  accent: string
+}
+
+const SHIP_PREVIEW_VISUAL_STYLES: Record<string, ShipPreviewVisualStyle> = {
+  rocket: {
+    core: 'rgba(34,211,238,0.78)',
+    edge: 'rgba(15,23,42,0.9)',
+    soft: 'rgba(14,165,233,0.18)',
+    accent: 'rgba(226,232,240,0.76)',
+  },
+  fast: {
+    core: 'rgba(255,255,255,0.9)',
+    edge: 'rgba(239,35,60,0.76)',
+    soft: 'rgba(244,63,94,0.2)',
+    accent: 'rgba(226,232,240,0.84)',
+  },
+  gatling: {
+    core: 'rgba(251,146,60,0.82)',
+    edge: 'rgba(239,35,60,0.7)',
+    soft: 'rgba(251,146,60,0.2)',
+    accent: 'rgba(254,215,170,0.76)',
+  },
+  laser: {
+    core: 'rgba(34,211,238,0.86)',
+    edge: 'rgba(248,250,252,0.78)',
+    soft: 'rgba(34,211,238,0.18)',
+    accent: 'rgba(165,243,252,0.82)',
+  },
+  dreadnought: {
+    core: 'rgba(168,85,247,0.72)',
+    edge: 'rgba(30,41,59,0.92)',
+    soft: 'rgba(88,28,135,0.24)',
+    accent: 'rgba(216,180,254,0.7)',
+  },
+  xwing: {
+    core: 'rgba(250,204,21,0.78)',
+    edge: 'rgba(248,250,252,0.86)',
+    soft: 'rgba(250,204,21,0.16)',
+    accent: 'rgba(239,68,68,0.66)',
+  },
+  spaceEt: {
+    core: 'rgba(248,250,252,0.9)',
+    edge: 'rgba(56,189,248,0.7)',
+    soft: 'rgba(148,163,184,0.16)',
+    accent: 'rgba(15,23,42,0.86)',
+  },
+}
 type StageBossEntry = {
   kind: BriefingBossKind
   name: string
@@ -211,8 +267,8 @@ export function ProgressionScreen({
                         aria-label={`${ship.name} ${text.masteryCosmetics}`}
                         onClick={() => setPreviewCosmeticShip(previewCosmeticShip === shipKey ? null : shipKey)}
                       >
-                        <div className={getPreviewClass(previewCosmetics, shipKey)}>
-                          <RaidShipSprite shipKey={shipKey} size={72} />
+                        <div className={getPreviewClass(shipKey)}>
+                          <ShipCosmeticCanvasPreview shipKey={shipKey} cosmetics={previewCosmetics} />
                         </div>
                       </button>
                       <div className="progress-ship-info">
@@ -483,7 +539,140 @@ function getStageBossEntries(briefingPanels: ReturnType<typeof getRaidText>['bri
   return entries
 }
 
+function ShipCosmeticCanvasPreview({ shipKey, cosmetics }: { shipKey: string; cosmetics: Required<ShipCosmeticEquipState> }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return undefined
+
+    const image = new Image()
+    let frameId = 0
+    let disposed = false
+
+    const render = (time: number) => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2))
+      const targetWidth = Math.round(SHIP_PREVIEW_CANVAS_WIDTH * dpr)
+      const targetHeight = Math.round(SHIP_PREVIEW_CANVAS_HEIGHT * dpr)
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth
+        canvas.height = targetHeight
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, SHIP_PREVIEW_CANVAS_WIDTH, SHIP_PREVIEW_CANVAS_HEIGHT)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+
+      const x = SHIP_PREVIEW_CANVAS_WIDTH / 2
+      const y = 40
+      const style = getShipPreviewVisualStyle(shipKey)
+
+      if (cosmetics.trail) drawPreviewMasteryTrail(ctx, x, y, SHIP_PREVIEW_SIZE, time, shipKey, style)
+      if (cosmetics.aura && image.complete) drawPreviewMasteryAura(ctx, image, x, y, SHIP_PREVIEW_SIZE, time, style)
+      drawPreviewShipSprite(ctx, image, x, y, SHIP_PREVIEW_SIZE, cosmetics.frame)
+
+      if (!disposed && (cosmetics.trail || cosmetics.aura)) frameId = requestAnimationFrame(render)
+    }
+
+    image.onload = () => {
+      if (!disposed) frameId = requestAnimationFrame(render)
+    }
+    image.src = getRaidShipSpriteUrl(shipKey)
+    if (image.complete) frameId = requestAnimationFrame(render)
+
+    return () => {
+      disposed = true
+      if (frameId) cancelAnimationFrame(frameId)
+    }
+  }, [shipKey, cosmetics.trail, cosmetics.aura, cosmetics.frame])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="progress-ship-preview__canvas"
+      width={SHIP_PREVIEW_CANVAS_WIDTH}
+      height={SHIP_PREVIEW_CANVAS_HEIGHT}
+      aria-hidden="true"
+    />
+  )
+}
+
+function getShipPreviewVisualStyle(shipKey: string) {
+  return SHIP_PREVIEW_VISUAL_STYLES[shipKey] ?? SHIP_PREVIEW_VISUAL_STYLES.rocket
+}
+
+function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number, framed: boolean) {
+  if (!image.complete) return
+  ctx.save()
+  ctx.filter = framed ? 'brightness(1.28) contrast(1.42) saturate(2.25)' : 'brightness(1.12) contrast(1.14) saturate(1.26)'
+  ctx.drawImage(image, x - size / 2, y - size / 2, size, size)
+  ctx.restore()
+}
+
+function drawPreviewMasteryTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string, style: ShipPreviewVisualStyle) {
+  const pulse = 0.96 + Math.sin(time / 180) * 0.05
+  const tailScale = shipKey === 'spaceEt' ? 1.18 : shipKey === 'dreadnought' ? 0.92 : 1
+  const top = y + size * 0.34
+  const length = size * 0.72 * tailScale * pulse
+  const width = size * (shipKey === 'dreadnought' ? 0.15 : 0.13)
+  const tip = top + length
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  const outer = ctx.createLinearGradient(x, top, x, tip)
+  outer.addColorStop(0, style.accent)
+  outer.addColorStop(0.2, style.core)
+  outer.addColorStop(0.58, style.edge)
+  outer.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = outer
+  ctx.shadowBlur = Math.max(10, size * 0.16)
+  ctx.shadowColor = style.soft
+  ctx.beginPath()
+  ctx.moveTo(x - width * 0.58, top)
+  ctx.bezierCurveTo(x - width * 0.54, top + length * 0.24, x - width * 0.16, top + length * 0.74, x, tip)
+  ctx.bezierCurveTo(x + width * 0.16, top + length * 0.74, x + width * 0.54, top + length * 0.24, x + width * 0.58, top)
+  ctx.closePath()
+  ctx.fill()
+
+  const inner = ctx.createLinearGradient(x, top, x, top + length * 0.68)
+  inner.addColorStop(0, 'rgba(255,255,255,0.86)')
+  inner.addColorStop(0.36, style.accent)
+  inner.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = inner
+  ctx.shadowBlur = Math.max(5, size * 0.07)
+  ctx.beginPath()
+  ctx.moveTo(x - width * 0.23, top + size * 0.01)
+  ctx.bezierCurveTo(x - width * 0.2, top + length * 0.2, x - width * 0.05, top + length * 0.48, x, top + length * 0.66)
+  ctx.bezierCurveTo(x + width * 0.05, top + length * 0.48, x + width * 0.2, top + length * 0.2, x + width * 0.23, top + size * 0.01)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawPreviewMasteryAura(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number, time: number, style: ShipPreviewVisualStyle) {
+  const pulse = 0.95 + Math.sin(time / 260) * 0.12
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = 0.24 * pulse
+  ctx.filter = `blur(${Math.max(5.5, size * 0.07)}px) brightness(1.55) saturate(1.75)`
+  ctx.drawImage(image, x - (size * 1.18) / 2, y - (size * 1.18) / 2, size * 1.18, size * 1.18)
+  ctx.globalAlpha = 0.28 * pulse
+  ctx.filter = `blur(${Math.max(2.2, size * 0.032)}px) brightness(1.55) saturate(1.8)`
+  ctx.drawImage(image, x - (size * 1.08) / 2, y - (size * 1.08) / 2, size * 1.08, size * 1.08)
+  ctx.filter = 'none'
+  ctx.globalAlpha = 0.26 * pulse
+  ctx.fillStyle = style.soft
+  ctx.beginPath()
+  ctx.ellipse(x, y, size * 0.55, size * 0.5, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
 function getRaidBestStage(progress: ProgressState) {
+  if (isLocalProgressionTestHost()) return 15
   return Math.max(progress.bestStageByMode.gradius_solo, progress.bestStageByMode.gradius_multiplayer)
 }
 
@@ -502,13 +691,10 @@ function getMasteryCosmetics(mastery: ShipMasteryRecord | undefined, text: Retur
   ]
 }
 
-function getPreviewClass(equipped: ReturnType<typeof getEquippedShipCosmetics>, shipKey: string) {
+function getPreviewClass(shipKey: string) {
   return [
     'progress-ship-preview__ship',
     `progress-ship-preview__ship--${shipKey}`,
-    equipped.trail ? 'progress-ship-preview__ship--trail' : '',
-    equipped.aura ? 'progress-ship-preview__ship--aura' : '',
-    equipped.frame ? 'progress-ship-preview__ship--frame' : '',
   ].filter(Boolean).join(' ')
 }
 

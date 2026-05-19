@@ -139,7 +139,7 @@
 
 .progress-ship-mastery {
   display: grid !important;
-  grid-template-columns: 96px minmax(140px, 0.7fr) minmax(260px, 1.7fr);
+  grid-template-columns: 112px minmax(140px, 0.7fr) minmax(260px, 1.7fr);
   align-items: center;
   gap: 14px;
   padding: 12px 0;
@@ -148,7 +148,7 @@
 .progress-ship-preview {
   display: grid;
   place-items: center;
-  min-height: 92px;
+  min-height: 118px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -165,12 +165,21 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 86px;
-  height: 86px;
+  width: 104px;
+  height: 118px;
+  overflow: visible;
   --mastery-core: rgba(110,245,203,0.72);
   --mastery-edge: rgba(239,35,60,0.5);
   --mastery-soft: rgba(110,245,203,0.16);
   --mastery-mark: rgba(255,255,255,0.72);
+}
+
+.progress-ship-preview__canvas {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 104px;
+  height: 118px;
 }
 
 .progress-ship-preview__ship--rocket {
@@ -750,7 +759,17 @@
   }
 
   .progress-ship-mastery {
-    grid-template-columns: 76px minmax(0, 1fr);
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .progress-ship-preview {
+    min-height: 108px;
+  }
+
+  .progress-ship-preview__ship,
+  .progress-ship-preview__canvas {
+    width: 92px;
+    height: 108px;
   }
 
   .progress-cosmetics {

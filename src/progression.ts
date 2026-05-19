@@ -391,7 +391,13 @@ export function getCompletionPercent(progress: ProgressState) {
   return Math.round(((achievements + codex) / (ACHIEVEMENT_IDS.length + CODEX_IDS.length)) * 100)
 }
 
+export function isLocalProgressionTestHost() {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(window.location.hostname)
+}
+
 export function isShipCosmeticUnlocked(mastery: ShipMasteryRecord | undefined, cosmetic: ShipCosmeticKey) {
+  if (isLocalProgressionTestHost()) return true
   if (!mastery) return false
   if (cosmetic === 'trail') return mastery.bestScore >= SHIP_COSMETIC_SINGLE_RUN_SCORE
   if (cosmetic === 'aura') return mastery.victories > 0
