@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import {
   getCompletionPercent,
   getEquippedShipCosmetics,
+  getMesiahShipColor,
   hasProgressionUnlockOverride,
   isShipCosmeticUnlocked,
+  setMesiahShipColor,
   setShipCosmeticEquipped,
   SHIP_COSMETIC_SINGLE_RUN_SCORE,
   SHIP_COSMETIC_TOTAL_SCORE,
@@ -13,6 +15,7 @@ import {
   type ShipMasteryRecord,
   type ShipCosmeticEquipState,
   type ShipCosmeticKey,
+  type MesiahShipColor,
 } from '../progression'
 import { getLanguageText, getRaidText, getReleaseText, type LanguageCode } from '../i18n'
 import { BossBriefingCanvas, type BriefingBossKind } from './games/GradiusRaid'
@@ -99,6 +102,12 @@ const SHIP_PREVIEW_VISUAL_STYLES: Record<string, ShipPreviewVisualStyle> = {
     edge: 'rgba(56,189,248,0.7)',
     soft: 'rgba(148,163,184,0.16)',
     accent: 'rgba(15,23,42,0.86)',
+  },
+  mesiah: {
+    core: 'rgba(226,232,240,0.92)',
+    edge: 'rgba(20,184,166,0.64)',
+    soft: 'rgba(15,23,42,0.2)',
+    accent: 'rgba(255,255,255,0.9)',
   },
 }
 type StageBossEntry = {
@@ -274,6 +283,8 @@ export function ProgressionScreen({
                 {Object.entries(raidText.ships).map(([shipKey, ship]) => {
                   const mastery = progress.shipMastery[shipKey]
                   const level = mastery?.level ?? 1
+                  const mesiahColor = getMesiahShipColor(progress)
+                  const previewSpriteKey = shipKey === 'mesiah' ? getMesiahPreviewSpriteKey(mesiahColor) : shipKey
                   const cosmetics = getMasteryCosmetics(mastery, text)
                   const equippedCosmetics = getEquippedShipCosmetics(progress, shipKey)
                   const previewCosmetics = previewCosmeticShip === shipKey ? ALL_COSMETICS_PREVIEW : equippedCosmetics
@@ -286,7 +297,7 @@ export function ProgressionScreen({
                         onClick={() => setPreviewCosmeticShip(previewCosmeticShip === shipKey ? null : shipKey)}
                       >
                         <div className={getPreviewClass(shipKey)}>
-                          <ShipCosmeticCanvasPreview shipKey={shipKey} cosmetics={previewCosmetics} />
+                          <ShipCosmeticCanvasPreview shipKey={shipKey} spriteKey={previewSpriteKey} cosmetics={previewCosmetics} />
                         </div>
                       </button>
                       <div className="progress-ship-info">
@@ -296,6 +307,22 @@ export function ProgressionScreen({
                         <small>{text.bestScores}: {(mastery?.bestScore ?? 0).toLocaleString()} · {text.victories}: {mastery?.victories ?? 0} · {text.totalScore}: {(mastery?.totalScore ?? 0).toLocaleString()}</small>
                       </div>
                       <div className="progress-cosmetics" aria-label={`${ship.name} ${text.masteryCosmetics}`}>
+                        {shipKey === 'mesiah' ? (
+                          <div className="progress-ship-color" aria-label={text.mesiahColor}>
+                            <span>{text.mesiahColor}</span>
+                            {(['black', 'white'] as MesiahShipColor[]).map((color) => (
+                              <button
+                                key={color}
+                                type="button"
+                                className={mesiahColor === color ? 'progress-ship-color__button progress-ship-color__button--active' : 'progress-ship-color__button'}
+                                onClick={() => onProgressChange(setMesiahShipColor(color))}
+                              >
+                                <i className={`progress-ship-color__swatch progress-ship-color__swatch--${color}`} />
+                                {color === 'white' ? text.mesiahWhite : text.mesiahBlack}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                         {cosmetics.map((cosmetic) => (
                           <button
                             key={cosmetic.key}
@@ -566,7 +593,7 @@ function copyRecoveryCode(recoveryCode: string) {
   void navigator.clipboard?.writeText(recoveryCode)
 }
 
-function ShipCosmeticCanvasPreview({ shipKey, cosmetics }: { shipKey: string; cosmetics: Required<ShipCosmeticEquipState> }) {
+function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics }: { shipKey: string; spriteKey?: string; cosmetics: Required<ShipCosmeticEquipState> }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -607,14 +634,14 @@ function ShipCosmeticCanvasPreview({ shipKey, cosmetics }: { shipKey: string; co
     image.onload = () => {
       if (!disposed) frameId = requestAnimationFrame(render)
     }
-    image.src = getRaidShipSpriteUrl(shipKey)
+    image.src = getRaidShipSpriteUrl(spriteKey ?? shipKey)
     if (image.complete) frameId = requestAnimationFrame(render)
 
     return () => {
       disposed = true
       if (frameId) cancelAnimationFrame(frameId)
     }
-  }, [shipKey, cosmetics.trail, cosmetics.aura, cosmetics.frame])
+  }, [shipKey, spriteKey, cosmetics.trail, cosmetics.aura, cosmetics.frame])
 
   return (
     <canvas
@@ -625,6 +652,10 @@ function ShipCosmeticCanvasPreview({ shipKey, cosmetics }: { shipKey: string; co
       aria-hidden="true"
     />
   )
+}
+
+function getMesiahPreviewSpriteKey(color: MesiahShipColor) {
+  return color === 'white' ? 'mesiahWhite' : 'mesiahBlack'
 }
 
 function getShipPreviewVisualStyle(shipKey: string) {

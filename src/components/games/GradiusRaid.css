@@ -2107,6 +2107,16 @@
   background: linear-gradient(180deg, rgba(45, 4, 8, 0.96), rgba(5, 5, 9, 0.96));
 }
 
+.raid__ship-card--locked {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.raid__ship-card--locked img {
+  filter: brightness(0) contrast(1.2) drop-shadow(0 0 18px rgba(148, 163, 184, 0.18));
+  opacity: 0.86;
+}
+
 .raid__ship-card span {
   font-size: 0.85rem;
   font-weight: 1000;

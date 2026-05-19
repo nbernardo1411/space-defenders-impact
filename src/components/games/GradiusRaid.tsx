@@ -6,7 +6,7 @@ import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAI
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
-import { getEquippedShipCosmetics, hasProgressionUnlockOverride, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
+import { getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -31,6 +31,14 @@ type ShipOption = {
   fireRate: number
 }
 
+type MesiahDroneUnit = Vec & {
+  side: -1 | 1
+  targetId: number | null
+  rotation: number
+  active: boolean
+  canFire: boolean
+}
+
 type Player = Vec & {
   hp: number
   maxHp: number
@@ -47,6 +55,11 @@ type Player = Vec & {
   weapons: Record<WeaponKey, number>
   weaponTimers: Record<WeaponKey, number>
   engineBoost: number
+  mesiahDroneTimer: number
+  mesiahDroneCooldown: number
+  mesiahDroneFireCooldown: number
+  mesiahRocketCooldown: number
+  mesiahDrones: MesiahDroneUnit[]
 }
 
 type Shot = Vec & {
@@ -330,6 +343,7 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'dreadnought', name: 'Obsidian Ark', role: 'Heavy survival hull', speed: 0.82, hp: 8, fireRate: 0.86 },
   { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.14, hp: 5, fireRate: 1.18 },
   { key: 'spaceEt', name: 'Space Jet', role: 'Comet-tail microfighter', speed: 1.24, hp: 3, fireRate: 1.28 },
+  { key: 'mesiah', name: 'Mesiah', role: 'Post-clear command battleship', speed: 1.08, hp: 7, fireRate: 1.16 },
 ]
 
 export type BriefingBossKind = Extract<BossKind, 'squid' | 'snake' | 'final'>
@@ -385,6 +399,7 @@ const EMPTY_WEAPON_TIMERS: Record<WeaponKey, number> = {
 }
 
 function getShipSpriteSize(shipKey: string, context: 'player' | 'option' | 'picker') {
+  if (shipKey === 'mesiah') return context === 'player' ? 128 : context === 'option' ? 38 : 112
   if (shipKey === 'dreadnought') return context === 'player' ? 88 : context === 'option' ? 40 : 88
   if (shipKey === 'spaceEt') return context === 'player' ? 84 : context === 'option' ? 38 : 84
   if (shipKey === 'xwing') return context === 'player' ? 78 : context === 'option' ? 36 : 82
@@ -415,6 +430,13 @@ const LEVEL_UP_HEAL = 1
 const FINAL_BOSS_NUKE_DAMAGE_MULTIPLIER = 0.26
 const SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES = 3
 const SPACE_ET_FORCE_FIELD_REGEN_SECONDS = 20
+const MESIAH_DRONE_DURATION_SECONDS = 5
+const MESIAH_DRONE_COOLDOWN_SECONDS = 8
+const MESIAH_DRONE_FIRE_INTERVAL_SECONDS = 0.1
+const MESIAH_DRONE_MIN_FIRE_RANGE = 7.5
+const MESIAH_DRONE_MAX_FIRE_RANGE = 19
+const MESIAH_ROCKET_FIRE_INTERVAL_SECONDS = 0.36
+const MESIAH_DRONE_HOME_OFFSET = 12
 const NORMAL_POWER_DROP_COOLDOWN = 3.8
 const POWER_PITY_KILLS = 12
 const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
@@ -1217,6 +1239,10 @@ function warmRaidCanvasFilterVariants() {
     const sprite = getShipCanvasSprite(ship.key)
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
+  for (const spriteKey of ['mesiahBlack', 'mesiahWhite']) {
+    const sprite = getShipCanvasSprite(spriteKey)
+    for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
+  }
 
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) {
     const sprite = getNormalAlienCanvasSprite(variant)
@@ -1310,6 +1336,8 @@ function warmRaidCanvasAssets() {
   entries.push(getSquidBossCanvasSprite())
   entries.push(getCobraBossCanvasSprite())
   for (const ship of SHIP_OPTIONS) entries.push(getShipCanvasSprite(ship.key))
+  entries.push(getShipCanvasSprite('mesiahBlack'))
+  entries.push(getShipCanvasSprite('mesiahWhite'))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) entries.push(getNormalAlienCanvasSprite(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) entries.push(getEliteAlienCanvasSprite(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) entries.push(getRaidOtherCanvasSprite(key))
@@ -1543,6 +1571,24 @@ function saveCheckpointStage(stage: number) {
   }
 }
 
+function createMesiahDrones(x = 50, y = 82): MesiahDroneUnit[] {
+  return [-1, 1].map((side) => ({
+    side: side as -1 | 1,
+    x: x + side * 7,
+    y: y + 1.6,
+    targetId: null,
+    rotation: 0,
+    active: false,
+    canFire: false,
+  }))
+}
+
+function normalizeMesiahDrones(player: Player) {
+  if (Array.isArray(player.mesiahDrones) && player.mesiahDrones.length === 2) return player.mesiahDrones
+  player.mesiahDrones = createMesiahDrones(player.x, player.y)
+  return player.mesiahDrones
+}
+
 function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
   const passiveForceField = ship.key === 'spaceEt' ? SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES : 0
   return {
@@ -1563,6 +1609,11 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     weapons: { ...EMPTY_WEAPONS },
     weaponTimers: { ...EMPTY_WEAPON_TIMERS },
     engineBoost: 0,
+    mesiahDroneTimer: 0,
+    mesiahDroneCooldown: ship.key === 'mesiah' ? 1.2 : 0,
+    mesiahDroneFireCooldown: 0,
+    mesiahRocketCooldown: 0,
+    mesiahDrones: createMesiahDrones(),
   }
 }
 
@@ -1644,11 +1695,28 @@ function clonePlayer(player: Player): Player {
     weaponTimers: { ...player.weaponTimers },
     weaponCooldowns: { ...player.weaponCooldowns },
     engineBoost: player.engineBoost ?? 0,
+    mesiahDroneTimer: player.mesiahDroneTimer ?? 0,
+    mesiahDroneCooldown: player.mesiahDroneCooldown ?? 0,
+    mesiahDroneFireCooldown: player.mesiahDroneFireCooldown ?? 0,
+    mesiahRocketCooldown: player.mesiahRocketCooldown ?? 0,
+    mesiahDrones: normalizeMesiahDrones(player).map((drone) => ({ ...drone })),
   }
 }
 
 function getShipByKey(shipKey: string | undefined, fallback = SHIP_OPTIONS[0]) {
   return SHIP_OPTIONS.find((ship) => ship.key === shipKey) ?? fallback
+}
+
+function getMesiahVisualShipKeyFromProgress(progress: ReturnType<typeof loadProgress>) {
+  return getMesiahShipColor(progress) === 'white' ? 'mesiahWhite' : 'mesiahBlack'
+}
+
+function getRaidPlayerVisualShipKey(player: Player, progress: ReturnType<typeof loadProgress>) {
+  return player.ship.key === 'mesiah' ? getMesiahVisualShipKeyFromProgress(progress) : player.ship.key
+}
+
+function hasClearedRaidInProgress(progress: ReturnType<typeof loadProgress>) {
+  return Boolean(progress.achievements.raid_clear || progress.achievements.fortress_fall)
 }
 
 function cloneVec(value: Vec | null | undefined): Vec | null {
@@ -1700,6 +1768,16 @@ function compactPlayer(player: Player): Player {
     optionTimer: roundNetworkNumber(player.optionTimer),
     fireCooldown: roundNetworkNumber(player.fireCooldown),
     engineBoost: roundNetworkNumber(player.engineBoost),
+    mesiahDroneTimer: roundNetworkNumber(player.mesiahDroneTimer ?? 0),
+    mesiahDroneCooldown: roundNetworkNumber(player.mesiahDroneCooldown ?? 0),
+    mesiahDroneFireCooldown: roundNetworkNumber(player.mesiahDroneFireCooldown ?? 0),
+    mesiahRocketCooldown: roundNetworkNumber(player.mesiahRocketCooldown ?? 0),
+    mesiahDrones: normalizeMesiahDrones(player).map((drone) => ({
+      ...drone,
+      x: roundNetworkNumber(drone.x),
+      y: roundNetworkNumber(drone.y),
+      rotation: roundNetworkNumber(drone.rotation),
+    })),
   }
 }
 
@@ -1802,6 +1880,18 @@ function getBufferedPlayerVisual(buffer: MultiplayerPlayerSnapshot[], renderAt: 
     const latestBoost = latest.player.engineBoost ?? 0
     const previousBoost = previous.player.engineBoost ?? 0
     visual.engineBoost = clamp(latestBoost + (latestBoost - previousBoost) * extrapolateScale, 0, 1)
+    visual.mesiahDroneTimer = latest.player.mesiahDroneTimer ?? 0
+    visual.mesiahDroneCooldown = latest.player.mesiahDroneCooldown ?? 0
+    visual.mesiahDroneFireCooldown = latest.player.mesiahDroneFireCooldown ?? 0
+    visual.mesiahRocketCooldown = latest.player.mesiahRocketCooldown ?? 0
+    visual.mesiahDrones = normalizeMesiahDrones(latest.player).map((drone, droneIndex) => {
+      const previousDrone = normalizeMesiahDrones(previous.player)[droneIndex] ?? drone
+      return {
+        ...drone,
+        x: clamp(drone.x + (drone.x - previousDrone.x) * extrapolateScale, 0, WIDTH),
+        y: clamp(drone.y + (drone.y - previousDrone.y) * extrapolateScale, 0, HEIGHT),
+      }
+    })
     return visual
   }
 
@@ -1818,6 +1908,27 @@ function getBufferedPlayerVisual(buffer: MultiplayerPlayerSnapshot[], renderAt: 
     const previousBoost = previous.player.engineBoost ?? 0
     const nextBoost = next.player.engineBoost ?? 0
     visual.engineBoost = previousBoost + (nextBoost - previousBoost) * t
+    const previousDroneTimer = previous.player.mesiahDroneTimer ?? 0
+    const nextDroneTimer = next.player.mesiahDroneTimer ?? 0
+    const previousDroneCooldown = previous.player.mesiahDroneCooldown ?? 0
+    const nextDroneCooldown = next.player.mesiahDroneCooldown ?? 0
+    const previousDroneFireCooldown = previous.player.mesiahDroneFireCooldown ?? 0
+    const nextDroneFireCooldown = next.player.mesiahDroneFireCooldown ?? 0
+    const previousMesiahRocketCooldown = previous.player.mesiahRocketCooldown ?? 0
+    const nextMesiahRocketCooldown = next.player.mesiahRocketCooldown ?? 0
+    visual.mesiahDroneTimer = previousDroneTimer + (nextDroneTimer - previousDroneTimer) * t
+    visual.mesiahDroneCooldown = previousDroneCooldown + (nextDroneCooldown - previousDroneCooldown) * t
+    visual.mesiahDroneFireCooldown = previousDroneFireCooldown + (nextDroneFireCooldown - previousDroneFireCooldown) * t
+    visual.mesiahRocketCooldown = previousMesiahRocketCooldown + (nextMesiahRocketCooldown - previousMesiahRocketCooldown) * t
+    visual.mesiahDrones = normalizeMesiahDrones(next.player).map((nextDrone, droneIndex) => {
+      const previousDrone = normalizeMesiahDrones(previous.player)[droneIndex] ?? nextDrone
+      return {
+        ...nextDrone,
+        x: previousDrone.x + (nextDrone.x - previousDrone.x) * t,
+        y: previousDrone.y + (nextDrone.y - previousDrone.y) * t,
+        rotation: previousDrone.rotation + (nextDrone.rotation - previousDrone.rotation) * t,
+      }
+    })
     return visual
   }
 
@@ -2126,11 +2237,31 @@ function applyRiftPullToPlayer(player: Player, event: RaidRandomEvent, dt: numbe
   player.x = clamp(player.x, 4, 96)
   player.y = clamp(player.y, 13, 93)
 }
-function updatePlayerTimers(player: Player, dt: number) {
+function updatePlayerTimers(player: Player, dt: number, enemies: Enemy[]) {
   player.fireCooldown = Math.max(0, player.fireCooldown - dt)
   WEAPON_KEYS.forEach((key) => {
     player.weaponCooldowns[key] = Math.max(0, player.weaponCooldowns[key] - dt)
   })
+  player.mesiahDroneFireCooldown = Math.max(0, player.mesiahDroneFireCooldown - dt)
+  player.mesiahRocketCooldown = Math.max(0, player.mesiahRocketCooldown - dt)
+  if (player.ship.key === 'mesiah' && player.hp > 0) {
+    if (player.mesiahDroneTimer > 0) {
+      player.mesiahDroneTimer = Math.max(0, player.mesiahDroneTimer - dt)
+      if (player.mesiahDroneTimer <= 0) player.mesiahDroneCooldown = MESIAH_DRONE_COOLDOWN_SECONDS
+    } else {
+      player.mesiahDroneCooldown = Math.max(0, player.mesiahDroneCooldown - dt)
+      if (player.mesiahDroneCooldown <= 0) {
+        player.mesiahDroneTimer = MESIAH_DRONE_DURATION_SECONDS
+        player.mesiahDroneCooldown = 0
+      }
+    }
+  } else {
+    player.mesiahDroneTimer = 0
+    player.mesiahDroneCooldown = 0
+    player.mesiahDroneFireCooldown = 0
+    player.mesiahRocketCooldown = 0
+  }
+  updateMesiahDrones(player, enemies, dt)
   player.invuln = Math.max(0, player.invuln - dt)
   player.shield = Math.max(0, player.shield - dt * 0.16)
 
@@ -5224,6 +5355,99 @@ function drawRaidEnemy(
   ctx.restore()
 }
 
+function getMesiahDroneTarget(player: Player, enemies: Enemy[], lockedTargetId: number | null = null) {
+  const lockedTarget = lockedTargetId === null
+    ? null
+    : enemies.find((enemy) => enemy.id === lockedTargetId && enemy.hp > 0 && enemy.y > -8) ?? null
+  if (lockedTarget) return lockedTarget
+  return enemies
+    .filter((enemy) => enemy.hp > 0 && enemy.y > -8)
+    .sort((a, b) => distSq(a, player) - distSq(b, player))[0] ?? null
+}
+
+function getMesiahDroneHome(player: Player, side: number, homeOffset = 7) {
+  return {
+    x: clamp(player.x + homeOffset * side, 4, 96),
+    y: player.y + 1.6,
+  }
+}
+
+function getMesiahDroneAttackPoint(player: Player, drone: MesiahDroneUnit, target: Enemy | null, elapsed: number) {
+  const direction = drone.side
+  const orbitPhase = elapsed * 3.4 + direction * 2.1
+  const orbitRadiusX = target ? 13.5 : 7
+  const orbitRadiusY = target ? 7.2 : 5
+  return {
+    x: target
+      ? clamp(target.x + Math.cos(orbitPhase) * orbitRadiusX + direction * 4.2, 5, 95)
+      : clamp(player.x + direction * 16 + Math.sin(elapsed * 2.4 + direction) * orbitRadiusX, 5, 95),
+    y: target
+      ? clamp(target.y + 5.8 + Math.sin(orbitPhase) * orbitRadiusY, 8, 78)
+      : clamp(player.y - 18 + Math.cos(elapsed * 1.9 + direction) * orbitRadiusY, 12, 74),
+  }
+}
+
+function moveMesiahDroneToward(drone: MesiahDroneUnit, destination: Vec, speed: number, dt: number) {
+  const dx = destination.x - drone.x
+  const dy = destination.y - drone.y
+  const distance = Math.hypot(dx, dy)
+  if (distance <= 0.001) return { movedX: 0, movedY: 0 }
+  const step = Math.min(distance, speed * dt)
+  const movedX = (dx / distance) * step
+  const movedY = (dy / distance) * step
+  drone.x += movedX
+  drone.y += movedY
+  return { movedX, movedY }
+}
+
+function updateMesiahDrones(player: Player, enemies: Enemy[], dt: number) {
+  const drones = normalizeMesiahDrones(player)
+  const active = player.ship.key === 'mesiah' && player.hp > 0 && player.mesiahDroneTimer > 0
+  const elapsed = MESIAH_DRONE_DURATION_SECONDS - player.mesiahDroneTimer
+  for (const drone of drones) {
+    const home = getMesiahDroneHome(player, drone.side, MESIAH_DRONE_HOME_OFFSET)
+    if (!active) {
+      drone.x = home.x
+      drone.y = home.y
+      drone.rotation = 0
+      drone.targetId = null
+      drone.active = false
+      drone.canFire = false
+      continue
+    }
+
+    drone.active = true
+    const recalling = player.mesiahDroneTimer < 0.72
+    const target = recalling ? null : getMesiahDroneTarget(player, enemies, drone.targetId)
+    drone.targetId = target?.id ?? null
+    const destination = recalling
+      ? home
+      : getMesiahDroneAttackPoint(player, drone, target, elapsed)
+    const speed = recalling ? 92 : target ? 64 : 52
+    const movement = moveMesiahDroneToward(drone, destination, speed, dt)
+    const distanceToTarget = target ? Math.hypot(target.x - drone.x, target.y - drone.y) : Infinity
+    drone.canFire = Boolean(
+      target &&
+      !recalling &&
+      elapsed > 0.32 &&
+      distanceToTarget >= MESIAH_DRONE_MIN_FIRE_RANGE &&
+      distanceToTarget <= MESIAH_DRONE_MAX_FIRE_RANGE,
+    )
+
+    if (!target && !recalling) {
+      drone.rotation = 0
+      continue
+    }
+
+    const facing = drone.canFire && target
+      ? { x: target.x - drone.x, y: target.y - drone.y }
+      : Math.hypot(movement.movedX, movement.movedY) > 0.01
+        ? { x: movement.movedX, y: movement.movedY }
+        : { x: destination.x - drone.x, y: destination.y - drone.y }
+    drone.rotation = Math.atan2(facing.y || -1, facing.x || 0) + Math.PI / 2
+  }
+}
+
 function drawRaidOptions(
   ctx: CanvasRenderingContext2D,
   player: Player,
@@ -5234,7 +5458,8 @@ function drawRaidOptions(
   color = PLAYER_COLOR,
 ) {
   const isArk = player.ship.key === 'dreadnought'
-  if (player.optionTimer <= 0 && !isArk) return
+  const isMesiahSortie = player.ship.key === 'mesiah' && player.mesiahDroneTimer > 0
+  if (player.optionTimer <= 0 && !isArk && !isMesiahSortie) return
 
   const drawSupportPair = (shipKey: string, offset: number, yOffset: number, maxBox: number, scale: number, filter: string) => {
     const optionShipSize = getShipSpriteSize(shipKey, 'option')
@@ -5270,14 +5495,34 @@ function drawRaidOptions(
     return
   }
 
-  drawSupportPair(
-    player.ship.key,
-    viewportWidth < 640 ? 12 : 5.6,
-    1.8,
-    viewportWidth < 860 ? 31 : 49,
-    1.2,
-    'brightness(1.12) contrast(1.12) saturate(1.24)',
-  )
+  if (isMesiahSortie) {
+    const sprite = getShipCanvasSprite('rocket')
+    const drawSize = Math.min(getShipSpriteSize('rocket', 'option') * 1.14, viewportWidth < 860 ? 35 : 48)
+    for (const drone of normalizeMesiahDrones(player)) {
+      if (!drone.active) continue
+      const x = toX(drone.x)
+      const y = toY(drone.y) + Math.sin(time / 135 + drone.side) * 0.8
+      drawCanvasSprite(ctx, sprite, x, y, drawSize, 'brightness(1.08) contrast(1.18) saturate(1.35)', 1, drone.rotation, 1, color)
+    }
+  }
+
+  if (player.optionTimer > 0) {
+    const supportShipKey = player.ship.key === 'mesiah' ? 'dreadnought' : player.ship.key
+    const supportOffset = player.ship.key === 'mesiah'
+      ? (viewportWidth < 640 ? 26 : 13.4)
+      : (viewportWidth < 640 ? 12 : 5.6)
+    const supportMaxBox = player.ship.key === 'mesiah'
+      ? (viewportWidth < 860 ? 39 : 55)
+      : (viewportWidth < 860 ? 31 : 49)
+    drawSupportPair(
+      supportShipKey,
+      supportOffset,
+      1.8,
+      supportMaxBox,
+      player.ship.key === 'mesiah' ? 1.05 : 1.2,
+      'brightness(1.12) contrast(1.12) saturate(1.24)',
+    )
+  }
 }
 function drawPlayerEngine(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, engineBoost = 0) {
   const flicker = Math.sin(time / 105) * 0.04 + Math.sin(time / 53) * 0.018
@@ -5590,10 +5835,12 @@ function drawRaidPlayer(
   time: number,
   color = PLAYER_COLOR,
   cosmetics: Required<ShipCosmeticEquipState> = { trail: false, aura: false, frame: false },
+  visualShipKey = player.ship.key,
 ) {
   const x = toX(player.x)
   const y = toY(player.y)
-  const size = viewportWidth < 860 ? 62 : viewportWidth > 1100 ? 86 : 76
+  const baseSize = viewportWidth < 860 ? 62 : viewportWidth > 1100 ? 86 : 76
+  const size = player.ship.key === 'mesiah' ? baseSize * 1.62 : baseSize
   const isDown = phase === 'gameover' || player.hp <= 0
   const rotation = isDown ? 28 * DEG : 0
   const scale = isDown ? 0.88 : 1
@@ -5616,7 +5863,7 @@ function drawRaidPlayer(
     else drawPlasmaForceField(ctx, x, y, size, time, forceCharge)
   }
 
-  const sprite = getShipCanvasSprite(player.ship.key)
+  const sprite = getShipCanvasSprite(visualShipKey)
   const spriteGlow = player.forceField > 0
     ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
     : player.shield > 0 ? 'rgba(252,211,77,0.16)' : player.invuln > 0 ? 'rgba(226,232,240,0.1)' : null
@@ -5713,6 +5960,15 @@ const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
     trailOffsets: [0],
     auraShape: 'stealth',
   },
+  mesiah: {
+    core: 'rgba(226,232,240,0.86)',
+    edge: 'rgba(20,184,166,0.62)',
+    soft: 'rgba(15,23,42,0.22)',
+    accent: 'rgba(255,255,255,0.86)',
+    paint: '#e2e8f0',
+    trailOffsets: [-0.2, 0, 0.2],
+    auraShape: 'diamond',
+  },
 }
 
 function getMasteryVisualStyle(shipKey: string, color: string): MasteryVisualStyle {
@@ -5734,7 +5990,7 @@ function getMasteryPaintColor(shipKey: string, fallbackColor: string) {
 function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color: string, shipKey: string, engineBoost = 0) {
   const style = getMasteryVisualStyle(shipKey, color)
   const pulse = 0.96 + Math.sin(time / 180) * 0.05
-  const tailScale = shipKey === 'spaceEt' ? 1.18 : shipKey === 'dreadnought' ? 0.92 : 1
+  const tailScale = shipKey === 'spaceEt' ? 1.18 : shipKey === 'dreadnought' ? 0.92 : shipKey === 'mesiah' ? 1.05 : 1
   const top = y + size * 0.34
   const length = size * 0.72 * tailScale * pulse * (1 + clamp(engineBoost, 0, 1.35) * 0.36)
   const width = size * (shipKey === 'dreadnought' ? 0.15 : 0.13)
@@ -8576,8 +8832,8 @@ export function GradiusRaid({
     const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
     if (gfxProfile.drawOptionShips && ownShipRef) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR)
     if (gfxProfile.drawOptionShips && allyShipRef) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR)
-    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key))
-    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key))
+    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current))
+    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current))
 
     for (const powerUp of powerUpsRef.current) {
       drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
@@ -9004,6 +9260,7 @@ export function GradiusRaid({
   const chooseShip = useCallback((ship: ShipOption) => {
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) return
+    if (ship.key === 'mesiah' && !hasProgressionUnlockOverride() && unlockedStageRef.current < MAX_RAID_STAGE && !hasClearedRaidInProgress(progressRef.current)) return
     selectedShipRef.current = ship
     setSelectedShipKey(ship.key)
     playerRef.current = getInitialPlayer(ship)
@@ -9044,40 +9301,82 @@ export function GradiusRaid({
     const stacks = player.weapons
     let totalStacks = 0
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
-    if (player.fireCooldown > 0) return
+    const shipKey = player.ship.key
+    const canFireMain = player.fireCooldown <= 0
+    const canFireMesiahDrones = shipKey === 'mesiah' && player.mesiahDroneTimer > 0 && player.mesiahDroneFireCooldown <= 0
+    if (!canFireMain && !canFireMesiahDrones) return
 
     const baseDamage = getPlayerBaseAttack(player)
-    const shipKey = player.ship.key
     const isArk = shipKey === 'dreadnought'
     const defaultScoutOffset = isArk
       ? (rootRef.current && rootRef.current.clientWidth < 640 ? 14 : 7.4)
       : (rootRef.current && rootRef.current.clientWidth < 640 ? 12 : 5.6)
     const pickupScoutOffset = rootRef.current && rootRef.current.clientWidth < 640 ? 8.2 : 5
     const scoutScale = isArk ? 0.9 : 0.86
-    const emitters: Array<{ x: number; y: number; scale: number; main: boolean; attackShipKey?: string; baseOnly?: boolean }> = [
-      { x: player.x, y: player.y, scale: 1, main: true },
-    ]
+    const emitters: Array<{ x: number; y: number; scale: number; main: boolean; attackShipKey?: string; baseOnly?: boolean; target?: Enemy | null; rotation?: number; canFire?: boolean }> = []
 
-    if (isArk) {
-      emitters.push(
-        { x: clamp(player.x - defaultScoutOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false, attackShipKey: 'rocket' },
-        { x: clamp(player.x + defaultScoutOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false, attackShipKey: 'rocket' },
-      )
-      if (player.optionTimer > 0) {
+    if (canFireMain) {
+      emitters.push({ x: player.x, y: player.y, scale: 1, main: true })
+      if (isArk) {
         emitters.push(
-          { x: clamp(player.x - pickupScoutOffset, 4, 96), y: player.y + 7.2, scale: 0.54, main: false, attackShipKey: 'spaceEt', baseOnly: true },
-          { x: clamp(player.x + pickupScoutOffset, 4, 96), y: player.y + 7.2, scale: 0.54, main: false, attackShipKey: 'spaceEt', baseOnly: true },
+          { x: clamp(player.x - defaultScoutOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false, attackShipKey: 'rocket' },
+          { x: clamp(player.x + defaultScoutOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false, attackShipKey: 'rocket' },
+        )
+        if (player.optionTimer > 0) {
+          emitters.push(
+            { x: clamp(player.x - pickupScoutOffset, 4, 96), y: player.y + 7.2, scale: 0.54, main: false, attackShipKey: 'spaceEt', baseOnly: true },
+            { x: clamp(player.x + pickupScoutOffset, 4, 96), y: player.y + 7.2, scale: 0.54, main: false, attackShipKey: 'spaceEt', baseOnly: true },
+          )
+        }
+      } else if (player.optionTimer > 0) {
+        const supportAttackShipKey = shipKey === 'mesiah' ? 'rocket' : undefined
+        const supportOffset = shipKey === 'mesiah'
+          ? (rootRef.current && rootRef.current.clientWidth < 640 ? 26 : 13.4)
+          : defaultScoutOffset
+        const supportScale = shipKey === 'mesiah' ? 0.62 : scoutScale
+        emitters.push(
+          { x: clamp(player.x - supportOffset, 4, 96), y: player.y + 1.8, scale: supportScale, main: false, attackShipKey: supportAttackShipKey },
+          { x: clamp(player.x + supportOffset, 4, 96), y: player.y + 1.8, scale: supportScale, main: false, attackShipKey: supportAttackShipKey },
         )
       }
-    } else if (player.optionTimer > 0) {
-      emitters.push(
-        { x: clamp(player.x - defaultScoutOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false },
-        { x: clamp(player.x + defaultScoutOffset, 4, 96), y: player.y + 1.8, scale: scoutScale, main: false },
-      )
+    }
+    if (canFireMesiahDrones) {
+      for (const drone of normalizeMesiahDrones(player)) {
+        if (!drone.active || !drone.canFire || drone.targetId === null) continue
+        const target = enemiesRef.current.find((enemy) => enemy.id === drone.targetId && enemy.hp > 0 && enemy.y > -8) ?? null
+        if (!target) continue
+        emitters.push({
+          x: drone.x,
+          y: drone.y,
+          scale: 0.72,
+          main: false,
+          attackShipKey: 'mesiahDrone',
+          baseOnly: true,
+          target,
+          rotation: drone.rotation,
+          canFire: drone.canFire,
+        })
+      }
     }
     const firingWeapons = { ...EMPTY_WEAPON_FLAGS }
     for (const key of WEAPON_KEYS) {
       firingWeapons[key] = stacks[key] > 0 && player.weaponCooldowns[key] <= 0
+    }
+
+    let mesiahDroneFired = false
+    let mesiahRocketsFired = false
+    const canFireMesiahRockets = shipKey === 'mesiah' && player.mesiahRocketCooldown <= 0
+    const fireBlackCometPulse = (emitter: { x: number; y: number; scale: number }, aim: Vec, radiusScale = 1) => {
+      const mag = Math.hypot(aim.x, aim.y) || 1
+      pushShot({
+        x: emitter.x,
+        y: emitter.y - 3.6,
+        vx: (aim.x / mag) * 108,
+        vy: (aim.y / mag) * 108,
+        damage: Math.ceil((baseDamage + 3) * emitter.scale),
+        kind: 'pulse',
+        radius: 1.8 * radiusScale,
+      })
     }
 
     emitters.forEach((emitter) => {
@@ -9085,9 +9384,15 @@ export function GradiusRaid({
       const attackShipKey = emitter.attackShipKey ?? (isArk && !emitter.main ? 'rocket' : shipKey)
       const activeWeapons = emitter.baseOnly ? EMPTY_WEAPON_FLAGS : firingWeapons
 
-      // ── BLACK COMET: original default attack ──
-      if (attackShipKey === 'rocket') {
-        pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -108, damage: Math.ceil((baseDamage + 3) * emitter.scale), kind: 'pulse', radius: 1.8 })
+      // ── MESIAH DRONE: detached Black Comet support fire ──
+      if (attackShipKey === 'mesiahDrone') {
+        const target = emitter.target
+        if (!target || !emitter.canFire) return
+        const rotation = emitter.rotation ?? 0
+        fireBlackCometPulse(emitter, target ? { x: target.x - emitter.x, y: target.y - emitter.y } : { x: Math.sin(rotation), y: -Math.cos(rotation) }, 0.58)
+        mesiahDroneFired = true
+      } else if (attackShipKey === 'rocket') {
+        fireBlackCometPulse(emitter, { x: 0, y: -1 })
         if (activeWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
           fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage, kind: 'spread', radius: 1.35 }))
@@ -9158,7 +9463,47 @@ export function GradiusRaid({
         }
       }
 
-      // ── CRIMSON SAW: dual side-by-side gatling cannons ──
+      // ── MESIAH: Red Wraith stream plus default rocket pair ──
+      else if (attackShipKey === 'mesiah') {
+        const boostedDamage = Math.ceil((baseDamage + 2) * emitter.scale)
+        pushShot({ x: emitter.x - 1.45, y: emitter.y - 3.4, vx: -3, vy: -116, damage: boostedDamage, kind: 'needle' as any, radius: 1.12 })
+        pushShot({ x: emitter.x + 1.45, y: emitter.y - 3.4, vx: 3, vy: -116, damage: boostedDamage, kind: 'needle' as any, radius: 1.12 })
+        if (canFireMesiahRockets) {
+          ;[-4.6, 4.6].forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1.2, vx: offset * 1.35, vy: -76, damage: Math.ceil((baseDamage + 7) * emitter.scale), kind: 'rocket', radius: 2.35 })
+          })
+          mesiahRocketsFired = true
+        }
+        if (activeWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-34, -18, 18, 34] : [-24, 24]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 2.8, vx, vy: -86, damage: boostedDamage, kind: 'spread', radius: 1.35 }))
+        }
+        if (activeWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.6 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5, vx: 0, vy: -132, damage: Math.ceil((baseDamage + 4 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.85, pierce: 1 + stacks.laser })
+        }
+        if (activeWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.18
+            pushShot({ x: emitter.x, y: emitter.y - 1.5, vx: Math.cos(angle) * 82, vy: Math.sin(angle) * 82, damage: boostedDamage, kind: 'scatter', radius: 1.2 })
+          }
+        }
+        if (activeWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-6.2, -3.2, 3.2, 6.2] : [-5.2, 5.2]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.5, vy: -74, damage: Math.ceil((baseDamage + 8 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.35 })
+          })
+        }
+        if (emitter.main && activeWeapons.homing) {
+          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 5) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.6 })
+          })
+        }
+      }
+
       else if (attackShipKey === 'gatling') {
         // left cannon
         pushShot({ x: emitter.x - 3.2, y: emitter.y - 3, vx: -2, vy: -98, damage, kind: 'pulse', radius: 1.25 })
@@ -9433,7 +9778,14 @@ export function GradiusRaid({
       }
     })
 
-    if ((stacks.rocket > 0 || stacks.homing > 0) && Math.random() < 0.12) playGameSound('rocket')
+    if (mesiahDroneFired) player.mesiahDroneFireCooldown = MESIAH_DRONE_FIRE_INTERVAL_SECONDS
+    if (mesiahRocketsFired) player.mesiahRocketCooldown = MESIAH_ROCKET_FIRE_INTERVAL_SECONDS
+    if (!canFireMain) {
+      if (mesiahDroneFired) playGameSound('shoot')
+      return
+    }
+
+    if ((shipKey === 'mesiah' || stacks.rocket > 0 || stacks.homing > 0) && Math.random() < 0.12) playGameSound('rocket')
       ; WEAPON_KEYS.forEach((key) => {
         if (firingWeapons[key]) {
           player.weaponCooldowns[key] = WEAPON_FIRE_INTERVALS[key]
@@ -9443,6 +9795,7 @@ export function GradiusRaid({
     const baseInterval =
       shipKey === 'fast' ? 0.072 :       // Red Wraith — very rapid
         shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
+          shipKey === 'mesiah' ? 0.082 :
           shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
             shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
               shipKey === 'spaceEt' ? 0.001 :    // Space Jet — fastest
@@ -10036,8 +10389,8 @@ export function GradiusRaid({
       movePlayerWithInput(remotePlayer, dt, remotePointerTargetRef.current, remoteKeysRef.current)
     }
 
-    if (player.hp > 0) updatePlayerTimers(player, dt)
-    if (remotePlayer && remotePlayer.hp > 0) updatePlayerTimers(remotePlayer, dt)
+    if (player.hp > 0) updatePlayerTimers(player, dt, enemiesRef.current)
+    if (remotePlayer && remotePlayer.hp > 0) updatePlayerTimers(remotePlayer, dt, enemiesRef.current)
     if (player.hp > 0) firePlayer(player)
     if (remotePlayer && remotePlayer.hp > 0) firePlayer(remotePlayer)
     const livingPlayersThisTick = remotePlayer
@@ -11506,7 +11859,9 @@ export function GradiusRaid({
     stageClearProgress > 0.66 && stageClearProgress < 0.9
       ? Math.sin(((stageClearProgress - 0.66) / 0.24) * Math.PI)
       : 0
-  const completedCampaign = hasProgressionUnlockOverride() || snapshot.unlockedStage >= MAX_RAID_STAGE
+  const completedCampaign = hasProgressionUnlockOverride() || snapshot.unlockedStage >= MAX_RAID_STAGE || hasClearedRaidInProgress(progressRef.current)
+  const mesiahUnlocked = completedCampaign
+  const mesiahVisualShipKey = getMesiahVisualShipKeyFromProgress(progressRef.current)
   const checkpointStage = getCheckpointStage()
   const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
   const nukeCooldown = Math.ceil(snapshot.nukeCooldown)
@@ -11792,13 +12147,13 @@ export function GradiusRaid({
             <div className="raid__ending-earth" />
             <div className="raid__ending-wake raid__ending-wake--host" />
             <div className="raid__ending-ship raid__ending-ship--host">
-              <RaidShipSprite shipKey={player.ship.key} size={finaleShipSize} />
+              <RaidShipSprite shipKey={player.ship.key === 'mesiah' ? mesiahVisualShipKey : player.ship.key} size={finaleShipSize} />
             </div>
             {snapshot.allyPlayer ? (
               <>
                 <div className="raid__ending-wake raid__ending-wake--ally" />
                 <div className="raid__ending-ship raid__ending-ship--ally">
-                  <RaidShipSprite shipKey={snapshot.allyPlayer.ship.key} size={finaleAllyShipSize} />
+                  <RaidShipSprite shipKey={snapshot.allyPlayer.ship.key === 'mesiah' ? mesiahVisualShipKey : snapshot.allyPlayer.ship.key} size={finaleAllyShipSize} />
                 </div>
               </>
             ) : null}
@@ -11868,16 +12223,25 @@ export function GradiusRaid({
               {SHIP_OPTIONS.map((ship) => (
                 (() => {
                   const shipCopy = raidText.ships[ship.key as keyof typeof raidText.ships] ?? ship
+                  const locked = ship.key === 'mesiah' && !mesiahUnlocked
+                  const shipSpriteKey = ship.key === 'mesiah' ? mesiahVisualShipKey : ship.key
                   return (
                     <button
                       key={ship.key}
                       type="button"
-                      className={selectedShipKey === ship.key ? 'raid__ship-card raid__ship-card--active' : 'raid__ship-card'}
-                      onClick={() => chooseShip(ship)}
+                      className={[
+                        'raid__ship-card',
+                        selectedShipKey === ship.key ? 'raid__ship-card--active' : '',
+                        locked ? 'raid__ship-card--locked' : '',
+                      ].filter(Boolean).join(' ')}
+                      disabled={locked}
+                      onClick={() => {
+                        if (!locked) chooseShip(ship)
+                      }}
                     >
-                      <RaidShipSprite shipKey={ship.key} size={getShipSpriteSize(ship.key, 'picker')} />
+                      <RaidShipSprite shipKey={shipSpriteKey} size={getShipSpriteSize(ship.key, 'picker')} />
                       <span>{shipCopy.name}</span>
-                      <small>{shipCopy.role}</small>
+                      <small>{locked ? raidText.menu.clearRaidToUnlock : shipCopy.role}</small>
                     </button>
                   )
                 })()

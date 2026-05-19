@@ -101,10 +101,12 @@ export type ShipMasteryRecord = {
 
 export type ShipCosmeticKey = 'trail' | 'aura' | 'frame'
 export type ShipCosmeticEquipState = Partial<Record<ShipCosmeticKey, boolean>>
+export type MesiahShipColor = 'black' | 'white'
 
 export type ProgressState = {
   version: 1
   towerDefenseEndlessUnlocked: boolean
+  mesiahShipColor: MesiahShipColor
   totalRuns: number
   totalScore: number
   totalPlaySeconds: number
@@ -220,6 +222,7 @@ export function createEmptyProgress(): ProgressState {
   return {
     version: 1,
     towerDefenseEndlessUnlocked: getStoredTowerDefenseEndlessUnlock(),
+    mesiahShipColor: 'black',
     totalRuns: 0,
     totalScore: 0,
     totalPlaySeconds: 0,
@@ -459,6 +462,17 @@ export function setShipCosmeticEquipped(shipKey: string, cosmetic: ShipCosmeticK
   return progress
 }
 
+export function getMesiahShipColor(progress: ProgressState): MesiahShipColor {
+  return progress.mesiahShipColor === 'white' ? 'white' : 'black'
+}
+
+export function setMesiahShipColor(color: MesiahShipColor) {
+  const progress = loadProgress()
+  progress.mesiahShipColor = color
+  saveProgress(progress)
+  return progress
+}
+
 export function getShipMasteryLevelFromXp(xp: number) {
   let level = 1
   let remainingXp = Math.max(0, Math.floor(xp))
@@ -505,6 +519,7 @@ export function normalizeProgress(value: unknown): ProgressState {
     ...data,
     version: 1,
     towerDefenseEndlessUnlocked: Boolean(data.towerDefenseEndlessUnlocked || getStoredTowerDefenseEndlessUnlock()),
+    mesiahShipColor: data.mesiahShipColor === 'white' ? 'white' : 'black',
     totalRuns: Math.max(0, Math.floor(Number(data.totalRuns) || 0)),
     totalScore: Math.max(0, Math.floor(Number(data.totalScore) || 0)),
     totalPlaySeconds: Math.max(0, Math.floor(Number(data.totalPlaySeconds) || 0)),

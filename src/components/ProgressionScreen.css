@@ -284,6 +284,13 @@
   --mastery-mark: rgba(15,23,42,0.86);
 }
 
+.progress-ship-preview__ship--mesiah {
+  --mastery-core: rgba(226,232,240,0.88);
+  --mastery-edge: rgba(20,184,166,0.56);
+  --mastery-soft: rgba(15,23,42,0.22);
+  --mastery-mark: rgba(255,255,255,0.92);
+}
+
 .progress-ship-preview__ship svg,
 .progress-ship-preview__ship img {
   position: relative;
@@ -296,6 +303,58 @@
   width: 72px;
   height: 72px;
   object-fit: contain;
+}
+
+.progress-ship-color {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 7px;
+  min-width: 0;
+}
+
+.progress-ship-color > span {
+  color: #6ef5cb;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.progress-ship-color__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 6px;
+  background: rgba(3, 11, 24, 0.62);
+  color: #dbeafe;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.progress-ship-color__button--active {
+  border-color: rgba(110, 245, 203, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(110, 245, 203, 0.2);
+  color: #ffffff;
+}
+
+.progress-ship-color__swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(255,255,255,0.45);
+  border-radius: 50%;
+}
+
+.progress-ship-color__swatch--black {
+  background: linear-gradient(135deg, #020617, #334155);
+}
+
+.progress-ship-color__swatch--white {
+  background: linear-gradient(135deg, #ffffff, #94a3b8);
 }
 
 .progress-ship-preview__ship--trail::after {

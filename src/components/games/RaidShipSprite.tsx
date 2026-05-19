@@ -8,6 +8,9 @@ export const RAID_SHIP_SPRITE_PATHS: Record<string, string> = {
   dreadnought: 'assets/ships/obsidian-ark.png',
   xwing: 'assets/ships/x-wing.png',
   spaceEt: 'assets/ships/space-jet.png',
+  mesiah: 'assets/ships/mesiah-black.png',
+  mesiahBlack: 'assets/ships/mesiah-black.png',
+  mesiahWhite: 'assets/ships/mesiah-white.png',
 }
 
 export const RAID_ALIEN_SPRITE_COUNT = 8
