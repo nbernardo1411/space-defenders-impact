@@ -115,7 +115,28 @@
   grid-column: 1 / -1;
 }
 
-.progress-card--recovery strong {
+.progress-card--account {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(0, 2fr);
+  gap: 18px;
+}
+
+.progress-account__identity,
+.progress-account__recovery {
+  min-width: 0;
+}
+
+.progress-account__identity > span,
+.progress-account__recovery > span {
+  color: #6ef5cb;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.progress-account__recovery strong {
   font-family: 'Rajdhani', 'Segoe UI', sans-serif;
   letter-spacing: 0.08em;
   overflow-wrap: anywhere;
@@ -769,6 +790,11 @@
 
   .progress-card--wide {
     grid-column: auto;
+  }
+
+  .progress-card--account {
+    grid-column: auto;
+    grid-template-columns: 1fr;
   }
 
   .progress-card--scores,

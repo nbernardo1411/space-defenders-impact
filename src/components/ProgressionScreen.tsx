@@ -222,22 +222,24 @@ export function ProgressionScreen({
 
         {view === 'profile' && (
           <div className="progress-grid">
-            <article className="progress-card progress-card--wide">
-              <span>{text.commander}</span>
-              <strong>{playerName}</strong>
-              <p>{text.completion}: {getCompletionPercent(progress)}%</p>
-            </article>
-            <article className="progress-card progress-card--wide progress-card--recovery">
-              <span>{text.recoveryCode}</span>
-              <strong>{showRecoveryCode ? recoveryCode || text.recoveryMissing : maskRecoveryCode(recoveryCode)}</strong>
-              <p>{text.recoveryCodeDesc}</p>
-              <div className="progress-card__actions">
-                <button type="button" onClick={() => setShowRecoveryCode((visible) => !visible)} disabled={!recoveryCode}>
-                  {showRecoveryCode ? text.hideRecoveryCode : text.showRecoveryCode}
-                </button>
-                <button type="button" onClick={() => copyRecoveryCode(recoveryCode)} disabled={!recoveryCode}>
-                  {text.copyRecoveryCode}
-                </button>
+            <article className="progress-card progress-card--account">
+              <div className="progress-account__identity">
+                <span>{text.commander}</span>
+                <strong>{playerName}</strong>
+                <p>{text.completion}: {getCompletionPercent(progress)}%</p>
+              </div>
+              <div className="progress-account__recovery">
+                <span>{text.recoveryCode}</span>
+                <strong>{showRecoveryCode ? recoveryCode || text.recoveryMissing : maskRecoveryCode(recoveryCode)}</strong>
+                <p>{text.recoveryCodeDesc}</p>
+                <div className="progress-card__actions">
+                  <button type="button" onClick={() => setShowRecoveryCode((visible) => !visible)} disabled={!recoveryCode}>
+                    {showRecoveryCode ? text.hideRecoveryCode : text.showRecoveryCode}
+                  </button>
+                  <button type="button" onClick={() => copyRecoveryCode(recoveryCode)} disabled={!recoveryCode}>
+                    {text.copyRecoveryCode}
+                  </button>
+                </div>
               </div>
             </article>
             {[
@@ -247,10 +249,10 @@ export function ProgressionScreen({
               { label: text.victories, value: progress.victories },
               { label: text.enemies, value: progress.enemiesDestroyed },
               { label: text.bosses, value: progress.bossesDefeated },
-              { label: text.pickups, value: progress.pickupsCollected, wide: true },
-              { label: text.nukes, value: progress.nukesUsed, wide: true },
+              { label: text.pickups, value: progress.pickupsCollected },
+              { label: text.nukes, value: progress.nukesUsed },
             ].map((stat) => (
-              <article className={stat.wide ? 'progress-card progress-card--wide' : 'progress-card'} key={stat.label}>
+              <article className="progress-card" key={stat.label}>
                 <span>{stat.label}</span>
                 <strong>{stat.value}</strong>
               </article>
