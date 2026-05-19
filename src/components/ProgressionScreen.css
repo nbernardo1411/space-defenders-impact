@@ -115,6 +115,38 @@
   grid-column: 1 / -1;
 }
 
+.progress-card--recovery strong {
+  font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}
+
+.progress-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.progress-card__actions button {
+  min-height: 34px;
+  border: 1px solid rgba(110, 245, 203, 0.36);
+  border-radius: 6px;
+  background: rgba(3, 11, 24, 0.72);
+  color: #dffdf5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 6px 10px;
+  text-transform: uppercase;
+}
+
+.progress-card__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .progress-card strong {
   display: block;
   margin-top: 5px;

@@ -7,7 +7,6 @@ import { GradiusRaid } from './components/games/GradiusRaid'
 import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl } from './components/games/RaidShipSprite'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
-import { ENDLESS_UNLOCK_STORAGE_KEY } from './components/games/towerDefense/config'
 import {
   getInitialLanguage,
   getLanguageText,
@@ -17,8 +16,8 @@ import {
   saveLanguage,
   type LanguageCode,
 } from './i18n'
-import { getStoredPlayerName, hasStoredPlayerName, isCreatorPlayerName, registerPlayerName, saveStoredPlayerName } from './leaderboards'
-import { loadProgress, recordRunResult, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
+import { getStoredPlayerName, getStoredRecoveryCode, hasStoredPlayerName, isCreatorPlayerName, registerPlayerName, restorePlayerName, saveStoredPlayerName, uploadPlayerProgress, type PlayerNameRegistrationResult } from './leaderboards'
+import { getStoredTowerDefenseEndlessUnlock, loadProgress, normalizeProgress, recordRunResult, saveProgress, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed — kept for prop compatibility)
@@ -90,7 +89,10 @@ function App() {
   const [showPlayerNamePrompt, setShowPlayerNamePrompt] = useState(() => !hasStoredPlayerName())
   const [playerNameSaving, setPlayerNameSaving] = useState(false)
   const [playerNameError, setPlayerNameError] = useState('')
-  const [endlessUnlocked, setEndlessUnlocked] = useState(() => localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
+  const [playerNameRestoreMode, setPlayerNameRestoreMode] = useState(false)
+  const [recoveryCode, setRecoveryCode] = useState(getStoredRecoveryCode)
+  const [recoveryCodeDraft, setRecoveryCodeDraft] = useState('')
+  const [endlessUnlocked, setEndlessUnlocked] = useState(getStoredTowerDefenseEndlessUnlock)
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress())
   const [lastRunUpdate, setLastRunUpdate] = useState<{ result: RunResult; update: ProgressUpdate } | null>(null)
 
@@ -112,6 +114,32 @@ function App() {
     saveLanguage(nextLanguage)
   }
 
+  const syncCloudProgress = (nextProgress: ProgressState) => {
+    void uploadPlayerProgress(nextProgress)
+  }
+
+  const applyRegisteredPlayer = (result: PlayerNameRegistrationResult, fallbackName: string, uploadLocalWhenEmpty = true) => {
+    const nextName = saveStoredPlayerName(result.playerName ?? fallbackName)
+    setPlayerName(nextName)
+    setPlayerNameDraft(nextName)
+    setRecoveryCode(result.recoveryCode ?? getStoredRecoveryCode())
+    setRecoveryCodeDraft('')
+    setPlayerNameRestoreMode(false)
+    setShowPlayerNamePrompt(false)
+
+    if (result.progress) {
+      const cloudProgress = normalizeProgress(result.progress)
+      saveProgress(cloudProgress)
+      setProgress(cloudProgress)
+      setEndlessUnlocked(cloudProgress.towerDefenseEndlessUnlocked)
+      return
+    }
+
+    const localProgress = loadProgress()
+    setEndlessUnlocked(localProgress.towerDefenseEndlessUnlocked)
+    if (uploadLocalWhenEmpty) syncCloudProgress(localProgress)
+  }
+
   useEffect(() => {
     if (!hasStoredPlayerName()) return
 
@@ -119,15 +147,13 @@ function App() {
     registerPlayerName(playerName).then((result) => {
       if (cancelled) return
       if (result.registered) {
-        const nextName = saveStoredPlayerName(result.playerName ?? playerName)
-        setPlayerName(nextName)
-        setPlayerNameDraft(nextName)
-        setShowPlayerNamePrompt(false)
+        applyRegisteredPlayer(result, playerName)
         return
       }
 
-      setPlayerNameDraft('')
-      setPlayerNameError(result.taken ? text.player.nameTaken : text.player.nameRegisterError)
+      setPlayerNameDraft(playerName)
+      setPlayerNameRestoreMode(Boolean(result.taken))
+      setPlayerNameError(result.taken ? text.player.nameTakenRecovery : text.player.nameRegisterError)
       setShowPlayerNamePrompt(true)
     })
 
@@ -249,6 +275,8 @@ function App() {
   const handleRunComplete = (result: RunResult) => {
     const update = recordRunResult(result)
     setProgress(update.progress)
+    setEndlessUnlocked(update.progress.towerDefenseEndlessUnlocked)
+    syncCloudProgress(update.progress)
     setLastRunUpdate({ result, update })
   }
 
@@ -256,18 +284,22 @@ function App() {
     if (!playerNameDraft.trim()) return
     setPlayerNameSaving(true)
     setPlayerNameError('')
-    const result = await registerPlayerName(playerNameDraft)
+    const result = playerNameRestoreMode
+      ? await restorePlayerName(playerNameDraft, recoveryCodeDraft)
+      : await registerPlayerName(playerNameDraft)
     setPlayerNameSaving(false)
 
     if (!result.registered) {
-      setPlayerNameError(result.taken ? text.player.nameTaken : text.player.nameRegisterError)
+      if (result.taken) setPlayerNameRestoreMode(true)
+      setPlayerNameError(
+        playerNameRestoreMode
+          ? text.player.recoveryInvalid
+          : result.taken ? text.player.nameTakenRecovery : text.player.nameRegisterError,
+      )
       return
     }
 
-    const nextName = saveStoredPlayerName(result.playerName ?? playerNameDraft)
-    setPlayerName(nextName)
-    setPlayerNameDraft(nextName)
-    setShowPlayerNamePrompt(false)
+    applyRegisteredPlayer(result, playerNameDraft)
   }
 
   const playerNamePrompt = showPlayerNamePrompt ? (
@@ -289,20 +321,34 @@ function App() {
           onChange={(event) => {
             setPlayerNameDraft(event.target.value)
             setPlayerNameError('')
+            setPlayerNameRestoreMode(false)
           }}
           placeholder={text.player.placeholder}
         />
+        {playerNameRestoreMode ? (
+          <input
+            maxLength={32}
+            value={recoveryCodeDraft}
+            onChange={(event) => {
+              setRecoveryCodeDraft(event.target.value)
+              setPlayerNameError('')
+            }}
+            placeholder={text.player.recoveryPlaceholder}
+          />
+        ) : null}
         {playerNameError ? <small className="player-name-modal__error">{playerNameError}</small> : null}
-        <button type="submit" disabled={!playerNameDraft.trim() || playerNameSaving}>
-          {playerNameSaving ? text.player.checking : text.player.confirm}
+        <button type="submit" disabled={!playerNameDraft.trim() || playerNameSaving || (playerNameRestoreMode && !recoveryCodeDraft.trim())}>
+          {playerNameSaving ? text.player.checking : playerNameRestoreMode ? text.player.restore : text.player.confirm}
         </button>
       </form>
     </div>
   ) : null
 
   const closeGame = () => {
-    setEndlessUnlocked(localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
-    setProgress(loadProgress())
+    const nextProgress = loadProgress()
+    setProgress(nextProgress)
+    setEndlessUnlocked(nextProgress.towerDefenseEndlessUnlocked)
+    syncCloudProgress(nextProgress)
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
     setScreen('title')
@@ -560,8 +606,12 @@ function App() {
           progress={progress}
           language={language}
           playerName={playerName}
+          recoveryCode={recoveryCode}
           onBack={() => setScreen('title')}
-          onProgressChange={setProgress}
+          onProgressChange={(nextProgress) => {
+            setProgress(nextProgress)
+            syncCloudProgress(nextProgress)
+          }}
         />
         {playerNamePrompt}
         {runResultsOverlay}

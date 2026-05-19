@@ -8,7 +8,6 @@ import {
   ENEMY_COLORS,
   MAX_STAGES,
   MAX_TOWER_LEVEL,
-  ENDLESS_UNLOCK_STORAGE_KEY,
   MOBILE_LAYOUT_STORAGE_KEY,
   ROWS,
   STORAGE_KEY,
@@ -31,7 +30,7 @@ import { StatPill, btnStyle } from './towerDefense/ui'
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getDefenseText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
-import type { RunResult, RunStatus } from '../../progression'
+import { markTowerDefenseEndlessUnlocked, type RunResult, type RunStatus } from '../../progression'
 
 let _eid = 1
 let _tid = 1
@@ -766,7 +765,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
           }
           submitDefenseLeaderboardScore(s)
           reportDefenseRunComplete('victory')
-          localStorage.setItem(ENDLESS_UNLOCK_STORAGE_KEY, 'true')
+          markTowerDefenseEndlessUnlocked()
           // Trigger victory effect
           setVictoryEffect({time: 0, maxTime: 2.0})
         } else {

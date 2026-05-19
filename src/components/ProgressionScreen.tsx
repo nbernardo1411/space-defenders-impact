@@ -26,6 +26,7 @@ type ProgressionScreenProps = {
   progress: ProgressState
   language: LanguageCode
   playerName: string
+  recoveryCode: string
   onBack: () => void
   onProgressChange: (progress: ProgressState) => void
 }
@@ -193,6 +194,7 @@ export function ProgressionScreen({
   progress,
   language,
   playerName,
+  recoveryCode,
   onBack,
   onProgressChange,
 }: ProgressionScreenProps) {
@@ -201,6 +203,7 @@ export function ProgressionScreen({
   const raidText = getRaidText(language)
   const title = getViewTitle(view, text)
   const [previewCosmeticShip, setPreviewCosmeticShip] = useState<string | null>(null)
+  const [showRecoveryCode, setShowRecoveryCode] = useState(false)
   const stageBossEntries = getStageBossEntries(raidText.briefingPanels)
 
   return (
@@ -223,6 +226,19 @@ export function ProgressionScreen({
               <span>{text.commander}</span>
               <strong>{playerName}</strong>
               <p>{text.completion}: {getCompletionPercent(progress)}%</p>
+            </article>
+            <article className="progress-card progress-card--wide progress-card--recovery">
+              <span>{text.recoveryCode}</span>
+              <strong>{showRecoveryCode ? recoveryCode || text.recoveryMissing : maskRecoveryCode(recoveryCode)}</strong>
+              <p>{text.recoveryCodeDesc}</p>
+              <div className="progress-card__actions">
+                <button type="button" onClick={() => setShowRecoveryCode((visible) => !visible)} disabled={!recoveryCode}>
+                  {showRecoveryCode ? text.hideRecoveryCode : text.showRecoveryCode}
+                </button>
+                <button type="button" onClick={() => copyRecoveryCode(recoveryCode)} disabled={!recoveryCode}>
+                  {text.copyRecoveryCode}
+                </button>
+              </div>
             </article>
             {[
               { label: text.totalRuns, value: progress.totalRuns },
@@ -537,6 +553,15 @@ function getStageBossEntries(briefingPanels: ReturnType<typeof getRaidText>['bri
     }
   }
   return entries
+}
+
+function maskRecoveryCode(recoveryCode: string) {
+  return recoveryCode ? '••••-••••-••••' : '••••'
+}
+
+function copyRecoveryCode(recoveryCode: string) {
+  if (!recoveryCode || typeof navigator === 'undefined') return
+  void navigator.clipboard?.writeText(recoveryCode)
 }
 
 function ShipCosmeticCanvasPreview({ shipKey, cosmetics }: { shipKey: string; cosmetics: Required<ShipCosmeticEquipState> }) {

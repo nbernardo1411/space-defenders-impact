@@ -22,6 +22,7 @@ export type SubmitLeaderboardScore = {
 
 export const PLAYER_NAME_STORAGE_KEY = 'space-defenders-player-name'
 export const PLAYER_ID_STORAGE_KEY = 'space-defenders-player-id'
+export const PLAYER_RECOVERY_CODE_STORAGE_KEY = 'space-defenders-player-recovery-code'
 export const CREATOR_PLAYER_NAME = 'zukito'
 
 export const LEADERBOARD_MODES: Array<{
@@ -83,6 +84,27 @@ export function getOrCreateStoredPlayerId(): string {
   return nextId
 }
 
+export function saveStoredPlayerId(value: string): string {
+  const playerId = value.trim()
+  if (typeof window !== 'undefined' && playerId) {
+    window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, playerId)
+  }
+  return playerId
+}
+
+export function getStoredRecoveryCode(): string {
+  if (typeof window === 'undefined') return ''
+  return window.localStorage.getItem(PLAYER_RECOVERY_CODE_STORAGE_KEY)?.trim() ?? ''
+}
+
+export function saveStoredRecoveryCode(value: string): string {
+  const recoveryCode = value.trim().toUpperCase()
+  if (typeof window !== 'undefined' && recoveryCode) {
+    window.localStorage.setItem(PLAYER_RECOVERY_CODE_STORAGE_KEY, recoveryCode)
+  }
+  return recoveryCode
+}
+
 export function getStoredPlayerName(): string {
   if (typeof window === 'undefined') return 'Pilot'
   return sanitizePlayerName(window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || '')
@@ -105,8 +127,12 @@ export type PlayerNameRegistrationResult = {
   registered: boolean
   available: boolean
   taken: boolean
+  restored?: boolean
   offline?: boolean
+  playerId?: string
   playerName?: string
+  recoveryCode?: string
+  progress?: unknown
   error?: string
 }
 
@@ -147,7 +173,7 @@ export async function registerPlayerName(value: string): Promise<PlayerNameRegis
   const playerName = sanitizePlayerName(value)
   const playerId = getOrCreateStoredPlayerId()
   const apiBase = getLeaderboardApiBase()
-  if (!apiBase) return { registered: true, available: true, taken: false, offline: true, playerName }
+  if (!apiBase) return { registered: true, available: true, taken: false, offline: true, playerId, playerName, recoveryCode: getStoredRecoveryCode() }
 
   try {
     const response = await fetch(`${apiBase}/players/register`, {
@@ -174,13 +200,68 @@ export async function registerPlayerName(value: string): Promise<PlayerNameRegis
       registered: true,
       available: true,
       taken: false,
+      playerId: typeof data.playerId === 'string' ? saveStoredPlayerId(data.playerId) : playerId,
       playerName: typeof data.playerName === 'string' ? sanitizePlayerName(data.playerName) : playerName,
+      recoveryCode: typeof data.recoveryCode === 'string' ? saveStoredRecoveryCode(data.recoveryCode) : getStoredRecoveryCode(),
+      progress: data.progress ?? null,
     }
   } catch {
     if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-      return { registered: true, available: true, taken: false, offline: true, playerName }
+      return { registered: true, available: true, taken: false, offline: true, playerId, playerName, recoveryCode: getStoredRecoveryCode() }
     }
     return { registered: false, available: false, taken: false, error: 'Name registration failed.', playerName }
+  }
+}
+
+export async function restorePlayerName(value: string, recoveryCodeValue: string): Promise<PlayerNameRegistrationResult> {
+  const playerName = sanitizePlayerName(value)
+  const recoveryCode = recoveryCodeValue.trim().toUpperCase()
+  const playerId = getOrCreateStoredPlayerId()
+  const apiBase = getLeaderboardApiBase()
+  if (!apiBase) return { registered: false, available: false, taken: false, error: 'Name restoration failed.', playerName }
+
+  try {
+    const response = await fetch(`${apiBase}/players/restore`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerName, recoveryCode, playerId }),
+    })
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data?.restored) {
+      return { registered: false, restored: false, available: false, taken: false, error: 'Name restoration failed.', playerName }
+    }
+
+    return {
+      registered: true,
+      restored: true,
+      available: true,
+      taken: false,
+      playerId: typeof data.playerId === 'string' ? saveStoredPlayerId(data.playerId) : playerId,
+      playerName: typeof data.playerName === 'string' ? sanitizePlayerName(data.playerName) : playerName,
+      recoveryCode: typeof data.recoveryCode === 'string' ? saveStoredRecoveryCode(data.recoveryCode) : recoveryCode,
+      progress: data.progress ?? null,
+    }
+  } catch {
+    return { registered: false, restored: false, available: false, taken: false, error: 'Name restoration failed.', playerName }
+  }
+}
+
+export async function uploadPlayerProgress(progress: unknown): Promise<{ saved: boolean; error?: string }> {
+  const apiBase = getLeaderboardApiBase()
+  if (!apiBase) return { saved: false }
+
+  try {
+    const response = await fetch(`${apiBase}/players/progress`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: getOrCreateStoredPlayerId(), progress }),
+    })
+    if (!response.ok) return { saved: false, error: 'Progress was not saved.' }
+    const data = await response.json().catch(() => ({}))
+    return { saved: Boolean(data.saved) }
+  } catch {
+    return { saved: false, error: 'Progress was not saved.' }
   }
 }
 

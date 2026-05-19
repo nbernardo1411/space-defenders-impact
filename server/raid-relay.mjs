@@ -6,7 +6,7 @@ const PORT = Number(process.env.PORT || 8787)
 const MAX_PAYLOAD_BYTES = 256 * 1024
 const LEADERBOARD_MODES = ['ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_multiplayer']
 const LEADERBOARD_MODE_SET = new Set(LEADERBOARD_MODES)
-const LEADERBOARD_BODY_LIMIT_BYTES = 16 * 1024
+const API_BODY_LIMIT_BYTES = 128 * 1024
 const DATABASE_URL = process.env.DATABASE_URL || ''
 const { Pool } = pg
 const leaderboardPool = DATABASE_URL
@@ -42,7 +42,7 @@ const server = createServer(async (req, res) => {
       return
     }
 
-    if (url.pathname === '/players/register' || url.pathname === '/players/name-check') {
+    if (url.pathname === '/players/register' || url.pathname === '/players/name-check' || url.pathname === '/players/restore' || url.pathname === '/players/progress') {
       await handlePlayerNameRequest(req, res, url)
       return
     }
@@ -265,6 +265,64 @@ async function handlePlayerNameRequest(req, res, url) {
     return
   }
 
+  if (req.method === 'POST' && url.pathname === '/players/restore') {
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch {
+      writeJson(res, 400, { error: 'Invalid JSON body.' })
+      return
+    }
+
+    const playerName = cleanName(body.playerName)
+    const recoveryCode = cleanRecoveryCode(body.recoveryCode)
+    const playerId = cleanPlayerId(body.playerId)
+    if (!playerName || !recoveryCode || !playerId) {
+      writeJson(res, 400, { error: 'A valid player name, recovery code, and player id are required.' })
+      return
+    }
+
+    await ensurePlayerNameSchema()
+    const result = await restorePlayerName({ playerName, recoveryCode, playerId })
+    writeJson(res, result.restored ? 200 : 403, result)
+    return
+  }
+
+  if (url.pathname === '/players/progress') {
+    await ensurePlayerNameSchema()
+    if (req.method === 'GET') {
+      const playerId = cleanPlayerId(url.searchParams.get('playerId'))
+      if (!playerId) {
+        writeJson(res, 400, { error: 'A valid player id is required.' })
+        return
+      }
+
+      const progress = await getPlayerProgress(playerId)
+      writeJson(res, 200, { progress })
+      return
+    }
+
+    if (req.method === 'POST') {
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch {
+        writeJson(res, 400, { error: 'Invalid JSON body.' })
+        return
+      }
+
+      const playerId = cleanPlayerId(body.playerId)
+      if (!playerId) {
+        writeJson(res, 400, { error: 'A valid player id is required.' })
+        return
+      }
+
+      const result = await savePlayerProgress(playerId, body.progress)
+      writeJson(res, result.saved ? 200 : 404, result)
+      return
+    }
+  }
+
   writeJson(res, 404, { error: 'Player route not found.' })
 }
 
@@ -303,13 +361,24 @@ async function ensurePlayerNameSchema() {
         player_id TEXT NOT NULL UNIQUE,
         player_name TEXT NOT NULL,
         normalized_name TEXT NOT NULL UNIQUE,
+        recovery_code TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE player_names
+        ADD COLUMN IF NOT EXISTS recovery_code TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS player_names_normalized_name_idx
         ON player_names (normalized_name);
       CREATE UNIQUE INDEX IF NOT EXISTS player_names_player_id_idx
         ON player_names (player_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS player_names_recovery_code_idx
+        ON player_names (recovery_code)
+        WHERE recovery_code IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS player_progress (
+        player_id TEXT PRIMARY KEY,
+        progress_json JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `).catch((error) => {
       playerNameSchemaPromise = null
       throw error
@@ -349,7 +418,7 @@ async function registerPlayerName({ playerName, playerId }) {
     await client.query('BEGIN')
     const existingName = await client.query(
       `
-        SELECT player_id AS "playerId", player_name AS "playerName"
+        SELECT player_id AS "playerId", player_name AS "playerName", recovery_code AS "recoveryCode"
         FROM player_names
         WHERE normalized_name = $1
         FOR UPDATE
@@ -380,31 +449,35 @@ async function registerPlayerName({ playerName, playerId }) {
 
     let saved
     if (existingPlayer.rows[0]) {
+      const recoveryCode = nameOwner?.recoveryCode || generateRecoveryCode()
       const updateResult = await client.query(
         `
           UPDATE player_names
           SET player_name = $2,
               normalized_name = $3,
+              recovery_code = COALESCE(recovery_code, $4),
               updated_at = NOW()
           WHERE player_id = $1
-          RETURNING player_id AS "playerId", player_name AS "playerName"
+          RETURNING player_id AS "playerId", player_name AS "playerName", recovery_code AS "recoveryCode"
         `,
-        [playerId, playerName, normalizedName],
+        [playerId, playerName, normalizedName, recoveryCode],
       )
       saved = updateResult.rows[0]
     } else {
+      const recoveryCode = generateRecoveryCode()
       const insertResult = await client.query(
         `
-          INSERT INTO player_names (player_id, player_name, normalized_name)
-          VALUES ($1, $2, $3)
-          RETURNING player_id AS "playerId", player_name AS "playerName"
+          INSERT INTO player_names (player_id, player_name, normalized_name, recovery_code)
+          VALUES ($1, $2, $3, $4)
+          RETURNING player_id AS "playerId", player_name AS "playerName", recovery_code AS "recoveryCode"
         `,
-        [playerId, playerName, normalizedName],
+        [playerId, playerName, normalizedName, recoveryCode],
       )
       saved = insertResult.rows[0]
     }
 
     await client.query('COMMIT')
+    const progress = await getPlayerProgress(saved.playerId)
     return {
       registered: true,
       available: true,
@@ -412,6 +485,8 @@ async function registerPlayerName({ playerName, playerId }) {
       ownedByPlayer: true,
       playerId: saved.playerId,
       playerName: saved.playerName,
+      recoveryCode: saved.recoveryCode,
+      progress,
     }
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {})
@@ -428,6 +503,110 @@ async function registerPlayerName({ playerName, playerId }) {
   } finally {
     client.release()
   }
+}
+
+async function restorePlayerName({ playerName, recoveryCode, playerId }) {
+  const normalizedName = normalizePlayerName(playerName)
+  const client = await leaderboardPool.connect()
+
+  try {
+    await client.query('BEGIN')
+    const existingName = await client.query(
+      `
+        SELECT player_id AS "playerId", player_name AS "playerName", recovery_code AS "recoveryCode"
+        FROM player_names
+        WHERE normalized_name = $1
+        FOR UPDATE
+      `,
+      [normalizedName],
+    )
+    const owner = existingName.rows[0]
+    if (!owner || cleanRecoveryCode(owner.recoveryCode) !== recoveryCode) {
+      await client.query('ROLLBACK')
+      return { restored: false, reason: 'invalid_recovery_code' }
+    }
+
+    const previousPlayerId = owner.playerId
+    if (previousPlayerId !== playerId) {
+      await client.query(
+        `
+          UPDATE player_names
+          SET player_id = $2,
+              updated_at = NOW()
+          WHERE player_id = $1
+        `,
+        [previousPlayerId, playerId],
+      )
+      await client.query(
+        `
+          UPDATE player_progress
+          SET player_id = $2,
+              updated_at = NOW()
+          WHERE player_id = $1
+        `,
+        [previousPlayerId, playerId],
+      )
+    }
+
+    await client.query('COMMIT')
+    const progress = await getPlayerProgress(playerId)
+    return {
+      restored: true,
+      registered: true,
+      playerId,
+      playerName: owner.playerName,
+      recoveryCode: owner.recoveryCode,
+      progress,
+    }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    if (error?.code === '23505') {
+      return { restored: false, reason: 'player_id_conflict' }
+    }
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+async function getPlayerProgress(playerId) {
+  const result = await leaderboardPool.query(
+    `
+      SELECT progress_json AS "progress"
+      FROM player_progress
+      WHERE player_id = $1
+      LIMIT 1
+    `,
+    [playerId],
+  )
+
+  return result.rows[0]?.progress ?? null
+}
+
+async function savePlayerProgress(playerId, progress) {
+  const playerExists = await leaderboardPool.query(
+    `
+      SELECT 1
+      FROM player_names
+      WHERE player_id = $1
+      LIMIT 1
+    `,
+    [playerId],
+  )
+  if (!playerExists.rows[0]) return { saved: false, reason: 'player_not_registered' }
+
+  await leaderboardPool.query(
+    `
+      INSERT INTO player_progress (player_id, progress_json, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (player_id)
+      DO UPDATE SET
+        progress_json = EXCLUDED.progress_json,
+        updated_at = NOW()
+    `,
+    [playerId, progress ?? {}],
+  )
+  return { saved: true }
 }
 
 async function getLeaderboardRows(mode) {
@@ -534,8 +713,8 @@ function readJsonBody(req) {
 
     req.on('data', (chunk) => {
       totalBytes += chunk.length
-      if (totalBytes > LEADERBOARD_BODY_LIMIT_BYTES) {
-        reject(new Error('Leaderboard request body is too large.'))
+      if (totalBytes > API_BODY_LIMIT_BYTES) {
+        reject(new Error('Request body is too large.'))
         req.destroy()
         return
       }
@@ -867,6 +1046,22 @@ function cleanPlayerId(value) {
     .slice(0, 96)
 
   return playerId.length >= 12 ? playerId : ''
+}
+
+function cleanRecoveryCode(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, '')
+    .slice(0, 32)
+}
+
+function generateRecoveryCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const chars = []
+  const bytes = randomBytes(12)
+  for (const byte of bytes) chars.push(alphabet[byte % alphabet.length])
+  return `SD-${chars.slice(0, 4).join('')}-${chars.slice(4, 8).join('')}-${chars.slice(8, 12).join('')}`
 }
 
 function cleanLeaderboardName(value) {

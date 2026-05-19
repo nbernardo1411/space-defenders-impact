@@ -1,3 +1,4 @@
+import { ENDLESS_UNLOCK_STORAGE_KEY } from './components/games/towerDefense/config'
 import { isCreatorPlayerName, PLAYER_NAME_STORAGE_KEY, type LeaderboardMode } from './leaderboards'
 
 export type RunStatus = 'victory' | 'gameover' | 'exit'
@@ -103,6 +104,7 @@ export type ShipCosmeticEquipState = Partial<Record<ShipCosmeticKey, boolean>>
 
 export type ProgressState = {
   version: 1
+  towerDefenseEndlessUnlocked: boolean
   totalRuns: number
   totalScore: number
   totalPlaySeconds: number
@@ -217,6 +219,7 @@ const LEADERBOARD_MODES: LeaderboardMode[] = [
 export function createEmptyProgress(): ProgressState {
   return {
     version: 1,
+    towerDefenseEndlessUnlocked: getStoredTowerDefenseEndlessUnlock(),
     totalRuns: 0,
     totalScore: 0,
     totalPlaySeconds: 0,
@@ -258,7 +261,9 @@ export function loadProgress(): ProgressState {
 
 export function saveProgress(progress: ProgressState) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(progress))
+  const normalized = normalizeProgress(progress)
+  syncTowerDefenseEndlessUnlockStorage(normalized.towerDefenseEndlessUnlocked)
+  window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(normalized))
 }
 
 export function recordRunResult(result: RunResult): ProgressUpdate {
@@ -275,6 +280,9 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   progress.pickupsCollected += Math.max(0, Math.floor(result.pickupsCollected ?? 0))
   progress.nukesUsed += Math.max(0, Math.floor(result.nukesUsed ?? 0))
   if (result.status === 'victory') progress.victories += 1
+  if (result.mode === 'ship_defense_normal' && result.status === 'victory') {
+    progress.towerDefenseEndlessUnlocked = true
+  }
 
   progress.bestScoreByMode[result.mode] = Math.max(progress.bestScoreByMode[result.mode] ?? 0, Math.floor(result.score))
   progress.bestStageByMode[result.mode] = Math.max(progress.bestStageByMode[result.mode] ?? 0, Math.floor(result.stage))
@@ -406,6 +414,18 @@ export function hasProgressionUnlockOverride() {
   return isLocalProgressionTestHost() || isCreatorProgressionUser()
 }
 
+export function getStoredTowerDefenseEndlessUnlock() {
+  if (typeof window === 'undefined') return false
+  return window.localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true'
+}
+
+export function markTowerDefenseEndlessUnlocked() {
+  const progress = loadProgress()
+  progress.towerDefenseEndlessUnlocked = true
+  saveProgress(progress)
+  return progress
+}
+
 export function isShipCosmeticUnlocked(mastery: ShipMasteryRecord | undefined, cosmetic: ShipCosmeticKey) {
   if (hasProgressionUnlockOverride()) return true
   if (!mastery) return false
@@ -474,7 +494,7 @@ function autoEquipNewCosmetics(current: ShipCosmeticEquipState | undefined, mast
   return next
 }
 
-function normalizeProgress(value: unknown): ProgressState {
+export function normalizeProgress(value: unknown): ProgressState {
   const empty = createEmptyProgress()
   if (!value || typeof value !== 'object') return empty
 
@@ -484,6 +504,7 @@ function normalizeProgress(value: unknown): ProgressState {
     ...empty,
     ...data,
     version: 1,
+    towerDefenseEndlessUnlocked: Boolean(data.towerDefenseEndlessUnlocked || getStoredTowerDefenseEndlessUnlock()),
     totalRuns: Math.max(0, Math.floor(Number(data.totalRuns) || 0)),
     totalScore: Math.max(0, Math.floor(Number(data.totalScore) || 0)),
     totalPlaySeconds: Math.max(0, Math.floor(Number(data.totalPlaySeconds) || 0)),
@@ -499,6 +520,12 @@ function normalizeProgress(value: unknown): ProgressState {
     shipMastery,
     equippedCosmetics: normalizeEquippedCosmetics(data.equippedCosmetics ?? {}, shipMastery),
   }
+}
+
+function syncTowerDefenseEndlessUnlockStorage(unlocked: boolean) {
+  if (typeof window === 'undefined') return
+  if (unlocked) window.localStorage.setItem(ENDLESS_UNLOCK_STORAGE_KEY, 'true')
+  else window.localStorage.removeItem(ENDLESS_UNLOCK_STORAGE_KEY)
 }
 
 function normalizeShipMastery(records: Record<string, ShipMasteryRecord>) {
