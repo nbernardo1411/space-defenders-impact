@@ -643,6 +643,7 @@ type RaidPalette = {
 
 const canvasSpriteCache = new Map<string, CanvasSpriteEntry>()
 const cobraBossBodyTextureCache = new Map<string, HTMLCanvasElement>()
+const squidBossTentacleTextureCache = new Map<string, HTMLCanvasElement>()
 const homingMissileSpriteCache = new Map<number, HTMLCanvasElement>()
 const honeycombShieldSpriteCache = new Map<number, HTMLCanvasElement>()
 
@@ -3644,10 +3645,8 @@ function drawSnakeBiteLungeModel(ctx: CanvasRenderingContext2D, x: number, y: nu
     ])
   }
 
-  const headAngle = tangentAt(1)
   ctx.save()
   ctx.translate(endX, endY)
-  ctx.rotate(headAngle - Math.PI / 2)
   drawCobraBossHead(ctx, size * 0.72, time, true)
   ctx.restore()
   ctx.restore()
@@ -3871,11 +3870,12 @@ function drawReferenceSquidBossPaintPass(ctx: CanvasRenderingContext2D, size: nu
     const x = side * size * (0.055 + (row % 5) * 0.026)
     const y = -size * 0.46 + row * size * 0.035
     if (Math.abs(x) > size * (0.16 + row * 0.002) || y > size * 0.2) continue
-    drawRadialEllipse(ctx, x, y, size * 0.012, size * 0.012, [
-      [0, `rgba(255,255,255,${0.58 * pulse})`],
-      [0.45, `rgba(163,230,53,${0.68 * pulse})`],
-      [1, 'rgba(163,230,53,0)'],
-    ])
+      drawRadialEllipse(ctx, x, y, size * 0.012, size * 0.012, [
+        [0, `rgba(255,255,255,${0.58 * pulse})`],
+        [0.42, `rgba(253,224,71,${0.56 * pulse})`],
+        [0.7, `rgba(217,70,239,${0.44 * pulse})`],
+        [1, 'rgba(217,70,239,0)'],
+      ])
   }
 
   ctx.strokeStyle = 'rgba(244,114,182,0.38)'
@@ -3983,6 +3983,41 @@ function drawSquidBossSpriteBody(ctx: CanvasRenderingContext2D, size: number, ti
   ctx.restore()
 }
 
+function getSquidBossTentacleTextureCanvas() {
+  if (typeof document === 'undefined') return null
+  const sprite = getSquidBossCanvasSprite()
+  if (!sprite.loaded || !sprite.image.complete) return null
+  const { source, width, height } = getCanvasSpriteDimensions(sprite)
+  if (width <= 0 || height <= 0) return null
+
+  const cacheKey = `${sprite.cacheKey}:tentacle-texture:${Math.round(width)}x${Math.round(height)}`
+  const cached = squidBossTentacleTextureCache.get(cacheKey)
+  if (cached) return cached
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 192
+  canvas.height = 192
+  const textureCtx = canvas.getContext('2d')
+  if (!textureCtx) return null
+
+  textureCtx.fillStyle = '#15051f'
+  textureCtx.fillRect(0, 0, canvas.width, canvas.height)
+  textureCtx.imageSmoothingEnabled = true
+  textureCtx.imageSmoothingQuality = 'high'
+  textureCtx.drawImage(source, width * 0.18, height * 0.38, width * 0.64, height * 0.48, 0, 0, canvas.width, canvas.height)
+  textureCtx.globalCompositeOperation = 'screen'
+  textureCtx.globalAlpha = 0.42
+  textureCtx.drawImage(source, width * 0.28, height * 0.5, width * 0.44, height * 0.34, canvas.width * 0.04, canvas.height * 0.08, canvas.width * 0.92, canvas.height * 0.84)
+  textureCtx.globalAlpha = 1
+  textureCtx.globalCompositeOperation = 'multiply'
+  textureCtx.fillStyle = 'rgba(48,8,72,0.18)'
+  textureCtx.fillRect(0, 0, canvas.width, canvas.height)
+  textureCtx.globalCompositeOperation = 'source-over'
+
+  squidBossTentacleTextureCache.set(cacheKey, canvas)
+  return canvas
+}
+
 
 function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time: number) {
   const seconds = time / 1000
@@ -3995,21 +4030,23 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
   ])
   drawBossDust(ctx, size, 'rgba(217,70,239,ALPHA)', 26, 3.7, 0.74, 0.92)
 
-  const drawSegmentedTentacle = (baseX: number, baseY: number, tipX: number, tipY: number, side: number, phase: number, thick: number, bulb = false) => {
+  const tentacleTexture = getSquidBossTentacleTextureCanvas()
+  const drawSegmentedTentacle = (baseX: number, baseY: number, tipX: number, tipY: number, side: number, phase: number, thick: number, bulb = false, attackCurl = false, curveScale = 1) => {
     ctx.save()
     const reachSize = Math.min(size, 320)
     const sway = Math.sin(seconds * 2.1 + phase) * reachSize * 0.04
     const c1x = baseX + side * reachSize * 0.16
     const c1y = baseY + reachSize * 0.18
     const c2x = tipX - side * reachSize * 0.14 + sway
-    const c2y = tipY - reachSize * 0.16
+    const c2y = attackCurl ? tipY + reachSize * (bulb ? 0.13 : 0.1) : tipY - reachSize * 0.12
     const endX = tipX + sway
-    const sCurve = side * reachSize * (bulb ? 0.15 : 0.12)
+    const endY = attackCurl ? tipY - reachSize * (bulb ? 0.2 : 0.16) : tipY + reachSize * 0.04
+    const sCurve = side * reachSize * (bulb ? 0.15 : 0.12) * curveScale
     const rawPointAt = (t: number) => {
       const inv = 1 - t
       return {
         x: inv * inv * inv * baseX + 3 * inv * inv * t * c1x + 3 * inv * t * t * c2x + t * t * t * endX,
-        y: inv * inv * inv * baseY + 3 * inv * inv * t * c1y + 3 * inv * t * t * c2y + t * t * t * tipY,
+        y: inv * inv * inv * baseY + 3 * inv * inv * t * c1y + 3 * inv * t * t * c2y + t * t * t * endY,
       }
     }
     const pointAt = (t: number) => {
@@ -4036,19 +4073,35 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
       const radius = reachSize * (thick * 1.2 * taper + 0.007)
       const pulse = 1 + Math.sin(seconds * 3.2 + phase + segment * 0.44) * 0.04
       const body = ctx.createRadialGradient(point.x - radius * 0.25, point.y - radius * 0.35, 1, point.x, point.y, radius * 1.35)
-      body.addColorStop(0, '#d8b4fe')
-      body.addColorStop(0.22, '#8b5cf6')
-      body.addColorStop(0.58, '#4c1d95')
-      body.addColorStop(1, '#12031f')
+      body.addColorStop(0, '#f5d0fe')
+      body.addColorStop(0.2, '#d946ef')
+      body.addColorStop(0.58, '#7e22ce')
+      body.addColorStop(1, '#16051f')
       ctx.save()
       ctx.translate(point.x, point.y)
       ctx.rotate(angle)
       ctx.fillStyle = body
-      ctx.strokeStyle = 'rgba(168,85,247,0.4)'
+      ctx.strokeStyle = 'rgba(232,121,249,0.46)'
       ctx.lineWidth = Math.max(0.9, reachSize * 0.0026)
       ctx.beginPath()
       ctx.ellipse(0, 0, radius * 1.34 * pulse, radius * 0.86, 0, 0, Math.PI * 2)
       ctx.fill()
+      if (tentacleTexture) {
+        ctx.save()
+        ctx.beginPath()
+        ctx.ellipse(0, 0, radius * 1.26 * pulse, radius * 0.78, 0, 0, Math.PI * 2)
+        ctx.clip()
+        const pattern = ctx.createPattern(tentacleTexture, 'repeat')
+        if (pattern) {
+          const scrollX = ((phase * 47 + segment * 11 + time / 100) % tentacleTexture.width) - tentacleTexture.width
+          const scrollY = ((phase * 31 + segment * 7 + time / 155) % tentacleTexture.height) - tentacleTexture.height
+          ctx.globalAlpha *= 0.72
+          ctx.translate(scrollX, scrollY)
+          ctx.fillStyle = pattern
+          ctx.fillRect(-radius * 3 - scrollX, -radius * 3 - scrollY, radius * 6, radius * 6)
+        }
+        ctx.restore()
+      }
       if (segment % 3 === 0) ctx.stroke()
       ctx.restore()
     }
@@ -4062,7 +4115,7 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
       ctx.save()
       ctx.translate(point.x, point.y)
       ctx.rotate(angle)
-      ctx.strokeStyle = ring % 2 === 0 ? 'rgba(192,132,252,0.5)' : 'rgba(129,140,248,0.36)'
+      ctx.strokeStyle = ring % 2 === 0 ? 'rgba(244,114,182,0.54)' : 'rgba(217,70,239,0.42)'
       ctx.lineWidth = Math.max(1, reachSize * 0.0028)
       ctx.beginPath()
       ctx.ellipse(0, 0, ringW * 1.24, ringW * 0.46, 0, 0, Math.PI * 2)
@@ -4076,28 +4129,29 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
       const normal = tangentAt(p) + Math.PI / 2
       const offset = (sucker % 2 === 0 ? 1 : -1) * reachSize * (0.014 + (1 - p) * 0.012)
       drawRadialEllipse(ctx, point.x + Math.cos(normal) * offset, point.y + Math.sin(normal) * offset, reachSize * (0.01 + (1 - p) * 0.005), reachSize * 0.007, [
-        [0, 'rgba(255,255,255,0.72)'],
-        [0.42, 'rgba(216,180,254,0.58)'],
-        [1, 'rgba(168,85,247,0)'],
+        [0, 'rgba(255,255,255,0.78)'],
+        [0.36, 'rgba(253,224,71,0.58)'],
+        [0.68, 'rgba(244,114,182,0.48)'],
+        [1, 'rgba(217,70,239,0)'],
       ])
     }
     if (bulb) {
-      drawRadialEllipse(ctx, endX, tipY, reachSize * 0.05, reachSize * 0.042, [
+      drawRadialEllipse(ctx, endX, endY, reachSize * 0.05, reachSize * 0.042, [
         [0, 'rgba(255,255,255,0.94)'],
-        [0.25, 'rgba(192,132,252,0.86)'],
-        [0.65, 'rgba(91,33,182,0.5)'],
-        [1, 'rgba(91,33,182,0)'],
+        [0.25, 'rgba(253,224,71,0.82)'],
+        [0.58, 'rgba(217,70,239,0.64)'],
+        [1, 'rgba(126,34,206,0)'],
       ])
     }
     const tipAngle = tangentAt(1)
     const clawLength = reachSize * (bulb ? 0.072 : 0.056)
     const clawWidth = reachSize * (bulb ? 0.035 : 0.027)
     ctx.save()
-    ctx.translate(endX, tipY)
+    ctx.translate(endX, endY)
     ctx.rotate(tipAngle)
     ctx.globalCompositeOperation = 'source-over'
-    ctx.fillStyle = '#ede9fe'
-    ctx.strokeStyle = 'rgba(168,85,247,0.74)'
+    ctx.fillStyle = '#fae8ff'
+    ctx.strokeStyle = 'rgba(244,114,182,0.78)'
     ctx.lineWidth = Math.max(1, reachSize * 0.0032)
     ctx.beginPath()
     ctx.moveTo(clawLength, 0)
@@ -4108,7 +4162,7 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
     ctx.fill()
     ctx.stroke()
     ctx.globalCompositeOperation = 'lighter'
-    ctx.strokeStyle = 'rgba(192,132,252,0.52)'
+    ctx.strokeStyle = 'rgba(253,224,71,0.44)'
     ctx.beginPath()
     ctx.moveTo(-clawLength * 0.1, 0)
     ctx.lineTo(clawLength * 0.62, 0)
@@ -4118,18 +4172,18 @@ function drawGalacticSquidBoss(ctx: CanvasRenderingContext2D, size: number, time
   }
 
   const longTentacles = [
-    [-0.24, 0.1, -0.48, 0.66, -1, 0.8, 0.03, true],
-    [0.24, 0.1, 0.48, 0.66, 1, 1.2, 0.03, true],
-    [-0.18, 0.14, -0.31, 0.78, -1, 1.7, 0.024, false],
-    [0.18, 0.14, 0.31, 0.78, 1, 2.2, 0.024, false],
-    [-0.09, 0.16, -0.16, 0.86, -1, 2.8, 0.021, true],
-    [0.09, 0.16, 0.16, 0.86, 1, 3.2, 0.021, true],
-    [-0.02, 0.17, -0.06, 0.74, -1, 3.7, 0.019, false],
-    [0.02, 0.17, 0.06, 0.74, 1, 4.1, 0.019, false],
+    [-0.24, 0.09, -0.5, -0.12, -1, 0.8, 0.03, true, true, 1.05],
+    [0.24, 0.09, 0.5, -0.12, 1, 1.2, 0.03, true, true, 1.05],
+    [-0.2, 0.13, -0.43, 0.42, -1, 1.7, 0.024, false, false, 0.72],
+    [0.2, 0.13, 0.43, 0.42, 1, 2.2, 0.024, false, false, 0.72],
+    [-0.11, 0.16, -0.24, 0.64, -1, 2.8, 0.021, true, false, 0.52],
+    [0.11, 0.16, 0.24, 0.64, 1, 3.2, 0.021, true, false, 0.52],
+    [-0.035, 0.17, -0.09, 0.78, -1, 3.7, 0.019, false, false, 0.34],
+    [0.035, 0.17, 0.09, 0.78, 1, 4.1, 0.019, false, false, 0.34],
   ] as const
   const reachSize = Math.min(size, 320)
-  for (const [baseX, baseY, tipX, tipY, side, phase, thick, bulb] of longTentacles) {
-    drawSegmentedTentacle(baseX * size, baseY * size, tipX * reachSize, tipY * reachSize, side, phase, thick, bulb)
+  for (const [baseX, baseY, tipX, tipY, side, phase, thick, bulb, attackCurl, curveScale] of longTentacles) {
+    drawSegmentedTentacle(baseX * size, baseY * size, tipX * reachSize, tipY * reachSize, side, phase, thick, bulb, attackCurl, curveScale)
   }
 
   drawSquidBossSpriteBody(ctx, size, time)
@@ -4368,6 +4422,83 @@ function drawCobraTexturedBodySegment(
   ctx.restore()
 }
 
+function drawCobraPointedTail(ctx: CanvasRenderingContext2D, tail: Vec, next: Vec, size: number, warning = false) {
+  const angle = Math.atan2(tail.y - next.y, tail.x - next.x)
+  const length = size * 0.155
+  const width = size * 0.052
+  ctx.save()
+  ctx.translate(tail.x, tail.y)
+  ctx.rotate(angle)
+
+  const tailGradient = ctx.createLinearGradient(-length * 0.32, -width, length, width)
+  tailGradient.addColorStop(0, '#050108')
+  tailGradient.addColorStop(0.28, '#3b0615')
+  tailGradient.addColorStop(0.58, '#be123c')
+  tailGradient.addColorStop(0.84, '#fb7185')
+  tailGradient.addColorStop(1, '#ffd0df')
+  ctx.fillStyle = tailGradient
+  ctx.strokeStyle = warning ? 'rgba(255,42,86,0.78)' : 'rgba(251,146,60,0.58)'
+  ctx.lineWidth = Math.max(0.9, size * 0.004)
+  ctx.beginPath()
+  ctx.moveTo(length, 0)
+  ctx.quadraticCurveTo(length * 0.26, -width, -length * 0.38, -width * 0.42)
+  ctx.quadraticCurveTo(-length * 0.12, 0, -length * 0.38, width * 0.42)
+  ctx.quadraticCurveTo(length * 0.26, width, length, 0)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = warning ? 'rgba(255,205,218,0.62)' : 'rgba(255,205,218,0.42)'
+  ctx.lineWidth = Math.max(0.8, size * 0.003)
+  ctx.beginPath()
+  ctx.moveTo(-length * 0.12, 0)
+  ctx.lineTo(length * 0.66, 0)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawCobraBodyConnector(ctx: CanvasRenderingContext2D, bodyPoints: Vec[], size: number, warning = false) {
+  ctx.save()
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  for (let i = 0; i < bodyPoints.length - 1; i += 1) {
+    const point = bodyPoints[i]
+    const next = bodyPoints[i + 1]
+    const p = i / (bodyPoints.length - 1)
+    const segmentSize = size * (0.04 + p * 0.066 + Math.sin(p * Math.PI) * 0.012)
+    ctx.strokeStyle = '#12020a'
+    ctx.lineWidth = segmentSize * 1.52
+    ctx.beginPath()
+    ctx.moveTo(point.x, point.y)
+    ctx.lineTo(next.x, next.y)
+    ctx.stroke()
+
+    const coreGradient = ctx.createLinearGradient(point.x, point.y, next.x, next.y)
+    coreGradient.addColorStop(0, '#3b0615')
+    coreGradient.addColorStop(0.42, '#be123c')
+    coreGradient.addColorStop(0.72, '#fb7185')
+    coreGradient.addColorStop(1, '#3b0615')
+    ctx.strokeStyle = coreGradient
+    ctx.lineWidth = segmentSize * 1.08
+    ctx.beginPath()
+    ctx.moveTo(point.x, point.y)
+    ctx.lineTo(next.x, next.y)
+    ctx.stroke()
+  }
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.strokeStyle = warning ? 'rgba(255,205,218,0.2)' : 'rgba(251,146,60,0.12)'
+  ctx.lineWidth = Math.max(1, size * 0.006)
+  ctx.beginPath()
+  for (let i = 0; i < bodyPoints.length; i += 1) {
+    const point = bodyPoints[i]
+    if (i === 0) ctx.moveTo(point.x, point.y)
+    else ctx.lineTo(point.x, point.y)
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
 function drawSnakeHoodFlaps(ctx: CanvasRenderingContext2D, size: number) {
   for (const side of [-1, 1]) {
     const hood = ctx.createLinearGradient(side * size * 0.02, -size * 0.42, side * size * 0.42, size * 0.02)
@@ -4417,13 +4548,16 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   const bodyPoints: Vec[] = []
   for (let i = 0; i < 70; i += 1) {
     const p = i / 69
-    const wave = seconds * 2.4
-    const angle = p * Math.PI * 3.55 + Math.sin(wave + p * Math.PI * 6) * 0.18
-    const neckBlend = Math.pow(1 - p, 0.68)
-    const radius = size * (0.34 * neckBlend + 0.026)
+    const travel = seconds * 4.05
+    const tailBlend = Math.pow(1 - p, 0.54)
+    const neckTether = 1 - Math.pow(p, 3.1) * 0.88
+    const waveA = Math.sin(p * Math.PI * 5.8 - travel)
+    const waveB = Math.sin(p * Math.PI * 11.4 - travel * 1.38) * 0.32
+    const waveC = Math.sin(seconds * 1.5 + p * Math.PI * 2.2) * 0.16
+    const slitherAmplitude = size * (0.17 * tailBlend + Math.sin(p * Math.PI) * 0.035)
     bodyPoints.push({
-      x: Math.sin(angle) * radius + Math.sin(p * Math.PI * 7 + wave * 1.15) * size * (0.045 * neckBlend + 0.006),
-      y: size * 0.62 - p * size * 0.82 + Math.cos(angle + Math.sin(wave + p * 4) * 0.18) * size * (0.09 * neckBlend + 0.02),
+      x: (waveA + waveB + waveC) * slitherAmplitude * neckTether,
+      y: size * 0.62 - p * size * 0.82 + Math.cos(p * Math.PI * 5.8 - travel) * size * (0.032 * tailBlend + 0.008),
     })
   }
 
@@ -4457,12 +4591,13 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
     return
   }
 
+  drawCobraBodyConnector(ctx, bodyPoints, size, redEyeWarning)
   for (let i = 0; i < bodyPoints.length - 1; i += 1) {
     const point = bodyPoints[i]
     const next = bodyPoints[i + 1]
     const p = i / (bodyPoints.length - 1)
     const angle = Math.atan2(next.y - point.y, next.x - point.x)
-    const segmentSize = size * (0.058 + p * 0.04 + Math.sin(p * Math.PI) * 0.012)
+    const segmentSize = size * (0.036 + p * 0.062 + Math.sin(p * Math.PI) * 0.012)
     const scale = 1 + Math.sin(seconds * 4.4 + i * 0.55) * 0.095
     drawCobraTexturedBodySegment(ctx, cobraTexture, point.x, point.y, segmentSize * 1.3 * scale, segmentSize * 0.74 * scale, angle + Math.PI / 2, time, i, redEyeWarning)
     if (i % 2 === 0) {
@@ -4487,6 +4622,7 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
       ctx.stroke()
     }
   }
+  drawCobraPointedTail(ctx, bodyPoints[0], bodyPoints[1], size, redEyeWarning)
 
   ctx.strokeStyle = 'rgba(251,146,60,0.2)'
   ctx.lineWidth = Math.max(1, size * 0.004)
@@ -5054,6 +5190,7 @@ function drawFinalBossSpriteBody(ctx: CanvasRenderingContext2D, size: number, ti
     ctx.stroke()
   }
 
+  const orbitalSprite = getEliteAlienCanvasSprite(4)
   for (let drone = 0; drone < 10; drone += 1) {
     const angle = drone / 10 * Math.PI * 2 + seconds * 0.28
     const dx = Math.cos(angle) * size * (0.62 + Math.sin(drone) * 0.035)
@@ -5061,13 +5198,32 @@ function drawFinalBossSpriteBody(ctx: CanvasRenderingContext2D, size: number, ti
     ctx.save()
     ctx.translate(dx, dy)
     ctx.rotate(angle + Math.PI / 2)
-    ctx.fillStyle = `rgba(14,165,233,${0.28 + slowPulse * 0.1})`
-    ctx.strokeStyle = coreRage > 0.08 ? 'rgba(252,165,165,0.76)' : 'rgba(125,249,255,0.78)'
-    ctx.lineWidth = Math.max(0.8, size * 0.003)
-    ctx.beginPath()
-    ctx.ellipse(0, 0, size * 0.04, size * 0.01, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
+    if (orbitalSprite.loaded && orbitalSprite.image.complete) {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.shadowColor = coreRage > 0.08 ? 'rgba(248,113,113,0.54)' : 'rgba(56,189,248,0.5)'
+      ctx.shadowBlur = size * 0.018
+      drawCanvasSpriteContain(
+        ctx,
+        orbitalSprite,
+        0,
+        0,
+        size * 0.082,
+        coreRage > 0.08 ? 'brightness(1.16) contrast(1.2) saturate(1.35)' : 'brightness(1.12) contrast(1.18) saturate(1.2)',
+        0.88 + slowPulse * 0.08,
+        0,
+        1,
+        coreColor,
+      )
+      ctx.shadowBlur = 0
+    } else {
+      ctx.fillStyle = `rgba(14,165,233,${0.28 + slowPulse * 0.1})`
+      ctx.strokeStyle = coreRage > 0.08 ? 'rgba(252,165,165,0.76)' : 'rgba(125,249,255,0.78)'
+      ctx.lineWidth = Math.max(0.8, size * 0.003)
+      ctx.beginPath()
+      ctx.ellipse(0, 0, size * 0.04, size * 0.01, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
     ctx.restore()
   }
 
@@ -5092,20 +5248,6 @@ function drawFinalBossRageCore(ctx: CanvasRenderingContext2D, size: number, time
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   ctx.globalAlpha = clamp(0.22 + rage * 0.88, 0, 1)
-  for (const side of [-1, 1]) {
-    const panelX = side * size * 0.34
-    ctx.fillStyle = `rgba(239,68,68,${0.18 + pulse * 0.34})`
-    ctx.strokeStyle = `rgba(252,165,165,${0.32 + pulse * 0.42})`
-    ctx.lineWidth = Math.max(1.5, size * 0.006)
-    ctx.beginPath()
-    ctx.moveTo(panelX - side * size * 0.1, -size * 0.2)
-    ctx.lineTo(panelX + side * size * 0.15, -size * 0.1)
-    ctx.lineTo(panelX + side * size * 0.11, size * 0.17)
-    ctx.lineTo(panelX - side * size * 0.13, size * 0.22)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
-  }
   drawRadialEllipse(ctx, 0, size * 0.23, size * (0.16 + rage * 0.05), size * (0.18 + rage * 0.06), [
     [0, `rgba(255,255,255,${0.72 + pulse * 0.2})`],
     [0.24, `rgba(248,113,113,${0.6 + pulse * 0.25})`],
@@ -5214,12 +5356,12 @@ function drawBossRichDetailOverlay(ctx: CanvasRenderingContext2D, size: number, 
 
   if (kind === 'squid') {
     ctx.globalCompositeOperation = 'lighter'
-    ctx.strokeStyle = 'rgba(244,114,182,0.44)'
+    ctx.strokeStyle = 'rgba(217,70,239,0.46)'
     ctx.lineWidth = Math.max(1.2, size * 0.0048)
     for (const side of [-1, 1]) {
       ctx.beginPath()
       ctx.moveTo(side * size * 0.08, size * 0.18)
-      ctx.bezierCurveTo(side * size * 0.18, size * 0.3, side * size * 0.02, size * 0.4, side * size * 0.13, size * 0.52)
+      ctx.bezierCurveTo(side * size * 0.2, size * 0.31, side * size * 0.02, size * 0.44, side * size * 0.16, size * 0.34)
       ctx.stroke()
     }
   }
@@ -5235,35 +5377,37 @@ function drawBossRichDetailOverlay(ctx: CanvasRenderingContext2D, size: number, 
     }
   }
 
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.strokeStyle = warm ? 'rgba(255,237,213,0.3)' : 'rgba(203,213,225,0.24)'
-  ctx.fillStyle = 'rgba(2,6,23,0.28)'
-  ctx.lineWidth = Math.max(0.75, size * 0.0026)
-  for (const side of [-1, 1]) {
-    for (let layer = 0; layer < 4; layer += 1) {
-      const y = -size * 0.31 + layer * size * 0.17
-      const inner = side * size * (0.04 + layer * 0.018)
-      const outer = side * size * (0.2 + layer * 0.038)
+  if (kind !== 'final') {
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.strokeStyle = warm ? 'rgba(255,237,213,0.3)' : 'rgba(203,213,225,0.24)'
+    ctx.fillStyle = 'rgba(2,6,23,0.28)'
+    ctx.lineWidth = Math.max(0.75, size * 0.0026)
+    for (const side of [-1, 1]) {
+      for (let layer = 0; layer < 4; layer += 1) {
+        const y = -size * 0.31 + layer * size * 0.17
+        const inner = side * size * (0.04 + layer * 0.018)
+        const outer = side * size * (0.2 + layer * 0.038)
+        ctx.beginPath()
+        ctx.moveTo(inner, y)
+        ctx.bezierCurveTo(side * size * 0.13, y + size * 0.025, outer, y + size * 0.055, outer * 0.92, y + size * 0.105)
+        ctx.bezierCurveTo(side * size * 0.18, y + size * 0.078, side * size * 0.1, y + size * 0.055, inner * 1.15, y + size * 0.02)
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+      }
+    }
+
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = hexToRgba(accent, 0.22 + pulse * 0.12)
+    ctx.lineWidth = Math.max(0.8, size * 0.0028)
+    for (let arc = 0; arc < 6; arc += 1) {
+      const y = -size * 0.42 + arc * size * 0.155
+      const width = size * (0.13 + arc * 0.034)
       ctx.beginPath()
-      ctx.moveTo(inner, y)
-      ctx.bezierCurveTo(side * size * 0.13, y + size * 0.025, outer, y + size * 0.055, outer * 0.92, y + size * 0.105)
-      ctx.bezierCurveTo(side * size * 0.18, y + size * 0.078, side * size * 0.1, y + size * 0.055, inner * 1.15, y + size * 0.02)
-      ctx.closePath()
-      ctx.fill()
+      ctx.moveTo(-width, y)
+      ctx.quadraticCurveTo(0, y + size * (0.045 + arc * 0.004), width, y)
       ctx.stroke()
     }
-  }
-
-  ctx.globalCompositeOperation = 'lighter'
-  ctx.strokeStyle = hexToRgba(accent, 0.22 + pulse * 0.12)
-  ctx.lineWidth = Math.max(0.8, size * 0.0028)
-  for (let arc = 0; arc < 6; arc += 1) {
-    const y = -size * 0.42 + arc * size * 0.155
-    const width = size * (0.13 + arc * 0.034)
-    ctx.beginPath()
-    ctx.moveTo(-width, y)
-    ctx.quadraticCurveTo(0, y + size * (0.045 + arc * 0.004), width, y)
-    ctx.stroke()
   }
 
   if (kind === 'squid') {
@@ -5271,17 +5415,18 @@ function drawBossRichDetailOverlay(ctx: CanvasRenderingContext2D, size: number, 
       const x = Math.sin(seconds * 1.4 + mote * 1.7) * size * (0.09 + mote * 0.018)
       const y = -size * 0.48 + mote * size * 0.082
       drawRadialEllipse(ctx, x, y, size * 0.01, size * 0.014, [
-        [0, 'rgba(236,253,245,0.86)'],
-        [0.48, 'rgba(132,204,22,0.66)'],
-        [1, 'rgba(132,204,22,0)'],
+        [0, 'rgba(255,255,255,0.86)'],
+        [0.34, 'rgba(253,224,71,0.62)'],
+        [0.68, 'rgba(244,114,182,0.5)'],
+        [1, 'rgba(217,70,239,0)'],
       ])
     }
-    ctx.strokeStyle = 'rgba(251,113,133,0.34)'
+    ctx.strokeStyle = 'rgba(232,121,249,0.36)'
     ctx.lineWidth = Math.max(0.9, size * 0.0032)
     for (const side of [-1, 1]) {
       ctx.beginPath()
       ctx.moveTo(side * size * 0.16, -size * 0.18)
-      ctx.bezierCurveTo(side * size * 0.3, size * 0.02, side * size * 0.15, size * 0.22, side * size * 0.28, size * 0.36)
+      ctx.bezierCurveTo(side * size * 0.31, size * 0.02, side * size * 0.13, size * 0.24, side * size * 0.29, size * 0.2)
       ctx.stroke()
     }
   } else if (kind === 'snake') {
@@ -5377,11 +5522,15 @@ function drawRaidEnemy(
       drawBossBar(ctx, enemy, x, y, size)
       return
     }
-    const sprite = getNormalAlienCanvasSprite(enemy.variant)
+    const bossSpriteVariant = Math.abs(Math.trunc(enemy.id + enemy.variant * 11 + enemy.pattern * 3)) % (RAID_ALIEN_SPRITE_COUNT + RAID_ELITE_SPRITE_COUNT)
+    const sprite = bossSpriteVariant < RAID_ALIEN_SPRITE_COUNT
+      ? getNormalAlienCanvasSprite(bossSpriteVariant)
+      : getEliteAlienCanvasSprite(bossSpriteVariant - RAID_ALIEN_SPRITE_COUNT)
     const bossFilter = enemy.bossKind === 'super'
-        ? 'brightness(1.12) contrast(1.16) saturate(1.32)'
-        : 'brightness(1.16) contrast(1.16) saturate(1.32)'
-    drawCanvasSpriteContain(ctx, sprite, x, y, size, bossFilter, 1, rotation, floatScale, enemy.color)
+        ? 'brightness(1.14) contrast(1.18) saturate(1.38)'
+        : 'brightness(1.16) contrast(1.18) saturate(1.34)'
+    drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.34), 1)
+    drawCanvasSpriteContain(ctx, sprite, x, y, size * 1.04, bossFilter, 1, rotation, floatScale, enemy.color)
     if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
     drawBossReticle(ctx, x, y, size, time, false)
     drawBossBar(ctx, enemy, x, y, size)
