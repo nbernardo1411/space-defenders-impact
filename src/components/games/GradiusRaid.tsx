@@ -668,6 +668,57 @@ const RAID_SQUID_BOSS_ASSET_PATH = 'assets/aliens/squid_boss.png'
 const RAID_COBRA_BOSS_ASSET_PATH = 'assets/aliens/cobra_boss.png'
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
 
+const RAID_SHIP_STATIC_FILTERS = [
+  'brightness(1.12) contrast(1.14) saturate(1.26)',
+  'brightness(1.28) contrast(1.42) saturate(2.25)',
+  'brightness(1.35) saturate(1.9)',
+] as const
+
+const RAID_NORMAL_BOSS_POOL_STATIC_FILTERS = [
+  'brightness(1.14) contrast(1.18) saturate(1.38)',
+  'brightness(1.16) contrast(1.18) saturate(1.34)',
+] as const
+
+const RAID_ELITE_STATIC_FILTERS = [
+  ...RAID_NORMAL_BOSS_POOL_STATIC_FILTERS,
+  'brightness(1.12) contrast(1.18) saturate(1.2)',
+  'brightness(1.14) contrast(1.18) saturate(1.25)',
+  'brightness(1.16) contrast(1.2) saturate(1.35)',
+  'brightness(1.18) contrast(1.2) saturate(1.45)',
+] as const
+
+const RAID_SQUID_BOSS_STATIC_FILTERS = [
+  'brightness(1.06) contrast(1.12) saturate(1.08)',
+] as const
+
+const RAID_COBRA_BOSS_STATIC_FILTERS = [
+  'brightness(1.08) contrast(1.14) saturate(1.08)',
+  'brightness(1.16) contrast(1.22) saturate(1.16)',
+] as const
+
+const RAID_FINAL_BOSS_STATIC_FILTERS = [
+  'brightness(1.12) contrast(1.14) saturate(1.22)',
+] as const
+
+const RAID_OTHER_STATIC_FILTERS: Partial<Record<RaidOtherAssetKey, readonly string[]>> = {
+  asteroid: [
+    'brightness(0.86) contrast(1.16) saturate(0.9)',
+    'brightness(0.84) contrast(1.2) saturate(0.92)',
+  ],
+  comet: ['brightness(1.2) contrast(1.18) saturate(1.14)'],
+  galaxy: [
+    'brightness(0.72) contrast(1.12) saturate(1.04)',
+    'brightness(0.42) contrast(1.08) saturate(0.72)',
+  ],
+  galaxy2: [
+    'brightness(0.58) contrast(1.06) saturate(0.82)',
+    'brightness(0.42) contrast(1.08) saturate(0.72)',
+  ],
+  planet1: ['brightness(0.78) contrast(1.08) saturate(0.86)'],
+  planet2: ['brightness(0.8) contrast(1.08) saturate(0.86)'],
+  planet3: ['brightness(0.66) contrast(1.12) saturate(0.9)'],
+}
+
 const DEFAULT_RAID_PALETTE: RaidPalette = {
   baseTop: '#020307',
   baseMid: '#060812',
@@ -1152,6 +1203,44 @@ function getFilteredCanvasSpriteSource(sprite: CanvasSpriteEntry, source: Canvas
   return canvas
 }
 
+function warmCanvasSpriteFilter(sprite: CanvasSpriteEntry, filter: string) {
+  if (!sprite.loaded || !sprite.image.complete) return
+  const { source, width, height } = getCanvasSpriteDimensions(sprite)
+  getFilteredCanvasSpriteSource(sprite, source, width, height, filter)
+}
+
+function warmRaidCanvasFilterVariants() {
+  if (typeof document === 'undefined') return
+
+  for (const ship of SHIP_OPTIONS) {
+    const sprite = getShipCanvasSprite(ship.key)
+    for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
+  }
+
+  for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) {
+    const sprite = getNormalAlienCanvasSprite(variant)
+    for (const filter of RAID_NORMAL_BOSS_POOL_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
+  }
+
+  for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) {
+    const sprite = getEliteAlienCanvasSprite(variant)
+    for (const filter of RAID_ELITE_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
+  }
+
+  for (const filter of RAID_SQUID_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getSquidBossCanvasSprite(), filter)
+  for (const filter of RAID_COBRA_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getCobraBossCanvasSprite(), filter)
+  for (const filter of RAID_FINAL_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getFinalBossCanvasSprite(), filter)
+  getSquidBossTentacleTextureCanvas()
+  getCobraBossBodyTextureCanvas()
+
+  for (const key of Object.keys(RAID_OTHER_STATIC_FILTERS) as RaidOtherAssetKey[]) {
+    const sprite = getRaidOtherCanvasSprite(key)
+    const filters = RAID_OTHER_STATIC_FILTERS[key]
+    if (!filters) continue
+    for (const filter of filters) warmCanvasSpriteFilter(sprite, filter)
+  }
+}
+
 function getCachedCanvasPattern(ctx: CanvasRenderingContext2D, texture: HTMLCanvasElement) {
   let contextPatterns = canvasPatternCache.get(ctx)
   if (!contextPatterns) {
@@ -1229,7 +1318,9 @@ function warmRaidCanvasAssets() {
 function preloadRaidCanvasAssets() {
   if (!raidCanvasAssetWarmPromise) {
     const entries = warmRaidCanvasAssets()
-    raidCanvasAssetWarmPromise = Promise.all(entries.map((entry) => entry.ready)).then(() => undefined)
+    raidCanvasAssetWarmPromise = Promise.all(entries.map((entry) => entry.ready)).then(() => {
+      warmRaidCanvasFilterVariants()
+    })
   }
   return raidCanvasAssetWarmPromise
 }
@@ -1276,6 +1367,7 @@ function drawCanvasSprite(
   rotation = 0,
   scale = 1,
   fallbackColor = PLAYER_COLOR,
+  cacheFilteredVariant = true,
 ) {
   ctx.save()
   ctx.translate(x, y)
@@ -1284,7 +1376,7 @@ function drawCanvasSprite(
   ctx.globalAlpha *= alpha
   if (sprite.loaded && sprite.image.complete) {
     const { source, width, height } = getCanvasSpriteDimensions(sprite)
-    const filteredSource = getFilteredCanvasSpriteSource(sprite, source, width, height, filter)
+    const filteredSource = cacheFilteredVariant ? getFilteredCanvasSpriteSource(sprite, source, width, height, filter) : null
     ctx.filter = filteredSource ? 'none' : filter
     ctx.drawImage(filteredSource ?? source, -size / 2, -size / 2, size, size)
   } else {
@@ -1305,6 +1397,7 @@ function drawCanvasSpriteContain(
   rotation = 0,
   scale = 1,
   fallbackColor = PLAYER_COLOR,
+  cacheFilteredVariant = true,
 ) {
   ctx.save()
   ctx.translate(x, y)
@@ -1322,7 +1415,7 @@ function drawCanvasSpriteContain(
     const aspect = width / height
     const drawWidth = aspect > 1 ? size : size * aspect
     const drawHeight = aspect > 1 ? size / aspect : size
-    const filteredSource = getFilteredCanvasSpriteSource(sprite, source, width, height, filter)
+    const filteredSource = cacheFilteredVariant ? getFilteredCanvasSpriteSource(sprite, source, width, height, filter) : null
     ctx.filter = filteredSource ? 'none' : filter
     ctx.drawImage(filteredSource ?? source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
   } else {
@@ -1342,6 +1435,7 @@ function drawCanvasImageContain(
   filter = 'none',
   alpha = 1,
   rotation = 0,
+  cacheFilteredVariant = true,
 ) {
   if (!sprite.loaded || !sprite.image.complete) return false
   const { source, width: sourceWidth, height: sourceHeight } = getCanvasSpriteDimensions(sprite)
@@ -1357,7 +1451,7 @@ function drawCanvasImageContain(
   ctx.translate(x, y)
   ctx.rotate(rotation)
   ctx.globalAlpha *= alpha
-  const filteredSource = getFilteredCanvasSpriteSource(sprite, source, sourceWidth, sourceHeight, filter)
+  const filteredSource = cacheFilteredVariant ? getFilteredCanvasSpriteSource(sprite, source, sourceWidth, sourceHeight, filter) : null
   ctx.filter = filteredSource ? 'none' : filter
   ctx.drawImage(filteredSource ?? source, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
   ctx.restore()
@@ -3246,7 +3340,9 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
   }
 
   ctx.restore()
-}function getNormalEnemyFilter(time: number) {
+}
+
+function getNormalEnemyFilter(time: number) {
   const pulse = 0.88 + ((Math.sin(time / 700) + 1) / 2) * 0.3
   return `brightness(${(1.16 * pulse).toFixed(2)}) contrast(1.12) saturate(1.28)`
 }
@@ -5105,7 +5201,7 @@ function drawRaidEnemy(
 
   const sprite = getNormalAlienCanvasSprite(enemy.variant)
   drawSpriteGlow(ctx, x, y, size, 'rgba(239,35,60,0.34)', 1)
-  drawCanvasSpriteContain(ctx, sprite, x, y, size, getNormalAlienImageFilter(normalEnemyFilter, enemy), 1, 0, 1, enemy.color)
+  drawCanvasSpriteContain(ctx, sprite, x, y, size, getNormalAlienImageFilter(normalEnemyFilter, enemy), 1, 0, 1, enemy.color, false)
   ctx.save()
   ctx.translate(x, y)
   drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.color)
