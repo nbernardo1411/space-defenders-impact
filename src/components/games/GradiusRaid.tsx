@@ -46,6 +46,7 @@ type Player = Vec & {
   ship: ShipOption
   weapons: Record<WeaponKey, number>
   weaponTimers: Record<WeaponKey, number>
+  engineBoost: number
 }
 
 type Shot = Vec & {
@@ -1561,6 +1562,7 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     ship,
     weapons: { ...EMPTY_WEAPONS },
     weaponTimers: { ...EMPTY_WEAPON_TIMERS },
+    engineBoost: 0,
   }
 }
 
@@ -1641,6 +1643,7 @@ function clonePlayer(player: Player): Player {
     weapons: { ...player.weapons },
     weaponTimers: { ...player.weaponTimers },
     weaponCooldowns: { ...player.weaponCooldowns },
+    engineBoost: player.engineBoost ?? 0,
   }
 }
 
@@ -1696,6 +1699,7 @@ function compactPlayer(player: Player): Player {
     invuln: roundNetworkNumber(player.invuln),
     optionTimer: roundNetworkNumber(player.optionTimer),
     fireCooldown: roundNetworkNumber(player.fireCooldown),
+    engineBoost: roundNetworkNumber(player.engineBoost),
   }
 }
 
@@ -1795,6 +1799,9 @@ function getBufferedPlayerVisual(buffer: MultiplayerPlayerSnapshot[], renderAt: 
     const visual = clonePlayer(latest.player)
     visual.x = clamp(latest.player.x + (latest.player.x - previous.player.x) * extrapolateScale, 0, WIDTH)
     visual.y = clamp(latest.player.y + (latest.player.y - previous.player.y) * extrapolateScale, 0, HEIGHT)
+    const latestBoost = latest.player.engineBoost ?? 0
+    const previousBoost = previous.player.engineBoost ?? 0
+    visual.engineBoost = clamp(latestBoost + (latestBoost - previousBoost) * extrapolateScale, 0, 1)
     return visual
   }
 
@@ -1808,6 +1815,9 @@ function getBufferedPlayerVisual(buffer: MultiplayerPlayerSnapshot[], renderAt: 
     const visual = clonePlayer(next.player)
     visual.x = previous.player.x + (next.player.x - previous.player.x) * t
     visual.y = previous.player.y + (next.player.y - previous.player.y) * t
+    const previousBoost = previous.player.engineBoost ?? 0
+    const nextBoost = next.player.engineBoost ?? 0
+    visual.engineBoost = previousBoost + (nextBoost - previousBoost) * t
     return visual
   }
 
@@ -2072,6 +2082,8 @@ function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | nu
   if (keys.has('arrowup') || keys.has('w')) dy -= 1
   if (keys.has('arrowdown') || keys.has('s')) dy += 1
 
+  const previousY = player.y
+
   if (pointerTarget) {
     const pull = Math.min(1, dt * 10.5 * player.ship.speed)
     player.x += (pointerTarget.x - player.x) * pull
@@ -2085,6 +2097,10 @@ function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | nu
 
   player.x = clamp(player.x, 4, 96)
   player.y = clamp(player.y, 13, 93)
+  const upwardSpeed = dt > 0 ? Math.max(0, previousY - player.y) / dt : 0
+  const targetEngineBoost = clamp(upwardSpeed / 46, 0, 1.35)
+  const boostEase = targetEngineBoost > (player.engineBoost ?? 0) ? 11.5 : 5.5
+  player.engineBoost = (player.engineBoost ?? 0) + (targetEngineBoost - (player.engineBoost ?? 0)) * Math.min(1, dt * boostEase)
 }
 
 function getRiftCenter(event: RaidRandomEvent) {
@@ -5263,9 +5279,9 @@ function drawRaidOptions(
     'brightness(1.12) contrast(1.12) saturate(1.24)',
   )
 }
-function drawPlayerEngine(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number) {
+function drawPlayerEngine(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, engineBoost = 0) {
   const flicker = Math.sin(time / 105) * 0.04 + Math.sin(time / 53) * 0.018
-  const flameHeight = size * (0.48 + flicker)
+  const flameHeight = size * (0.48 + flicker) * (1 + clamp(engineBoost, 0, 1.35) * 0.34)
   const flameWidth = size * (0.11 + Math.sin(time / 88) * 0.006)
   const top = y + size * 0.32
   const tip = top + flameHeight
@@ -5583,9 +5599,10 @@ function drawRaidPlayer(
   const scale = isDown ? 0.88 : 1
   const alpha = isDown ? 0.3 : 1
   const masteryPaintColor = cosmetics.frame ? getMasteryPaintColor(player.ship.key, color) : color
+  const engineBoost = clamp(player.engineBoost ?? 0, 0, 1)
 
-  if (!isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, y, size, time, color, player.ship.key)
-  if (!isDown) drawPlayerEngine(ctx, x, y, size, time)
+  if (!isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, y, size, time, color, player.ship.key, engineBoost)
+  if (!isDown) drawPlayerEngine(ctx, x, y, size, time, engineBoost)
   if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, size, time, player.ship.key, masteryPaintColor)
 
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
@@ -5714,12 +5731,12 @@ function getMasteryPaintColor(shipKey: string, fallbackColor: string) {
   return MASTERY_VISUAL_STYLES[shipKey]?.paint ?? fallbackColor
 }
 
-function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color: string, shipKey: string) {
+function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color: string, shipKey: string, engineBoost = 0) {
   const style = getMasteryVisualStyle(shipKey, color)
   const pulse = 0.96 + Math.sin(time / 180) * 0.05
   const tailScale = shipKey === 'spaceEt' ? 1.18 : shipKey === 'dreadnought' ? 0.92 : 1
   const top = y + size * 0.34
-  const length = size * 0.72 * tailScale * pulse
+  const length = size * 0.72 * tailScale * pulse * (1 + clamp(engineBoost, 0, 1.35) * 0.36)
   const width = size * (shipKey === 'dreadnought' ? 0.15 : 0.13)
   const tip = top + length
 
