@@ -1306,12 +1306,12 @@ function getEliteAlienCanvasSprite(variant: number) {
 
 function warmRaidCanvasAssets() {
   const entries: CanvasSpriteEntry[] = []
+  entries.push(getFinalBossCanvasSprite())
+  entries.push(getSquidBossCanvasSprite())
+  entries.push(getCobraBossCanvasSprite())
   for (const ship of SHIP_OPTIONS) entries.push(getShipCanvasSprite(ship.key))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) entries.push(getNormalAlienCanvasSprite(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) entries.push(getEliteAlienCanvasSprite(variant))
-  entries.push(getSquidBossCanvasSprite())
-  entries.push(getCobraBossCanvasSprite())
-  entries.push(getFinalBossCanvasSprite())
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) entries.push(getRaidOtherCanvasSprite(key))
   return entries
 }
@@ -4685,8 +4685,8 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
   drawBossDust(ctx, size, 'rgba(244,63,94,ALPHA)', 34, 8.2, 0.68, 0.96)
 
   const bodyPoints: Vec[] = []
-  for (let i = 0; i < 70; i += 1) {
-    const p = i / 69
+  for (let i = 0; i < 88; i += 1) {
+    const p = i / 87
     const travel = seconds * 4.05
     const tailBlend = Math.pow(1 - p, 0.54)
     const neckTether = 1 - Math.pow(p, 3.1) * 0.88
@@ -4696,7 +4696,7 @@ function drawGalacticSnakeBoss(ctx: CanvasRenderingContext2D, size: number, time
     const slitherAmplitude = size * (0.17 * tailBlend + Math.sin(p * Math.PI) * 0.035)
     bodyPoints.push({
       x: (waveA + waveB + waveC) * slitherAmplitude * neckTether,
-      y: size * 0.62 - p * size * 0.82 + Math.cos(p * Math.PI * 5.8 - travel) * size * (0.032 * tailBlend + 0.008),
+      y: size * 0.9 - p * size * 1.1 + Math.cos(p * Math.PI * 5.8 - travel) * size * (0.032 * tailBlend + 0.008),
     })
   }
 
@@ -6774,6 +6774,7 @@ export function BossBriefingCanvas({ kind }: { kind: BriefingBossKind }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
+    void preloadRaidCanvasAssets()
     let raf = 0
     const draw = (time: number) => {
       const canvas = canvasRef.current
