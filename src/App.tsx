@@ -17,7 +17,7 @@ import {
   saveLanguage,
   type LanguageCode,
 } from './i18n'
-import { getStoredPlayerName, hasStoredPlayerName, saveStoredPlayerName } from './leaderboards'
+import { getStoredPlayerName, hasStoredPlayerName, isCreatorPlayerName, registerPlayerName, saveStoredPlayerName } from './leaderboards'
 import { loadProgress, recordRunResult, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
@@ -88,12 +88,16 @@ function App() {
   const [playerName, setPlayerName] = useState(getStoredPlayerName)
   const [playerNameDraft, setPlayerNameDraft] = useState(playerName === 'Pilot' && !hasStoredPlayerName() ? '' : playerName)
   const [showPlayerNamePrompt, setShowPlayerNamePrompt] = useState(() => !hasStoredPlayerName())
+  const [playerNameSaving, setPlayerNameSaving] = useState(false)
+  const [playerNameError, setPlayerNameError] = useState('')
   const [endlessUnlocked, setEndlessUnlocked] = useState(() => localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true')
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress())
   const [lastRunUpdate, setLastRunUpdate] = useState<{ result: RunResult; update: ProgressUpdate } | null>(null)
 
   const text = useMemo(() => getLanguageText(language), [language])
   const releaseText = useMemo(() => getReleaseText(language), [language])
+  const creatorUnlock = isCreatorPlayerName(playerName)
+  const canPlayEndless = endlessUnlocked || creatorUnlock
   const currentScene = useMemo(
     () => ({
       ...text.cutscene.scenes[cutsceneIndex],
@@ -107,6 +111,30 @@ function App() {
     setLanguage(nextLanguage)
     saveLanguage(nextLanguage)
   }
+
+  useEffect(() => {
+    if (!hasStoredPlayerName()) return
+
+    let cancelled = false
+    registerPlayerName(playerName).then((result) => {
+      if (cancelled) return
+      if (result.registered) {
+        const nextName = saveStoredPlayerName(result.playerName ?? playerName)
+        setPlayerName(nextName)
+        setPlayerNameDraft(nextName)
+        setShowPlayerNamePrompt(false)
+        return
+      }
+
+      setPlayerNameDraft('')
+      setPlayerNameError(result.taken ? text.player.nameTaken : text.player.nameRegisterError)
+      setShowPlayerNamePrompt(true)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // =========================
   // MENU BGM CONTROL
@@ -202,7 +230,7 @@ function App() {
   }
 
   const startEndless = () => {
-    if (!endlessUnlocked) return
+    if (!canPlayEndless) return
     setActiveGame('towerDefense')
     setGameMode('endless')
     setScreen('game')
@@ -224,9 +252,19 @@ function App() {
     setLastRunUpdate({ result, update })
   }
 
-  const savePlayerName = () => {
+  const savePlayerName = async () => {
     if (!playerNameDraft.trim()) return
-    const nextName = saveStoredPlayerName(playerNameDraft)
+    setPlayerNameSaving(true)
+    setPlayerNameError('')
+    const result = await registerPlayerName(playerNameDraft)
+    setPlayerNameSaving(false)
+
+    if (!result.registered) {
+      setPlayerNameError(result.taken ? text.player.nameTaken : text.player.nameRegisterError)
+      return
+    }
+
+    const nextName = saveStoredPlayerName(result.playerName ?? playerNameDraft)
     setPlayerName(nextName)
     setPlayerNameDraft(nextName)
     setShowPlayerNamePrompt(false)
@@ -248,10 +286,16 @@ function App() {
           autoFocus
           maxLength={18}
           value={playerNameDraft}
-          onChange={(event) => setPlayerNameDraft(event.target.value)}
+          onChange={(event) => {
+            setPlayerNameDraft(event.target.value)
+            setPlayerNameError('')
+          }}
           placeholder={text.player.placeholder}
         />
-        <button type="submit" disabled={!playerNameDraft.trim()}>{text.player.confirm}</button>
+        {playerNameError ? <small className="player-name-modal__error">{playerNameError}</small> : null}
+        <button type="submit" disabled={!playerNameDraft.trim() || playerNameSaving}>
+          {playerNameSaving ? text.player.checking : text.player.confirm}
+        </button>
       </form>
     </div>
   ) : null
@@ -365,7 +409,7 @@ function App() {
               </div>
             </div>
 
-            <div className={endlessUnlocked ? 'start-screen__actions' : 'start-screen__actions start-screen__actions--three'} aria-label="Game modes">
+            <div className={canPlayEndless ? 'start-screen__actions' : 'start-screen__actions start-screen__actions--three'} aria-label="Game modes">
               <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
                 <span className="start-screen__button-kicker">{text.title.raidKicker}</span>
                 <span className="start-screen__button-title">{text.title.raidTitle}</span>
@@ -376,7 +420,7 @@ function App() {
                 <span className="start-screen__button-title">{text.title.normalTitle}</span>
                 <span className="start-screen__button-copy">{text.title.normalCopy}</span>
               </button>
-              {endlessUnlocked && (
+              {canPlayEndless && (
                 <button className="start-screen__button start-screen__button--endless" onClick={startEndless}>
                   <span className="start-screen__button-kicker">{text.title.endlessKicker}</span>
                   <span className="start-screen__button-title">{text.title.endlessTitle}</span>

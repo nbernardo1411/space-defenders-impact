@@ -24,6 +24,9 @@ export const TEXT = {
       commander: 'Commander',
       change: 'Change',
       pilotName: 'Pilot name',
+      checking: 'Checking...',
+      nameTaken: 'That commander name is already taken.',
+      nameRegisterError: 'Could not verify that name. Try again in a moment.',
     },
     title: {
       brand: 'Orbital Command Simulation',
@@ -147,6 +150,9 @@ export const TEXT = {
       commander: '指挥官',
       change: '更改',
       pilotName: '飞行员名称',
+      checking: '检查中...',
+      nameTaken: '该指挥官名称已被使用。',
+      nameRegisterError: '无法验证该名称。请稍后再试。',
     },
     title: {
       brand: '轨道指挥模拟',
@@ -270,6 +276,9 @@ export const TEXT = {
       commander: '司令官',
       change: '変更',
       pilotName: 'パイロット名',
+      checking: '確認中...',
+      nameTaken: 'その司令官名はすでに使用されています。',
+      nameRegisterError: '名前を確認できませんでした。しばらくしてから再試行してください。',
     },
     title: {
       brand: '軌道司令シミュレーション',
@@ -393,6 +402,9 @@ export const TEXT = {
       commander: '지휘관',
       change: '변경',
       pilotName: '파일럿 이름',
+      checking: '확인 중...',
+      nameTaken: '이미 사용 중인 지휘관 이름입니다.',
+      nameRegisterError: '이름을 확인할 수 없습니다. 잠시 후 다시 시도하세요.',
     },
     title: {
       brand: '궤도 사령 시뮬레이션',

@@ -1223,6 +1223,13 @@ body {
   font-size: 1rem;
 }
 
+.player-name-modal__error {
+  color: #fecdd3;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
 .player-name-modal button {
   min-height: 48px;
   border: 0;

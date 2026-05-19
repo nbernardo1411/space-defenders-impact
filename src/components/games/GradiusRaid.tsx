@@ -6,7 +6,7 @@ import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAI
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
-import { getEquippedShipCosmetics, isLocalProgressionTestHost, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
+import { getEquippedShipCosmetics, hasProgressionUnlockOverride, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -11505,7 +11505,7 @@ export function GradiusRaid({
     stageClearProgress > 0.66 && stageClearProgress < 0.9
       ? Math.sin(((stageClearProgress - 0.66) / 0.24) * Math.PI)
       : 0
-  const completedCampaign = isLocalProgressionTestHost() || snapshot.unlockedStage >= MAX_RAID_STAGE
+  const completedCampaign = hasProgressionUnlockOverride() || snapshot.unlockedStage >= MAX_RAID_STAGE
   const checkpointStage = getCheckpointStage()
   const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
   const nukeCooldown = Math.ceil(snapshot.nukeCooldown)

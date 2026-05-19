@@ -21,6 +21,8 @@ export type SubmitLeaderboardScore = {
 }
 
 export const PLAYER_NAME_STORAGE_KEY = 'space-defenders-player-name'
+export const PLAYER_ID_STORAGE_KEY = 'space-defenders-player-id'
+export const CREATOR_PLAYER_NAME = 'zukito'
 
 export const LEADERBOARD_MODES: Array<{
   key: LeaderboardMode
@@ -64,6 +66,23 @@ export function sanitizePlayerName(value: string, maxLength = 18): string {
   return name || 'Pilot'
 }
 
+export function isCreatorPlayerName(value: string): boolean {
+  return sanitizePlayerName(value).toLocaleLowerCase('en-US') === CREATOR_PLAYER_NAME
+}
+
+export function getOrCreateStoredPlayerId(): string {
+  if (typeof window === 'undefined') return 'server-player'
+
+  const existing = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY)?.trim()
+  if (existing) return existing
+
+  const nextId = typeof window.crypto?.randomUUID === 'function'
+    ? window.crypto.randomUUID()
+    : `player-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+  window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, nextId)
+  return nextId
+}
+
 export function getStoredPlayerName(): string {
   if (typeof window === 'undefined') return 'Pilot'
   return sanitizePlayerName(window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || '')
@@ -80,6 +99,15 @@ export function saveStoredPlayerName(value: string): string {
     window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name)
   }
   return name
+}
+
+export type PlayerNameRegistrationResult = {
+  registered: boolean
+  available: boolean
+  taken: boolean
+  offline?: boolean
+  playerName?: string
+  error?: string
 }
 
 export function getLeaderboardApiBase(): string {
@@ -113,6 +141,47 @@ export async function fetchLeaderboards(): Promise<LeaderboardMap> {
 
   const data = await response.json()
   return normalizeLeaderboardMap(data.leaderboards)
+}
+
+export async function registerPlayerName(value: string): Promise<PlayerNameRegistrationResult> {
+  const playerName = sanitizePlayerName(value)
+  const playerId = getOrCreateStoredPlayerId()
+  const apiBase = getLeaderboardApiBase()
+  if (!apiBase) return { registered: true, available: true, taken: false, offline: true, playerName }
+
+  try {
+    const response = await fetch(`${apiBase}/players/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerName, playerId }),
+    })
+
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 409 || data?.reason === 'name_taken') {
+      return {
+        registered: false,
+        available: false,
+        taken: true,
+        playerName: typeof data?.playerName === 'string' ? data.playerName : playerName,
+      }
+    }
+
+    if (!response.ok || !data?.registered) {
+      return { registered: false, available: false, taken: false, error: 'Name registration failed.', playerName }
+    }
+
+    return {
+      registered: true,
+      available: true,
+      taken: false,
+      playerName: typeof data.playerName === 'string' ? sanitizePlayerName(data.playerName) : playerName,
+    }
+  } catch {
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      return { registered: true, available: true, taken: false, offline: true, playerName }
+    }
+    return { registered: false, available: false, taken: false, error: 'Name registration failed.', playerName }
+  }
 }
 
 export async function submitLeaderboardScore(score: SubmitLeaderboardScore): Promise<{ accepted: boolean; error?: string }> {

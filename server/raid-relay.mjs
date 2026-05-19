@@ -16,6 +16,7 @@ const leaderboardPool = DATABASE_URL
     })
   : null
 let leaderboardSchemaPromise = null
+let playerNameSchemaPromise = null
 
 /** @type {Map<string, { code: string, hostId: string, peers: Set<string> }>} */
 const rooms = new Map()
@@ -38,6 +39,11 @@ const server = createServer(async (req, res) => {
         peers: peers.size,
         leaderboards: Boolean(leaderboardPool),
       })
+      return
+    }
+
+    if (url.pathname === '/players/register' || url.pathname === '/players/name-check') {
+      await handlePlayerNameRequest(req, res, url)
       return
     }
 
@@ -217,6 +223,51 @@ async function handleLeaderboardRequest(req, res, url) {
   writeJson(res, 404, { error: 'Leaderboard route not found.' })
 }
 
+async function handlePlayerNameRequest(req, res, url) {
+  if (!leaderboardPool) {
+    writeJson(res, 503, { error: 'Player database is not configured.' })
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/players/name-check') {
+    const playerName = cleanName(url.searchParams.get('name'))
+    const playerId = cleanPlayerId(url.searchParams.get('playerId'))
+    if (!playerName) {
+      writeJson(res, 400, { error: 'A valid player name is required.' })
+      return
+    }
+
+    await ensurePlayerNameSchema()
+    const status = await getPlayerNameStatus(playerName, playerId)
+    writeJson(res, 200, status)
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/players/register') {
+    let body
+    try {
+      body = await readJsonBody(req)
+    } catch {
+      writeJson(res, 400, { error: 'Invalid JSON body.' })
+      return
+    }
+
+    const playerName = cleanName(body.playerName)
+    const playerId = cleanPlayerId(body.playerId)
+    if (!playerName || !playerId) {
+      writeJson(res, 400, { error: 'A valid player name and player id are required.' })
+      return
+    }
+
+    await ensurePlayerNameSchema()
+    const result = await registerPlayerName({ playerName, playerId })
+    writeJson(res, result.registered ? 200 : 409, result)
+    return
+  }
+
+  writeJson(res, 404, { error: 'Player route not found.' })
+}
+
 async function ensureLeaderboardSchema() {
   if (!leaderboardPool) throw new Error('Leaderboard database is not configured.')
   if (!leaderboardSchemaPromise) {
@@ -241,6 +292,142 @@ async function ensureLeaderboardSchema() {
   }
 
   return leaderboardSchemaPromise
+}
+
+async function ensurePlayerNameSchema() {
+  if (!leaderboardPool) throw new Error('Player database is not configured.')
+  if (!playerNameSchemaPromise) {
+    playerNameSchemaPromise = leaderboardPool.query(`
+      CREATE TABLE IF NOT EXISTS player_names (
+        id BIGSERIAL PRIMARY KEY,
+        player_id TEXT NOT NULL UNIQUE,
+        player_name TEXT NOT NULL,
+        normalized_name TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS player_names_normalized_name_idx
+        ON player_names (normalized_name);
+      CREATE UNIQUE INDEX IF NOT EXISTS player_names_player_id_idx
+        ON player_names (player_id);
+    `).catch((error) => {
+      playerNameSchemaPromise = null
+      throw error
+    })
+  }
+
+  return playerNameSchemaPromise
+}
+
+async function getPlayerNameStatus(playerName, playerId = null) {
+  const normalizedName = normalizePlayerName(playerName)
+  const result = await leaderboardPool.query(
+    `
+      SELECT player_id AS "playerId", player_name AS "playerName"
+      FROM player_names
+      WHERE normalized_name = $1
+      LIMIT 1
+    `,
+    [normalizedName],
+  )
+
+  const existing = result.rows[0]
+  const ownedByPlayer = Boolean(existing && playerId && existing.playerId === playerId)
+  return {
+    available: !existing || ownedByPlayer,
+    taken: Boolean(existing && !ownedByPlayer),
+    ownedByPlayer,
+    playerName: existing?.playerName ?? playerName,
+  }
+}
+
+async function registerPlayerName({ playerName, playerId }) {
+  const normalizedName = normalizePlayerName(playerName)
+  const client = await leaderboardPool.connect()
+
+  try {
+    await client.query('BEGIN')
+    const existingName = await client.query(
+      `
+        SELECT player_id AS "playerId", player_name AS "playerName"
+        FROM player_names
+        WHERE normalized_name = $1
+        FOR UPDATE
+      `,
+      [normalizedName],
+    )
+    const nameOwner = existingName.rows[0]
+    if (nameOwner && nameOwner.playerId !== playerId) {
+      await client.query('ROLLBACK')
+      return {
+        registered: false,
+        available: false,
+        taken: true,
+        reason: 'name_taken',
+        playerName: nameOwner.playerName,
+      }
+    }
+
+    const existingPlayer = await client.query(
+      `
+        SELECT id
+        FROM player_names
+        WHERE player_id = $1
+        FOR UPDATE
+      `,
+      [playerId],
+    )
+
+    let saved
+    if (existingPlayer.rows[0]) {
+      const updateResult = await client.query(
+        `
+          UPDATE player_names
+          SET player_name = $2,
+              normalized_name = $3,
+              updated_at = NOW()
+          WHERE player_id = $1
+          RETURNING player_id AS "playerId", player_name AS "playerName"
+        `,
+        [playerId, playerName, normalizedName],
+      )
+      saved = updateResult.rows[0]
+    } else {
+      const insertResult = await client.query(
+        `
+          INSERT INTO player_names (player_id, player_name, normalized_name)
+          VALUES ($1, $2, $3)
+          RETURNING player_id AS "playerId", player_name AS "playerName"
+        `,
+        [playerId, playerName, normalizedName],
+      )
+      saved = insertResult.rows[0]
+    }
+
+    await client.query('COMMIT')
+    return {
+      registered: true,
+      available: true,
+      taken: false,
+      ownedByPlayer: true,
+      playerId: saved.playerId,
+      playerName: saved.playerName,
+    }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    if (error?.code === '23505') {
+      return {
+        registered: false,
+        available: false,
+        taken: true,
+        reason: 'name_taken',
+        playerName,
+      }
+    }
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 async function getLeaderboardRows(mode) {
@@ -667,6 +854,19 @@ function cleanName(value) {
     .slice(0, 18)
 
   return name || 'Pilot'
+}
+
+function normalizePlayerName(value) {
+  return cleanName(value).toLocaleLowerCase('en-US')
+}
+
+function cleanPlayerId(value) {
+  const playerId = String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 96)
+
+  return playerId.length >= 12 ? playerId : ''
 }
 
 function cleanLeaderboardName(value) {

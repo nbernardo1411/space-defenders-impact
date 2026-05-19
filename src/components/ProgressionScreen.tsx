@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   getCompletionPercent,
   getEquippedShipCosmetics,
-  isLocalProgressionTestHost,
+  hasProgressionUnlockOverride,
   isShipCosmeticUnlocked,
   setShipCosmeticEquipped,
   SHIP_COSMETIC_SINGLE_RUN_SCORE,
@@ -672,7 +672,7 @@ function drawPreviewMasteryAura(ctx: CanvasRenderingContext2D, image: HTMLImageE
 }
 
 function getRaidBestStage(progress: ProgressState) {
-  if (isLocalProgressionTestHost()) return 15
+  if (hasProgressionUnlockOverride()) return 15
   return Math.max(progress.bestStageByMode.gradius_solo, progress.bestStageByMode.gradius_multiplayer)
 }
 

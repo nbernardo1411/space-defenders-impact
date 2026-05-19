@@ -1,4 +1,4 @@
-import type { LeaderboardMode } from './leaderboards'
+import { isCreatorPlayerName, PLAYER_NAME_STORAGE_KEY, type LeaderboardMode } from './leaderboards'
 
 export type RunStatus = 'victory' | 'gameover' | 'exit'
 
@@ -386,6 +386,7 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
 }
 
 export function getCompletionPercent(progress: ProgressState) {
+  if (hasProgressionUnlockOverride()) return 100
   const achievements = ACHIEVEMENT_IDS.filter((id) => progress.achievements[id]).length
   const codex = CODEX_IDS.filter((id) => progress.codex[id]).length
   return Math.round(((achievements + codex) / (ACHIEVEMENT_IDS.length + CODEX_IDS.length)) * 100)
@@ -396,8 +397,17 @@ export function isLocalProgressionTestHost() {
   return ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(window.location.hostname)
 }
 
+export function isCreatorProgressionUser() {
+  if (typeof window === 'undefined') return false
+  return isCreatorPlayerName(window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || '')
+}
+
+export function hasProgressionUnlockOverride() {
+  return isLocalProgressionTestHost() || isCreatorProgressionUser()
+}
+
 export function isShipCosmeticUnlocked(mastery: ShipMasteryRecord | undefined, cosmetic: ShipCosmeticKey) {
-  if (isLocalProgressionTestHost()) return true
+  if (hasProgressionUnlockOverride()) return true
   if (!mastery) return false
   if (cosmetic === 'trail') return mastery.bestScore >= SHIP_COSMETIC_SINGLE_RUN_SCORE
   if (cosmetic === 'aura') return mastery.victories > 0
