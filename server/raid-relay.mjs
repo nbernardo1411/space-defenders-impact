@@ -526,68 +526,12 @@ async function restorePlayerName({ playerName, recoveryCode, playerId }) {
       return { restored: false, reason: 'invalid_recovery_code' }
     }
 
-    const previousPlayerId = owner.playerId
-    if (previousPlayerId !== playerId) {
-      const localPlayer = await client.query(
-        `
-          SELECT player_name AS "playerName", normalized_name AS "normalizedName"
-          FROM player_names
-          WHERE player_id = $1
-          FOR UPDATE
-        `,
-        [playerId],
-      )
-      const replacedPlayer = localPlayer.rows[0]
-      if (replacedPlayer && replacedPlayer.normalizedName !== normalizedName) {
-        await client.query(
-          `
-            DELETE FROM player_progress
-            WHERE player_id = $1
-          `,
-          [playerId],
-        )
-        await client.query(
-          `
-            DELETE FROM player_names
-            WHERE player_id = $1
-          `,
-          [playerId],
-        )
-      } else {
-        await client.query(
-          `
-            DELETE FROM player_progress
-            WHERE player_id = $1
-          `,
-          [playerId],
-        )
-      }
-      await client.query(
-        `
-          UPDATE player_names
-          SET player_id = $2,
-              updated_at = NOW()
-          WHERE player_id = $1
-        `,
-        [previousPlayerId, playerId],
-      )
-      await client.query(
-        `
-          UPDATE player_progress
-          SET player_id = $2,
-              updated_at = NOW()
-          WHERE player_id = $1
-        `,
-        [previousPlayerId, playerId],
-      )
-    }
-
     await client.query('COMMIT')
-    const progress = await getPlayerProgress(playerId)
+    const progress = await getPlayerProgress(owner.playerId)
     return {
       restored: true,
       registered: true,
-      playerId,
+      playerId: owner.playerId,
       playerName: owner.playerName,
       recoveryCode: owner.recoveryCode,
       progress,
