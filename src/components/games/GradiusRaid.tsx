@@ -454,6 +454,7 @@ const MESIAH_DRONE_MIN_FIRE_RANGE = 7.5
 const MESIAH_DRONE_MAX_FIRE_RANGE = 19
 const MESIAH_ROCKET_FIRE_INTERVAL_SECONDS = 0.36
 const MESIAH_DRONE_HOME_OFFSET = 11.6
+const MESIAH_DRONE_MOBILE_HOME_OFFSET = 18.5
 const NORMAL_POWER_DROP_COOLDOWN = 3.8
 const POWER_PITY_KILLS = 12
 const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
@@ -2398,7 +2399,7 @@ function updatePlayerTimers(player: Player, dt: number, enemies: Enemy[], isSmal
     player.mesiahDroneFireCooldown = 0
     player.mesiahRocketCooldown = 0
   }
-  updateMesiahDrones(player, enemies, dt)
+  updateMesiahDrones(player, enemies, dt, isSmallViewport)
   updateMesiahScoutDrones(player, enemies, dt, isSmallViewport)
   player.invuln = Math.max(0, player.invuln - dt)
   player.shield = Math.max(0, player.shield - dt * 0.16)
@@ -5565,12 +5566,12 @@ function moveMesiahDroneToward(drone: MesiahDroneUnit, destination: Vec, speed: 
   return { movedX, movedY }
 }
 
-function updateMesiahDrones(player: Player, enemies: Enemy[], dt: number) {
+function updateMesiahDrones(player: Player, enemies: Enemy[], dt: number, isSmallViewport: boolean) {
   const drones = normalizeMesiahDrones(player)
   const active = player.ship.key === 'mesiah' && player.hp > 0
   const elapsed = player.mesiahDroneTimer
   for (const drone of drones) {
-    const home = getMesiahDroneHome(player, drone.side, MESIAH_DRONE_HOME_OFFSET)
+    const home = getMesiahDroneHome(player, drone.side, isSmallViewport ? MESIAH_DRONE_MOBILE_HOME_OFFSET : MESIAH_DRONE_HOME_OFFSET)
     if (!active) {
       drone.x = home.x
       drone.y = home.y
@@ -5616,7 +5617,7 @@ function updateMesiahScoutDrones(player: Player, enemies: Enemy[], dt: number, i
   const active = player.ship.key === 'mesiah' && player.hp > 0 && supportStacks > 0
   const elapsed = player.mesiahDroneTimer
   const liveTargets = enemies
-    .filter((enemy) => enemy.hp > 0 && enemy.y > -8)
+    .filter((enemy) => enemy.hp > 0 && enemy.y > -8 && (enemy.isBoss || enemy.isMiniBoss))
     .sort((a, b) => distSq(a, player) - distSq(b, player) || a.id - b.id)
   for (const scout of scouts) {
     const enabled = active && scout.stack < supportStacks
@@ -5737,14 +5738,13 @@ function drawRaidOptions(
     if (player.ship.key === 'mesiah') {
       const scoutShipKey = 'gatling'
       const scoutSprite = getShipCanvasSprite(scoutShipKey)
-      const scoutMaxBox = viewportWidth < 860 ? 48 : 64
-      const scoutSize = Math.min(getShipSpriteSize(scoutShipKey, 'option') * 1.45, scoutMaxBox)
+      const scoutSizeKey = isWhiteMesiah ? 'spaceEt' : 'rocket'
+      const scoutSize = Math.min(getShipSpriteSize(scoutSizeKey, 'option') * (viewportWidth < 860 ? 1.14 : 1.28), viewportWidth < 860 ? 35 : 54)
       for (const scout of normalizeMesiahScoutDrones(player)) {
         if (!scout.active || scout.stack >= supportStacks) continue
         const x = toX(scout.x)
         const y = toY(scout.y)
-        const scale = scout.stack === 0 ? 1 : 0.9
-        drawCanvasSprite(ctx, scoutSprite, x, y, scoutSize * scale, 'brightness(1.14) contrast(1.16) saturate(1.34)', 1, scout.rotation, 1, color)
+        drawCanvasSprite(ctx, scoutSprite, x, y, scoutSize, 'brightness(1.14) contrast(1.16) saturate(1.34)', 1, scout.rotation, 1, color)
       }
     } else {
       const supportOffset = viewportWidth < 640 ? 12 : 5.6
@@ -9584,11 +9584,10 @@ export function GradiusRaid({
             if (!scout.active || !scout.canFire || scout.targetId === null || scout.stack >= optionSupportStacks) continue
             const target = enemiesRef.current.find((enemy) => enemy.id === scout.targetId && enemy.hp > 0 && enemy.y > -8) ?? null
             if (!target) continue
-            const stackScale = scout.stack === 0 ? 0.9 : 0.78
             emitters.push({
               x: scout.x,
               y: scout.y,
-              scale: stackScale,
+              scale: 0.72,
               main: false,
               attackShipKey: 'gatling',
               baseOnly: true,
