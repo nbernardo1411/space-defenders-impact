@@ -1469,8 +1469,8 @@ body {
 
 .leaderboards-screen__modes {
   display: grid;
-  grid-template-columns: repeat(5, minmax(132px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(5, minmax(136px, 1fr));
+  gap: 7px;
   overflow-x: auto;
   padding-bottom: 4px;
   scrollbar-width: thin;
@@ -1481,7 +1481,7 @@ body {
   display: grid;
   gap: 4px;
   justify-items: start;
-  padding: 12px;
+  padding: 12px 10px;
   border: 1px solid rgba(110, 245, 203, 0.2);
   border-radius: 8px;
   background: rgba(6, 17, 31, 0.72);
@@ -1499,7 +1499,8 @@ body {
 
 .leaderboards-screen__mode strong {
   color: #ffffff;
-  font-size: 0.98rem;
+  font-size: clamp(0.78rem, 1.24vw, 0.94rem);
+  line-height: 1.05;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -2102,7 +2103,7 @@ body {
   }
 
   .leaderboards-screen__modes {
-    grid-template-columns: repeat(5, minmax(124px, 1fr));
+    grid-template-columns: repeat(5, minmax(132px, 1fr));
   }
 
   .leaderboards-screen__row {
@@ -2294,13 +2295,13 @@ body {
   }
 
   .leaderboards-screen__modes {
-    grid-template-columns: repeat(5, minmax(118px, 1fr));
+    grid-template-columns: repeat(5, minmax(128px, 1fr));
     gap: 7px;
   }
 
   .leaderboards-screen__mode {
     min-height: 58px;
-    padding: 10px 12px;
+    padding: 10px 9px;
   }
 
   .leaderboards-screen__mode span,
@@ -2310,7 +2311,7 @@ body {
   }
 
   .leaderboards-screen__mode strong {
-    font-size: 0.88rem;
+    font-size: 0.76rem;
   }
 
   .leaderboards-screen__board {
