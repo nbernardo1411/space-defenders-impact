@@ -5615,6 +5615,9 @@ function updateMesiahScoutDrones(player: Player, enemies: Enemy[], dt: number, i
   const supportStacks = getOptionSupportStacks(player)
   const active = player.ship.key === 'mesiah' && player.hp > 0 && supportStacks > 0
   const elapsed = player.mesiahDroneTimer
+  const liveTargets = enemies
+    .filter((enemy) => enemy.hp > 0 && enemy.y > -8)
+    .sort((a, b) => distSq(a, player) - distSq(b, player) || a.id - b.id)
   for (const scout of scouts) {
     const enabled = active && scout.stack < supportStacks
     const home = getMesiahScoutSupportPoint(player, scout.side, elapsed, isSmallViewport, null, scout.stack, Math.max(1, supportStacks))
@@ -5629,12 +5632,17 @@ function updateMesiahScoutDrones(player: Player, enemies: Enemy[], dt: number, i
     }
 
     scout.active = true
-    const target = getMesiahDroneTarget(player, enemies, scout.targetId)
+    const slot = scout.stack * 2 + (scout.side > 0 ? 1 : 0)
+    const sortedTargets = liveTargets.length > 1
+      ? [...liveTargets].sort((a, b) => distSq(a, scout) - distSq(b, scout) || a.id - b.id)
+      : liveTargets
+    const target = sortedTargets.length > 0 ? sortedTargets[slot % sortedTargets.length] : null
     scout.targetId = target?.id ?? null
     const destination = target
       ? getMesiahScoutSupportPoint(player, scout.side, elapsed, isSmallViewport, target, scout.stack, supportStacks)
       : home
-    const movement = moveMesiahDroneToward(scout, destination, target ? 72 : 64, dt)
+    const distanceToHome = Math.hypot(home.x - scout.x, home.y - scout.y)
+    const movement = moveMesiahDroneToward(scout, destination, target ? 72 : Math.min(82, 54 + distanceToHome * 2.1), dt)
     const distanceToTarget = target ? Math.hypot(target.x - scout.x, target.y - scout.y) : Infinity
     scout.canFire = Boolean(
       target &&
