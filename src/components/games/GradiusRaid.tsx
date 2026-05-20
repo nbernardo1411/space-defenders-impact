@@ -10165,11 +10165,23 @@ export function GradiusRaid({
   }, [onRunComplete, playerName])
 
   const exitRaid = useCallback(() => {
-    if (phaseRef.current === 'victory') reportRaidRunComplete('victory')
-    else if (phaseRef.current === 'gameover') reportRaidRunComplete('gameover')
-    else if (phaseRef.current === 'playing' || phaseRef.current === 'paused') reportRaidRunComplete('exit')
+    const score = Math.max(playerRef.current.score, remotePlayerRef.current?.score ?? 0)
+    if (phaseRef.current === 'victory') {
+      submitRaidLeaderboardScore(score)
+      reportRaidRunComplete('victory')
+    } else if (phaseRef.current === 'gameover') {
+      submitRaidLeaderboardScore(score)
+      reportRaidRunComplete('gameover')
+    } else if (phaseRef.current === 'playing' || phaseRef.current === 'paused') {
+      if (!coOpRunRef.current && score > highScoreRef.current) {
+        highScoreRef.current = score
+        saveHighScore(score)
+      }
+      submitRaidLeaderboardScore(score)
+      reportRaidRunComplete('exit')
+    }
     onClose()
-  }, [onClose, reportRaidRunComplete])
+  }, [onClose, reportRaidRunComplete, submitRaidLeaderboardScore])
 
   const damagePlayer = useCallback((amount: number, targetPlayer = playerRef.current) => {
     const player = targetPlayer

@@ -279,6 +279,7 @@ export async function submitLeaderboardScore(score: SubmitLeaderboardScore): Pro
     const response = await fetch(`${apiBase}/leaderboards/submit`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      keepalive: true,
       body: JSON.stringify({
         ...score,
         playerName: sanitizePlayerName(score.playerName, 36),
