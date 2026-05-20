@@ -16,6 +16,7 @@ export type RunResult = {
   bossesDefeated?: number
   pickupsCollected?: number
   nukesUsed?: number
+  raidMode?: 'campaign' | 'endless'
 }
 
 export type AchievementId =
@@ -28,6 +29,12 @@ export type AchievementId =
   | 'endless_survivor'
   | 'endless_warden'
   | 'endless_legend'
+  | 'raid_endless_launch'
+  | 'raid_endless_survivor'
+  | 'raid_endless_vanguard'
+  | 'raid_endless_legend'
+  | 'raid_endless_boss_reaper'
+  | 'raid_endless_score_ace'
   | 'swarm_reaper'
   | 'swarm_extinction'
   | 'boss_executioner'
@@ -144,6 +151,12 @@ export const ACHIEVEMENT_IDS: AchievementId[] = [
   'endless_survivor',
   'endless_warden',
   'endless_legend',
+  'raid_endless_launch',
+  'raid_endless_survivor',
+  'raid_endless_vanguard',
+  'raid_endless_legend',
+  'raid_endless_boss_reaper',
+  'raid_endless_score_ace',
   'swarm_reaper',
   'swarm_extinction',
   'boss_executioner',
@@ -216,6 +229,7 @@ const LEADERBOARD_MODES: LeaderboardMode[] = [
   'ship_defense_normal',
   'ship_defense_endless',
   'gradius_solo',
+  'gradius_endless',
   'gradius_multiplayer',
 ]
 
@@ -237,12 +251,14 @@ export function createEmptyProgress(): ProgressState {
       ship_defense_normal: 0,
       ship_defense_endless: 0,
       gradius_solo: 0,
+      gradius_endless: 0,
       gradius_multiplayer: 0,
     },
     bestStageByMode: {
       ship_defense_normal: 0,
       ship_defense_endless: 0,
       gradius_solo: 0,
+      gradius_endless: 0,
       gradius_multiplayer: 0,
     },
     achievements: {},
@@ -315,6 +331,9 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
     shipLevel = current.level
   }
 
+  const isGradiusRun = result.mode === 'gradius_solo' || result.mode === 'gradius_endless' || result.mode === 'gradius_multiplayer'
+  const isGradiusEndlessRun = result.mode === 'gradius_endless' || (isGradiusRun && result.raidMode === 'endless')
+
   const unlockAchievement = (id: AchievementId, condition: boolean) => {
     if (!condition || progress.achievements[id]) return
     progress.achievements[id] = now
@@ -323,13 +342,19 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
 
   unlockAchievement('first_sortie', progress.totalRuns >= 1)
   unlockAchievement('defense_clear', result.mode === 'ship_defense_normal' && result.status === 'victory')
-  unlockAchievement('raid_clear', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory')
+  unlockAchievement('raid_clear', isGradiusRun && result.status === 'victory')
   unlockAchievement('boss_breaker', progress.bossesDefeated >= 10)
   unlockAchievement('defense_veteran', progress.bestStageByMode.ship_defense_normal >= 10)
   unlockAchievement('defense_legend', result.mode === 'ship_defense_normal' && result.status === 'victory' && result.score >= 15000)
   unlockAchievement('endless_survivor', result.mode === 'ship_defense_endless' && result.stage >= 15)
   unlockAchievement('endless_warden', result.mode === 'ship_defense_endless' && result.stage >= 25)
   unlockAchievement('endless_legend', result.mode === 'ship_defense_endless' && result.stage >= 40)
+  unlockAchievement('raid_endless_launch', isGradiusEndlessRun && result.score > 0)
+  unlockAchievement('raid_endless_survivor', isGradiusEndlessRun && result.stage >= 10)
+  unlockAchievement('raid_endless_vanguard', isGradiusEndlessRun && result.stage >= 20)
+  unlockAchievement('raid_endless_legend', isGradiusEndlessRun && result.stage >= 30)
+  unlockAchievement('raid_endless_boss_reaper', isGradiusEndlessRun && (result.bossesDefeated ?? 0) >= 10)
+  unlockAchievement('raid_endless_score_ace', isGradiusEndlessRun && result.score >= 150000)
   unlockAchievement('swarm_reaper', progress.enemiesDestroyed >= 500)
   unlockAchievement('swarm_extinction', progress.enemiesDestroyed >= 2500)
   unlockAchievement('boss_executioner', progress.bossesDefeated >= 50)
@@ -372,7 +397,7 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   unlockCodex('boss_anatomy', progress.bossesDefeated >= 5)
   unlockCodex('supply_routes', progress.pickupsCollected >= 10)
   unlockCodex('commander_records', progress.totalRuns >= 5)
-  unlockCodex('weapon_lab', progress.bestScoreByMode.gradius_solo > 0 || progress.bestScoreByMode.gradius_multiplayer > 0)
+  unlockCodex('weapon_lab', progress.bestScoreByMode.gradius_solo > 0 || progress.bestScoreByMode.gradius_endless > 0 || progress.bestScoreByMode.gradius_multiplayer > 0)
   unlockCodex('elite_contacts', result.stage >= 2 || progress.bossesDefeated >= 1)
   unlockCodex('elite_hunter_cells', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 4)
   unlockCodex('asteroid_cluster', result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer')

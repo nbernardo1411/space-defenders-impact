@@ -558,6 +558,11 @@ type RaidGraphicsProfile = {
 }
 
 const raidGraphicsProfileCache = new Map<string, RaidGraphicsProfile>()
+const RAID_IMAGE_CACHE_NAME = 'space-defender-raid-images-v1'
+const RAID_AUDIO_CACHE_NAME = 'space-defender-audio-v1'
+const RAID_PERSISTENT_CACHE_VERSION = 'gradius-raid-assets-v2'
+const RAID_PERSISTENT_CACHE_STORAGE_KEY = 'gradiusRaidPersistentAssetCache'
+let raidPersistentAssetCachePromise: Promise<void> | null = null
 
 function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boolean, isMultiplayer: boolean): RaidGraphicsProfile {
   const cacheKey = `${quality}:${isSmallViewport ? 1 : 0}:${isMultiplayer ? 1 : 0}`
@@ -1357,7 +1362,89 @@ function warmRaidCanvasAssets() {
   return entries
 }
 
+function getRaidPersistentImageUrls() {
+  const urls = new Set<string>()
+  urls.add(getPublicAssetUrl(RAID_FINAL_BOSS_ASSET_PATH))
+  urls.add(getPublicAssetUrl(RAID_SQUID_BOSS_ASSET_PATH))
+  urls.add(getPublicAssetUrl(RAID_COBRA_BOSS_ASSET_PATH))
+  for (const ship of SHIP_OPTIONS) urls.add(getRaidShipSpriteUrl(ship.key))
+  urls.add(getRaidShipSpriteUrl('mesiahBlack'))
+  urls.add(getRaidShipSpriteUrl('mesiahWhite'))
+  for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) urls.add(getRaidAlienSpriteUrl(variant))
+  for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) urls.add(getRaidEliteSpriteUrl(variant))
+  for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) urls.add(getPublicAssetUrl(RAID_OTHER_ASSET_PATHS[key]))
+  return [...urls]
+}
+
+function getRaidPersistentAudioUrls() {
+  return [
+    RAID_DEFAULT_BGM_TRACK,
+    RAID_BOSS_BGM_TRACK,
+    RAID_ENDING_BGM_TRACK,
+    DEFAULT_PICKUP_VOICE_SAMPLE_URL,
+    ...Object.values(PICKUP_VOICE_SAMPLE_URLS),
+    getPublicAssetUrl('audio/sfx_laser.wav'),
+    getPublicAssetUrl('audio/sfx_rocket.wav'),
+    getPublicAssetUrl('audio/sfx_cannon.wav'),
+    getPublicAssetUrl('audio/sfx_explosion_small.wav'),
+    getPublicAssetUrl('audio/sfx_explosion_big.wav'),
+    getPublicAssetUrl('audio/sfx_shoot.wav'),
+    getPublicAssetUrl('audio/sfx_hit.wav'),
+    getPublicAssetUrl('audio/sfx_combo.wav'),
+    getPublicAssetUrl('audio/sfx_levelup.wav'),
+    getPublicAssetUrl('audio/sfx_gameover.wav'),
+    getPublicAssetUrl('audio/sfx_damage.wav'),
+    getPublicAssetUrl('audio/sfx_ui_select.wav'),
+    getPublicAssetUrl('audio/sfx_ui_tower_select.wav'),
+    getPublicAssetUrl('audio/sfx_ui_swap.wav'),
+    getPublicAssetUrl('audio/sfx_ui_clear.wav'),
+    getPublicAssetUrl('audio/sfx_countdown.wav'),
+    getPublicAssetUrl('audio/sfx_score.wav'),
+  ]
+}
+
+async function cacheRaidPersistentUrl(cache: Cache | null, url: string) {
+  try {
+    const request = new Request(url, { cache: 'force-cache' })
+    if (cache && await cache.match(request)) return
+    const response = await fetch(request)
+    if (cache && response.ok) await cache.put(request, response.clone())
+  } catch {
+    // Missing optional assets should never block the game boot.
+  }
+}
+
+async function cacheRaidPersistentGroup(cacheName: string, urls: string[]) {
+  const cache = typeof caches === 'undefined' ? null : await caches.open(cacheName)
+  const queue = [...new Set(urls)]
+  const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const url = queue.shift()
+      if (url) await cacheRaidPersistentUrl(cache, url)
+    }
+  })
+  await Promise.all(workers)
+}
+
+function warmRaidPersistentAssetCache() {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') return Promise.resolve()
+  if (!raidPersistentAssetCachePromise) {
+    raidPersistentAssetCachePromise = Promise.all([
+      cacheRaidPersistentGroup(RAID_IMAGE_CACHE_NAME, getRaidPersistentImageUrls()),
+      cacheRaidPersistentGroup(RAID_AUDIO_CACHE_NAME, getRaidPersistentAudioUrls()),
+    ]).then(() => {
+      try {
+        window.localStorage.setItem(RAID_PERSISTENT_CACHE_STORAGE_KEY, RAID_PERSISTENT_CACHE_VERSION)
+      } catch {
+        // Cache API and HTTP cache are the source of truth; localStorage is just a warm marker.
+      }
+    }).catch(() => undefined)
+  }
+  return raidPersistentAssetCachePromise
+}
+
 function preloadRaidCanvasAssets() {
+  void warmRaidPersistentAssetCache()
   if (!raidCanvasAssetWarmPromise) {
     const entries = warmRaidCanvasAssets()
     raidCanvasAssetWarmPromise = Promise.all(entries.map((entry) => entry.ready)).then(() => {
@@ -7238,6 +7325,7 @@ export function GradiusRaid({
   const stopRaidBgmRef = useRef<() => void>(() => {})
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [briefingStep, setBriefingStep] = useState(0)
+  const [stagePickerOpen, setStagePickerOpen] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
     phase: 'select',
     player: getInitialPlayer(),
@@ -10041,7 +10129,7 @@ export function GradiusRaid({
 
     leaderboardSubmittedRef.current = true
     void submitLeaderboardScore({
-      mode: session ? 'gradius_multiplayer' : 'gradius_solo',
+      mode: session ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
       playerName: leaderboardName,
       score,
       shipKey: selectedShipRef.current.key,
@@ -10061,7 +10149,7 @@ export function GradiusRaid({
 
     runReportedRef.current = true
     onRunComplete?.({
-      mode: session ? 'gradius_multiplayer' : 'gradius_solo',
+      mode: session ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
       status,
       playerName: commanderName,
       score,
@@ -10072,6 +10160,7 @@ export function GradiusRaid({
       bossesDefeated: bossesDefeatedRef.current,
       pickupsCollected: pickupsCollectedRef.current,
       nukesUsed: nukesUsedRef.current,
+      raidMode: raidModeRef.current,
     })
   }, [onRunComplete, playerName])
 
@@ -12240,7 +12329,7 @@ export function GradiusRaid({
               ) : null}
               {!isMultiplayer && completedCampaign && canControlOverlay ? (
                 <button type="button" className="raid__menu-button" onClick={() => resetGame(1, false, 'endless')}>
-                  Endless Flight
+                  {menuText.endlessFlight}
                 </button>
               ) : null}
               <button type="button" className="raid__menu-button" onClick={exitRaid}>
@@ -12251,6 +12340,33 @@ export function GradiusRaid({
         </div>
       )}
 
+      {stagePickerOpen && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
+        <div className="raid__stage-modal" role="dialog" aria-modal="true" aria-label={menuText.selectStageTitle}>
+          <div className="raid__stage-modal-panel">
+            <div className="raid__kicker">{menuText.selectStageTitle}</div>
+            <div className="raid__stage-select raid__stage-select--modal">
+              {stageSelectButtons.map((stage) => (
+                <button
+                  key={stage}
+                  type="button"
+                  className={stage === MAX_RAID_STAGE ? 'raid__stage-button raid__stage-button--final' : 'raid__stage-button'}
+                  onClick={() => {
+                    setStagePickerOpen(false)
+                    resetGame(stage)
+                  }}
+                >
+                  {stage}
+                </button>
+              ))}
+            </div>
+            <div className="raid__pause-actions">
+              <button type="button" className="raid__menu-button raid__menu-button--wide" onClick={() => setStagePickerOpen(false)}>
+                {menuText.back}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
         <div className="raid__overlay">
           <div className="raid__panel">
@@ -12284,24 +12400,17 @@ export function GradiusRaid({
                 })()
               ))}
             </div>
-            {!isMultiplayer && completedCampaign && (
-              <div className="raid__stage-select">
-                {stageSelectButtons.map((stage) => (
-                  <button
-                    key={stage}
-                    type="button"
-                    className={stage === MAX_RAID_STAGE ? 'raid__stage-button raid__stage-button--final' : 'raid__stage-button'}
-                    onClick={() => resetGame(stage)}
-                  >
-                    {stage}
-                  </button>
-                ))}
+            {!isMultiplayer && completedCampaign && canControlOverlay ? (
+              <div className="raid__stage-picker-row">
+                <button type="button" className="raid__menu-button raid__menu-button--wide" onClick={() => setStagePickerOpen(true)}>
+                  {menuText.selectStage}
+                </button>
               </div>
-            )}
+            ) : null}
             <div className="raid__records">
               <span>{menuText.best} {snapshot.highScore.toLocaleString()}</span>
               {!isMultiplayer && snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>{menuText.checkpointStage} {checkpointStage}</span> : <span>{isMultiplayer ? menuText.coopRun : menuText.pcFollowsCursor}</span>}
-              <span>{isMultiplayer ? menuText.bothPilotsMustFall : isEndlessRun ? 'Endless Flight' : completedCampaign ? 'Endless Flight unlocked' : menuText.mobileFollowsFinger}</span>
+              <span>{isMultiplayer ? menuText.bothPilotsMustFall : isEndlessRun ? menuText.endlessFlight : completedCampaign ? menuText.endlessFlightUnlocked : menuText.mobileFollowsFinger}</span>
             </div>
             <div className="raid__gfx-row">
               <span className="raid__gfx-label">{menuText.graphics}</span>
@@ -12328,15 +12437,15 @@ export function GradiusRaid({
                   className={!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
                   onClick={snapshot.phase === 'gameover' ? () => resetGame(1) : openBriefing}
                 >
-                  {snapshot.phase === 'gameover' ? isMultiplayer ? menuText.restartCoop : isEndlessRun ? 'Restart Endless' : menuText.restartStage1 : menuText.startRaid}
+                  {snapshot.phase === 'gameover' ? isMultiplayer ? menuText.restartCoop : isEndlessRun ? menuText.restartEndless : menuText.restartStage1 : menuText.startRaid}
                 </button>
               ) : (
                 <button type="button" className="raid__start" onClick={exitRaid}>{menuText.exitCoop}</button>
               )}
               {!isMultiplayer && completedCampaign && canControlOverlay ? (
-                <button type="button" className="raid__menu-button" onClick={() => resetGame(1, false, 'endless')}>Endless Flight</button>
+                <button type="button" className="raid__menu-button" onClick={() => resetGame(1, false, 'endless')}>{menuText.endlessFlight}</button>
               ) : null}
-              {snapshot.phase === 'gameover' && canControlOverlay ? (
+              {canControlOverlay ? (
                 <button type="button" className="raid__menu-button" onClick={exitRaid}>{hudText.exit}</button>
               ) : null}
             </div>

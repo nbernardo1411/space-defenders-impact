@@ -140,6 +140,12 @@ const DEFENSE_ACHIEVEMENT_IDS: AchievementId[] = [
 ]
 const RAID_ACHIEVEMENT_IDS: AchievementId[] = [
   'raid_clear',
+  'raid_endless_launch',
+  'raid_endless_survivor',
+  'raid_endless_vanguard',
+  'raid_endless_legend',
+  'raid_endless_boss_reaper',
+  'raid_endless_score_ace',
   'coop_wingman',
   'coop_clear',
   'coop_veteran',

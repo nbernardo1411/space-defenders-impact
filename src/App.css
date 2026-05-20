@@ -1469,16 +1469,19 @@ body {
 
 .leaderboards-screen__modes {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(132px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
 }
 
 .leaderboards-screen__mode {
-  min-height: 86px;
+  min-height: 78px;
   display: grid;
   gap: 4px;
   justify-items: start;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid rgba(110, 245, 203, 0.2);
   border-radius: 8px;
   background: rgba(6, 17, 31, 0.72);
@@ -1496,8 +1499,9 @@ body {
 
 .leaderboards-screen__mode strong {
   color: #ffffff;
-  font-size: 1.08rem;
+  font-size: 0.98rem;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .leaderboards-screen__mode--active {
@@ -2098,7 +2102,7 @@ body {
   }
 
   .leaderboards-screen__modes {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(124px, 1fr));
   }
 
   .leaderboards-screen__row {
@@ -2290,7 +2294,7 @@ body {
   }
 
   .leaderboards-screen__modes {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(5, minmax(118px, 1fr));
     gap: 7px;
   }
 

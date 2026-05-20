@@ -1,4 +1,4 @@
-export type LeaderboardMode = 'ship_defense_normal' | 'ship_defense_endless' | 'gradius_solo' | 'gradius_multiplayer'
+export type LeaderboardMode = 'ship_defense_normal' | 'ship_defense_endless' | 'gradius_solo' | 'gradius_endless' | 'gradius_multiplayer'
 
 export type LeaderboardEntry = {
   id?: number | string
@@ -48,6 +48,12 @@ export const LEADERBOARD_MODES: Array<{
     title: 'Gradius Raid',
     label: 'Solo',
     description: 'Top solo pilot assault runs.',
+  },
+  {
+    key: 'gradius_endless',
+    title: 'Gradius Raid',
+    label: 'Endless Flight',
+    description: 'Longest Endless Flight survival runs.',
   },
   {
     key: 'gradius_multiplayer',

@@ -2183,12 +2183,45 @@
   color: #f87171;
 }
 
+.raid__stage-picker-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.raid__stage-modal {
+  position: absolute;
+  z-index: 48;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: radial-gradient(circle at center, rgba(12, 3, 7, 0.28), rgba(3, 7, 18, 0.86));
+  backdrop-filter: blur(5px);
+}
+
+.raid__stage-modal-panel {
+  width: min(560px, 100%);
+  border: 1px solid rgba(248, 113, 113, 0.46);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(16, 3, 5, 0.98), rgba(4, 5, 9, 0.98)),
+    radial-gradient(circle at 50% 0%, rgba(239, 35, 60, 0.16), transparent 34%);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62), inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+  padding: 24px;
+  text-align: center;
+}
+
 .raid__stage-select {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   width: min(520px, 100%);
   margin: 18px auto 0;
+}
+
+.raid__stage-select--modal {
+  margin-top: 20px;
 }
 
 .raid__stage-button {
@@ -2393,6 +2426,13 @@
 
 .raid__pause-actions .raid__start {
   margin-top: 0;
+}
+
+.raid__pause-actions .raid__start,
+.raid__pause-actions .raid__menu-button,
+.raid__menu-button--wide {
+  width: min(240px, 100%);
+  min-height: 48px;
 }
 
 .raid__menu-button {
