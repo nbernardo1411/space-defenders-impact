@@ -5498,10 +5498,10 @@ function drawRaidEnemy(
 function getMesiahDroneTarget(player: Player, enemies: Enemy[], lockedTargetId: number | null = null) {
   const lockedTarget = lockedTargetId === null
     ? null
-    : enemies.find((enemy) => enemy.id === lockedTargetId && enemy.hp > 0 && enemy.y > -8) ?? null
+    : enemies.find((enemy) => enemy.id === lockedTargetId && enemy.hp > 0 && enemy.y > -8 && (enemy.isBoss || enemy.isMiniBoss)) ?? null
   if (lockedTarget) return lockedTarget
   return enemies
-    .filter((enemy) => enemy.hp > 0 && enemy.y > -8)
+    .filter((enemy) => enemy.hp > 0 && enemy.y > -8 && (enemy.isBoss || enemy.isMiniBoss))
     .sort((a, b) => distSq(a, player) - distSq(b, player))[0] ?? null
 }
 
@@ -5646,10 +5646,8 @@ function updateMesiahScoutDrones(player: Player, enemies: Enemy[], dt: number, i
     const movement = moveMesiahDroneToward(scout, destination, target ? 72 : Math.min(82, 54 + distanceToHome * 2.1), dt)
     const distanceToTarget = target ? Math.hypot(target.x - scout.x, target.y - scout.y) : Infinity
     scout.canFire = Boolean(
-      target &&
       elapsed > 0.32 &&
-      distanceToTarget >= 5.5 &&
-      distanceToTarget <= 26,
+      (!target || (distanceToTarget >= 5.5 && distanceToTarget <= 26)),
     )
 
     if (!target) {
@@ -5736,7 +5734,7 @@ function drawRaidOptions(
 
   if (supportStacks > 0) {
     if (player.ship.key === 'mesiah') {
-      const scoutShipKey = 'gatling'
+      const scoutShipKey = isWhiteMesiah ? 'spaceEt' : 'rocket'
       const scoutSprite = getShipCanvasSprite(scoutShipKey)
       const scoutSizeKey = isWhiteMesiah ? 'spaceEt' : 'rocket'
       const scoutSize = Math.min(getShipSpriteSize(scoutSizeKey, 'option') * (viewportWidth < 860 ? 1.14 : 1.28), viewportWidth < 860 ? 35 : 54)
@@ -9563,7 +9561,7 @@ export function GradiusRaid({
     const pickupScoutOffset = rootRef.current && rootRef.current.clientWidth < 640 ? 8.2 : 5
     const scoutScale = isArk ? 0.9 : 0.86
     const optionSupportStacks = getOptionSupportStacks(player)
-    const emitters: Array<{ x: number; y: number; scale: number; main: boolean; attackShipKey?: string; baseOnly?: boolean; target?: Enemy | null; rotation?: number; canFire?: boolean }> = []
+    const emitters: Array<{ x: number; y: number; scale: number; main: boolean; attackShipKey?: string; baseOnly?: boolean; target?: Enemy | null; rotation?: number; canFire?: boolean; supportWeaponMode?: 'laserHoming' }> = []
 
     if (canFireMain) {
       emitters.push({ x: player.x, y: player.y, scale: 1, main: true })
@@ -9581,16 +9579,17 @@ export function GradiusRaid({
       } else if (optionSupportStacks > 0) {
         if (shipKey === 'mesiah') {
           for (const scout of normalizeMesiahScoutDrones(player)) {
-            if (!scout.active || !scout.canFire || scout.targetId === null || scout.stack >= optionSupportStacks) continue
-            const target = enemiesRef.current.find((enemy) => enemy.id === scout.targetId && enemy.hp > 0 && enemy.y > -8) ?? null
-            if (!target) continue
+            if (!scout.active || !scout.canFire || scout.stack >= optionSupportStacks) continue
+            const target = scout.targetId === null
+              ? null
+              : enemiesRef.current.find((enemy) => enemy.id === scout.targetId && enemy.hp > 0 && enemy.y > -8 && (enemy.isBoss || enemy.isMiniBoss)) ?? null
             emitters.push({
               x: scout.x,
               y: scout.y,
               scale: 0.72,
               main: false,
               attackShipKey: 'gatling',
-              baseOnly: true,
+              supportWeaponMode: 'laserHoming',
               target,
               rotation: scout.rotation,
             })
@@ -9645,7 +9644,9 @@ export function GradiusRaid({
     emitters.forEach((emitter) => {
       const damage = Math.max(1, Math.ceil(baseDamage * emitter.scale))
       const attackShipKey = emitter.attackShipKey ?? (isArk && !emitter.main ? 'rocket' : shipKey)
-      const activeWeapons = emitter.baseOnly ? EMPTY_WEAPON_FLAGS : firingWeapons
+      const activeWeapons = emitter.supportWeaponMode === 'laserHoming'
+        ? { ...EMPTY_WEAPON_FLAGS, laser: firingWeapons.laser, homing: firingWeapons.homing }
+        : emitter.baseOnly ? EMPTY_WEAPON_FLAGS : firingWeapons
 
       // ── MESIAH DRONE: detached Space Jet support fire for white Mesiah ──
       if (attackShipKey === 'mesiahDroneSpaceJet') {
@@ -9698,8 +9699,8 @@ export function GradiusRaid({
             pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
           })
         }
-        if (emitter.main && activeWeapons.homing) {
-          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.4, 5.4, -7.2, 7.2]
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
@@ -9735,8 +9736,8 @@ export function GradiusRaid({
             pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
           })
         }
-        if (emitter.main && activeWeapons.homing) {
-          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.4, 5.4, -7.2, 7.2]
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
@@ -9776,8 +9777,8 @@ export function GradiusRaid({
             pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.5, vy: -74, damage: Math.ceil((baseDamage + 8 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.35 })
           })
         }
-        if (emitter.main && activeWeapons.homing) {
-          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.4, 5.4, -7.2, 7.2]
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 5) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.6 })
@@ -9819,8 +9820,8 @@ export function GradiusRaid({
             pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
           })
         }
-        if (emitter.main && activeWeapons.homing) {
-          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.4, 5.4, -7.2, 7.2]
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
@@ -9953,8 +9954,8 @@ export function GradiusRaid({
           })
         }
 
-        if (emitter.main && activeWeapons.homing) {
-          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.4, 5.4, -7.2, 7.2]
 
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
@@ -10005,8 +10006,8 @@ export function GradiusRaid({
             pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
           })
         }
-        if (emitter.main && activeWeapons.homing) {
-          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.4, 5.4, -7.2, 7.2]
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
@@ -10050,8 +10051,8 @@ export function GradiusRaid({
             pushShot({ x: emitter.x + offset, y: emitter.y - 1, vx: offset * 1.7, vy: -72, damage: Math.ceil((baseDamage + 4 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.2 })
           })
         }
-        if (emitter.main && activeWeapons.homing) {
-          const salvoOffsets = [-5.4, 5.4, -7.2, 7.2]
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.4, 5.4, -7.2, 7.2]
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
