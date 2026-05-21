@@ -8044,7 +8044,7 @@ function drawGodGundamPassiveStrikes(
     const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
     const energyColor = burning ? '#f59e0b' : '#facc15'
     const shadowColor = burning ? 'rgba(251,146,60,0.42)' : 'rgba(250,204,21,0.32)'
-    const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * strike.size
+    const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * Math.max(1, strike.size)
     const targetRadius = Math.max(12, viewportWidth * (strike.targetRadius / WIDTH) * 0.78)
     const progress = clamp(strike.age / strike.duration, 0, 1)
     const fade = Math.sin(progress * Math.PI)
@@ -8124,7 +8124,7 @@ function drawGodGundamPassiveStrikes(
       if (attackSide > 0) ctx.scale(-1, 1)
       ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
       ctx.shadowColor = shadowColor
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (0.88 + layer * 0.08), strikeFilter, alpha, 0, 1, energyColor)
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (1 + layer * 0.06), strikeFilter, alpha, 0, 1, energyColor)
       ctx.restore()
     }
   }
@@ -11300,6 +11300,7 @@ export function GradiusRaid({
 
   const firePlayer = useCallback((sourcePlayer = playerRef.current) => {
     const player = sourcePlayer
+    if (isGodGundamBarragePilot(player, progressRef.current) && (player.godMeleeCloak ?? 0) > 0) return
     const stacks = player.weapons
     let totalStacks = 0
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
@@ -13878,7 +13879,7 @@ export function GradiusRaid({
         side,
         age: 0,
         duration: GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS,
-        size: 0.86,
+        size: 1,
         targetRadius: target.radius,
         burning: isCoreLanderBurning(owner),
       })
