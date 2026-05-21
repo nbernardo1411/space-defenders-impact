@@ -9500,6 +9500,8 @@ export function GradiusRaid({
         playGameSound('countdown')
       }
       if (state.bossMessage === 'clear' && prevBossMessage !== 'clear') {
+        player.godMeleeCloak = 0
+        if (remotePlayerRef.current) remotePlayerRef.current.godMeleeCloak = 0
         playGameSound('levelup')
         playGameSound('combo')
       }
@@ -10767,8 +10769,9 @@ export function GradiusRaid({
     const ownShipRef = isGuestView ? remotePlayerRef.current : playerRef.current
     const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
     const mesiahSupportVisualShipKey = getMesiahVisualShipKeyFromProgress(progressRef.current)
-    const hideOwnShipForBarrage = Boolean(ownShipRef && isGodGundamBarragePilot(ownShipRef, progressRef.current) && (godBarrageRef.current || (ownShipRef.godMeleeCloak ?? 0) > 0))
-    const hideAllyShipForBarrage = Boolean(allyShipRef && isGodGundamBarragePilot(allyShipRef, progressRef.current) && (godBarrageRef.current || (allyShipRef.godMeleeCloak ?? 0) > 0))
+    const stageClearActive = stageClearRef.current > 0
+    const hideOwnShipForBarrage = Boolean(ownShipRef && !stageClearActive && isGodGundamBarragePilot(ownShipRef, progressRef.current) && (godBarrageRef.current || (ownShipRef.godMeleeCloak ?? 0) > 0))
+    const hideAllyShipForBarrage = Boolean(allyShipRef && !stageClearActive && isGodGundamBarragePilot(allyShipRef, progressRef.current) && (godBarrageRef.current || (allyShipRef.godMeleeCloak ?? 0) > 0))
     if (gfxProfile.drawOptionShips && ownShipRef && !hideOwnShipForBarrage) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR, mesiahSupportVisualShipKey)
     if (gfxProfile.drawOptionShips && allyShipRef && !hideAllyShipForBarrage) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, mesiahSupportVisualShipKey)
     if (ownShipRef && !hideOwnShipForBarrage) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current))
@@ -13859,6 +13862,8 @@ export function GradiusRaid({
           bossAlertRef.current = 2.4
           bossMessageRef.current = 'clear'
         }
+        player.godMeleeCloak = 0
+        if (remotePlayerRef.current) remotePlayerRef.current.godMeleeCloak = 0
         playGameSound('levelup')
         playGameSound('combo')
         window.setTimeout(() => playGameSound('score'), 180)
