@@ -450,6 +450,7 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
 const WEAPON_KEYS: WeaponKey[] = ['spread', 'laser', 'scatter', 'rocket', 'homing']
 const CORE_LANDER_FIRE_INTERVAL_SECONDS = 0.5
 const CORE_LANDER_BURNING_FIRE_INTERVAL_SECONDS = 0.32
+const CORE_LANDER_BASE_DAMAGE_BONUS = 4
 const CORE_LANDER_BURNING_DAMAGE_BONUS = 7
 const CORE_LANDER_AOE_RADIUS = 12.5
 const FORCE_FIELD_ARMOR = 5
@@ -2337,8 +2338,9 @@ function getFinalBossBeamRadius(chargePattern: Enemy['chargePattern']) {
 }
 
 function getPlayerBaseAttack(player: Player) {
+  const coreLanderBonus = player.ship.key === 'coreLander' ? CORE_LANDER_BASE_DAMAGE_BONUS : 0
   const burningBonus = isCoreLanderBurning(player) ? CORE_LANDER_BURNING_DAMAGE_BONUS : 0
-  return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL + burningBonus
+  return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL + coreLanderBonus + burningBonus
 }
 
 function isCoreLanderBurning(player: Player) {
@@ -8898,9 +8900,9 @@ export function GradiusRaid({
       ctx.globalCompositeOperation = 'lighter'
       const outerWake = ctx.createLinearGradient(headX, headY, tailX, tailY)
       outerWake.addColorStop(0, 'rgba(255,255,255,0.94)')
-      outerWake.addColorStop(0.18, burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.82)')
-      outerWake.addColorStop(0.42, burning ? 'rgba(103,232,249,0.52)' : 'rgba(103,232,249,0.58)')
-      outerWake.addColorStop(0.72, burning ? 'rgba(251,191,36,0.24)' : 'rgba(239,35,60,0.24)')
+      outerWake.addColorStop(0.18, burning ? 'rgba(254,240,138,0.86)' : 'rgba(254,215,170,0.84)')
+      outerWake.addColorStop(0.42, burning ? 'rgba(251,146,60,0.62)' : 'rgba(249,115,22,0.58)')
+      outerWake.addColorStop(0.72, burning ? 'rgba(239,68,68,0.34)' : 'rgba(239,35,60,0.3)')
       outerWake.addColorStop(1, 'rgba(239,35,60,0)')
       ctx.strokeStyle = outerWake
       ctx.lineWidth = radius * (burning ? 0.84 : 0.72) * pulse
@@ -8926,7 +8928,7 @@ export function GradiusRaid({
         const wispMidY = y + ny * (side * 0.34)
         const wake = ctx.createLinearGradient(headX, headY, wispTailX, wispTailY)
         wake.addColorStop(0, 'rgba(255,255,255,0.72)')
-        wake.addColorStop(0.4, burning ? 'rgba(254,240,138,0.34)' : 'rgba(125,249,255,0.34)')
+        wake.addColorStop(0.4, burning ? 'rgba(251,191,36,0.42)' : 'rgba(251,146,60,0.36)')
         wake.addColorStop(1, 'rgba(239,35,60,0)')
         ctx.strokeStyle = wake
         ctx.lineWidth = Math.max(1.1, radius * (wisp === 0 ? 0.22 : 0.13))
@@ -8938,9 +8940,9 @@ export function GradiusRaid({
 
       const coreWake = ctx.createLinearGradient(headX, headY, tailX, tailY)
       coreWake.addColorStop(0, 'rgba(255,255,255,0.95)')
-      coreWake.addColorStop(0.34, burning ? 'rgba(254,240,138,0.86)' : 'rgba(165,243,252,0.86)')
-      coreWake.addColorStop(0.68, 'rgba(34,211,238,0.24)')
-      coreWake.addColorStop(1, 'rgba(34,211,238,0)')
+      coreWake.addColorStop(0.34, burning ? 'rgba(254,240,138,0.9)' : 'rgba(255,237,213,0.86)')
+      coreWake.addColorStop(0.68, 'rgba(251,146,60,0.34)')
+      coreWake.addColorStop(1, 'rgba(239,68,68,0)')
       ctx.strokeStyle = coreWake
       ctx.lineWidth = Math.max(1.3, radius * 0.26)
       ctx.beginPath()
@@ -8950,12 +8952,12 @@ export function GradiusRaid({
 
       const flame = ctx.createLinearGradient(headX, headY, tailX, tailY)
       flame.addColorStop(0, 'rgba(255,255,255,0.96)')
-      flame.addColorStop(0.2, burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.82)')
-      flame.addColorStop(0.52, 'rgba(103,232,249,0.42)')
+      flame.addColorStop(0.2, burning ? 'rgba(254,240,138,0.86)' : 'rgba(254,215,170,0.84)')
+      flame.addColorStop(0.52, 'rgba(249,115,22,0.48)')
       flame.addColorStop(1, 'rgba(239,35,60,0)')
       ctx.fillStyle = flame
       ctx.shadowBlur = 9
-      ctx.shadowColor = burning ? 'rgba(250,204,21,0.32)' : 'rgba(34,211,238,0.3)'
+      ctx.shadowColor = burning ? 'rgba(250,204,21,0.36)' : 'rgba(249,115,22,0.34)'
       ctx.beginPath()
       ctx.moveTo(headX + ux * radius * 0.82, headY + uy * radius * 0.82)
       ctx.bezierCurveTo(
@@ -8979,9 +8981,9 @@ export function GradiusRaid({
 
       const glow = ctx.createRadialGradient(headX, headY, 1, headX, headY, radius * 1.65)
       glow.addColorStop(0, 'rgba(255,255,255,0.98)')
-      glow.addColorStop(0.28, burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.82)')
-      glow.addColorStop(0.64, 'rgba(34,211,238,0.32)')
-      glow.addColorStop(1, 'rgba(34,211,238,0)')
+      glow.addColorStop(0.28, burning ? 'rgba(254,240,138,0.86)' : 'rgba(254,215,170,0.84)')
+      glow.addColorStop(0.64, 'rgba(249,115,22,0.4)')
+      glow.addColorStop(1, 'rgba(239,68,68,0)')
       ctx.fillStyle = glow
       ctx.beginPath()
       ctx.arc(headX, headY, radius * 1.65 * pulse, 0, Math.PI * 2)
@@ -9272,8 +9274,8 @@ export function GradiusRaid({
     const drawPlayerShot = (shot: Shot) => {
       if (!gfxProfile.drawAdvancedShotFx) {
         if (shot.kind === 'coreBlast') {
-          drawTrail(shot, shot.burning ? 'rgba(254,240,138,0.9)' : 'rgba(125,249,255,0.88)', 46, 4)
-          drawOrb(shot, shot.burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.78)', 7)
+          drawTrail(shot, shot.burning ? 'rgba(251,191,36,0.9)' : 'rgba(249,115,22,0.88)', 46, 4)
+          drawOrb(shot, shot.burning ? 'rgba(254,240,138,0.84)' : 'rgba(251,146,60,0.8)', 7)
         } else if (shot.kind === 'laser' || shot.kind === 'rocket' || shot.kind === 'needle' || shot.kind === 'homing') drawTrail(shot, shot.kind === 'rocket' ? 'rgba(251,146,60,0.88)' : 'rgba(125,249,255,0.86)', 36, 3)
         else drawOrb(shot, 'rgba(34,197,94,0.86)', 6)
       }
