@@ -795,6 +795,15 @@ const RAID_COBRA_BOSS_STATIC_FILTERS = [
 const RAID_FINAL_BOSS_STATIC_FILTERS = [
   'brightness(1.12) contrast(1.14) saturate(1.22)',
 ] as const
+const RAID_DEVIL_BOSS_BASE_FILTER = 'brightness(1.06) contrast(1.16) saturate(1.12)'
+const RAID_DEVIL_BOSS_ATTACK_FILTER = 'brightness(1.12) contrast(1.24) saturate(1.34)'
+const RAID_DEVIL_BOSS_RED_OVERLAY_FILTER = 'brightness(1.34) contrast(1.34) saturate(2.8) sepia(0.72) hue-rotate(315deg)'
+const RAID_DEVIL_SNAKE_HEAD_FILTER = 'brightness(1.24) contrast(1.2) saturate(1.34)'
+const RAID_DEVIL_BOSS_RED_FILTERS: Record<string, string> = {
+  '0.5': 'brightness(1.20) contrast(1.31) saturate(1.82) sepia(0.29) hue-rotate(327.0deg)',
+  '0.75': 'brightness(1.25) contrast(1.37) saturate(2.10) sepia(0.43) hue-rotate(318.5deg)',
+  '1': 'brightness(1.30) contrast(1.42) saturate(2.39) sepia(0.58) hue-rotate(310.0deg)',
+}
 
 const RAID_OTHER_STATIC_FILTERS: Partial<Record<RaidOtherAssetKey, readonly string[]>> = {
   asteroid: [
@@ -1368,7 +1377,11 @@ function warmRaidCanvasFilterVariants() {
   }
 
   RAID_DEVIL_BOSS_POSES.forEach((pose) => {
-    warmCanvasSpriteFilter(getDevilBossCanvasSprite(pose), 'brightness(1.08) contrast(1.18) saturate(1.16)')
+    const sprite = getDevilBossCanvasSprite(pose)
+    warmCanvasSpriteFilter(sprite, RAID_DEVIL_BOSS_BASE_FILTER)
+    warmCanvasSpriteFilter(sprite, RAID_DEVIL_BOSS_ATTACK_FILTER)
+    warmCanvasSpriteFilter(sprite, RAID_DEVIL_BOSS_RED_OVERLAY_FILTER)
+    Object.values(RAID_DEVIL_BOSS_RED_FILTERS).forEach((filter) => warmCanvasSpriteFilter(sprite, filter))
   })
 
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) {
@@ -1383,6 +1396,7 @@ function warmRaidCanvasFilterVariants() {
 
   for (const filter of RAID_SQUID_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getSquidBossCanvasSprite(), filter)
   for (const filter of RAID_COBRA_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getCobraBossCanvasSprite(), filter)
+  warmCanvasSpriteFilter(getCobraBossCanvasSprite(), RAID_DEVIL_SNAKE_HEAD_FILTER)
   for (const filter of RAID_FINAL_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getFinalBossCanvasSprite(), filter)
   getSquidBossTentacleTextureCanvas()
   getCobraBossBodyTextureCanvas()
@@ -2478,6 +2492,10 @@ function getDevilBossChargeDuration(chargePattern: Enemy['chargePattern'], volle
           chargePattern === 'trident' || chargePattern === 'pincer' ? 1.54 :
             1.44
   return base + (volleyActive && chargePattern !== 'diagonal' ? 0.16 : 0)
+}
+
+function getDevilBossRedFilter(redStep: number) {
+  return RAID_DEVIL_BOSS_RED_FILTERS[String(redStep)] ?? RAID_DEVIL_BOSS_RED_FILTERS['1']
 }
 
 function getPlayerBaseAttack(player: Player) {
@@ -5681,10 +5699,10 @@ function drawDevilGundamBoss(ctx: CanvasRenderingContext2D, enemy: Enemy, size: 
   const pulse = (0.98 + Math.sin(time / 1100 + enemy.phase) * 0.018) * poseSettleScale
   const coreGlow = (enemy.chargeTimer > 0 || attackActive ? 0.22 : pose === 'rage' ? 0.18 : 0.1) + redStep * 0.12
   const filter = redStep > 0
-    ? `brightness(${(1.1 + redStep * 0.2).toFixed(2)}) contrast(${(1.2 + redStep * 0.22).toFixed(2)}) saturate(${(1.24 + redStep * 1.15).toFixed(2)}) sepia(${(redStep * 0.58).toFixed(2)}) hue-rotate(${(344 - redStep * 34).toFixed(1)}deg)`
+    ? getDevilBossRedFilter(redStep)
     : pose === 'rage' || enemy.chargeTimer > 0 || attackActive
-      ? 'brightness(1.12) contrast(1.24) saturate(1.34)'
-    : 'brightness(1.06) contrast(1.16) saturate(1.12)'
+      ? RAID_DEVIL_BOSS_ATTACK_FILTER
+    : RAID_DEVIL_BOSS_BASE_FILTER
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
@@ -5718,7 +5736,7 @@ function drawDevilGundamBoss(ctx: CanvasRenderingContext2D, enemy: Enemy, size: 
       0,
       size * 0.28 + poseSettleY,
       size * 1.01,
-      'brightness(1.34) contrast(1.34) saturate(2.8) sepia(0.72) hue-rotate(315deg)',
+      RAID_DEVIL_BOSS_RED_OVERLAY_FILTER,
       defeatedFade * redStep * 0.28,
       0,
       pulse,
@@ -9996,7 +10014,7 @@ export function GradiusRaid({
         [0.44, 'rgba(132,204,22,0.22)'],
         [1, 'rgba(22,101,52,0)'],
       ])
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, size * 1.14, 'brightness(1.24) contrast(1.2) saturate(1.34)', 1, 0, 1, '#84cc16')
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, size * 1.14, RAID_DEVIL_SNAKE_HEAD_FILTER, 1, 0, 1, '#84cc16')
       ctx.restore()
     }
     const drawVenomSpitShot = (shot: Shot) => {
