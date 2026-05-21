@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM } from './sound'
 import type { GraphicsQuality } from './sound'
 import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
-import { submitLeaderboardScore } from '../../leaderboards'
+import { isCreatorPlayerName, submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
 import { getCoreLanderModel, getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, isLocalProgressionTestHost, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
@@ -348,26 +348,27 @@ const BOSS_COLORS: Record<BossKind, string> = {
   devil: '#450a0a',
 }
 const ENDLESS_BOSS_POOL: BossKind[] = ['carrier', 'orb', 'serpent', 'mantis', 'hydra', 'gate', 'super', 'squid', 'snake', 'final']
+const ENDLESS_BOSS_POOL_WITHOUT_FINAL: BossKind[] = ENDLESS_BOSS_POOL.filter((kind) => kind !== 'final')
 const DEVIL_BOSS_RAMP_ENDLESS_STAGE = 10
 const DEVIL_BOSS_MIN_STAGE_GAP = 5
 const DEVIL_BOSS_MAX_STAGE_GAP = 10
 
-function pickEndlessBossKind(stage: number, wave: number, devilNextEligibleStage: number): BossKind {
+function pickEndlessBossKind(stage: number, wave: number, devilNextEligibleStage: number, creatorDevilBoost = false): BossKind {
   const danger = Math.max(stage, wave)
   if (danger >= devilNextEligibleStage) {
     const rampDepth = Math.max(0, danger - DEVIL_BOSS_RAMP_ENDLESS_STAGE)
-    const devilChance = danger < DEVIL_BOSS_RAMP_ENDLESS_STAGE ? 0.018 : Math.min(0.46, 0.3 + rampDepth * 0.012)
+    const devilChance = creatorDevilBoost ? 0.5 : danger < DEVIL_BOSS_RAMP_ENDLESS_STAGE ? 0.018 : Math.min(0.46, 0.3 + rampDepth * 0.012)
     if (Math.random() < devilChance) return 'devil'
   }
   if (danger >= 8 && danger % 5 === 0 && Math.random() < 0.42) return 'final'
   if (danger >= 5 && Math.random() < 0.22) return Math.random() < 0.5 ? 'squid' : 'snake'
   if (danger >= 4 && Math.random() < 0.18) return 'super'
-  const pool = danger >= 10 ? ENDLESS_BOSS_POOL : ENDLESS_BOSS_POOL.filter((kind) => kind !== 'final')
+  const pool = danger >= 10 ? ENDLESS_BOSS_POOL : ENDLESS_BOSS_POOL_WITHOUT_FINAL
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
-function shouldForceLocalDevilBossTest(stage: number, mode: RaidMode) {
-  return mode === 'endless' && stage === 1 && isLocalProgressionTestHost()
+function shouldForceLocalDevilBossTest(stage: number, mode: RaidMode, playerName: string) {
+  return mode === 'endless' && stage === 1 && isLocalProgressionTestHost() && !isCreatorPlayerName(playerName)
 }
 
 const RAID_DEFAULT_BGM_TRACK = getPublicAssetUrl('audio/bgm_scifi_loop.ogg')
@@ -586,6 +587,8 @@ let rippleId = 1
 let lastPickupVoiceMs = 0
 
 const DEG = Math.PI / 180
+const SIDE_VALUES = [-1, 1] as const
+const RAID_FX_CANVAS_CONTEXT_SETTINGS: CanvasRenderingContext2DSettings = { alpha: true, desynchronized: true }
 
 type RaidGraphicsProfile = {
   dprCap: number
@@ -680,6 +683,43 @@ function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boole
   }
   raidGraphicsProfileCache.set(cacheKey, profile)
   return profile
+}
+
+type RaidViewportMetrics = {
+  cssWidth: number
+  cssHeight: number
+  dpr: number
+  canvasWidth: number
+  canvasHeight: number
+  isSmallViewport: boolean
+  isDesktopViewport: boolean
+  visualScale: number
+  profile: RaidGraphicsProfile
+  quality: GraphicsQuality
+  multiplayer: boolean
+}
+
+function makeRaidViewportMetrics(root: HTMLElement, quality: GraphicsQuality, multiplayer: boolean): RaidViewportMetrics {
+  const cssWidth = Math.max(1, root.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1) || 1)
+  const cssHeight = Math.max(1, root.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 1) || 1)
+  const isSmallViewport = cssWidth <= 860 || cssHeight <= 560
+  const profile = getRaidGraphicsProfile(quality, isSmallViewport, multiplayer)
+  const dpr = Math.min(profile.dprCap, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
+  const isDesktopViewport = cssWidth > 1100 && cssHeight > 700
+  const visualScale = clamp(Math.min(cssWidth, cssHeight) / (isDesktopViewport ? 760 : 560), 0.72, isDesktopViewport ? 1.08 : 1.28)
+  return {
+    cssWidth,
+    cssHeight,
+    dpr,
+    canvasWidth: Math.max(1, Math.floor(cssWidth * dpr)),
+    canvasHeight: Math.max(1, Math.floor(cssHeight * dpr)),
+    isSmallViewport,
+    isDesktopViewport,
+    visualScale,
+    profile,
+    quality,
+    multiplayer,
+  }
 }
 
 type CanvasSpriteEntry = {
@@ -804,6 +844,50 @@ const RAID_DEVIL_BOSS_RED_FILTERS: Record<string, string> = {
   '0.75': 'brightness(1.25) contrast(1.37) saturate(2.10) sepia(0.43) hue-rotate(318.5deg)',
   '1': 'brightness(1.30) contrast(1.42) saturate(2.39) sepia(0.58) hue-rotate(310.0deg)',
 }
+const RAID_DEVIL_BOSS_STATIC_FILTERS = [
+  RAID_DEVIL_BOSS_BASE_FILTER,
+  RAID_DEVIL_BOSS_ATTACK_FILTER,
+  RAID_DEVIL_BOSS_RED_OVERLAY_FILTER,
+  ...Object.values(RAID_DEVIL_BOSS_RED_FILTERS),
+] as const
+const RAID_DEVIL_RETICLE_GLOW_STOPS: Array<[number, string]> = [
+  [0, 'rgba(254,202,202,0.36)'],
+  [0.4, 'rgba(239,68,68,0.22)'],
+  [1, 'rgba(127,29,29,0)'],
+]
+const RAID_DEVIL_SNAKE_HEAD_GLOW_STOPS: Array<[number, string]> = [
+  [0, 'rgba(254,240,138,0.34)'],
+  [0.44, 'rgba(132,204,22,0.22)'],
+  [1, 'rgba(22,101,52,0)'],
+]
+const RAID_PLAYER_LASER_HEAD_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.75)'],
+  [0.38, 'rgba(34,211,238,0.52)'],
+  [1, 'rgba(34,211,238,0)'],
+]
+const RAID_SQUID_BUBBLE_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.72)'],
+  [0.22, 'rgba(244,114,182,0.58)'],
+  [0.58, 'rgba(168,85,247,0.42)'],
+  [1, 'rgba(88,28,135,0)'],
+]
+const RAID_SQUID_INK_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.72)'],
+  [0.24, 'rgba(244,114,182,0.74)'],
+  [0.58, 'rgba(88,28,135,0.72)'],
+  [1, 'rgba(31,5,54,0)'],
+]
+const RAID_SNAKE_FANG_GLOW_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.55)'],
+  [0.42, 'rgba(132,204,22,0.56)'],
+  [1, 'rgba(132,204,22,0)'],
+]
+const RAID_VENOM_SPIT_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.72)'],
+  [0.24, 'rgba(190,242,100,0.82)'],
+  [0.58, 'rgba(132,204,22,0.58)'],
+  [1, 'rgba(63,98,18,0)'],
+]
 
 const RAID_OTHER_STATIC_FILTERS: Partial<Record<RaidOtherAssetKey, readonly string[]>> = {
   asteroid: [
@@ -984,7 +1068,7 @@ function drawRadialEllipse(
   y: number,
   radiusX: number,
   radiusY: number,
-  stops: Array<[number, string]>,
+  stops: ReadonlyArray<readonly [number, string]>,
 ) {
   ctx.save()
   ctx.translate(x, y)
@@ -1378,10 +1462,7 @@ function warmRaidCanvasFilterVariants() {
 
   RAID_DEVIL_BOSS_POSES.forEach((pose) => {
     const sprite = getDevilBossCanvasSprite(pose)
-    warmCanvasSpriteFilter(sprite, RAID_DEVIL_BOSS_BASE_FILTER)
-    warmCanvasSpriteFilter(sprite, RAID_DEVIL_BOSS_ATTACK_FILTER)
-    warmCanvasSpriteFilter(sprite, RAID_DEVIL_BOSS_RED_OVERLAY_FILTER)
-    Object.values(RAID_DEVIL_BOSS_RED_FILTERS).forEach((filter) => warmCanvasSpriteFilter(sprite, filter))
+    for (const filter of RAID_DEVIL_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   })
 
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) {
@@ -2437,20 +2518,34 @@ function getNukeBossDamage(enemy: Enemy, stage: number) {
     : damage
 }
 
-function getFinalBossBeamLanes(chargeLane: number, chargePattern: Enemy['chargePattern']) {
-  if (chargePattern === 'horizontal' || chargePattern === 'diagonal' || chargePattern === 'cross' || chargePattern === 'rotate') {
-    return [clamp(chargeLane, 9, 91)]
-  }
+const FINAL_BOSS_SCATTER_LANE_OFFSETS = [-31, -13, 13, 31] as const
+const FINAL_BOSS_TRIDENT_LANE_OFFSETS = [-22, 0, 22] as const
+const FINAL_BOSS_PINCER_LANE_OFFSETS = [-24, 24] as const
+const DEVIL_BOSS_SCATTER_LANE_OFFSETS = [-26, -10, 0, 10, 26] as const
+const DEVIL_BOSS_PINCER_LANE_OFFSETS = [-20, 0, 20] as const
+const DEVIL_BOSS_TRIDENT_LANE_OFFSETS = [-18, 0, 18] as const
+
+function forEachFinalBossBeamLane(chargeLane: number, chargePattern: Enemy['chargePattern'], visit: (lane: number) => void) {
   if (chargePattern === 'scatter') {
-    return [-31, -13, 13, 31].map((offset) => clamp(chargeLane + offset, 7, 93))
+    for (const offset of FINAL_BOSS_SCATTER_LANE_OFFSETS) visit(clamp(chargeLane + offset, 7, 93))
+    return
   }
   if (chargePattern === 'trident') {
-    return [-22, 0, 22].map((offset) => clamp(chargeLane + offset, 8, 92))
+    for (const offset of FINAL_BOSS_TRIDENT_LANE_OFFSETS) visit(clamp(chargeLane + offset, 8, 92))
+    return
   }
   if (chargePattern === 'pincer') {
-    return [-24, 24].map((offset) => clamp(chargeLane + offset, 8, 92))
+    for (const offset of FINAL_BOSS_PINCER_LANE_OFFSETS) visit(clamp(chargeLane + offset, 8, 92))
+    return
   }
-  return [clamp(chargeLane, 9, 91)]
+  visit(clamp(chargeLane, 9, 91))
+}
+
+function getFinalBossBeamLaneCount(chargePattern: Enemy['chargePattern']) {
+  if (chargePattern === 'scatter') return FINAL_BOSS_SCATTER_LANE_OFFSETS.length
+  if (chargePattern === 'trident') return FINAL_BOSS_TRIDENT_LANE_OFFSETS.length
+  if (chargePattern === 'pincer') return FINAL_BOSS_PINCER_LANE_OFFSETS.length
+  return 1
 }
 
 function getFinalBossBeamRadius(chargePattern: Enemy['chargePattern']) {
@@ -2470,17 +2565,20 @@ function getDevilBossBeamRadius(chargePattern: Enemy['chargePattern']) {
   return 2.45
 }
 
-function getDevilBossBeamLanes(chargeLane: number, chargePattern: Enemy['chargePattern']) {
+function forEachDevilBossBeamLane(chargeLane: number, chargePattern: Enemy['chargePattern'], visit: (lane: number) => void) {
   if (chargePattern === 'scatter') {
-    return [-26, -10, 0, 10, 26].map((offset) => clamp(chargeLane + offset, 7, 93))
+    for (const offset of DEVIL_BOSS_SCATTER_LANE_OFFSETS) visit(clamp(chargeLane + offset, 7, 93))
+    return
   }
   if (chargePattern === 'pincer') {
-    return [-20, 0, 20].map((offset) => clamp(chargeLane + offset, 8, 92))
+    for (const offset of DEVIL_BOSS_PINCER_LANE_OFFSETS) visit(clamp(chargeLane + offset, 8, 92))
+    return
   }
   if (chargePattern === 'trident' || chargePattern === 'single') {
-    return [-18, 0, 18].map((offset) => clamp(chargeLane + offset, 8, 92))
+    for (const offset of DEVIL_BOSS_TRIDENT_LANE_OFFSETS) visit(clamp(chargeLane + offset, 8, 92))
+    return
   }
-  return getFinalBossBeamLanes(chargeLane, chargePattern)
+  forEachFinalBossBeamLane(chargeLane, chargePattern, visit)
 }
 
 function getDevilBossChargeDuration(chargePattern: Enemy['chargePattern'], volleyActive = false) {
@@ -8005,8 +8103,14 @@ function drawFinalChargeLines(
   viewportHeight: number,
   time: number,
 ) {
-  const chargingEnemies = enemies.filter((e) => e.bossKind === 'final' && e.chargeTimer > 0)
-  if (chargingEnemies.length === 0) return
+  let hasFinalCharge = false
+  for (const enemy of enemies) {
+    if (enemy.bossKind === 'final' && enemy.chargeTimer > 0) {
+      hasFinalCharge = true
+      break
+    }
+  }
+  if (!hasFinalCharge) return
 
   const toViewportY = (value: number) => (value / HEIGHT) * viewportHeight
   const drawWarningBeam = (x: number, y: number, angle: number, width: number, alpha: number, pulse: number) => {
@@ -8044,7 +8148,9 @@ function drawFinalChargeLines(
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
 
-  for (const enemy of chargingEnemies) {
+  for (const enemy of enemies) {
+    if (enemy.bossKind !== 'final' || enemy.chargeTimer <= 0) continue
+
     const chargeProgress = 1 - clamp(enemy.chargeTimer / FINAL_BOSS_BEAM_CHARGE_SECONDS, 0, 1)
     const alpha = 0.28 + chargeProgress * 0.72
     const radius = getFinalBossBeamRadius(enemy.chargePattern)
@@ -8067,9 +8173,9 @@ function drawFinalChargeLines(
       continue
     }
 
-    for (const lane of getFinalBossBeamLanes(enemy.chargeLane, enemy.chargePattern)) {
+    forEachFinalBossBeamLane(enemy.chargeLane, enemy.chargePattern, (lane) => {
       drawWarningBeam(toX(lane), viewportHeight * 0.5, Math.PI / 2, lineWidth, alpha, 0.72 + Math.sin(time / 80 + lane) * 0.2)
-    }
+    })
   }
 
   ctx.restore()
@@ -8084,8 +8190,14 @@ function drawDevilChargeWarnings(
   viewportHeight: number,
   time: number,
 ) {
-  const chargingEnemies = enemies.filter((e) => e.bossKind === 'devil' && e.chargeTimer > 0)
-  if (chargingEnemies.length === 0) return
+  let hasDevilCharge = false
+  for (const enemy of enemies) {
+    if (enemy.bossKind === 'devil' && enemy.chargeTimer > 0) {
+      hasDevilCharge = true
+      break
+    }
+  }
+  if (!hasDevilCharge) return
 
   const drawWarningBeam = (x: number, y: number, angle: number, width: number, alpha: number, pulse: number) => {
     const length = Math.hypot(viewportWidth, viewportHeight) * 1.45
@@ -8123,11 +8235,7 @@ function drawDevilChargeWarnings(
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     ctx.globalAlpha = alpha * 0.36
-    drawRadialEllipse(ctx, x, y, radius * 1.18, radius * 0.88, [
-      [0, 'rgba(254,202,202,0.36)'],
-      [0.4, 'rgba(239,68,68,0.22)'],
-      [1, 'rgba(127,29,29,0)'],
-    ])
+    drawRadialEllipse(ctx, x, y, radius * 1.18, radius * 0.88, RAID_DEVIL_RETICLE_GLOW_STOPS)
     ctx.globalAlpha = alpha
     ctx.strokeStyle = '#fca5a5'
     ctx.lineWidth = Math.max(2, viewportWidth * 0.0015)
@@ -8170,7 +8278,9 @@ function drawDevilChargeWarnings(
     ctx.restore()
   }
 
-  for (const enemy of chargingEnemies) {
+  for (const enemy of enemies) {
+    if (enemy.bossKind !== 'devil' || enemy.chargeTimer <= 0) continue
+
     const maxCharge = getDevilBossChargeDuration(enemy.chargePattern, (enemy.beamVolleyLeft ?? 0) > 0)
     const chargeProgress = 1 - clamp(enemy.chargeTimer / maxCharge, 0, 1)
     const alpha = 0.28 + chargeProgress * 0.72
@@ -8212,9 +8322,9 @@ function drawDevilChargeWarnings(
       continue
     }
 
-    for (const lane of getDevilBossBeamLanes(enemy.chargeLane, enemy.chargePattern)) {
+    forEachDevilBossBeamLane(enemy.chargeLane, enemy.chargePattern, (lane) => {
       drawWarningBeam(toX(lane), viewportHeight * 0.5, Math.PI / 2, lineWidth, alpha, 0.72 + Math.sin(time / 76 + lane) * 0.2)
-    }
+    })
   }
 }
 function getBriefingPickupType(item: string) {
@@ -8389,6 +8499,7 @@ export function GradiusRaid({
   const lastTimeRef = useRef(0)
   const lastRenderTimeRef = useRef(0)
   const graphicsQualityRef = useRef<GraphicsQuality>(getGraphicsQuality())
+  const viewportMetricsRef = useRef<RaidViewportMetrics | null>(null)
   const snapshotKeyRef = useRef('')
   const paletteRef = useRef<RaidPalette>(DEFAULT_RAID_PALETTE)
   const paletteClassRef = useRef('')
@@ -8450,6 +8561,9 @@ export function GradiusRaid({
   const nukesUsedRef = useRef(0)
   const shotsRef = useRef<Shot[]>([])
   const enemyShotsRef = useRef<Shot[]>([])
+  const expiredSquidBubblesRef = useRef<Shot[]>([])
+  const spawnedSquidBubblesRef = useRef<Shot[]>([])
+  const spawnedAsteroidsRef = useRef<AsteroidHazard[]>([])
   const enemiesRef = useRef<Enemy[]>([])
   const asteroidsRef = useRef<AsteroidHazard[]>([])
   const meteorsRef = useRef<MeteorHazard[]>([])
@@ -9469,19 +9583,42 @@ export function GradiusRaid({
     return cosmetics
   }
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const refreshViewportMetrics = () => {
+      const root = rootRef.current
+      if (!root) return
+      viewportMetricsRef.current = makeRaidViewportMetrics(root, graphicsQualityRef.current, Boolean(multiplayerSessionRef.current))
+    }
+
+    refreshViewportMetrics()
+    const root = rootRef.current
+    const resizeObserver = typeof ResizeObserver !== 'undefined' && root ? new ResizeObserver(refreshViewportMetrics) : null
+    if (root && resizeObserver) resizeObserver.observe(root)
+    window.addEventListener('resize', refreshViewportMetrics, { passive: true })
+
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', refreshViewportMetrics)
+    }
+  }, [])
+
   const drawFxCanvas = useCallback((time = performance.now()) => {
     const canvas = fxCanvasRef.current
     const root = rootRef.current
     if (!canvas || !root) return
 
-    const cssWidth = Math.max(1, root.clientWidth || window.innerWidth || 1)
-    const cssHeight = Math.max(1, root.clientHeight || window.innerHeight || 1)
     const gfxQuality = graphicsQualityRef.current
-    const gfxProfile = getRaidGraphicsProfile(gfxQuality, cssWidth <= 860 || cssHeight <= 560, Boolean(multiplayerSessionRef.current))
-    const dprCap = gfxProfile.dprCap
-    const dpr = Math.min(dprCap, window.devicePixelRatio || 1)
-    const width = Math.max(1, Math.floor(cssWidth * dpr))
-    const height = Math.max(1, Math.floor(cssHeight * dpr))
+    const multiplayerActive = Boolean(multiplayerSessionRef.current)
+    let viewport = viewportMetricsRef.current
+    if (!viewport || viewport.quality !== gfxQuality || viewport.multiplayer !== multiplayerActive) {
+      viewport = makeRaidViewportMetrics(root, gfxQuality, multiplayerActive)
+      viewportMetricsRef.current = viewport
+    }
+    const { cssWidth, cssHeight, dpr, profile: gfxProfile, visualScale } = viewport
+    const width = viewport.canvasWidth
+    const height = viewport.canvasHeight
 
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width
@@ -9489,7 +9626,7 @@ export function GradiusRaid({
       fxCanvasContextRef.current = null
     }
 
-    const ctx = fxCanvasContextRef.current ?? canvas.getContext('2d')
+    const ctx = fxCanvasContextRef.current ?? canvas.getContext('2d', RAID_FX_CANVAS_CONTEXT_SETTINGS)
     if (!ctx) return
     fxCanvasContextRef.current = ctx
     ctx.imageSmoothingEnabled = true
@@ -9499,8 +9636,6 @@ export function GradiusRaid({
 
     const toX = (value: number) => (value / WIDTH) * cssWidth
     const toY = (value: number) => (value / HEIGHT) * cssHeight
-    const isDesktopViewport = cssWidth > 1100 && cssHeight > 700
-    const visualScale = clamp(Math.min(cssWidth, cssHeight) / (isDesktopViewport ? 760 : 560), 0.72, isDesktopViewport ? 1.08 : 1.28)
 
     if (paletteClassRef.current !== root.className) {
       paletteClassRef.current = root.className
@@ -9597,17 +9732,13 @@ export function GradiusRaid({
       ctx.stroke()
       ctx.strokeStyle = 'rgba(125,249,255,0.5)'
       ctx.lineWidth = Math.max(1, visualScale * 1.4)
-      for (const side of [-1, 1]) {
+      for (const side of SIDE_VALUES) {
         ctx.beginPath()
         ctx.moveTo(headX + normalX * side * width * 0.52, headY + normalY * side * width * 0.52)
         ctx.lineTo(tailX + normalX * side * width * 0.52, tailY + normalY * side * width * 0.52)
         ctx.stroke()
       }
-      drawRadialEllipse(ctx, headX, headY, width * 0.38, width * 0.38, [
-        [0, 'rgba(255,255,255,0.75)'],
-        [0.38, 'rgba(34,211,238,0.52)'],
-        [1, 'rgba(34,211,238,0)'],
-      ])
+      drawRadialEllipse(ctx, headX, headY, width * 0.38, width * 0.38, RAID_PLAYER_LASER_HEAD_STOPS)
       ctx.restore()
     }
 
@@ -9647,7 +9778,7 @@ export function GradiusRaid({
       ctx.stroke()
       ctx.strokeStyle = 'rgba(253,230,138,0.64)'
       ctx.lineWidth = Math.max(0.9, visualScale * 1.1)
-      for (const side of [-1, 1]) {
+      for (const side of SIDE_VALUES) {
         ctx.beginPath()
         ctx.moveTo(x - ux * length * 0.28 + nx * side * width * 1.2, y - uy * length * 0.28 + ny * side * width * 1.2)
         ctx.lineTo(x - ux * length * 0.54 + nx * side * width * 2.0, y - uy * length * 0.54 + ny * side * width * 2.0)
@@ -9670,7 +9801,7 @@ export function GradiusRaid({
       ctx.globalCompositeOperation = 'lighter'
       ctx.strokeStyle = 'rgba(45,212,191,0.68)'
       ctx.lineWidth = Math.max(1, visualScale * 1.2)
-      for (const side of [-1, 1]) {
+      for (const side of SIDE_VALUES) {
         ctx.beginPath()
         ctx.moveTo(x - ux * length * 0.15, y - uy * length * 0.15)
         ctx.lineTo(x - ux * length * 0.62 + nx * side * width * 1.25, y - uy * length * 0.62 + ny * side * width * 1.25)
@@ -9889,12 +10020,7 @@ export function GradiusRaid({
       const pulse = 0.85 + Math.sin(time / 160 + shot.id) * 0.12
       ctx.save()
       ctx.globalCompositeOperation = 'lighter'
-      drawRadialEllipse(ctx, x, y, radius * pulse, radius * pulse, [
-        [0, 'rgba(255,255,255,0.72)'],
-        [0.22, 'rgba(244,114,182,0.58)'],
-        [0.58, 'rgba(168,85,247,0.42)'],
-        [1, 'rgba(88,28,135,0)'],
-      ])
+      drawRadialEllipse(ctx, x, y, radius * pulse, radius * pulse, RAID_SQUID_BUBBLE_STOPS)
       ctx.strokeStyle = 'rgba(250,232,255,0.76)'
       ctx.lineWidth = Math.max(1.5, visualScale * 1.4)
       ctx.beginPath()
@@ -9920,12 +10046,7 @@ export function GradiusRaid({
       ctx.translate(x, y)
       ctx.rotate(angle)
       ctx.globalCompositeOperation = 'lighter'
-      drawRadialEllipse(ctx, 0, 0, radius * 1.08 * pulse, radius * 0.82, [
-        [0, 'rgba(255,255,255,0.72)'],
-        [0.24, 'rgba(244,114,182,0.74)'],
-        [0.58, 'rgba(88,28,135,0.72)'],
-        [1, 'rgba(31,5,54,0)'],
-      ])
+      drawRadialEllipse(ctx, 0, 0, radius * 1.08 * pulse, radius * 0.82, RAID_SQUID_INK_STOPS)
       ctx.strokeStyle = 'rgba(250,232,255,0.68)'
       ctx.lineWidth = Math.max(1.2, visualScale * 1.2)
       ctx.beginPath()
@@ -9994,26 +10115,19 @@ export function GradiusRaid({
       ctx.closePath()
       ctx.fill()
       ctx.stroke()
-      drawRadialEllipse(ctx, 0, length * 0.18, width * 0.65, width * 0.42, [
-        [0, 'rgba(255,255,255,0.55)'],
-        [0.42, 'rgba(132,204,22,0.56)'],
-        [1, 'rgba(132,204,22,0)'],
-      ])
+      drawRadialEllipse(ctx, 0, length * 0.18, width * 0.65, width * 0.42, RAID_SNAKE_FANG_GLOW_STOPS)
       ctx.restore()
     }
+    let devilSnakeHeadSprite: CanvasSpriteEntry | null = null
     const drawDevilSnakeHeadShot = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
       const size = Math.max(78, shot.radius * visualScale * 18.5)
-      const sprite = getCobraBossCanvasSprite()
+      const sprite = devilSnakeHeadSprite ?? (devilSnakeHeadSprite = getCobraBossCanvasSprite())
       ctx.save()
       ctx.translate(x, y)
       ctx.globalCompositeOperation = 'lighter'
-      drawRadialEllipse(ctx, 0, size * 0.04, size * 0.34, size * 0.54, [
-        [0, 'rgba(254,240,138,0.34)'],
-        [0.44, 'rgba(132,204,22,0.22)'],
-        [1, 'rgba(22,101,52,0)'],
-      ])
+      drawRadialEllipse(ctx, 0, size * 0.04, size * 0.34, size * 0.54, RAID_DEVIL_SNAKE_HEAD_GLOW_STOPS)
       drawCanvasSpriteContain(ctx, sprite, 0, 0, size * 1.14, RAID_DEVIL_SNAKE_HEAD_FILTER, 1, 0, 1, '#84cc16')
       ctx.restore()
     }
@@ -10024,12 +10138,7 @@ export function GradiusRaid({
       const pulse = 0.86 + Math.sin(time / 130 + shot.id * 1.7) * 0.13
       ctx.save()
       ctx.globalCompositeOperation = 'lighter'
-      drawRadialEllipse(ctx, x, y, radius * pulse, radius * 0.78, [
-        [0, 'rgba(255,255,255,0.72)'],
-        [0.24, 'rgba(190,242,100,0.82)'],
-        [0.58, 'rgba(132,204,22,0.58)'],
-        [1, 'rgba(63,98,18,0)'],
-      ])
+      drawRadialEllipse(ctx, x, y, radius * pulse, radius * 0.78, RAID_VENOM_SPIT_STOPS)
       ctx.strokeStyle = 'rgba(253,230,138,0.68)'
       ctx.lineWidth = Math.max(1.1, visualScale * 1.1)
       ctx.beginPath()
@@ -10458,7 +10567,7 @@ export function GradiusRaid({
       remotePlayerRef.current.x = 58
       remotePlayerRef.current.y = 84
     }
-    const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, mode)
+    const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, mode, playerName)
     if (fullyBuffed || forceLocalDevilTest) {
       fullyBuffRaidPlayer(playerRef.current)
       if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
@@ -10535,7 +10644,7 @@ export function GradiusRaid({
     stopBGM()
     startRaidBgm(stageRef.current, 'cruise')
     syncSnapshot()
-  }, [resetGuestPredictionState, startRaidBgm, syncSnapshot])
+  }, [playerName, resetGuestPredictionState, startRaidBgm, syncSnapshot])
 
   useEffect(() => {
     const session = multiplayerSessionRef.current
@@ -10635,10 +10744,11 @@ export function GradiusRaid({
 
     const baseDamage = getPlayerBaseAttack(player)
     const isArk = shipKey === 'dreadnought'
+    const isSmallViewport = viewportMetricsRef.current?.cssWidth ? viewportMetricsRef.current.cssWidth < 640 : false
     const defaultScoutOffset = isArk
-      ? (rootRef.current && rootRef.current.clientWidth < 640 ? 14 : 7.4)
-      : (rootRef.current && rootRef.current.clientWidth < 640 ? 12 : 5.6)
-    const pickupScoutOffset = rootRef.current && rootRef.current.clientWidth < 640 ? 8.2 : 5
+      ? (isSmallViewport ? 14 : 7.4)
+      : (isSmallViewport ? 12 : 5.6)
+    const pickupScoutOffset = isSmallViewport ? 8.2 : 5
     const scoutScale = isArk ? 0.9 : 0.86
     const optionSupportStacks = getOptionSupportStacks(player)
     const emitters: Array<{ x: number; y: number; scale: number; main: boolean; attackShipKey?: string; baseOnly?: boolean; target?: Enemy | null; rotation?: number; canFire?: boolean; supportWeaponMode?: 'laserHoming' }> = []
@@ -11302,7 +11412,7 @@ export function GradiusRaid({
     const wave = waveRef.current
     const stage = stageRef.current
     const player = playerRef.current
-    const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, raidModeRef.current)
+    const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, raidModeRef.current, playerName)
     if (forceLocalDevilTest) {
       fullyBuffRaidPlayer(player)
       if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
@@ -11311,7 +11421,7 @@ export function GradiusRaid({
     const powerScore = getPowerScore(playerRef.current)
     const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
     const bossKind: BossKind = raidModeRef.current === 'endless'
-      ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current)
+      ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current, isCreatorPlayerName(playerName))
       : stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
       bossKind === 'devil' ? 60 :
@@ -11382,7 +11492,7 @@ export function GradiusRaid({
     bossMessageRef.current = 'incoming'
     startRaidBgm(stage, 'boss')
     playGameSound('countdown')
-  }, [startRaidBgm])
+  }, [playerName, startRaidBgm])
 
   const spawnPowerUp = useCallback((x: number, y: number, guaranteed = false) => {
     const player = playerRef.current
@@ -11871,7 +11981,7 @@ export function GradiusRaid({
       movePlayerWithInput(remotePlayer, dt, remotePointerTargetRef.current, remoteKeysRef.current)
     }
 
-    const isSmallViewport = Boolean(rootRef.current && rootRef.current.clientWidth < 640)
+    const isSmallViewport = Boolean(viewportMetricsRef.current && viewportMetricsRef.current.cssWidth < 640)
     if (player.hp > 0) updatePlayerTimers(player, dt, enemiesRef.current, isSmallViewport)
     if (remotePlayer && remotePlayer.hp > 0) updatePlayerTimers(remotePlayer, dt, enemiesRef.current, isSmallViewport)
     if (player.hp > 0) firePlayer(player)
@@ -12089,8 +12199,15 @@ export function GradiusRaid({
     const nowSeconds = now / 1000
     const asteroidDriftTime = now / 900
 
+    let hasHomingShot = false
+    for (const shot of shotsRef.current) {
+      if (shot.kind === 'homing') {
+        hasHomingShot = true
+        break
+      }
+    }
     let homingTargets: Map<number, Enemy> | null = null
-    if (shotsRef.current.some((shot) => shot.kind === 'homing')) {
+    if (hasHomingShot) {
       homingTargets = homingTargetsRef.current
       homingTargets.clear()
       for (const enemy of enemiesRef.current) {
@@ -12133,7 +12250,8 @@ export function GradiusRaid({
     }
     shots.length = liveShotCount
 
-    const expiredSquidBubbles: Shot[] = []
+    const expiredSquidBubbles = expiredSquidBubblesRef.current
+    expiredSquidBubbles.length = 0
     const enemyShots = enemyShotsRef.current
     let liveEnemyShotCount = 0
     for (const shot of enemyShots) {
@@ -12416,8 +12534,7 @@ export function GradiusRaid({
               })
               addRipple(chargeLane, chargeTargetY, '#bef264', 23)
             } else {
-              const lanes = getDevilBossBeamLanes(chargeLane, chargePattern)
-              lanes.forEach((lane) => {
+              forEachDevilBossBeamLane(chargeLane, chargePattern, (lane) => {
                 emitDevilBeam(lane, 50, undefined, getDevilBossBeamRadius(chargePattern), 1.08)
                 addRipple(lane, 50, '#ef4444', chargePattern === 'scatter' ? 14 : 19)
               })
@@ -12513,7 +12630,7 @@ export function GradiusRaid({
               emitFinalBeam(50, 50, angle + Math.PI / 2, 0.46)
               addRipple(50, 50, '#38bdf8', 32)
             } else {
-              getFinalBossBeamLanes(chargeLane, chargePattern).forEach((lane) => {
+              forEachFinalBossBeamLane(chargeLane, chargePattern, (lane) => {
                 emitFinalBeam(lane, 50)
                 addRipple(lane, 50, '#38bdf8', chargePattern === 'scatter' ? 14 : 22)
               })
@@ -12575,7 +12692,7 @@ export function GradiusRaid({
                           ? clamp(player.x + (Math.random() - 0.5) * 22, 28, 72)
                           : clamp(player.x + (Math.random() - 0.5) * 12, 10, 90)
             chargeCooldown = 999
-            const laneCount = getFinalBossBeamLanes(chargeLane, chargePattern).length
+            const laneCount = getFinalBossBeamLaneCount(chargePattern)
             addRipple(chargeLane, 84, '#38bdf8', laneCount >= 4 ? 16 : laneCount === 3 ? 18 : laneCount === 2 ? 20 : 24)
             spawnSparks(enemy.x, enemy.y + 6, '#38bdf8', 52, 8)
             playGameSound('countdown')
@@ -12877,8 +12994,10 @@ export function GradiusRaid({
     updateSparksInPlace(sparksRef.current, dt)
     updateRipplesInPlace(ripplesRef.current, dt)
 
-    const spawnedAsteroids: AsteroidHazard[] = []
-    const spawnedSquidBubbles: Shot[] = []
+    const spawnedAsteroids = spawnedAsteroidsRef.current
+    spawnedAsteroids.length = 0
+    const spawnedSquidBubbles = spawnedSquidBubblesRef.current
+    spawnedSquidBubbles.length = 0
     const breakAsteroid = (asteroid: AsteroidHazard, awardScore: boolean) => {
       asteroid.hp = 0
       spawnedAsteroids.push(...splitAsteroidHazard(
@@ -12965,6 +13084,7 @@ export function GradiusRaid({
     }
 
     for (const bubble of expiredSquidBubbles) splitSquidBubble(bubble)
+    expiredSquidBubbles.length = 0
 
     for (const shot of shotsRef.current) {
       if (shot.y <= -50) continue
@@ -13279,6 +13399,7 @@ export function GradiusRaid({
       return shot.y > -margin && shot.y < HEIGHT + margin && shot.x > -margin && shot.x < WIDTH + margin
     })
     for (const bubble of spawnedSquidBubbles) enemyShotList.push(bubble)
+    spawnedSquidBubbles.length = 0
 
     for (const enemy of enemiesRef.current) {
       const hitRange = enemy.radius + PLAYER_RADIUS
@@ -13391,6 +13512,7 @@ export function GradiusRaid({
       for (let index = 0; index < spawnedAsteroids.length && index < room; index += 1) {
         asteroidList.push(spawnedAsteroids[index])
       }
+      spawnedAsteroids.length = 0
     }
 
     for (const powerUp of powerUpsRef.current) {
@@ -13578,6 +13700,7 @@ export function GradiusRaid({
   const [graphicsQuality, setGraphicsQualityState] = useState<GraphicsQuality>(() => getGraphicsQuality())
   const applyGraphicsQuality = (q: GraphicsQuality) => {
     graphicsQualityRef.current = q
+    viewportMetricsRef.current = null
     setGraphicsQuality(q)
     setGraphicsQualityState(q)
   }
