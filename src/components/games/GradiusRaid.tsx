@@ -10391,13 +10391,15 @@ export function GradiusRaid({
     const drawDevilSnakeHeadShot = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
-      const size = Math.max(78, shot.radius * visualScale * 18.5)
+      const size = getGodGundamGameplayRenderSize(cssWidth)
       const sprite = devilMasterProjectileSprite ?? (devilMasterProjectileSprite = getDevilMasterProjectileCanvasSprite())
+      const angle = shot.angle ?? Math.atan2(shot.vy, shot.vx) + Math.PI / 2
       ctx.save()
       ctx.translate(x, y)
+      ctx.rotate(angle)
       ctx.globalCompositeOperation = 'lighter'
       drawRadialEllipse(ctx, 0, size * 0.04, size * 0.38, size * 0.54, RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS)
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, size * 1.18, RAID_DEVIL_MASTER_PROJECTILE_FILTER, 1, 0, 1, '#ef4444')
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, size, RAID_DEVIL_MASTER_PROJECTILE_FILTER, 1, 0, 1, '#ef4444')
       ctx.restore()
     }
     const drawVenomSpitShot = (shot: Shot) => {
@@ -12879,6 +12881,7 @@ export function GradiusRaid({
                 radius: 4.15,
                 life: 2.35,
                 maxLife: 2.35,
+                angle: Math.atan2(aimY, aimX) + Math.PI / 2,
               })
               addRipple(chargeLane, chargeTargetY, '#bef264', 23)
             } else {
