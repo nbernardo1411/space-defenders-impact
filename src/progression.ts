@@ -109,12 +109,14 @@ export type ShipMasteryRecord = {
 export type ShipCosmeticKey = 'trail' | 'aura' | 'frame'
 export type ShipCosmeticEquipState = Partial<Record<ShipCosmeticKey, boolean>>
 export type MesiahShipColor = 'black' | 'white'
+export type CoreLanderModel = 'coreLander' | 'godGundam'
 
 export type ProgressState = {
   version: 1
   towerDefenseEndlessUnlocked: boolean
   gradiusRaidEndlessUnlocked: boolean
   mesiahShipColor: MesiahShipColor
+  coreLanderModel: CoreLanderModel
   gradiusEndlessTotalScore: number
   totalRuns: number
   totalScore: number
@@ -226,6 +228,7 @@ export const SHIP_MASTERY_LEVEL_XP = 1600
 export const SHIP_COSMETIC_SINGLE_RUN_SCORE = 500000
 export const SHIP_COSMETIC_TOTAL_SCORE = 5000000
 export const CORE_LANDER_UNLOCK_GRADIUS_ENDLESS_SCORE = 5000000
+export const CORE_LANDER_GOD_GUNDAM_UNLOCK_SCORE = 1000000
 
 const LEADERBOARD_MODES: LeaderboardMode[] = [
   'ship_defense_normal',
@@ -241,6 +244,7 @@ export function createEmptyProgress(): ProgressState {
     towerDefenseEndlessUnlocked: getStoredTowerDefenseEndlessUnlock(),
     gradiusRaidEndlessUnlocked: false,
     mesiahShipColor: 'black',
+    coreLanderModel: 'coreLander',
     gradiusEndlessTotalScore: 0,
     totalRuns: 0,
     totalScore: 0,
@@ -469,6 +473,11 @@ export function isCoreLanderUnlocked(progress: ProgressState) {
   return (progress.gradiusEndlessTotalScore ?? 0) >= CORE_LANDER_UNLOCK_GRADIUS_ENDLESS_SCORE
 }
 
+export function isCoreLanderGodGundamUnlocked(progress: ProgressState) {
+  if (hasProgressionUnlockOverride()) return true
+  return (progress.shipMastery.coreLander?.totalScore ?? 0) >= CORE_LANDER_GOD_GUNDAM_UNLOCK_SCORE
+}
+
 export function getStoredTowerDefenseEndlessUnlock() {
   if (typeof window === 'undefined') return false
   return window.localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true'
@@ -525,6 +534,17 @@ export function setMesiahShipColor(color: MesiahShipColor) {
   return progress
 }
 
+export function getCoreLanderModel(progress: ProgressState): CoreLanderModel {
+  return progress.coreLanderModel === 'godGundam' && isCoreLanderGodGundamUnlocked(progress) ? 'godGundam' : 'coreLander'
+}
+
+export function setCoreLanderModel(model: CoreLanderModel) {
+  const progress = loadProgress()
+  progress.coreLanderModel = model === 'godGundam' && isCoreLanderGodGundamUnlocked(progress) ? 'godGundam' : 'coreLander'
+  saveProgress(progress)
+  return progress
+}
+
 export function getShipMasteryLevelFromXp(xp: number) {
   let level = 1
   let remainingXp = Math.max(0, Math.floor(xp))
@@ -573,6 +593,7 @@ export function normalizeProgress(value: unknown): ProgressState {
     towerDefenseEndlessUnlocked: Boolean(data.towerDefenseEndlessUnlocked || getStoredTowerDefenseEndlessUnlock()),
     gradiusRaidEndlessUnlocked: Boolean(data.gradiusRaidEndlessUnlocked || data.achievements?.raid_clear || data.achievements?.fortress_fall || (data.bestStageByMode?.gradius_solo ?? 0) >= 15 || (data.bestStageByMode?.gradius_multiplayer ?? 0) >= 15),
     mesiahShipColor: data.mesiahShipColor === 'white' ? 'white' : 'black',
+    coreLanderModel: data.coreLanderModel === 'godGundam' && isCoreLanderGodGundamUnlocked({ ...empty, ...data, shipMastery } as ProgressState) ? 'godGundam' : 'coreLander',
     gradiusEndlessTotalScore: Math.max(
       Math.floor(Number(data.bestScoreByMode?.gradius_endless) || 0),
       Math.floor(Number(data.gradiusEndlessTotalScore) || 0),

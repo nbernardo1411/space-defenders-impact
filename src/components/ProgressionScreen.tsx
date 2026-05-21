@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   getCompletionPercent,
+  getCoreLanderModel,
   getEquippedShipCosmetics,
   getMesiahShipColor,
   hasProgressionUnlockOverride,
+  isCoreLanderGodGundamUnlocked,
   isCoreLanderUnlocked,
   isShipCosmeticUnlocked,
+  setCoreLanderModel,
   setMesiahShipColor,
   setShipCosmeticEquipped,
+  CORE_LANDER_GOD_GUNDAM_UNLOCK_SCORE,
   SHIP_COSMETIC_SINGLE_RUN_SCORE,
   SHIP_COSMETIC_TOTAL_SCORE,
   type AchievementId,
@@ -17,6 +21,7 @@ import {
   type ShipCosmeticEquipState,
   type ShipCosmeticKey,
   type MesiahShipColor,
+  type CoreLanderModel,
 } from '../progression'
 import { getLanguageText, getRaidText, getReleaseText, type LanguageCode } from '../i18n'
 import { BossBriefingCanvas, type BriefingBossKind } from './games/GradiusRaid'
@@ -115,6 +120,12 @@ const SHIP_PREVIEW_VISUAL_STYLES: Record<string, ShipPreviewVisualStyle> = {
     edge: 'rgba(239,68,68,0.68)',
     soft: 'rgba(251,146,60,0.18)',
     accent: 'rgba(255,237,213,0.9)',
+  },
+  godGundam: {
+    core: 'rgba(250,204,21,0.88)',
+    edge: 'rgba(37,99,235,0.72)',
+    soft: 'rgba(250,204,21,0.2)',
+    accent: 'rgba(239,68,68,0.78)',
   },
 }
 type StageBossEntry = {
@@ -297,8 +308,14 @@ export function ProgressionScreen({
                   const mastery = progress.shipMastery[shipKey]
                   const level = mastery?.level ?? 1
                   const mesiahColor = getMesiahShipColor(progress)
+                  const coreLanderModel = getCoreLanderModel(progress)
+                  const coreLanderGodUnlocked = isCoreLanderGodGundamUnlocked(progress)
                   const lockedShip = shipKey === 'coreLander' && !isCoreLanderUnlocked(progress)
-                  const previewSpriteKey = shipKey === 'mesiah' ? getMesiahPreviewSpriteKey(mesiahColor) : shipKey
+                  const previewSpriteKey = shipKey === 'mesiah'
+                    ? getMesiahPreviewSpriteKey(mesiahColor)
+                    : shipKey === 'coreLander'
+                      ? coreLanderModel
+                      : shipKey
                   const cosmetics = getMasteryCosmetics(mastery, text)
                   const equippedCosmetics = getEquippedShipCosmetics(progress, shipKey)
                   const previewCosmetics = lockedShip ? { trail: false, aura: false, frame: false } : previewCosmeticShip === shipKey ? ALL_COSMETICS_PREVIEW : equippedCosmetics
@@ -337,6 +354,27 @@ export function ProgressionScreen({
                                 {color === 'white' ? text.mesiahWhite : text.mesiahBlack}
                               </button>
                             ))}
+                          </div>
+                        ) : null}
+                        {shipKey === 'coreLander' ? (
+                          <div className="progress-ship-color" aria-label={text.coreLanderModel}>
+                            <span>{text.coreLanderModel}</span>
+                            {(['coreLander', 'godGundam'] as CoreLanderModel[]).map((model) => {
+                              const lockedModel = model === 'godGundam' && !coreLanderGodUnlocked
+                              return (
+                                <button
+                                  key={model}
+                                  type="button"
+                                  className={coreLanderModel === model ? 'progress-ship-color__button progress-ship-color__button--active' : 'progress-ship-color__button'}
+                                  disabled={lockedShip || lockedModel}
+                                  onClick={() => onProgressChange(setCoreLanderModel(model))}
+                                >
+                                  <i className={`progress-ship-color__swatch progress-ship-color__swatch--${model}`} />
+                                  {model === 'godGundam' ? text.coreLanderGodGundam : text.coreLanderDefault}
+                                  {lockedModel ? <small>{text.cosmeticLocked}: {CORE_LANDER_GOD_GUNDAM_UNLOCK_SCORE.toLocaleString()} {text.coreLanderScore}</small> : null}
+                                </button>
+                              )
+                            })}
                           </div>
                         ) : null}
                         {cosmetics.map((cosmetic) => (
@@ -637,13 +675,21 @@ function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics, locked = fal
       ctx.imageSmoothingQuality = 'high'
 
       const x = SHIP_PREVIEW_CANVAS_WIDTH / 2
-      const y = shipKey === 'coreLander' ? 43 : 40
-      const previewSize = shipKey === 'coreLander' ? 86 : SHIP_PREVIEW_SIZE
-      const style = getShipPreviewVisualStyle(shipKey)
+      const visualKey = spriteKey ?? shipKey
+      const y = visualKey === 'godGundam' ? 46 : shipKey === 'coreLander' ? 43 : 40
+      const previewSize = visualKey === 'godGundam' ? 96 : shipKey === 'coreLander' ? 86 : SHIP_PREVIEW_SIZE
+      const style = getShipPreviewVisualStyle(visualKey)
+      const drawTrailOverSprite = visualKey === 'godGundam'
 
-      if (!locked && cosmetics.trail) drawPreviewMasteryTrail(ctx, x, y, previewSize, time, shipKey, style)
+      if (!locked && cosmetics.trail && !drawTrailOverSprite) drawPreviewMasteryTrail(ctx, x, y, previewSize, time, visualKey, style)
       if (!locked && cosmetics.aura && image.complete) drawPreviewMasteryAura(ctx, image, x, y, previewSize, time, style)
       drawPreviewShipSprite(ctx, image, x, y, previewSize, cosmetics.frame, locked)
+      if (!locked && cosmetics.trail && drawTrailOverSprite) {
+        ctx.save()
+        ctx.globalAlpha *= 0.72
+        drawPreviewMasteryTrail(ctx, x, y, previewSize, time, visualKey, style)
+        ctx.restore()
+      }
 
       if (!disposed && !locked && (cosmetics.trail || cosmetics.aura)) frameId = requestAnimationFrame(render)
     }
@@ -690,8 +736,18 @@ function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageEl
 function drawPreviewMasteryTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string, style: ShipPreviewVisualStyle) {
   const pulse = 0.96 + Math.sin(time / 180) * 0.05
   const tailScale = shipKey === 'spaceEt' ? 1.18 : shipKey === 'dreadnought' ? 0.92 : 1
-  const engineSize = shipKey === 'coreLander' ? size * 0.74 : size
-  const engineY = shipKey === 'coreLander' ? y - size * 0.085 : y
+  const engineSize = shipKey === 'godGundam' ? size * 0.28 : shipKey === 'coreLander' ? size * 0.74 : size
+  const engineY = shipKey === 'godGundam' ? y - size * 0.285 : shipKey === 'coreLander' ? y - size * 0.085 : y
+  if (shipKey === 'godGundam') {
+    const ventOffset = engineSize * 0.08
+    drawSinglePreviewMasteryTrail(ctx, x - ventOffset, engineY, engineSize, pulse, tailScale, shipKey, style)
+    drawSinglePreviewMasteryTrail(ctx, x + ventOffset, engineY, engineSize, pulse, tailScale, shipKey, style)
+    return
+  }
+  drawSinglePreviewMasteryTrail(ctx, x, engineY, engineSize, pulse, tailScale, shipKey, style)
+}
+
+function drawSinglePreviewMasteryTrail(ctx: CanvasRenderingContext2D, x: number, engineY: number, engineSize: number, pulse: number, tailScale: number, shipKey: string, style: ShipPreviewVisualStyle) {
   const top = engineY + engineSize * 0.34
   const length = engineSize * 0.72 * tailScale * pulse
   const width = engineSize * (shipKey === 'dreadnought' ? 0.15 : 0.13)
@@ -705,7 +761,7 @@ function drawPreviewMasteryTrail(ctx: CanvasRenderingContext2D, x: number, y: nu
   outer.addColorStop(0.58, style.edge)
   outer.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = outer
-  ctx.shadowBlur = Math.max(10, size * 0.16)
+  ctx.shadowBlur = Math.max(10, engineSize * 0.16)
   ctx.shadowColor = style.soft
   ctx.beginPath()
   ctx.moveTo(x - width * 0.58, top)
@@ -719,11 +775,11 @@ function drawPreviewMasteryTrail(ctx: CanvasRenderingContext2D, x: number, y: nu
   inner.addColorStop(0.36, style.accent)
   inner.addColorStop(1, 'rgba(255,255,255,0)')
   ctx.fillStyle = inner
-  ctx.shadowBlur = Math.max(5, size * 0.07)
+  ctx.shadowBlur = Math.max(5, engineSize * 0.07)
   ctx.beginPath()
-  ctx.moveTo(x - width * 0.23, top + size * 0.01)
+  ctx.moveTo(x - width * 0.23, top + engineSize * 0.01)
   ctx.bezierCurveTo(x - width * 0.2, top + length * 0.2, x - width * 0.05, top + length * 0.48, x, top + length * 0.66)
-  ctx.bezierCurveTo(x + width * 0.05, top + length * 0.48, x + width * 0.2, top + length * 0.2, x + width * 0.23, top + size * 0.01)
+  ctx.bezierCurveTo(x + width * 0.05, top + length * 0.48, x + width * 0.2, top + length * 0.2, x + width * 0.23, top + engineSize * 0.01)
   ctx.closePath()
   ctx.fill()
   ctx.restore()

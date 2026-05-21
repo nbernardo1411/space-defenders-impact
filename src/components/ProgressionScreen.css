@@ -336,6 +336,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 7px;
   min-height: 34px;
   border: 1px solid rgba(148, 163, 184, 0.28);
@@ -346,6 +347,13 @@
   font: inherit;
   font-size: 0.8rem;
   font-weight: 900;
+}
+
+.progress-ship-color__button small {
+  flex-basis: 100%;
+  color: #94a3b8;
+  font-size: 0.66rem;
+  line-height: 1.2;
 }
 
 .progress-ship-color__button--active {
@@ -367,6 +375,14 @@
 
 .progress-ship-color__swatch--white {
   background: linear-gradient(135deg, #ffffff, #94a3b8);
+}
+
+.progress-ship-color__swatch--coreLander {
+  background: linear-gradient(135deg, #f8fafc, #ef4444 55%, #111827);
+}
+
+.progress-ship-color__swatch--godGundam {
+  background: linear-gradient(135deg, #facc15, #2563eb 38%, #ef4444 72%, #f8fafc);
 }
 
 .progress-ship-preview__ship--trail::after {

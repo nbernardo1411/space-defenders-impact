@@ -15,6 +15,7 @@ export const RAID_SHIP_SPRITE_PATHS: Record<string, string> = {
   mesiahRaptorWhite: 'assets/ships/mesiah-raptor-white.png',
   coreLander: 'assets/ships/core-lander.png',
   coreLanderBurning: 'assets/ships/core-lander-burning.png',
+  godGundam: 'assets/ships/god-gundam.png',
 }
 
 export const RAID_ALIEN_SPRITE_COUNT = 8
