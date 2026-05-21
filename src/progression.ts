@@ -14,6 +14,7 @@ export type RunResult = {
   durationMs?: number
   enemiesDestroyed?: number
   bossesDefeated?: number
+  devilBossEncountered?: boolean
   pickupsCollected?: number
   nukesUsed?: number
   raidMode?: 'campaign' | 'endless'
@@ -85,6 +86,7 @@ export type CodexId =
   | 'serpent_guardian'
   | 'serpent_scales'
   | 'orbital_fortress'
+  | 'devil_gundam'
   | 'fortress_beam_core'
   | 'final_gauntlet'
   | 'endless_swarm'
@@ -211,6 +213,7 @@ export const CODEX_IDS: CodexId[] = [
   'serpent_guardian',
   'serpent_scales',
   'orbital_fortress',
+  'devil_gundam',
   'fortress_beam_core',
   'final_gauntlet',
   'endless_swarm',
@@ -420,6 +423,7 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   unlockCodex('serpent_guardian', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 10)
   unlockCodex('serpent_scales', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 11)
   unlockCodex('orbital_fortress', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && (result.stage >= 15 || result.status === 'victory'))
+  unlockCodex('devil_gundam', isGradiusEndlessRun && Boolean(result.devilBossEncountered))
   unlockCodex('fortress_beam_core', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && (result.stage >= 15 || result.status === 'victory'))
   unlockCodex('final_gauntlet', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory')
   unlockCodex('endless_swarm', result.mode === 'ship_defense_endless')

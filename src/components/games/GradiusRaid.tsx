@@ -6,18 +6,19 @@ import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAI
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
-import { getCoreLanderModel, getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
+import { getCoreLanderModel, getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, isLocalProgressionTestHost, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
 type PowerKind = WeaponKey | 'option' | 'shield' | 'forcefield' | 'repair' | 'levelup'
 type GamePhase = 'select' | 'briefing' | 'playing' | 'paused' | 'gameover' | 'victory'
 type BossMessage = 'incoming' | 'clear' | null
-type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super' | 'squid' | 'snake' | 'final'
+type BossKind = 'carrier' | 'orb' | 'serpent' | 'mantis' | 'hydra' | 'gate' | 'super' | 'squid' | 'snake' | 'final' | 'devil'
 type MirageBossKind = 'squid' | 'snake'
 type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 type RaidMode = 'campaign' | 'endless'
+type DevilBossPose = 'idle' | 'idle2' | 'attack' | 'attack2' | 'rage'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
 type RaidRandomEventKind = 'meteor' | 'solar' | 'rift' | 'wreck' | 'ambush' | 'ion'
 
@@ -75,7 +76,7 @@ type Shot = Vec & {
   vx: number
   vy: number
   damage: number
-  kind: WeaponKey | 'pulse' | 'coreBlast' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud' | 'squidBubble' | 'squidInk' | 'squidSpine' | 'snakeFang' | 'venomSpit'
+  kind: WeaponKey | 'pulse' | 'coreBlast' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud' | 'squidBubble' | 'squidInk' | 'squidSpine' | 'snakeFang' | 'devilSnakeHead' | 'venomSpit'
   radius: number
   pierce?: number
   turn?: number
@@ -122,6 +123,12 @@ type Enemy = Vec & {
   mirageTimer?: number
   mirageCooldown?: number
   hitFlash?: number
+  devilVisualPose?: DevilBossPose
+  devilPoseChangedAt?: number
+  devilNormalAttackTimer?: number
+  devilDefeatedTimer?: number
+  devilSnakeBurstLeft?: number
+  defeatTimer?: number
   chargePattern: 'single' | 'pincer' | 'trident' | 'scatter' | 'diagonal' | 'horizontal' | 'cross' | 'rotate'
 }
 
@@ -338,16 +345,29 @@ const BOSS_COLORS: Record<BossKind, string> = {
   squid: '#7c3aed',
   snake: '#e11d48',
   final: '#120617',
+  devil: '#450a0a',
 }
 const ENDLESS_BOSS_POOL: BossKind[] = ['carrier', 'orb', 'serpent', 'mantis', 'hydra', 'gate', 'super', 'squid', 'snake', 'final']
+const DEVIL_BOSS_RAMP_ENDLESS_STAGE = 10
+const DEVIL_BOSS_MIN_STAGE_GAP = 5
+const DEVIL_BOSS_MAX_STAGE_GAP = 10
 
-function pickEndlessBossKind(stage: number, wave: number): BossKind {
+function pickEndlessBossKind(stage: number, wave: number, devilNextEligibleStage: number): BossKind {
   const danger = Math.max(stage, wave)
+  if (danger >= devilNextEligibleStage) {
+    const rampDepth = Math.max(0, danger - DEVIL_BOSS_RAMP_ENDLESS_STAGE)
+    const devilChance = danger < DEVIL_BOSS_RAMP_ENDLESS_STAGE ? 0.018 : Math.min(0.46, 0.3 + rampDepth * 0.012)
+    if (Math.random() < devilChance) return 'devil'
+  }
   if (danger >= 8 && danger % 5 === 0 && Math.random() < 0.42) return 'final'
   if (danger >= 5 && Math.random() < 0.22) return Math.random() < 0.5 ? 'squid' : 'snake'
   if (danger >= 4 && Math.random() < 0.18) return 'super'
   const pool = danger >= 10 ? ENDLESS_BOSS_POOL : ENDLESS_BOSS_POOL.filter((kind) => kind !== 'final')
   return pool[Math.floor(Math.random() * pool.length)]
+}
+
+function shouldForceLocalDevilBossTest(stage: number, mode: RaidMode) {
+  return mode === 'endless' && stage === 1 && isLocalProgressionTestHost()
 }
 
 const RAID_DEFAULT_BGM_TRACK = getPublicAssetUrl('audio/bgm_scifi_loop.ogg')
@@ -368,7 +388,7 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'coreLander', name: 'Core Lander', role: 'AOE comet striker. Burning awakens at low HP.', speed: 0.94, hp: 6, fireRate: 1 },
 ]
 
-export type BriefingBossKind = Extract<BossKind, 'squid' | 'snake' | 'final'>
+export type BriefingBossKind = Extract<BossKind, 'squid' | 'snake' | 'final' | 'devil'>
 
 const BRIEFING_PICKUP_TYPES: Record<string, PowerKind> = {
   'V Spread': 'spread',
@@ -462,6 +482,7 @@ const PLAYER_MAX_RANK = 20
 const PLAYER_BASE_ATTACK_PER_LEVEL = 0.65
 const LEVEL_UP_HEAL = 1
 const FINAL_BOSS_NUKE_DAMAGE_MULTIPLIER = 0.26
+const DEVIL_BOSS_NUKE_DAMAGE_MULTIPLIER = 0.075
 const SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES = 3
 const SPACE_ET_FORCE_FIELD_REGEN_SECONDS = 20
 const MESIAH_DRONE_FIRE_INTERVAL_SECONDS = 0.1
@@ -734,6 +755,14 @@ const RAID_FINAL_BOSS_CORE_OFFSET_Y = -0.039
 const RAID_SQUID_BOSS_ASSET_PATH = 'assets/aliens/squid_boss.png'
 const RAID_COBRA_BOSS_ASSET_PATH = 'assets/aliens/cobra_boss.png'
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
+const RAID_DEVIL_BOSS_ASSET_PATHS: Record<DevilBossPose, string> = {
+  idle: 'assets/GundamEnemy/devil-idle-1.png',
+  idle2: 'assets/GundamEnemy/devil-idle-2.png',
+  attack: 'assets/GundamEnemy/devil-attack.png',
+  attack2: 'assets/GundamEnemy/devil-attack-2.png',
+  rage: 'assets/GundamEnemy/devil-rage.png',
+}
+const RAID_DEVIL_BOSS_POSES: DevilBossPose[] = ['idle', 'idle2', 'attack', 'attack2', 'rage']
 
 const RAID_SHIP_STATIC_FILTERS = [
   'brightness(1.12) contrast(1.14) saturate(1.26)',
@@ -1184,6 +1213,56 @@ function processCobraBossAsset(image: HTMLImageElement) {
   return canvas
 }
 
+function processDevilBossAsset(image: HTMLImageElement) {
+  const sourceCanvas = makeSpriteProcessingCanvas(image, Math.max(image.naturalWidth, image.naturalHeight))
+  const sourceCtx = sourceCanvas?.getContext('2d')
+  if (!sourceCanvas || !sourceCtx) return null
+
+  const imageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height)
+  const data = imageData.data
+  let minX = sourceCanvas.width
+  let minY = sourceCanvas.height
+  let maxX = -1
+  let maxY = -1
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] <= 8) continue
+    const pixel = index / 4
+    const x = pixel % sourceCanvas.width
+    const y = Math.floor(pixel / sourceCanvas.width)
+    minX = Math.min(minX, x)
+    minY = Math.min(minY, y)
+    maxX = Math.max(maxX, x)
+    maxY = Math.max(maxY, y)
+  }
+  if (maxX < minX || maxY < minY) return sourceCanvas
+
+  const canvasSize = 512
+  const targetHeight = 472
+  const sourceWidth = maxX - minX + 1
+  const sourceHeight = maxY - minY + 1
+  const scale = targetHeight / sourceHeight
+  const targetWidth = sourceWidth * scale
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasSize
+  canvas.height = canvasSize
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(
+    sourceCanvas,
+    minX,
+    minY,
+    sourceWidth,
+    sourceHeight,
+    (canvasSize - targetWidth) / 2,
+    18,
+    targetWidth,
+    targetHeight,
+  )
+  return canvas
+}
+
 function getOtherAssetProcessor(key: RaidOtherAssetKey): CanvasSpriteProcessor | undefined {
   if (key === 'asteroid') return processAsteroidAsset
   if (key === 'comet') return processCometAsset
@@ -1288,6 +1367,10 @@ function warmRaidCanvasFilterVariants() {
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
 
+  RAID_DEVIL_BOSS_POSES.forEach((pose) => {
+    warmCanvasSpriteFilter(getDevilBossCanvasSprite(pose), 'brightness(1.08) contrast(1.18) saturate(1.16)')
+  })
+
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) {
     const sprite = getNormalAlienCanvasSprite(variant)
     for (const filter of RAID_NORMAL_BOSS_POOL_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
@@ -1366,6 +1449,13 @@ function getCobraBossCanvasSprite() {
   return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_COBRA_BOSS_ASSET_PATH), processCobraBossAsset)
 }
 
+function getDevilBossCanvasSprite(pose: DevilBossPose) {
+  const key = `boss-image:devil-${pose}`
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_DEVIL_BOSS_ASSET_PATHS[pose]), processDevilBossAsset)
+}
+
 function getEliteAlienCanvasSprite(variant: number) {
   const index = Math.abs(Math.trunc(variant)) % RAID_ELITE_SPRITE_COUNT
   const key = `elite-image:${index}`
@@ -1379,6 +1469,7 @@ function warmRaidCanvasAssets() {
   entries.push(getFinalBossCanvasSprite())
   entries.push(getSquidBossCanvasSprite())
   entries.push(getCobraBossCanvasSprite())
+  RAID_DEVIL_BOSS_POSES.forEach((pose) => entries.push(getDevilBossCanvasSprite(pose)))
   for (const ship of SHIP_OPTIONS) entries.push(getShipCanvasSprite(ship.key))
   entries.push(getShipCanvasSprite('mesiahBlack'))
   entries.push(getShipCanvasSprite('mesiahWhite'))
@@ -1398,6 +1489,7 @@ function getRaidPersistentImageUrls() {
   urls.add(getPublicAssetUrl(RAID_FINAL_BOSS_ASSET_PATH))
   urls.add(getPublicAssetUrl(RAID_SQUID_BOSS_ASSET_PATH))
   urls.add(getPublicAssetUrl(RAID_COBRA_BOSS_ASSET_PATH))
+  RAID_DEVIL_BOSS_POSES.forEach((pose) => urls.add(getPublicAssetUrl(RAID_DEVIL_BOSS_ASSET_PATHS[pose])))
   for (const ship of SHIP_OPTIONS) urls.add(getRaidShipSpriteUrl(ship.key))
   urls.add(getRaidShipSpriteUrl('mesiahBlack'))
   urls.add(getRaidShipSpriteUrl('mesiahWhite'))
@@ -1638,6 +1730,7 @@ function getEnemyCanvasSize(enemy: Enemy, viewportWidth: number) {
   const isMobileView = viewportWidth <= 640
   if (enemy.isMiniBoss) return isMobileView ? Math.min(viewportWidth * 0.18, 150) : Math.min(viewportWidth * 0.15, 132)
   if (!enemy.isBoss) return isMobileView ? Math.min(viewportWidth * 0.125, 92) : Math.min(viewportWidth * 0.105, 82)
+  if (enemy.bossKind === 'devil') return Math.min(viewportWidth * (isMobileView ? 0.94 : 0.68), isMobileView ? 520 : 720)
   if (enemy.bossKind === 'final') return Math.min(viewportWidth * 0.64, 620)
   if (enemy.bossKind === 'squid') return isMobileView ? Math.min(viewportWidth * 0.46, 380) : Math.min(viewportWidth * 0.34, 340)
   if (enemy.bossKind === 'snake') return Math.min(viewportWidth * (isMobileView ? 0.66 : 0.62), 600)
@@ -2322,6 +2415,9 @@ function getNukeBossDamage(enemy: Enemy, stage: number) {
   const ratio = NUKE_BOSS_DAMAGE_MIN_RATIO + (NUKE_BOSS_DAMAGE_MAX_RATIO - NUKE_BOSS_DAMAGE_MIN_RATIO) * scale
   const floor = NUKE_BOSS_DAMAGE_MIN_FLOOR + (NUKE_BOSS_DAMAGE_MAX_FLOOR - NUKE_BOSS_DAMAGE_MIN_FLOOR) * scale
   const damage = Math.max(Math.round(floor), Math.round(enemy.maxHp * ratio))
+  if (enemy.bossKind === 'devil') {
+    return Math.max(Math.round(floor * 0.18), Math.round(damage * DEVIL_BOSS_NUKE_DAMAGE_MULTIPLIER))
+  }
   return enemy.bossKind === 'final'
     ? Math.max(Math.round(floor * 0.45), Math.round(damage * FINAL_BOSS_NUKE_DAMAGE_MULTIPLIER))
     : damage
@@ -2352,12 +2448,61 @@ function getFinalBossBeamRadius(chargePattern: Enemy['chargePattern']) {
   return FINAL_BOSS_BEAM_SINGLE_RADIUS
 }
 
+function getDevilBossBeamRadius(chargePattern: Enemy['chargePattern']) {
+  if (chargePattern === 'horizontal') return 2.65
+  if (chargePattern === 'rotate' || chargePattern === 'trident') return 2.35
+  if (chargePattern === 'cross' || chargePattern === 'pincer') return 2.55
+  if (chargePattern === 'scatter') return 2.2
+  return 2.45
+}
+
+function getDevilBossBeamLanes(chargeLane: number, chargePattern: Enemy['chargePattern']) {
+  if (chargePattern === 'scatter') {
+    return [-26, -10, 0, 10, 26].map((offset) => clamp(chargeLane + offset, 7, 93))
+  }
+  if (chargePattern === 'pincer') {
+    return [-20, 0, 20].map((offset) => clamp(chargeLane + offset, 8, 92))
+  }
+  if (chargePattern === 'trident' || chargePattern === 'single') {
+    return [-18, 0, 18].map((offset) => clamp(chargeLane + offset, 8, 92))
+  }
+  return getFinalBossBeamLanes(chargeLane, chargePattern)
+}
+
+function getDevilBossChargeDuration(chargePattern: Enemy['chargePattern'], volleyActive = false) {
+  const base = chargePattern === 'rotate' ? 1.82 :
+    chargePattern === 'diagonal' ? 0.72 :
+    chargePattern === 'cross' ? 1.48 :
+      chargePattern === 'horizontal' ? 1.58 :
+        chargePattern === 'scatter' ? 1.5 :
+          chargePattern === 'trident' || chargePattern === 'pincer' ? 1.54 :
+            1.44
+  return base + (volleyActive && chargePattern !== 'diagonal' ? 0.16 : 0)
+}
+
 function getPlayerBaseAttack(player: Player) {
   const coreLanderBonus = player.ship.key === 'coreLander' ? CORE_LANDER_BASE_DAMAGE_BONUS : 0
   const burningBonus = isCoreLanderBurning(player)
     ? CORE_LANDER_BURNING_DAMAGE_BONUS + CORE_LANDER_BURNING_RAGE_DAMAGE_BONUS * getCoreLanderBurningRage(player)
     : 0
   return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL + coreLanderBonus + burningBonus
+}
+
+function fullyBuffRaidPlayer(player: Player) {
+  player.rank = PLAYER_MAX_RANK
+  player.hp = player.maxHp
+  player.shield = 8
+  player.forceField = FORCE_FIELD_ARMOR
+  player.fireCooldown = 0
+  for (const key of WEAPON_KEYS) {
+    player.weapons[key] = WEAPON_STACK_CAPS[key]
+    player.weaponCooldowns[key] = 0
+  }
+  player.optionTimer = 1
+  player.optionStacks = player.ship.key === 'mesiah' ? 2 : 1
+  player.mesiahDroneCooldown = 0
+  player.mesiahDroneFireCooldown = 0
+  player.mesiahRocketCooldown = 0
 }
 
 function isCoreLanderBurning(player: Player) {
@@ -3566,45 +3711,51 @@ function drawBossBarSkull(ctx: CanvasRenderingContext2D, x: number, y: number, r
 }
 
 function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: number, size: number) {
+  if (enemy.hp <= 0) return
   const isStageBoss = enemy.bossKind === 'squid' || enemy.bossKind === 'snake' || enemy.bossKind === 'final'
   const isSuper = enemy.bossKind === 'super' || isStageBoss
   const isFinal = enemy.bossKind === 'final'
-  const width = size * (isFinal ? 1.28 : isStageBoss ? 1.12 : isSuper ? 1.04 : 0.9)
-  const height = isFinal ? 18 : isStageBoss ? 15 : isSuper ? 13 : 10
+  const isDevil = enemy.bossKind === 'devil'
+  const devilDesktopBar = isDevil && size > 560
+  const maxContainedWidth = Math.max(120, x * 2 - 18)
+  const width = Math.min(size * (isDevil ? 1.18 : isFinal ? 1.28 : isStageBoss ? 1.12 : isSuper ? 1.04 : 0.9), isDevil ? maxContainedWidth : Number.POSITIVE_INFINITY)
+  const height = isDevil ? 17 : isFinal ? 18 : isStageBoss ? 15 : isSuper ? 13 : 10
   const skullRadius = size * (isFinal ? 0.09 : isStageBoss ? 0.075 : 0)
   const barX = x - width / 2
-  const barY = y + size * 0.5 + (isFinal ? 20 : isSuper ? 16 : 12)
+  const barY = devilDesktopBar ? Math.max(52, y - size * 0.44) : y + size * 0.5 + (isDevil ? 30 : isFinal ? 20 : isSuper ? 16 : 12)
   const fill = clamp(enemy.hp / enemy.maxHp, 0, 1)
-  const accent = isFinal ? '#38bdf8' : enemy.bossKind === 'snake' ? '#fbbf24' : enemy.bossKind === 'squid' ? '#f472b6' : '#ef233c'
+  const accent = isDevil ? '#fb7185' : isFinal ? '#38bdf8' : enemy.bossKind === 'snake' ? '#fbbf24' : enemy.bossKind === 'squid' ? '#f472b6' : '#ef233c'
 
   ctx.save()
-  if (isStageBoss) {
+  if (isStageBoss || isDevil) {
     const framePadX = skullRadius * (isFinal ? 2.15 : 1.65)
-    const framePadY = isFinal ? 7 : 5
-    const frameX = barX - framePadX
+    const devilPadX = isDevil ? Math.min(size * 0.035, Math.max(4, x - width / 2 - 9)) : 0
+    const framePadY = isDevil ? 8 : isFinal ? 7 : 5
+    const frameX = barX - framePadX - devilPadX
     const frameY = barY - framePadY
-    const frameW = width + framePadX * 2
+    const frameW = width + framePadX * 2 + devilPadX * 2
     const frameH = height + framePadY * 2
     const frame = ctx.createLinearGradient(frameX, frameY, frameX + frameW, frameY + frameH)
     frame.addColorStop(0, 'rgba(2,6,23,0.98)')
-    frame.addColorStop(0.26, isFinal ? 'rgba(69,26,3,0.94)' : 'rgba(42,12,42,0.94)')
+    frame.addColorStop(0.26, isDevil ? 'rgba(69,10,10,0.96)' : isFinal ? 'rgba(69,26,3,0.94)' : 'rgba(42,12,42,0.94)')
     frame.addColorStop(0.62, 'rgba(15,23,42,0.96)')
     frame.addColorStop(1, 'rgba(2,6,23,0.98)')
     ctx.fillStyle = frame
-    ctx.strokeStyle = isFinal ? 'rgba(254,243,199,0.82)' : 'rgba(248,113,113,0.62)'
-    ctx.lineWidth = isFinal ? 2 : 1.4
-    ctx.shadowBlur = isFinal ? 20 : 12
-    ctx.shadowColor = isFinal ? 'rgba(56,189,248,0.34)' : 'rgba(248,113,113,0.28)'
-    traceRoundedRect(ctx, frameX, frameY, frameW, frameH, isFinal ? 9 : 7)
+    ctx.strokeStyle = isDevil ? 'rgba(254,202,202,0.82)' : isFinal ? 'rgba(254,243,199,0.82)' : 'rgba(248,113,113,0.62)'
+    ctx.lineWidth = isDevil ? 1.8 : isFinal ? 2 : 1.4
+    ctx.shadowBlur = isDevil ? 16 : isFinal ? 20 : 12
+    ctx.shadowColor = isDevil ? 'rgba(239,68,68,0.36)' : isFinal ? 'rgba(56,189,248,0.34)' : 'rgba(248,113,113,0.28)'
+    traceRoundedRect(ctx, frameX, frameY, frameW, frameH, isDevil ? 10 : isFinal ? 9 : 7)
     ctx.fill()
     ctx.stroke()
     ctx.shadowBlur = 0
 
     ctx.globalCompositeOperation = 'lighter'
-    ctx.strokeStyle = isFinal ? 'rgba(56,189,248,0.42)' : 'rgba(251,191,36,0.26)'
+    ctx.strokeStyle = isDevil ? 'rgba(248,113,113,0.32)' : isFinal ? 'rgba(56,189,248,0.42)' : 'rgba(251,191,36,0.26)'
     ctx.lineWidth = Math.max(1, size * 0.003)
-    for (let mark = 0; mark < (isFinal ? 12 : 8); mark += 1) {
-      const px = barX + (mark / ((isFinal ? 12 : 8) - 1)) * width
+    const markCount = isDevil ? 14 : isFinal ? 12 : 8
+    for (let mark = 0; mark < markCount; mark += 1) {
+      const px = barX + (mark / (markCount - 1)) * width
       ctx.beginPath()
       ctx.moveTo(px, frameY + 3)
       ctx.lineTo(px + (mark % 2 === 0 ? size * 0.018 : -size * 0.018), frameY + frameH - 3)
@@ -3614,9 +3765,9 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
   }
 
   traceRoundedRect(ctx, barX, barY, width, height, 999)
-  ctx.fillStyle = isFinal ? 'rgba(3,7,18,0.98)' : isSuper ? 'rgba(18,8,16,0.95)' : 'rgba(20,10,20,0.92)'
-  ctx.strokeStyle = isFinal ? 'rgba(125,249,255,0.72)' : isSuper ? 'rgba(251,191,36,0.65)' : 'rgba(255,255,255,0.2)'
-  ctx.lineWidth = isFinal ? 1.5 : 1
+  ctx.fillStyle = isDevil ? 'rgba(15,3,8,0.98)' : isFinal ? 'rgba(3,7,18,0.98)' : isSuper ? 'rgba(18,8,16,0.95)' : 'rgba(20,10,20,0.92)'
+  ctx.strokeStyle = isDevil ? 'rgba(252,165,165,0.78)' : isFinal ? 'rgba(125,249,255,0.72)' : isSuper ? 'rgba(251,191,36,0.65)' : 'rgba(255,255,255,0.2)'
+  ctx.lineWidth = isDevil ? 1.6 : isFinal ? 1.5 : 1
   ctx.fill()
   ctx.stroke()
 
@@ -3624,7 +3775,13 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
   traceRoundedRect(ctx, barX, barY, width, height, 999)
   ctx.clip()
   const gradient = ctx.createLinearGradient(barX, 0, barX + width, 0)
-  if (isFinal) {
+  if (isDevil) {
+    gradient.addColorStop(0, '#270509')
+    gradient.addColorStop(0.28, '#991b1b')
+    gradient.addColorStop(0.58, '#ef4444')
+    gradient.addColorStop(0.82, '#fb923c')
+    gradient.addColorStop(1, '#fee2e2')
+  } else if (isFinal) {
     gradient.addColorStop(0, '#22d3ee')
     gradient.addColorStop(0.28, '#2563eb')
     gradient.addColorStop(0.56, '#ef233c')
@@ -3645,11 +3802,11 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
     gradient.addColorStop(1, '#fca5a5')
   }
   ctx.fillStyle = gradient
-  ctx.shadowBlur = isFinal ? 24 : isSuper ? 18 : 14
-  ctx.shadowColor = isFinal ? 'rgba(56,189,248,0.9)' : isSuper ? 'rgba(251,191,36,0.82)' : 'rgba(239,35,60,0.8)'
+  ctx.shadowBlur = isDevil ? 22 : isFinal ? 24 : isSuper ? 18 : 14
+  ctx.shadowColor = isDevil ? 'rgba(239,68,68,0.9)' : isFinal ? 'rgba(56,189,248,0.9)' : isSuper ? 'rgba(251,191,36,0.82)' : 'rgba(239,35,60,0.8)'
   ctx.fillRect(barX, barY, width * fill, height)
   ctx.globalCompositeOperation = 'screen'
-  ctx.fillStyle = isFinal ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.14)'
+  ctx.fillStyle = isDevil ? 'rgba(255,255,255,0.18)' : isFinal ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.14)'
   ctx.fillRect(barX, barY, width * fill, Math.max(2, height * 0.32))
   ctx.restore()
 
@@ -3661,7 +3818,20 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
     ctx.restore()
   }
 
-  if (isFinal) {
+  if (isDevil) {
+    ctx.save()
+    ctx.font = `950 ${Math.max(10, size * 0.027)}px Orbitron, system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.fillStyle = 'rgba(254,226,226,0.94)'
+    ctx.shadowBlur = 10
+    ctx.shadowColor = 'rgba(239,68,68,0.74)'
+    ctx.fillText('DEVIL GUNDAM', x, barY - 8)
+    ctx.font = `850 ${Math.max(7, size * 0.017)}px Orbitron, system-ui, sans-serif`
+    ctx.fillStyle = 'rgba(251,146,60,0.76)'
+    ctx.fillText('DG CELL CORE INTEGRITY', x, barY + height + 15)
+    ctx.restore()
+  } else if (isFinal) {
     ctx.save()
     ctx.font = `900 ${Math.max(10, size * 0.03)}px Orbitron, system-ui, sans-serif`
     ctx.textAlign = 'center'
@@ -5461,6 +5631,109 @@ function drawEnemyHitFlash(ctx: CanvasRenderingContext2D, size: number, flash = 
   ctx.restore()
 }
 
+function getDevilBossPose(enemy: Enemy, time: number): DevilBossPose {
+  if (enemy.hp <= 0) return 'rage'
+  const hpRatio = enemy.hp / Math.max(1, enemy.maxHp)
+  if ((enemy.beamVolleyRecovery ?? 0) > 0) return 'attack'
+  if (enemy.chargeTimer > 0) {
+    if (enemy.chargeTimer > 0.55) return 'rage'
+    return 'attack'
+  }
+  if ((enemy.devilNormalAttackTimer ?? 0) > 0) return 'attack2'
+  if (hpRatio <= 0.32) {
+    const rageCycle = ((time / 1000) + enemy.phase * 0.53) % 2.6
+    if (rageCycle < 1.25) return 'rage'
+  } else if (hpRatio <= 0.62) {
+    const rageCycle = ((time / 1000) + enemy.phase * 0.53) % 4.2
+    if (rageCycle < 0.95) return 'rage'
+  } else if (hpRatio <= 0.78) {
+    const rageCycle = ((time / 1000) + enemy.phase * 0.37) % 6
+    if (rageCycle < 0.55) return 'rage'
+  }
+  const idleCycle = ((time / 1000) + enemy.phase * 0.37) % 3.4
+  return idleCycle > 1.7 ? 'idle2' : 'idle'
+}
+
+function drawDevilGundamBoss(ctx: CanvasRenderingContext2D, enemy: Enemy, size: number, time: number) {
+  const pose = getDevilBossPose(enemy, time)
+  if (enemy.devilVisualPose !== pose) {
+    enemy.devilVisualPose = pose
+    enemy.devilPoseChangedAt = time
+  }
+  const hpRatio = enemy.hp / Math.max(1, enemy.maxHp)
+  const attackActive = (enemy.beamVolleyRecovery ?? 0) > 0 || (enemy.devilNormalAttackTimer ?? 0) > 0
+  const redBlend = enemy.hp <= 0
+    ? 1
+    : pose === 'rage' && hpRatio <= 0.36
+      ? clamp(0.48 + ((0.36 - hpRatio) / 0.36) * 0.52, 0.48, 1)
+      : 0
+  const redStep = Math.round(redBlend * 4) / 4
+  const sprite = getDevilBossCanvasSprite(pose)
+  const defeatedFade = enemy.hp <= 0
+    ? getBossDefeatFade(enemy)
+    : 1
+  const defeatedProgress = 1 - defeatedFade
+  const transitionAge = time - (enemy.devilPoseChangedAt ?? time)
+  const transitionProgress = easeOutCubic(transitionAge / 190)
+  const transitionPush = 1 - transitionProgress
+  const poseSettleScale = (1 + transitionPush * (pose === 'rage' ? 0.018 : pose === 'attack' || pose === 'attack2' ? 0.026 : 0.012)) * (1 + defeatedProgress * 0.045)
+  const poseSettleY = transitionPush * size * (pose === 'attack' || pose === 'attack2' ? 0.014 : pose === 'rage' ? -0.008 : 0.006) + defeatedProgress * size * 0.035
+  const pulse = (0.98 + Math.sin(time / 1100 + enemy.phase) * 0.018) * poseSettleScale
+  const coreGlow = (enemy.chargeTimer > 0 || attackActive ? 0.22 : pose === 'rage' ? 0.18 : 0.1) + redStep * 0.12
+  const filter = redStep > 0
+    ? `brightness(${(1.1 + redStep * 0.2).toFixed(2)}) contrast(${(1.2 + redStep * 0.22).toFixed(2)}) saturate(${(1.24 + redStep * 1.15).toFixed(2)}) sepia(${(redStep * 0.58).toFixed(2)}) hue-rotate(${(344 - redStep * 34).toFixed(1)}deg)`
+    : pose === 'rage' || enemy.chargeTimer > 0 || attackActive
+      ? 'brightness(1.12) contrast(1.24) saturate(1.34)'
+    : 'brightness(1.06) contrast(1.16) saturate(1.12)'
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha *= defeatedFade
+  drawRadialEllipse(ctx, 0, size * 0.26, size * 0.42, size * 0.5, [
+    [0, `rgba(239,68,68,${coreGlow})`],
+    [0.48, 'rgba(127,29,29,0.07)'],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  ctx.restore()
+
+  drawCanvasSpriteContain(
+    ctx,
+    sprite,
+    0,
+    size * 0.28 + poseSettleY,
+    size,
+    filter,
+    defeatedFade,
+    0,
+    pulse,
+    '#ef4444',
+  )
+
+  if (redStep > 0) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    drawCanvasSpriteContain(
+      ctx,
+      sprite,
+      0,
+      size * 0.28 + poseSettleY,
+      size * 1.01,
+      'brightness(1.34) contrast(1.34) saturate(2.8) sepia(0.72) hue-rotate(315deg)',
+      defeatedFade * redStep * 0.28,
+      0,
+      pulse,
+      '#ef4444',
+    )
+    ctx.restore()
+  }
+
+}
+
+function getBossDefeatFade(enemy: Enemy) {
+  if (enemy.hp > 0) return 1
+  return clamp((enemy.defeatTimer ?? enemy.devilDefeatedTimer ?? STAGE_CLEAR_SECONDS) / STAGE_CLEAR_SECONDS, 0, 1)
+}
+
 function drawRaidEnemy(
   ctx: CanvasRenderingContext2D,
   enemy: Enemy,
@@ -5475,17 +5748,37 @@ function drawRaidEnemy(
   const size = getEnemyCanvasSize(enemy, viewportWidth) * (viewportWidth > 1100 ? 0.96 : 1)
 
   if (enemy.isBoss) {
+    const defeatFade = getBossDefeatFade(enemy)
     const floatScale = 1 + Math.sin(time / 1100) * 0.03
     const rotation = Math.sin(time / 1100) * 0.5 * DEG
     const displayBossKind: BossKind | MirageBossKind | null = enemy.bossKind === 'final' && (enemy.mirageTimer ?? 0) > 0 && enemy.mirageKind
       ? enemy.mirageKind
       : enemy.bossKind
-    drawBossAura(ctx, enemy, x, y, size, time)
+    if (displayBossKind !== 'devil') {
+      ctx.save()
+      ctx.globalAlpha *= defeatFade
+      drawBossAura(ctx, enemy, x, y, size, time)
+      ctx.restore()
+    }
+    if (displayBossKind === 'devil') {
+      ctx.save()
+      ctx.translate(x, y)
+      drawDevilGundamBoss(ctx, enemy, size, time)
+      drawEnemyHitFlash(ctx, size, enemy.hitFlash, '#ef4444')
+      ctx.restore()
+      if (enemy.hp > 0) {
+        if (enemy.shieldTime > 0 || enemy.y < 18) drawBossShield(ctx, x, y + size * 0.18, size * 0.86, time, enemy.color)
+        drawBossReticle(ctx, x, y, size, time, true)
+        drawBossBar(ctx, enemy, x, y + size * 0.16, size)
+      }
+      return
+    }
     if (displayBossKind === 'squid' || displayBossKind === 'snake' || displayBossKind === 'final') {
       const introProgress = getStageBossIntroProgress(enemy, displayBossKind)
       const introScale = 0.74 + introProgress * 0.26
       ctx.save()
       ctx.translate(x, y)
+      ctx.globalAlpha *= defeatFade
       drawStageBossIntroEffect(ctx, size, time, displayBossKind, introProgress)
       ctx.rotate(displayBossKind === 'snake' ? 0 : rotation * 0.45)
       ctx.globalAlpha *= 0.58 + introProgress * 0.42
@@ -5501,15 +5794,17 @@ function drawRaidEnemy(
       }
       drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.bossKind === 'final' ? '#fbbf24' : enemy.bossKind === 'squid' ? '#f472b6' : '#f43f5e')
       ctx.restore()
-      if (displayBossKind === 'squid' && enemy.chargeTimer > 0 && enemy.chargePattern !== 'rotate') {
-        drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer)
+      if (enemy.hp > 0) {
+        if (displayBossKind === 'squid' && enemy.chargeTimer > 0 && enemy.chargePattern !== 'rotate') {
+          drawSquidWhipStrike(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, time, enemy.chargeTimer)
+        }
+        if (displayBossKind === 'snake' && (enemy.chargeTimer > 0 || (enemy.chargePattern === 'cross' && (enemy.beamVolleyRecovery ?? 0) > 0))) {
+          drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, viewportWidth, time, enemy.chargeTimer, enemy.chargePattern, enemy.beamVolleyRecovery ?? 0)
+        }
+        if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
+        drawBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
+        drawBossBar(ctx, enemy, x, y, size)
       }
-      if (displayBossKind === 'snake' && (enemy.chargeTimer > 0 || (enemy.chargePattern === 'cross' && (enemy.beamVolleyRecovery ?? 0) > 0))) {
-        drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, viewportWidth, time, enemy.chargeTimer, enemy.chargePattern, enemy.beamVolleyRecovery ?? 0)
-      }
-      if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
-      drawBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
-      drawBossBar(ctx, enemy, x, y, size)
       return
     }
     const bossSpriteVariant = Math.abs(Math.trunc(enemy.id + enemy.variant * 11 + enemy.pattern * 3)) % (RAID_ALIEN_SPRITE_COUNT + RAID_ELITE_SPRITE_COUNT)
@@ -5519,15 +5814,18 @@ function drawRaidEnemy(
     const bossFilter = enemy.bossKind === 'super'
         ? 'brightness(1.14) contrast(1.18) saturate(1.38)'
         : 'brightness(1.16) contrast(1.18) saturate(1.34)'
-    drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.34), 1)
-    drawCanvasSpriteContain(ctx, sprite, x, y, size * 1.04, bossFilter, 1, rotation, floatScale, enemy.color)
+    drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.34), defeatFade)
+    drawCanvasSpriteContain(ctx, sprite, x, y, size * 1.04, bossFilter, defeatFade, rotation, floatScale, enemy.color)
     ctx.save()
     ctx.translate(x, y)
+    ctx.globalAlpha *= defeatFade
     drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.color)
     ctx.restore()
-    if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
-    drawBossReticle(ctx, x, y, size, time, false)
-    drawBossBar(ctx, enemy, x, y, size)
+    if (enemy.hp > 0) {
+      if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
+      drawBossReticle(ctx, x, y, size, time, false)
+      drawBossBar(ctx, enemy, x, y, size)
+    }
     return
   }
 
@@ -7758,6 +8056,149 @@ function drawFinalChargeLines(
 
   ctx.restore()
 }
+
+function drawDevilChargeWarnings(
+  ctx: CanvasRenderingContext2D,
+  enemies: Enemy[],
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  viewportHeight: number,
+  time: number,
+) {
+  const chargingEnemies = enemies.filter((e) => e.bossKind === 'devil' && e.chargeTimer > 0)
+  if (chargingEnemies.length === 0) return
+
+  const drawWarningBeam = (x: number, y: number, angle: number, width: number, alpha: number, pulse: number) => {
+    const length = Math.hypot(viewportWidth, viewportHeight) * 1.45
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(angle)
+    ctx.globalCompositeOperation = 'lighter'
+
+    ctx.globalAlpha = alpha * 0.22
+    ctx.fillStyle = 'rgba(127,29,29,1)'
+    ctx.fillRect(-length / 2, -width * 0.82, length, width * 1.64)
+
+    ctx.globalAlpha = alpha * 0.42
+    ctx.fillStyle = 'rgba(239,68,68,1)'
+    ctx.fillRect(-length / 2, -width * 0.48, length, width * 0.96)
+
+    ctx.globalAlpha = alpha * 0.72 * pulse
+    ctx.fillStyle = 'rgba(254,202,202,1)'
+    ctx.fillRect(-length / 2, -2, length, 4)
+
+    ctx.globalAlpha = alpha * 0.82
+    ctx.strokeStyle = time % 180 < 90 ? '#fca5a5' : '#fed7aa'
+    ctx.lineWidth = 2.5
+    ctx.setLineDash([9, 8])
+    ctx.beginPath()
+    ctx.moveTo(-length / 2, -width * 0.5)
+    ctx.lineTo(length / 2, -width * 0.5)
+    ctx.moveTo(-length / 2, width * 0.5)
+    ctx.lineTo(length / 2, width * 0.5)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  const drawInfectionReticle = (x: number, y: number, radius: number, alpha: number, pulse: number) => {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.globalAlpha = alpha * 0.36
+    drawRadialEllipse(ctx, x, y, radius * 1.18, radius * 0.88, [
+      [0, 'rgba(254,202,202,0.36)'],
+      [0.4, 'rgba(239,68,68,0.22)'],
+      [1, 'rgba(127,29,29,0)'],
+    ])
+    ctx.globalAlpha = alpha
+    ctx.strokeStyle = '#fca5a5'
+    ctx.lineWidth = Math.max(2, viewportWidth * 0.0015)
+    ctx.setLineDash([8, 7])
+    ctx.beginPath()
+    ctx.ellipse(x, y, radius * pulse, radius * 0.72 * pulse, 0, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.beginPath()
+    ctx.moveTo(x - radius * 1.15, y)
+    ctx.lineTo(x + radius * 1.15, y)
+    ctx.moveTo(x, y - radius * 0.9)
+    ctx.lineTo(x, y + radius * 0.9)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  const drawSnakeLungeWarning = (startX: number, startY: number, targetX: number, targetY: number, width: number, alpha: number, pulse: number) => {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.globalAlpha = alpha * 0.26
+    ctx.strokeStyle = 'rgba(132,204,22,1)'
+    ctx.lineWidth = width * 1.75
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(targetX, targetY)
+    ctx.stroke()
+    ctx.globalAlpha = alpha * 0.72
+    ctx.strokeStyle = 'rgba(254,240,138,1)'
+    ctx.lineWidth = Math.max(4, width * 0.38)
+    ctx.setLineDash([14, 10])
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(targetX, targetY)
+    ctx.stroke()
+    ctx.setLineDash([])
+    drawInfectionReticle(targetX, targetY, width * (1.1 + pulse * 0.2), alpha * 0.86, pulse)
+    ctx.restore()
+  }
+
+  for (const enemy of chargingEnemies) {
+    const maxCharge = getDevilBossChargeDuration(enemy.chargePattern, (enemy.beamVolleyLeft ?? 0) > 0)
+    const chargeProgress = 1 - clamp(enemy.chargeTimer / maxCharge, 0, 1)
+    const alpha = 0.28 + chargeProgress * 0.72
+    const radius = getDevilBossBeamRadius(enemy.chargePattern)
+    const maxBeamWidth = viewportWidth > 1100 ? viewportWidth * 0.052 : viewportWidth * 0.11
+    const minBeamWidth = viewportWidth > 1100 ? 20 : 28
+    const lineWidth = Math.max(minBeamWidth, Math.min(maxBeamWidth, (radius / WIDTH) * viewportWidth * 1.9))
+    const warningPulse = 0.74 + Math.sin(time / 76 + enemy.phase) * 0.18
+
+    if (enemy.chargePattern === 'horizontal') {
+      drawWarningBeam(viewportWidth * 0.5, toY(enemy.chargeTargetY ?? 50), 0, lineWidth, alpha, warningPulse)
+      continue
+    }
+
+    if (enemy.chargePattern === 'cross') {
+      const x = toX(enemy.chargeLane)
+      const y = toY(enemy.chargeTargetY ?? 50)
+      drawInfectionReticle(x, y, Math.max(42, viewportWidth * 0.045), alpha, warningPulse)
+      continue
+    }
+
+    if (enemy.chargePattern === 'diagonal') {
+      drawSnakeLungeWarning(
+        toX(enemy.x),
+        toY(enemy.y + 10),
+        toX(enemy.chargeLane),
+        toY(enemy.chargeTargetY ?? 70),
+        Math.max(28, Math.min(viewportWidth * 0.045, 54)),
+        alpha,
+        warningPulse,
+      )
+      continue
+    }
+
+    if (enemy.chargePattern === 'rotate') {
+      const baseAngle = time / 1600 + enemy.phase + Math.PI / 4
+      drawWarningBeam(viewportWidth * 0.5, viewportHeight * 0.5, baseAngle, lineWidth, alpha, warningPulse)
+      drawWarningBeam(viewportWidth * 0.5, viewportHeight * 0.5, baseAngle + Math.PI / 2, lineWidth, alpha * 0.92, warningPulse)
+      continue
+    }
+
+    for (const lane of getDevilBossBeamLanes(enemy.chargeLane, enemy.chargePattern)) {
+      drawWarningBeam(toX(lane), viewportHeight * 0.5, Math.PI / 2, lineWidth, alpha, 0.72 + Math.sin(time / 76 + lane) * 0.2)
+    }
+  }
+}
 function getBriefingPickupType(item: string) {
   const label = item.split(':')[0]
   const pickupKey = Object.keys(BRIEFING_PICKUP_TYPES).find((key) => label.startsWith(key))
@@ -7840,17 +8281,47 @@ export function BossBriefingCanvas({ kind }: { kind: BriefingBossKind }) {
       ctx.clearRect(0, 0, rect.width, rect.height)
 
       const glow = ctx.createRadialGradient(rect.width * 0.5, rect.height * 0.5, 4, rect.width * 0.5, rect.height * 0.5, rect.width * 0.48)
-      glow.addColorStop(0, kind === 'snake' ? 'rgba(225,29,72,0.22)' : kind === 'final' ? 'rgba(248,113,113,0.18)' : 'rgba(244,114,182,0.2)')
+      glow.addColorStop(0, kind === 'devil' ? 'rgba(239,68,68,0.18)' : kind === 'snake' ? 'rgba(225,29,72,0.22)' : kind === 'final' ? 'rgba(248,113,113,0.18)' : 'rgba(244,114,182,0.2)')
       glow.addColorStop(1, 'rgba(0,0,0,0)')
       ctx.fillStyle = glow
       ctx.fillRect(0, 0, rect.width, rect.height)
 
       ctx.save()
-      const size = Math.min(rect.width * (kind === 'snake' ? 0.58 : kind === 'final' ? 0.68 : 0.62), rect.height * 0.78)
-      ctx.translate(rect.width * 0.5, rect.height * (kind === 'final' ? 0.58 : 0.54))
+      const size = Math.min(rect.width * (kind === 'devil' ? 0.86 : kind === 'snake' ? 0.58 : kind === 'final' ? 0.68 : 0.62), rect.height * (kind === 'devil' ? 0.96 : 0.78))
+      ctx.translate(rect.width * 0.5, rect.height * (kind === 'devil' ? 0.33 : kind === 'final' ? 0.58 : 0.54))
       if (kind === 'squid') drawGalacticSquidBoss(ctx, size, time)
       else if (kind === 'snake') drawGalacticSnakeBoss(ctx, size, time)
-      else {
+      else if (kind === 'devil') {
+        drawDevilGundamBoss(ctx, {
+          id: 0,
+          x: 50,
+          y: 18,
+          vx: 0,
+          vy: 0,
+          hp: 100,
+          maxHp: 100,
+          radius: 12.8,
+          variant: 0,
+          isBoss: true,
+          isMiniBoss: false,
+          fireCooldown: 0,
+          phase: 0,
+          color: BOSS_COLORS.devil,
+          pattern: 10,
+          bossKind: 'devil',
+          miniBossKind: null,
+          shieldTime: 0,
+          originX: 50,
+          amplitude: 0,
+          trainSlot: 0,
+          pathSpeed: 0,
+          chargeCooldown: 0,
+          chargeTimer: 0,
+          chargeLane: 50,
+          chargeTargetY: 50,
+          chargePattern: 'single',
+        }, size, time)
+      } else {
         const briefingRage = 0.45 + Math.sin(time / 900) * 0.18
         drawFinalBossSpriteBody(ctx, size, time, briefingRage)
       }
@@ -7955,6 +8426,8 @@ export function GradiusRaid({
   const runReportedRef = useRef(false)
   const enemiesDestroyedRef = useRef(0)
   const bossesDefeatedRef = useRef(0)
+  const devilBossEncounteredRef = useRef(false)
+  const devilBossNextEligibleStageRef = useRef(1)
   const pickupsCollectedRef = useRef(0)
   const nukesUsedRef = useRef(0)
   const shotsRef = useRef<Shot[]>([])
@@ -9510,6 +9983,22 @@ export function GradiusRaid({
       ])
       ctx.restore()
     }
+    const drawDevilSnakeHeadShot = (shot: Shot) => {
+      const x = toX(shot.x)
+      const y = toY(shot.y)
+      const size = Math.max(78, shot.radius * visualScale * 18.5)
+      const sprite = getCobraBossCanvasSprite()
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.globalCompositeOperation = 'lighter'
+      drawRadialEllipse(ctx, 0, size * 0.04, size * 0.34, size * 0.54, [
+        [0, 'rgba(254,240,138,0.34)'],
+        [0.44, 'rgba(132,204,22,0.22)'],
+        [1, 'rgba(22,101,52,0)'],
+      ])
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, size * 1.14, 'brightness(1.24) contrast(1.2) saturate(1.34)', 1, 0, 1, '#84cc16')
+      ctx.restore()
+    }
     const drawVenomSpitShot = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
@@ -9582,32 +10071,6 @@ export function GradiusRaid({
       else if (shot.kind === 'needle') drawTrail(shot, 'rgba(125,249,255,0.9)', 42, 3.2)
       else drawPulseBolt(shot)
     }
-    for (const shot of shotsRef.current) drawPlayerShot(shot)
-    // Guest client-side prediction: draw locally fired shots immediately without waiting for network
-    for (const shot of guestLocalShotsRef.current) drawPlayerShot(shot)
-
-    for (const shot of enemyShotsRef.current) {
-      if (!gfxProfile.drawAdvancedShotFx) {
-        if (shot.kind === 'beam') drawTrail(shot, 'rgba(56,189,248,0.88)', 82, 9)
-        else drawOrb(shot, shot.kind === 'poisonCloud' || shot.kind === 'venomSpit' || shot.kind === 'snakeFang' ? 'rgba(132,204,22,0.68)' : shot.kind === 'squidInk' || shot.kind === 'squidSpine' ? 'rgba(244,114,182,0.78)' : 'rgba(251,113,133,0.78)', shot.kind === 'squidBubble' ? 12 : 8)
-      }
-      else if (shot.kind === 'squidBubble') drawSquidBubble(shot)
-      else if (shot.kind === 'squidInk') drawSquidInkShot(shot)
-      else if (shot.kind === 'squidSpine') drawSquidSpineShot(shot)
-      else if (shot.kind === 'snakeFang') drawSnakeFangShot(shot)
-      else if (shot.kind === 'venomSpit') drawVenomSpitShot(shot)
-      else if (shot.kind === 'poisonCloud') drawPoisonCloud(shot)
-      else if (shot.kind === 'orbShot') drawOrb(shot, 'rgba(168,85,247,0.92)', 12)
-      else if (shot.kind === 'blade') drawTrail(shot, 'rgba(34,211,238,0.9)', 46, 7)
-      else if (shot.kind === 'needle') drawTrail(shot, 'rgba(190,242,100,0.92)', 42, 5)
-      else if (shot.kind === 'voidShot') drawOrb(shot, 'rgba(192,132,252,0.95)', 15)
-      else if (shot.kind === 'beam' && shot.life !== undefined) drawEnemyBeamColumn(shot)
-      else if (shot.kind === 'beam') drawTrail(shot, 'rgba(56,189,248,0.96)', 112, 14)
-      else if (shot.kind === 'scatterBoss') drawTrail(shot, 'rgba(251,146,60,0.9)', 34, 5)
-      else if (shot.kind === 'superShot') drawOrb(shot, 'rgba(251,191,36,0.95)', 14)
-      else drawOrb(shot, 'rgba(251,113,133,0.9)', 10)
-    }
-
     const sparks = sparksRef.current
     const sparkStart = Math.max(0, sparks.length - gfxProfile.maxSparks)
     for (let i = sparkStart; i < sparks.length; i += 1) {
@@ -9638,6 +10101,33 @@ export function GradiusRaid({
       drawRaidEnemy(ctx, enemy, toX, toY, cssWidth, time, normalEnemyFilter)
     }
 
+    for (const shot of shotsRef.current) drawPlayerShot(shot)
+    // Guest client-side prediction: draw locally fired shots immediately without waiting for network
+    for (const shot of guestLocalShotsRef.current) drawPlayerShot(shot)
+
+    for (const shot of enemyShotsRef.current) {
+      if (!gfxProfile.drawAdvancedShotFx) {
+        if (shot.kind === 'beam') drawTrail(shot, 'rgba(56,189,248,0.88)', 82, 9)
+        else drawOrb(shot, shot.kind === 'poisonCloud' || shot.kind === 'venomSpit' || shot.kind === 'snakeFang' || shot.kind === 'devilSnakeHead' ? 'rgba(132,204,22,0.68)' : shot.kind === 'squidInk' || shot.kind === 'squidSpine' ? 'rgba(244,114,182,0.78)' : 'rgba(251,113,133,0.78)', shot.kind === 'squidBubble' ? 12 : 8)
+      }
+      else if (shot.kind === 'squidBubble') drawSquidBubble(shot)
+      else if (shot.kind === 'squidInk') drawSquidInkShot(shot)
+      else if (shot.kind === 'squidSpine') drawSquidSpineShot(shot)
+      else if (shot.kind === 'snakeFang') drawSnakeFangShot(shot)
+      else if (shot.kind === 'devilSnakeHead') drawDevilSnakeHeadShot(shot)
+      else if (shot.kind === 'venomSpit') drawVenomSpitShot(shot)
+      else if (shot.kind === 'poisonCloud') drawPoisonCloud(shot)
+      else if (shot.kind === 'orbShot') drawOrb(shot, 'rgba(168,85,247,0.92)', 12)
+      else if (shot.kind === 'blade') drawTrail(shot, 'rgba(34,211,238,0.9)', 46, 7)
+      else if (shot.kind === 'needle') drawTrail(shot, 'rgba(190,242,100,0.92)', 42, 5)
+      else if (shot.kind === 'voidShot') drawOrb(shot, 'rgba(192,132,252,0.95)', 15)
+      else if (shot.kind === 'beam' && shot.life !== undefined) drawEnemyBeamColumn(shot)
+      else if (shot.kind === 'beam') drawTrail(shot, 'rgba(56,189,248,0.96)', 112, 14)
+      else if (shot.kind === 'scatterBoss') drawTrail(shot, 'rgba(251,146,60,0.9)', 34, 5)
+      else if (shot.kind === 'superShot') drawOrb(shot, 'rgba(251,191,36,0.95)', 14)
+      else drawOrb(shot, 'rgba(251,113,133,0.9)', 10)
+    }
+
     // On the guest's screen playerRef = interpolated host, remotePlayerRef = own (guest) ship.
     // Always draw the player's OWN ship in PLAYER_COLOR (red) and the ally in ALLY_PLAYER_COLOR (cyan).
     const isGuestView = Boolean(multiplayerSessionRef.current && !multiplayerSessionRef.current.isHost)
@@ -9654,6 +10144,7 @@ export function GradiusRaid({
     }
 
     drawFinalChargeLines(ctx, enemiesRef.current, toX, cssWidth, cssHeight, time)
+    drawDevilChargeWarnings(ctx, enemiesRef.current, toX, toY, cssWidth, cssHeight, time)
 
     for (const meteor of meteorsRef.current) {
       drawMeteorHazard(ctx, meteor, toX, toY, cssWidth)
@@ -9790,7 +10281,7 @@ export function GradiusRaid({
       if (enemy.isBoss) {
         const damage = getNukeBossDamage(enemy, stageRef.current)
         enemy.shieldTime = 0
-        if (enemy.bossKind !== 'final') enemy.chargeTimer = 0
+        if (enemy.bossKind !== 'final' && enemy.bossKind !== 'devil') enemy.chargeTimer = 0
         enemy.hp = Math.max(1, enemy.hp - damage)
         survivors.push(enemy)
         addRipple(enemy.x, enemy.y, '#fbbf24', enemy.bossKind === 'final' ? 26 : 20)
@@ -9949,16 +10440,10 @@ export function GradiusRaid({
       remotePlayerRef.current.x = 58
       remotePlayerRef.current.y = 84
     }
-    if (fullyBuffed) {
-      const p = playerRef.current
-        ; WEAPON_KEYS.forEach((key) => {
-          p.weapons[key] = WEAPON_STACK_CAPS[key]
-        })
-      p.optionTimer = 1
-      p.optionStacks = p.ship.key === 'mesiah' ? 2 : 1
-      p.shield = 8
-      p.forceField = FORCE_FIELD_ARMOR
-      p.hp = p.maxHp
+    const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, mode)
+    if (fullyBuffed || forceLocalDevilTest) {
+      fullyBuffRaidPlayer(playerRef.current)
+      if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
     }
     shotsRef.current = []
     enemyShotsRef.current = []
@@ -9976,7 +10461,7 @@ export function GradiusRaid({
     waveRef.current = stage
     spawnTimerRef.current = 1.25
     formationTimerRef.current = 3.4
-    bossTimerRef.current = isEndless ? 28 + Math.random() * 18 : stage === MAX_RAID_STAGE ? 24 : 36
+    bossTimerRef.current = forceLocalDevilTest ? 3.2 : isEndless ? 28 + Math.random() * 18 : stage === MAX_RAID_STAGE ? 24 : 36
     spawnLockRef.current = 0
     powerDropCooldownRef.current = 0
     killsSincePowerRef.current = 0
@@ -10001,6 +10486,8 @@ export function GradiusRaid({
     runReportedRef.current = false
     enemiesDestroyedRef.current = 0
     bossesDefeatedRef.current = 0
+    devilBossEncounteredRef.current = false
+    devilBossNextEligibleStageRef.current = stage
     pickupsCollectedRef.current = 0
     nukesUsedRef.current = 0
     remotePointerTargetRef.current = null
@@ -10797,15 +11284,22 @@ export function GradiusRaid({
     const wave = waveRef.current
     const stage = stageRef.current
     const player = playerRef.current
+    const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, raidModeRef.current)
+    if (forceLocalDevilTest) {
+      fullyBuffRaidPlayer(player)
+      if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
+      nukeCooldownRef.current = 0
+    }
     const powerScore = getPowerScore(playerRef.current)
     const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
     const bossKind: BossKind = raidModeRef.current === 'endless'
-      ? pickEndlessBossKind(stage, wave)
+      ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current)
       : stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     const hpMultiplier =
-      bossKind === 'final' ? 13.4 :
-        bossKind === 'snake' ? 8.25 :
-          bossKind === 'squid' ? 7.45 :
+      bossKind === 'devil' ? 60 :
+        bossKind === 'final' ? 13.4 :
+          bossKind === 'snake' ? 8.25 :
+            bossKind === 'squid' ? 7.45 :
         bossKind === 'super' ? 3.45 :
           bossKind === 'gate' ? 1.75 :
             bossKind === 'hydra' ? 1.62 :
@@ -10817,10 +11311,11 @@ export function GradiusRaid({
     const multiplayerBossMultiplier = multiplayerSessionRef.current ? MULTIPLAYER_BOSS_HP_MULTIPLIER : 1
     const hp = Math.round((1450 + wave * 180 + stagePressure * 320 + powerScore * 90) * hpMultiplier * multiplayerBossMultiplier)
     const radius =
-      bossKind === 'final' ? 25 :
-        bossKind === 'squid' ? 22 :
-          bossKind === 'snake' ? 11.8 :
-            bossKind === 'super' ? 21 :
+      bossKind === 'devil' ? 12.8 :
+        bossKind === 'final' ? 25 :
+          bossKind === 'squid' ? 22 :
+            bossKind === 'snake' ? 11.8 :
+              bossKind === 'super' ? 21 :
               bossKind === 'gate' ? 15 :
                 bossKind === 'hydra' ? 14 :
                   bossKind === 'serpent' ? 13.4 :
@@ -10829,27 +11324,27 @@ export function GradiusRaid({
     enemiesRef.current.push({
       id: enemyId++,
       x: 50,
-      y: bossKind === 'final' ? -30 : bossKind === 'squid' || bossKind === 'snake' ? -27 : bossKind === 'super' || bossKind === 'gate' ? -24 : -16,
+      y: bossKind === 'devil' ? -28 : bossKind === 'final' ? -30 : bossKind === 'squid' || bossKind === 'snake' ? -27 : bossKind === 'super' || bossKind === 'gate' ? -24 : -16,
       vx: 0,
-      vy: bossKind === 'final' ? 4.4 : bossKind === 'squid' || bossKind === 'snake' ? 4.9 : bossKind === 'super' || bossKind === 'gate' ? 5.3 : 7,
+      vy: bossKind === 'devil' ? 3.4 : bossKind === 'final' ? 4.4 : bossKind === 'squid' || bossKind === 'snake' ? 4.9 : bossKind === 'super' || bossKind === 'gate' ? 5.3 : 7,
       hp,
       maxHp: hp,
       radius,
       variant: bossKind === 'squid' ? 4 : bossKind === 'snake' ? 5 : stage % 4,
       isBoss: true,
       isMiniBoss: false,
-      fireCooldown: Math.max(0.75, 1 - stagePressure * 0.025),
+      fireCooldown: bossKind === 'devil' ? 1.35 : Math.max(0.75, 1 - stagePressure * 0.025),
       phase: Math.random() * Math.PI * 2,
       color: BOSS_COLORS[bossKind],
-      pattern: bossKind === 'final' ? 9 : bossKind === 'snake' ? 8 : bossKind === 'squid' ? 7 : bossKind === 'super' ? 6 : bossCycle.indexOf(bossKind),
+      pattern: bossKind === 'devil' ? 10 : bossKind === 'final' ? 9 : bossKind === 'snake' ? 8 : bossKind === 'squid' ? 7 : bossKind === 'super' ? 6 : bossCycle.indexOf(bossKind),
       bossKind,
       miniBossKind: null,
-      shieldTime: (bossKind === 'final' ? 7.4 : bossKind === 'squid' || bossKind === 'snake' ? 5.8 : bossKind === 'super' || bossKind === 'gate' ? 5.4 : 3.8) + Math.min(2.2, stagePressure * 0.18),
+      shieldTime: (bossKind === 'devil' ? 7.2 : bossKind === 'final' ? 7.4 : bossKind === 'squid' || bossKind === 'snake' ? 5.8 : bossKind === 'super' || bossKind === 'gate' ? 5.4 : 3.8) + Math.min(2.2, stagePressure * 0.18),
       originX: 50,
-      amplitude: bossKind === 'final' ? 34 : bossKind === 'snake' ? 36 : bossKind === 'squid' ? 24 : bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
+      amplitude: bossKind === 'devil' ? 0 : bossKind === 'final' ? 34 : bossKind === 'snake' ? 36 : bossKind === 'squid' ? 24 : bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
       trainSlot: 0,
-      pathSpeed: 0.05,
-      chargeCooldown: bossKind === 'final' ? 3.2 : bossKind === 'snake' ? 3.4 : bossKind === 'squid' ? 0.75 : 999,
+      pathSpeed: bossKind === 'devil' ? 0.018 : 0.05,
+      chargeCooldown: bossKind === 'devil' ? 2.2 : bossKind === 'final' ? 3.2 : bossKind === 'snake' ? 3.4 : bossKind === 'squid' ? 0.75 : 999,
       mirageKind: null,
       mirageTimer: 0,
       mirageCooldown: bossKind === 'final' ? 8 + Math.random() * 6 : 0,
@@ -10858,6 +11353,10 @@ export function GradiusRaid({
       chargeTargetY: 50,
       chargePattern: 'single',
     })
+    if (bossKind === 'devil') {
+      devilBossEncounteredRef.current = true
+      devilBossNextEligibleStageRef.current = stage + DEVIL_BOSS_MIN_STAGE_GAP + Math.floor(Math.random() * (DEVIL_BOSS_MAX_STAGE_GAP - DEVIL_BOSS_MIN_STAGE_GAP + 1))
+    }
     if (player.forceField > 0) {
       player.forceField = Math.min(FORCE_FIELD_ARMOR, player.forceField + 1)
     }
@@ -10955,6 +11454,7 @@ export function GradiusRaid({
       pickupsCollected: pickupsCollectedRef.current,
       nukesUsed: nukesUsedRef.current,
       raidMode: raidModeRef.current,
+      devilBossEncountered: devilBossEncounteredRef.current,
     })
   }, [onRunComplete, playerName])
 
@@ -11146,6 +11646,40 @@ export function GradiusRaid({
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: Math.cos(angle) * 22, vy: Math.sin(angle) * 22 + 20, damage: 1, kind: 'orbShot', radius: 1.7 })
         }
       }
+      if (kind === 'devil') {
+        enemy.devilNormalAttackTimer = 0.52
+        ;[-16, 0, 16].forEach((offset, index) => {
+          const aimX = player.x + (index - 1) * 3.5 - (enemy.x + offset)
+          const aimY = player.y - (enemy.y + 8)
+          const mag = Math.hypot(aimX, aimY) || 1
+          enemyShotsRef.current.push({
+            id: shotId++,
+            x: enemy.x + offset,
+            y: enemy.y + 10,
+            vx: (aimX / mag) * 31 + offset * 0.08,
+            vy: (aimY / mag) * 31 + 3,
+            damage: 1,
+            kind: index === 1 ? 'voidShot' : 'superShot',
+            radius: index === 1 ? 2.05 : 1.65,
+          })
+        })
+        if (Math.random() < 0.42) {
+          enemyShotsRef.current.push({
+            id: shotId++,
+            x: clamp(player.x + (Math.random() - 0.5) * 16, 10, 90),
+            y: enemy.y + 16,
+            vx: Math.sin(time / 350) * 1.2,
+            vy: 8.5,
+            damage: 1,
+            kind: 'poisonCloud',
+            radius: 3.25,
+            life: 3.2,
+            maxLife: 3.2,
+          })
+        }
+        playGameSound('rocket')
+        return
+      }
       if (kind === 'final') {
         playGameSound('laser')
         return
@@ -11237,6 +11771,12 @@ export function GradiusRaid({
       }
       updateSparksInPlace(sparksRef.current, dt)
       updateRipplesInPlace(ripplesRef.current, dt)
+      for (const enemy of enemiesRef.current) {
+        if (enemy.isBoss && enemy.hp <= 0) {
+          enemy.defeatTimer = Math.max(0, (enemy.defeatTimer ?? enemy.devilDefeatedTimer ?? STAGE_CLEAR_SECONDS) - dt)
+          if (enemy.bossKind === 'devil') enemy.devilDefeatedTimer = enemy.defeatTimer
+        }
+      }
       if (before > 0 && stageClearRef.current <= 0) {
         if (victoryPendingRef.current) {
           // Victory transition: fly-forward done — fade to black then show cutscene
@@ -11695,27 +12235,29 @@ export function GradiusRaid({
       const bossKind = enemy.bossKind ?? 'carrier'
       const finalRage = bossKind === 'final' ? clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1) : 0
       const bossX =
-        bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
-          bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
-            bossKind === 'squid' ? 50 + Math.sin(t * 0.58) * 23 + Math.sin(t * 1.4) * 4 :
-              bossKind === 'snake' ? 50 + Math.sin(t * 1.05) * 34 + Math.sin(t * 2.1) * 6 :
-                bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
-                  bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
-                    bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
-                      bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
-                        bossKind === 'final' ? 50 + Math.sin(t * (0.26 + finalRage * 0.08)) * (24 + finalRage * 2.5) + Math.sin(t * (0.92 + finalRage * 0.18)) * (3.5 + finalRage * 1.5) :
-                          50 + Math.sin(t * 0.42) * 30
+        bossKind === 'devil' ? 50 :
+          bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
+            bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
+              bossKind === 'squid' ? 50 + Math.sin(t * 0.58) * 23 + Math.sin(t * 1.4) * 4 :
+                bossKind === 'snake' ? 50 + Math.sin(t * 1.05) * 34 + Math.sin(t * 2.1) * 6 :
+                  bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
+                    bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
+                      bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
+                        bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
+                          bossKind === 'final' ? 50 + Math.sin(t * (0.26 + finalRage * 0.08)) * (24 + finalRage * 2.5) + Math.sin(t * (0.92 + finalRage * 0.18)) * (3.5 + finalRage * 1.5) :
+                            50 + Math.sin(t * 0.42) * 30
       const bossYTarget =
-        bossKind === 'final' ? 17 + Math.sin(t * (0.52 + finalRage * 0.16)) * (2.2 + finalRage * 0.9) :
-          bossKind === 'squid' ? 18 + Math.sin(t * 0.75) * 3 :
-            bossKind === 'snake' ? 19 + Math.sin(t * 1.3) * 4 :
-              bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
-                bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
-                  bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
-                    bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
-                      bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
-                        bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
-                          18
+        bossKind === 'devil' ? 21 + Math.sin(t * 0.42) * 1.8 :
+          bossKind === 'final' ? 17 + Math.sin(t * (0.52 + finalRage * 0.16)) * (2.2 + finalRage * 0.9) :
+            bossKind === 'squid' ? 18 + Math.sin(t * 0.75) * 3 :
+              bossKind === 'snake' ? 19 + Math.sin(t * 1.3) * 4 :
+                bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
+                  bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
+                    bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
+                      bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
+                        bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
+                          bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
+                            18
       const trainT = (enemy.y - enemy.trainSlot * 6.2) * enemy.pathSpeed + enemy.phase
       const trainX =
         enemy.pattern === 0 ? enemy.originX + Math.sin(trainT) * enemy.amplitude :
@@ -11740,6 +12282,8 @@ export function GradiusRaid({
       let rapidCharge = enemy.rapidCharge ?? false
       let beamVolleyLeft = enemy.beamVolleyLeft ?? 0
       let beamVolleyRecovery = Math.max(0, (enemy.beamVolleyRecovery ?? 0) - dt)
+      let devilNormalAttackTimer = Math.max(0, (enemy.devilNormalAttackTimer ?? 0) - dt)
+      let devilSnakeBurstLeft = Math.max(0, enemy.devilSnakeBurstLeft ?? 0)
       let mirageKind = enemy.mirageKind ?? null
       let mirageTimer = Math.max(0, enemy.mirageTimer ?? 0)
       let mirageCooldown = Math.max(0, (enemy.mirageCooldown ?? 0) - dt)
@@ -11775,6 +12319,141 @@ export function GradiusRaid({
         playGameSound('countdown')
       }
       const attackBossKind: BossKind | MirageBossKind = mirageActive && mirageKind ? mirageKind : bossKind
+      if (enemy.isBoss && bossKind === 'devil' && enemy.y >= bossYTarget - 0.5) {
+        if (chargeTimer > 0) {
+          if (chargePattern === 'diagonal') {
+            const target = getNearestLivingPlayerThisTick(enemy)
+            chargeLane = clamp(target.x, 16, 84)
+            chargeTargetY = clamp(target.y, 32, 88)
+          }
+          const beforeCharge = chargeTimer
+          chargeTimer = Math.max(0, chargeTimer - dt)
+          if (beforeCharge > 0 && chargeTimer <= 0) {
+            const emitDevilBeam = (x: number, y: number, angle?: number, radius = 3.6, life = 1.08) => {
+              enemyShotsRef.current.push({
+                id: shotId++,
+                x,
+                y,
+                vx: 0,
+                vy: 0,
+                damage: 1,
+                kind: 'beam',
+                radius,
+                life,
+                maxLife: life,
+                angle,
+              })
+            }
+            if (chargePattern === 'horizontal') {
+              emitDevilBeam(50, chargeTargetY, 0, getDevilBossBeamRadius(chargePattern), 1.04)
+              ;[-18, 18].forEach((offset) => {
+                enemyShotsRef.current.push({ id: shotId++, x: chargeLane + offset, y: enemy.y + 18, vx: offset * 0.18, vy: 36, damage: 1, kind: 'blade', radius: 1.8 })
+              })
+              addRipple(50, chargeTargetY, '#ef4444', 25)
+            } else if (chargePattern === 'cross') {
+              for (const target of livingPlayersThisTick) {
+                if (target.hp <= 0) continue
+                if (Math.abs(target.x - chargeLane) < 10.5 && Math.abs(target.y - chargeTargetY) < 8.5) {
+                  damagePlayer(2, target)
+                  spawnSparks(target.x, target.y, '#f97316', 46, 9)
+                  addRipple(target.x, target.y, '#ef4444', 18)
+                }
+              }
+              for (let i = 0; i < 8; i += 1) {
+                const angle = (i / 8) * Math.PI * 2
+                enemyShotsRef.current.push({
+                  id: shotId++,
+                  x: chargeLane,
+                  y: chargeTargetY,
+                  vx: Math.cos(angle) * 22,
+                  vy: Math.sin(angle) * 16 + 12,
+                  damage: 1,
+                  kind: i % 2 === 0 ? 'voidShot' : 'orbShot',
+                  radius: 1.55,
+                })
+              }
+              addRipple(chargeLane, chargeTargetY, '#ef4444', 21)
+            } else if (chargePattern === 'rotate') {
+              const baseAngle = enemy.phase + Math.PI / 4
+              emitDevilBeam(50, 50, baseAngle, getDevilBossBeamRadius(chargePattern), 1.22)
+              emitDevilBeam(50, 50, baseAngle + Math.PI / 2, getDevilBossBeamRadius(chargePattern), 1.22)
+              addRipple(50, 50, '#ef4444', 28)
+            } else if (chargePattern === 'diagonal') {
+              const startX = enemy.x
+              const startY = enemy.y + 10
+              const aimX = chargeLane - startX
+              const aimY = chargeTargetY - startY
+              const mag = Math.hypot(aimX, aimY) || 1
+              enemyShotsRef.current.push({
+                id: shotId++,
+                x: startX,
+                y: startY,
+                vx: (aimX / mag) * 50,
+                vy: (aimY / mag) * 50,
+                damage: 1,
+                kind: 'devilSnakeHead',
+                radius: 4.15,
+                life: 2.35,
+                maxLife: 2.35,
+              })
+              addRipple(chargeLane, chargeTargetY, '#bef264', 23)
+            } else {
+              const lanes = getDevilBossBeamLanes(chargeLane, chargePattern)
+              lanes.forEach((lane) => {
+                emitDevilBeam(lane, 50, undefined, getDevilBossBeamRadius(chargePattern), 1.08)
+                addRipple(lane, 50, '#ef4444', chargePattern === 'scatter' ? 14 : 19)
+              })
+            }
+            spawnSparks(enemy.x, enemy.y + 12, '#ef4444', 68, 9)
+            playGameSound('laser')
+            if (chargePattern === 'diagonal') {
+              devilSnakeBurstLeft = Math.max(0, devilSnakeBurstLeft - 1)
+              if (devilSnakeBurstLeft <= 0 && beamVolleyLeft > 0) beamVolleyLeft = Math.max(0, beamVolleyLeft - 1)
+            } else if (beamVolleyLeft > 0) beamVolleyLeft = Math.max(0, beamVolleyLeft - 1)
+            const hpRatio = enemy.hp / Math.max(1, enemy.maxHp)
+            chargeCooldown = chargePattern === 'diagonal' && devilSnakeBurstLeft > 0
+              ? 0.18
+              : beamVolleyLeft > 0
+              ? (hpRatio <= 0.36 ? 0.92 : 1.08)
+              : chargePattern === 'cross' ? 4.8 + Math.random() * 1.2 : chargePattern === 'rotate' ? 5.8 + Math.random() * 1.2 : 4.2 + Math.random() * 1.2
+            beamVolleyRecovery = chargePattern === 'diagonal' && devilSnakeBurstLeft > 0 ? 0.32 : beamVolleyLeft > 0 ? 1.08 : 0.86
+            fireCooldown = Math.max(fireCooldown, 1.45)
+          }
+        } else {
+          chargeCooldown = Math.max(0, chargeCooldown - dt)
+          if (chargeCooldown <= 0) {
+            const target = getNearestLivingPlayerThisTick(enemy)
+            const hpRatio = enemy.hp / Math.max(1, enemy.maxHp)
+            const volleyActive = beamVolleyLeft > 0
+            const roll = Math.random()
+            if (devilSnakeBurstLeft > 0) {
+              chargePattern = 'diagonal'
+            } else {
+              if (!volleyActive) {
+                const volleyChance = hpRatio <= 0.36 ? 0.62 : hpRatio <= 0.62 ? 0.34 : hpRatio <= 0.78 ? 0.18 : 0.08
+                if (Math.random() < volleyChance) beamVolleyLeft = hpRatio <= 0.36 ? 3 + Math.floor(Math.random() * 2) : hpRatio <= 0.62 ? 2 + Math.floor(Math.random() * 2) : 2
+              }
+              const skillVolleyActive = beamVolleyLeft > 0
+              chargePattern = skillVolleyActive
+                ? hpRatio <= 0.36
+                  ? roll < 0.18 ? 'diagonal' : roll < 0.34 ? 'trident' : roll < 0.5 ? 'pincer' : roll < 0.66 ? 'horizontal' : roll < 0.8 ? 'scatter' : roll < 0.92 ? 'cross' : 'rotate'
+                  : roll < 0.18 ? 'diagonal' : roll < 0.38 ? 'trident' : roll < 0.58 ? 'pincer' : roll < 0.74 ? 'horizontal' : roll < 0.9 ? 'scatter' : 'cross'
+                : hpRatio < 0.36
+                  ? roll < 0.16 ? 'diagonal' : roll < 0.34 ? 'horizontal' : roll < 0.54 ? 'trident' : roll < 0.74 ? 'cross' : roll < 0.88 ? 'rotate' : 'scatter'
+                  : roll < 0.14 ? 'diagonal' : roll < 0.36 ? 'trident' : roll < 0.58 ? 'horizontal' : roll < 0.78 ? 'cross' : roll < 0.92 ? 'scatter' : 'rotate'
+              if (chargePattern === 'diagonal') devilSnakeBurstLeft = hpRatio <= 0.36 ? 4 : 2 + Math.floor(Math.random() * 2)
+            }
+            const skillVolleyActive = beamVolleyLeft > 0
+            chargeTimer = getDevilBossChargeDuration(chargePattern, skillVolleyActive)
+            chargeLane = chargePattern === 'rotate' ? 50 : chargePattern === 'diagonal' ? clamp(target.x, 16, 84) : clamp(target.x + (Math.random() - 0.5) * (chargePattern === 'horizontal' || chargePattern === 'cross' ? 8 : 3), 16, 84)
+            chargeTargetY = chargePattern === 'diagonal' ? clamp(target.y, 32, 88) : clamp(target.y + (Math.random() - 0.5) * 8, 28, 84)
+            chargeCooldown = 999
+            addRipple(chargePattern === 'rotate' ? 50 : chargeLane, chargePattern === 'rotate' ? 50 : chargeTargetY, skillVolleyActive ? '#f87171' : '#ef4444', chargePattern === 'rotate' ? 27 : skillVolleyActive ? 21 : 18)
+            spawnSparks(enemy.x, enemy.y + 8, skillVolleyActive ? '#fca5a5' : '#fb7185', skillVolleyActive ? 58 : 44, 8)
+            playGameSound('countdown')
+          }
+        }
+      }
       if (enemy.isBoss && bossKind === 'final' && !mirageActive && enemy.y >= bossYTarget - 0.5) {
         if (chargeTimer > 0) {
           const beforeCharge = chargeTimer
@@ -12101,14 +12780,15 @@ export function GradiusRaid({
         }
       }
       const nextFire = fireCooldown - dt
-      const bossInPause = enemy.isBoss && nowSeconds % 6 > 3
+      const bossInPause = enemy.isBoss && bossKind !== 'devil' && nowSeconds % 6 > 3
       const biteRetracting = attackBossKind === 'snake' && chargePattern === 'cross' && beamVolleyRecovery > 0
       if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !biteRetracting && !bossInPause && (bossKind !== 'final' || mirageActive)) {
         fireEnemy(enemy, getNearestLivingPlayerThisTick(enemy), now)
+        if (bossKind === 'devil') devilNormalAttackTimer = Math.max(devilNormalAttackTimer, enemy.devilNormalAttackTimer ?? 0)
       }
 
       enemy.x = enemy.isBoss
-        ? clamp(bossX, bossKind === 'final' ? 14 : bossKind === 'snake' ? 15 : bossKind === 'super' ? 20 : 16, bossKind === 'final' ? 86 : bossKind === 'snake' ? 85 : bossKind === 'super' ? 80 : 84)
+        ? clamp(bossX, bossKind === 'devil' ? 50 : bossKind === 'final' ? 14 : bossKind === 'snake' ? 15 : bossKind === 'super' ? 20 : 16, bossKind === 'devil' ? 50 : bossKind === 'final' ? 86 : bossKind === 'snake' ? 85 : bossKind === 'super' ? 80 : 84)
         : enemy.isMiniBoss
           ? clamp(enemy.x + (miniBossX - enemy.x) * Math.min(1, dt * 3.6) + enemy.vx * dt * 0.24, 10, 90)
           : clamp(enemy.x + (trainX - enemy.x) * Math.min(1, dt * 5.8) + enemy.vx * dt, 4, 96)
@@ -12128,7 +12808,9 @@ export function GradiusRaid({
       enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
       enemy.fireCooldown = fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
         ? (enemy.isBoss
-          ? Math.max(bossKind === 'final' ? 0.62 : bossKind === 'snake' ? 1.05 : bossKind === 'squid' ? 1.08 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035)
+          ? bossKind === 'devil'
+            ? Math.max(1.05, 1.55 - waveRef.current * 0.018 - stageRef.current * 0.02)
+            : Math.max(bossKind === 'final' ? 0.62 : bossKind === 'snake' ? 1.05 : bossKind === 'squid' ? 1.08 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035)
           : enemy.isMiniBoss
             ? Math.max(miniKind === 'lancer' ? 1.12 : 1.28, 1.84 - stageRef.current * 0.018 + Math.random() * 0.5)
             : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
@@ -12141,6 +12823,8 @@ export function GradiusRaid({
       enemy.rapidCharge = rapidCharge
       enemy.beamVolleyLeft = beamVolleyLeft
       enemy.beamVolleyRecovery = beamVolleyRecovery
+      enemy.devilNormalAttackTimer = devilNormalAttackTimer
+      enemy.devilSnakeBurstLeft = devilSnakeBurstLeft
       enemy.mirageKind = mirageKind
       enemy.mirageTimer = mirageTimer
       enemy.mirageCooldown = mirageCooldown
@@ -12407,8 +13091,16 @@ export function GradiusRaid({
           }
           if (enemy.hp <= 0) {
             enemiesDestroyedRef.current += 1
-            if (enemy.isBoss) bossesDefeatedRef.current += 1
-            const scoreValue = enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
+            if (enemy.isBoss) {
+              bossesDefeatedRef.current += 1
+              enemy.defeatTimer = STAGE_CLEAR_SECONDS
+              if (enemy.bossKind === 'devil') {
+                enemy.devilDefeatedTimer = enemy.defeatTimer
+                enemy.devilVisualPose = 'rage'
+                enemy.devilPoseChangedAt = now
+              }
+            }
+            const scoreValue = enemy.bossKind === 'devil' ? 150000 : enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
             player.score += scoreValue
             if (remotePlayerRef.current) {
               remotePlayerRef.current.score += scoreValue
@@ -12458,10 +13150,23 @@ export function GradiusRaid({
     compactInPlace(shotsRef.current, (shot) => shot.y > -50)
     if (bossDefeatedThisFrame) {
       const defeatedBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp <= 0)
+      const scheduleBossDefeatExplosions = (boss: Enemy, dropLevelUp: boolean) => {
+        const explosionDelays = [80, 220, 380, 560, 760, 980, 1220, 1500, 1840, 2220, 2620]
+        explosionDelays.forEach((delay, index) => {
+          window.setTimeout(() => {
+            const spreadX = boss.bossKind === 'devil' || boss.bossKind === 'final' || boss.bossKind === 'squid' ? 26 : boss.bossKind === 'snake' ? 18 : 16
+            const spreadY = boss.bossKind === 'devil' || boss.bossKind === 'final' || boss.bossKind === 'squid' ? 28 : boss.bossKind === 'snake' ? 18 : 16
+            const color = index % 2 === 0 ? '#fda4af' : '#fbbf24'
+            spawnSparks(boss.x + (Math.random() - 0.5) * spreadX, boss.y + 10 + (Math.random() - 0.5) * spreadY, color, 52, 9)
+            addRipple(boss.x + (Math.random() - 0.5) * spreadX * 0.5, boss.y + 10 + (Math.random() - 0.5) * spreadY * 0.5, index % 2 === 0 ? '#fb7185' : '#fbbf24', 15 + index * 1.2)
+          }, delay)
+        })
+        if (dropLevelUp) spawnLevelUpPowerUp(boss.x, boss.y)
+      }
       if (completedRun) {
         shotsRef.current = []
         enemyShotsRef.current = []
-        enemiesRef.current = []
+        enemiesRef.current = defeatedBoss ? [defeatedBoss] : []
         asteroidsRef.current = []
         meteorsRef.current = []
         ionStrikesRef.current = []
@@ -12479,6 +13184,7 @@ export function GradiusRaid({
           saveHighScore(player.score)
         }
         submitRaidLeaderboardScore(Math.max(player.score, remotePlayerRef.current?.score ?? 0))
+        if (defeatedBoss) scheduleBossDefeatExplosions(defeatedBoss, false)
         return
       }
       if (preserveLoadoutForSuperBoss) {
@@ -12516,13 +13222,7 @@ export function GradiusRaid({
       randomEventTimerRef.current = getRandomEventInterval()
       powerUpsRef.current = []
       if (defeatedBoss) {
-        ;[120, 320, 540, 780].forEach((delay, index) => {
-          window.setTimeout(() => {
-            spawnSparks(defeatedBoss.x + (Math.random() - 0.5) * 12, defeatedBoss.y + (Math.random() - 0.5) * 9, index % 2 === 0 ? '#fda4af' : '#fbbf24', 32, 7)
-            addRipple(defeatedBoss.x, defeatedBoss.y, index % 2 === 0 ? '#fb7185' : '#fbbf24', 12 + index * 2)
-          }, delay)
-        })
-        spawnLevelUpPowerUp(defeatedBoss.x, defeatedBoss.y)
+        scheduleBossDefeatExplosions(defeatedBoss, true)
       }
       addRipple(player.x, player.y, '#fca5a5', 12)
     }

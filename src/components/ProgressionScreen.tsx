@@ -138,6 +138,7 @@ const RAID_BOSS_STAGES: Record<BriefingBossKind, number> = {
   squid: 5,
   snake: 10,
   final: 15,
+  devil: 1,
 }
 const DEFENSE_ACHIEVEMENT_IDS: AchievementId[] = [
   'first_sortie',
@@ -209,6 +210,7 @@ const RAID_CODEX_IDS: CodexId[] = [
   'serpent_guardian',
   'serpent_scales',
   'orbital_fortress',
+  'devil_gundam',
   'fortress_beam_core',
   'final_gauntlet',
   'ship_hangar',
@@ -237,7 +239,7 @@ export function ProgressionScreen({
   const title = getViewTitle(view, text)
   const [previewCosmeticShip, setPreviewCosmeticShip] = useState<string | null>(null)
   const [showRecoveryCode, setShowRecoveryCode] = useState(false)
-  const stageBossEntries = getStageBossEntries(raidText.briefingPanels)
+  const stageBossEntries = getStageBossEntries(raidText.briefingPanels, text.enemyAlmanac.devilBoss)
 
   return (
     <div className="progress-screen">
@@ -545,7 +547,9 @@ function EnemyAlmanac({
         </header>
         <div className="enemy-almanac__boss-grid">
           {stageBossEntries.map((boss) => {
-            const encountered = raidBestStage >= RAID_BOSS_STAGES[boss.kind]
+            const encountered = boss.kind === 'devil'
+              ? Boolean(progress.codex.devil_gundam) || hasProgressionUnlockOverride()
+              : raidBestStage >= RAID_BOSS_STAGES[boss.kind]
             return (
               <article key={boss.kind} className={encountered ? 'enemy-almanac__boss-card' : 'enemy-almanac__boss-card enemy-almanac__boss-card--locked'}>
                 <header className="enemy-almanac__boss-card-title">
@@ -627,7 +631,7 @@ function UnlockCard({
   )
 }
 
-function getStageBossEntries(briefingPanels: ReturnType<typeof getRaidText>['briefingPanels']) {
+function getStageBossEntries(briefingPanels: ReturnType<typeof getRaidText>['briefingPanels'], devilBoss: StageBossEntry) {
   const entries: StageBossEntry[] = []
   for (const panel of briefingPanels) {
     if (!('bosses' in panel)) continue
@@ -635,6 +639,7 @@ function getStageBossEntries(briefingPanels: ReturnType<typeof getRaidText>['bri
       entries.push(boss)
     }
   }
+  entries.push(devilBoss)
   return entries
 }
 
