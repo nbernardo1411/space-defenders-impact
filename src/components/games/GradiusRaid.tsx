@@ -794,6 +794,8 @@ const homingMissileSpriteCache = new Map<number, HTMLCanvasElement>()
 const honeycombShieldSpriteCache = new Map<number, HTMLCanvasElement>()
 const coreBlastSpriteCache = new Map<string, HTMLCanvasElement>()
 const coreLanderBurningHaloSpriteCache = new Map<string, HTMLCanvasElement>()
+const godBarrageDrawTargetsScratch: Enemy[] = []
+const godBarrageDamageTargetsScratch: Enemy[] = []
 let raidCanvasAssetWarmPromise: Promise<void> | null = null
 
 const RAID_OTHER_ASSET_PATHS = {
@@ -817,6 +819,8 @@ const RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS = {
   kick: 'assets/G-gundam-attacks/kick.png',
   uppercut1: 'assets/G-gundam-attacks/uppercut-1.png',
   uppercut2: 'assets/G-gundam-attacks/uppercut-2.png',
+  katana1: 'assets/G-gundam-attacks/katana-1.png',
+  katana2: 'assets/G-gundam-attacks/katana-2.png',
 } as const
 type GodGundamBarragePose = keyof typeof RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
@@ -827,10 +831,14 @@ const RAID_GOD_GUNDAM_BARRAGE_SEQUENCE: Array<{
   impactY: number
 }> = [
   { pose: 'punch', side: -1, offsetY: -6, impactY: -2 },
+  { pose: 'katana1', side: -1, offsetY: -2, impactY: -1 },
+  { pose: 'katana2', side: -1, offsetY: 1, impactY: 0 },
   { pose: 'kick', side: 1, offsetY: 2, impactY: 0 },
   { pose: 'uppercut1', side: 0, offsetY: 18, impactY: 8 },
   { pose: 'uppercut2', side: 0, offsetY: 12, impactY: 4 },
   { pose: 'punch', side: 1, offsetY: -9, impactY: -3 },
+  { pose: 'katana1', side: 1, offsetY: -4, impactY: -2 },
+  { pose: 'katana2', side: 1, offsetY: 0, impactY: 0 },
   { pose: 'kick', side: -1, offsetY: 7, impactY: 2 },
   { pose: 'uppercut1', side: -1, offsetY: 17, impactY: 7 },
   { pose: 'uppercut2', side: 1, offsetY: 11, impactY: 4 },
@@ -2168,6 +2176,11 @@ function getRaidPlayerVisualShipKey(player: Player, progress: ReturnType<typeof 
 
 function isGodGundamBarragePilot(player: Player, progress: ReturnType<typeof loadProgress>) {
   return player.ship.key === 'coreLander' && getCoreLanderModel(progress) === 'godGundam'
+}
+
+function getGodGundamGameplayRenderSize(viewportWidth: number) {
+  const baseSize = viewportWidth < 860 ? 62 : viewportWidth > 1100 ? 86 : 76
+  return baseSize * 1.38 * 1.08
 }
 
 function hasClearedRaidInProgress(progress: ReturnType<typeof loadProgress>) {
@@ -7765,14 +7778,21 @@ function drawGodGundamBarrage(
   const durationFade = Math.min(1, barrage.age / 0.32, (barrage.duration - barrage.age) / 0.42)
   if (durationFade <= 0) return
 
-  const visibleTargets = enemies.filter((enemy) => enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16)
-  if (visibleTargets.length === 0) return
+  const visibleTargets = godBarrageDrawTargetsScratch
+  visibleTargets.length = 0
+  for (let index = 0; index < enemies.length; index += 1) {
+    const enemy = enemies[index]
+    if (enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16) visibleTargets.push(enemy)
+  }
+  const visibleTargetCount = visibleTargets.length
+  if (visibleTargetCount === 0) return
 
-  const spriteSize = Math.max(86, Math.min(158, viewportWidth * 0.082))
+  const spriteSize = getGodGundamGameplayRenderSize(viewportWidth)
   const dashDuration = 0.46
   const dashProgress = clamp(barrage.age / dashDuration, 0, 1)
   if (dashProgress < 1) {
-    const easedDash = 1 - Math.pow(1 - dashProgress, 3)
+    const invDash = 1 - dashProgress
+    const easedDash = 1 - invDash * invDash * invDash
     const startX = toX(barrage.startX)
     const startY = toY(barrage.startY)
     const endX = toX(barrage.targetX)
@@ -7803,29 +7823,41 @@ function drawGodGundamBarrage(
   }
 
   const comboAge = Math.max(0, barrage.age - dashDuration * 0.45)
-  const primaryIndex = Math.max(0, visibleTargets.findIndex((enemy) => enemy.id === barrage.targetId))
-  const orderedTargets = [
-    ...visibleTargets.slice(primaryIndex, primaryIndex + 1),
-    ...visibleTargets.filter((_, index) => index !== primaryIndex),
-  ]
+  let primaryIndex = 0
+  for (let index = 0; index < visibleTargetCount; index += 1) {
+    if (visibleTargets[index].id === barrage.targetId) {
+      primaryIndex = index
+      break
+    }
+  }
+  const seedOffset = barrage.seed % 0.09
+  const spriteScale = 1 / GOD_GUNDAM_BARRAGE_FRAME_SECONDS
+  const punchSprite = getGodGundamBarrageCanvasSprite('punch')
+  const kickSprite = getGodGundamBarrageCanvasSprite('kick')
+  const uppercut1Sprite = getGodGundamBarrageCanvasSprite('uppercut1')
+  const uppercut2Sprite = getGodGundamBarrageCanvasSprite('uppercut2')
+  const katana1Sprite = getGodGundamBarrageCanvasSprite('katana1')
+  const katana2Sprite = getGodGundamBarrageCanvasSprite('katana2')
 
-  for (let targetIndex = 0; targetIndex < orderedTargets.length; targetIndex += 1) {
-    const target = orderedTargets[targetIndex]
+  for (let drawIndex = 0; drawIndex < visibleTargetCount; drawIndex += 1) {
+    const targetIndex = drawIndex === 0 ? primaryIndex : drawIndex <= primaryIndex ? drawIndex - 1 : drawIndex
+    const target = visibleTargets[targetIndex]
     const targetX = toX(target.x)
     const targetRadiusX = Math.max(28, viewportWidth * (target.radius / WIDTH) * 0.72)
     const layers = target.isBoss ? 4 : target.isMiniBoss ? 3 : 2
     for (let layer = layers - 1; layer >= 0; layer -= 1) {
-      const localAge = comboAge - targetIndex * 0.055 - layer * 0.105 + (barrage.seed % 0.09)
+      const localAge = comboAge - drawIndex * 0.055 - layer * 0.105 + seedOffset
       if (localAge < 0) continue
 
-      const frame = Math.floor(localAge / GOD_GUNDAM_BARRAGE_FRAME_SECONDS)
-      const pose = RAID_GOD_GUNDAM_BARRAGE_SEQUENCE[(frame + layer + targetIndex) % RAID_GOD_GUNDAM_BARRAGE_SEQUENCE.length]
-      const frameProgress = (localAge % GOD_GUNDAM_BARRAGE_FRAME_SECONDS) / GOD_GUNDAM_BARRAGE_FRAME_SECONDS
+      const frame = Math.floor(localAge * spriteScale)
+      const pose = RAID_GOD_GUNDAM_BARRAGE_SEQUENCE[(frame + layer + drawIndex) % RAID_GOD_GUNDAM_BARRAGE_SEQUENCE.length]
+      const frameProgress = (localAge % GOD_GUNDAM_BARRAGE_FRAME_SECONDS) * spriteScale
+      const approachPrep = 1 - frameProgress / 0.72
       const approach = frameProgress < 0.72
-        ? 1 - Math.pow(1 - frameProgress / 0.72, 3)
+        ? 1 - approachPrep * approachPrep * approachPrep
         : 1 - (frameProgress - 0.72) / 0.28 * 0.16
       const side = pose.side
-      const attackSide = side === 0 ? ((frame + targetIndex) % 2 === 0 ? -1 : 1) : side
+      const attackSide = side === 0 ? ((frame + drawIndex) % 2 === 0 ? -1 : 1) : side
       const startX = targetX + attackSide * (targetRadiusX + spriteSize * (target.isBoss ? 0.5 : 0.38))
       const hitX = targetX + attackSide * targetRadiusX * 0.22
       const startY = toY(target.y + pose.offsetY) + Math.sin(time / 95 + frame * 1.7 + target.id) * spriteSize * 0.018
@@ -7849,7 +7881,17 @@ function drawGodGundamBarrage(
         ctx.restore()
       }
 
-      const sprite = getGodGundamBarrageCanvasSprite(pose.pose)
+      const sprite = pose.pose === 'punch'
+        ? punchSprite
+        : pose.pose === 'kick'
+          ? kickSprite
+          : pose.pose === 'uppercut1'
+            ? uppercut1Sprite
+            : pose.pose === 'uppercut2'
+              ? uppercut2Sprite
+              : pose.pose === 'katana1'
+                ? katana1Sprite
+                : katana2Sprite
       ctx.save()
       ctx.translate(x, y)
       if (attackSide > 0) ctx.scale(-1, 1)
@@ -10738,16 +10780,29 @@ export function GradiusRaid({
 
     const player = sourcePlayer
     const priorityTarget = visibleEnemies.find((enemy) => enemy.isBoss) ?? visibleEnemies.find((enemy) => enemy.isMiniBoss)
+    let barrageTarget = priorityTarget ?? null
+    if (!barrageTarget && visibleEnemies.length > 0) {
+      barrageTarget = visibleEnemies[0]
+      let nearestDistance = distSq(player, barrageTarget)
+      for (let index = 1; index < visibleEnemies.length; index += 1) {
+        const enemy = visibleEnemies[index]
+        const distance = distSq(player, enemy)
+        if (distance < nearestDistance) {
+          barrageTarget = enemy
+          nearestDistance = distance
+        }
+      }
+    }
     if (isGodGundamBarragePilot(player, progressRef.current)) {
-      if (!priorityTarget) return
+      if (!barrageTarget) return
       nukeCooldownRef.current = getNukeCooldownSeconds(stageRef.current)
       player.invuln = Math.max(player.invuln, GOD_GUNDAM_BARRAGE_DURATION_SECONDS + 0.75)
       godBarrageRef.current = {
-        targetId: priorityTarget.id,
+        targetId: barrageTarget.id,
         startX: player.x,
         startY: player.y,
-        targetX: priorityTarget.x,
-        targetY: priorityTarget.y,
+        targetX: barrageTarget.x,
+        targetY: barrageTarget.y,
         age: 0,
         duration: GOD_GUNDAM_BARRAGE_DURATION_SECONDS,
         hitTimer: 0,
@@ -10755,9 +10810,9 @@ export function GradiusRaid({
         seed: Math.random() * 1000,
       }
       player.y = HEIGHT + 18
-      addRipple(priorityTarget.x, priorityTarget.y, '#facc15', priorityTarget.isBoss ? 18 : 13)
+      addRipple(barrageTarget.x, barrageTarget.y, '#facc15', barrageTarget.isBoss ? 18 : 13)
       addRipple(player.x, player.y, '#fef3c7', 13)
-      spawnSparks(priorityTarget.x, priorityTarget.y, '#facc15', priorityTarget.isBoss ? 42 : 26, 7)
+      spawnSparks(barrageTarget.x, barrageTarget.y, '#facc15', barrageTarget.isBoss ? 42 : 26, 7)
       playGameSound('combo')
       syncSnapshot()
       return
@@ -13534,7 +13589,12 @@ export function GradiusRaid({
     }
     const godBarrage = godBarrageRef.current
     if (godBarrage && !bossDefeatedThisFrame) {
-      const barrageTargets = enemiesRef.current.filter((enemy) => enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16)
+      const barrageTargets = godBarrageDamageTargetsScratch
+      barrageTargets.length = 0
+      for (let index = 0; index < enemiesRef.current.length; index += 1) {
+        const enemy = enemiesRef.current[index]
+        if (enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16) barrageTargets.push(enemy)
+      }
       if (barrageTargets.length === 0) {
         godBarrageRef.current = null
       } else {
@@ -13544,7 +13604,8 @@ export function GradiusRaid({
           godBarrage.hitTimer += GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS
           godBarrage.hitIndex += 1
           let hitAnyTarget = false
-          for (const target of barrageTargets) {
+          for (let targetIndex = 0; targetIndex < barrageTargets.length; targetIndex += 1) {
+            const target = barrageTargets[targetIndex]
             if (target.hp <= 0) continue
             const damage = target.isBoss || target.isMiniBoss
               ? getGodGundamBarrageBossDamage(target, stageRef.current, powerScore)
