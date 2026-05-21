@@ -710,6 +710,7 @@ const squidBossTentacleTextureCache = new Map<string, HTMLCanvasElement>()
 const homingMissileSpriteCache = new Map<number, HTMLCanvasElement>()
 const honeycombShieldSpriteCache = new Map<number, HTMLCanvasElement>()
 const coreBlastSpriteCache = new Map<string, HTMLCanvasElement>()
+const coreLanderBurningHaloSpriteCache = new Map<string, HTMLCanvasElement>()
 let raidCanvasAssetWarmPromise: Promise<void> | null = null
 
 const RAID_OTHER_ASSET_PATHS = {
@@ -5866,6 +5867,19 @@ function drawPlayerEngine(ctx: CanvasRenderingContext2D, x: number, y: number, s
 }
 
 function drawCoreLanderBurningHalo(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, alpha = 1) {
+  const sprite = getCoreLanderBurningHaloSprite(size, time)
+  if (sprite) {
+    const ringY = y + size * 0.02
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.translate(x, ringY)
+    ctx.rotate(Math.sin(time / 1500) * 0.035)
+    ctx.globalAlpha *= alpha
+    ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2)
+    ctx.restore()
+    return
+  }
+
   const pulse = 0.97 + Math.sin(time / 240) * 0.035
   const radius = size * 0.72 * pulse
   const ringY = y + size * 0.02
@@ -5911,6 +5925,73 @@ function drawCoreLanderBurningHalo(ctx: CanvasRenderingContext2D, x: number, y: 
   ctx.arc(0, 0, radius * 1.02, Math.PI * 1.08, Math.PI * 1.9)
   ctx.stroke()
   ctx.restore()
+}
+
+function getCoreLanderBurningHaloSprite(size: number, time: number) {
+  if (typeof document === 'undefined') return null
+
+  const roundedSize = Math.max(24, Math.round(size / 2) * 2)
+  const frameBucket = Math.abs(Math.trunc(time / 120) % 8)
+  const cacheKey = `${roundedSize}:${frameBucket}`
+  const cached = coreLanderBurningHaloSpriteCache.get(cacheKey)
+  if (cached) return cached
+
+  const frameTime = frameBucket * 120
+  const pulse = 0.97 + Math.sin(frameTime / 240) * 0.035
+  const radius = roundedSize * 0.72 * pulse
+  const canvasSize = Math.ceil(radius * 2.64 + roundedSize * 0.16)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasSize
+  canvas.height = canvasSize
+  const haloCtx = canvas.getContext('2d')
+  if (!haloCtx) return null
+
+  const center = canvasSize / 2
+  haloCtx.translate(center, center)
+  haloCtx.globalCompositeOperation = 'lighter'
+  haloCtx.lineCap = 'round'
+
+  haloCtx.globalAlpha = 0.52
+  const glow = haloCtx.createRadialGradient(0, 0, radius * 0.24, 0, 0, radius * 1.22)
+  glow.addColorStop(0, 'rgba(254,240,138,0)')
+  glow.addColorStop(0.62, 'rgba(250,204,21,0.07)')
+  glow.addColorStop(1, 'rgba(249,115,22,0)')
+  haloCtx.fillStyle = glow
+  haloCtx.beginPath()
+  haloCtx.arc(0, 0, radius * 1.22, 0, Math.PI * 2)
+  haloCtx.fill()
+
+  haloCtx.lineWidth = Math.max(3.2, roundedSize * 0.046)
+  haloCtx.strokeStyle = 'rgba(239,68,68,0.22)'
+  haloCtx.beginPath()
+  haloCtx.arc(0, 0, radius, 0, Math.PI * 2)
+  haloCtx.stroke()
+
+  haloCtx.lineWidth = Math.max(2.6, roundedSize * 0.035)
+  haloCtx.strokeStyle = 'rgba(250,204,21,0.4)'
+  haloCtx.beginPath()
+  haloCtx.arc(0, 0, radius * 0.94, 0, Math.PI * 2)
+  haloCtx.stroke()
+
+  haloCtx.lineWidth = Math.max(1.2, roundedSize * 0.012)
+  haloCtx.strokeStyle = 'rgba(255,255,255,0.16)'
+  haloCtx.beginPath()
+  haloCtx.arc(0, 0, radius * 0.74, 0, Math.PI * 2)
+  haloCtx.stroke()
+
+  haloCtx.globalAlpha = 0.34
+  haloCtx.lineWidth = Math.max(0.9, roundedSize * 0.009)
+  haloCtx.strokeStyle = 'rgba(255,255,255,0.24)'
+  haloCtx.beginPath()
+  haloCtx.arc(0, 0, radius * 1.02, Math.PI * 1.08, Math.PI * 1.9)
+  haloCtx.stroke()
+
+  if (coreLanderBurningHaloSpriteCache.size >= 48) {
+    const oldestKey = coreLanderBurningHaloSpriteCache.keys().next().value
+    if (oldestKey) coreLanderBurningHaloSpriteCache.delete(oldestKey)
+  }
+  coreLanderBurningHaloSpriteCache.set(cacheKey, canvas)
+  return canvas
 }
 
 function drawCoreLanderBurningCometWake(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, alpha = 1, dualVent = false) {
@@ -6447,7 +6528,6 @@ function drawRaidPlayer(
     ? 'brightness(1.34) contrast(1.36) saturate(1.68)'
     : 'brightness(1.2) contrast(1.18) saturate(1.36)'
   const sprite = getShipCanvasSprite(visualShipKey)
-  const godGundamBurningHeat = coreLanderBurningBlend * (0.35 + coreLanderBurningRage * 0.65)
   const spriteGlow = coreLanderBurning
     ? coreLanderUsesGodModel
       ? `rgba(251,${Math.round(191 - 74 * coreLanderBurningRage)},${Math.round(36 - 20 * coreLanderBurningRage)},${(0.28 + coreLanderBurningRage * 0.16).toFixed(2)})`
@@ -6495,7 +6575,7 @@ function drawRaidPlayer(
     y,
     renderSize,
     coreLanderUsesGodModel && coreLanderBurningBlend > 0.01
-      ? `brightness(${(1.22 + godGundamBurningHeat * 0.44).toFixed(2)}) contrast(${(1.16 + godGundamBurningHeat * 0.2).toFixed(2)}) saturate(${(1.36 + godGundamBurningHeat * 1.22).toFixed(2)}) sepia(${(coreLanderBurningBlend * (0.68 + coreLanderBurningRage * 0.24)).toFixed(2)}) hue-rotate(${(352 - coreLanderBurningRage * 18).toFixed(1)}deg)`
+      ? getGodGundamBurningSpriteFilter(coreLanderBurningBlend, coreLanderBurningRage)
       : normalSpriteFilter,
     alpha,
     rotation,
@@ -6635,6 +6715,13 @@ function getMasteryPaintColor(shipKey: string, fallbackColor: string) {
 function getShipFrameSpriteFilter(shipKey: string) {
   if (shipKey === 'godGundam') return 'brightness(1.18) contrast(1.34) saturate(2.45) sepia(0.46) hue-rotate(350deg)'
   return 'brightness(1.28) contrast(1.42) saturate(2.25)'
+}
+
+function getGodGundamBurningSpriteFilter(blend: number, rage: number) {
+  const blendStep = Math.round(clamp(blend, 0, 1) * 8) / 8
+  const rageStep = Math.round(clamp(rage, 0, 1) * 4) / 4
+  const heat = blendStep * (0.35 + rageStep * 0.65)
+  return `brightness(${(1.22 + heat * 0.44).toFixed(2)}) contrast(${(1.16 + heat * 0.2).toFixed(2)}) saturate(${(1.36 + heat * 1.22).toFixed(2)}) sepia(${(blendStep * (0.68 + rageStep * 0.24)).toFixed(2)}) hue-rotate(${(352 - rageStep * 18).toFixed(1)}deg)`
 }
 
 function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color: string, shipKey: string, engineBoost = 0) {
