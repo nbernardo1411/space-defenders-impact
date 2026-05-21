@@ -6,7 +6,7 @@ import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAI
 import { submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
-import { getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isGradiusRaidEndlessUnlocked, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
+import { getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -67,6 +67,7 @@ type Player = Vec & {
   mesiahRocketCooldown: number
   mesiahDrones: MesiahDroneUnit[]
   mesiahScoutDrones: MesiahScoutUnit[]
+  burningBlend: number
 }
 
 type Shot = Vec & {
@@ -74,7 +75,7 @@ type Shot = Vec & {
   vx: number
   vy: number
   damage: number
-  kind: WeaponKey | 'pulse' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud' | 'squidBubble' | 'squidInk' | 'squidSpine' | 'snakeFang' | 'venomSpit'
+  kind: WeaponKey | 'pulse' | 'coreBlast' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud' | 'squidBubble' | 'squidInk' | 'squidSpine' | 'snakeFang' | 'venomSpit'
   radius: number
   pierce?: number
   turn?: number
@@ -86,6 +87,7 @@ type Shot = Vec & {
   spin?: number
   hp?: number
   splitLevel?: number
+  burning?: boolean
 }
 
 type Enemy = Vec & {
@@ -363,6 +365,7 @@ const SHIP_OPTIONS: ShipOption[] = [
   { key: 'xwing', name: 'Crosswing Nova', role: 'Four-cannon S-foil ace', speed: 1.14, hp: 5, fireRate: 1.18 },
   { key: 'spaceEt', name: 'Space Jet', role: 'Comet-tail microfighter', speed: 1.24, hp: 3, fireRate: 1.28 },
   { key: 'mesiah', name: 'Mesiah', role: 'Post-clear command battleship', speed: 1.08, hp: 7, fireRate: 1.16 },
+  { key: 'coreLander', name: 'Core Lander', role: 'AOE comet striker. Burning awakens at low HP.', speed: 0.94, hp: 6, fireRate: 1 },
 ]
 
 export type BriefingBossKind = Extract<BossKind, 'squid' | 'snake' | 'final'>
@@ -419,6 +422,9 @@ const EMPTY_WEAPON_TIMERS: Record<WeaponKey, number> = {
 
 function getShipSpriteSize(shipKey: string, context: 'player' | 'option' | 'picker') {
   if (shipKey === 'mesiah') return context === 'player' ? 128 : context === 'option' ? 38 : 112
+  if (shipKey === 'mesiahRaptorBlack' || shipKey === 'mesiahRaptorWhite') return context === 'player' ? 74 : context === 'option' ? 36 : 80
+  if (shipKey === 'coreLanderBurning') return context === 'player' ? 116 : context === 'option' ? 46 : 112
+  if (shipKey === 'coreLander') return context === 'player' ? 110 : context === 'option' ? 44 : 108
   if (shipKey === 'dreadnought') return context === 'player' ? 88 : context === 'option' ? 40 : 88
   if (shipKey === 'spaceEt') return context === 'player' ? 84 : context === 'option' ? 38 : 84
   if (shipKey === 'xwing') return context === 'player' ? 78 : context === 'option' ? 36 : 82
@@ -442,6 +448,10 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
 }
 
 const WEAPON_KEYS: WeaponKey[] = ['spread', 'laser', 'scatter', 'rocket', 'homing']
+const CORE_LANDER_FIRE_INTERVAL_SECONDS = 0.5
+const CORE_LANDER_BURNING_FIRE_INTERVAL_SECONDS = 0.32
+const CORE_LANDER_BURNING_DAMAGE_BONUS = 7
+const CORE_LANDER_AOE_RADIUS = 12.5
 const FORCE_FIELD_ARMOR = 5
 const PLAYER_MAX_RANK = 20
 const PLAYER_BASE_ATTACK_PER_LEVEL = 0.65
@@ -1262,7 +1272,7 @@ function warmRaidCanvasFilterVariants() {
     const sprite = getShipCanvasSprite(ship.key)
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
-  for (const spriteKey of ['mesiahBlack', 'mesiahWhite']) {
+  for (const spriteKey of ['mesiahBlack', 'mesiahWhite', 'mesiahRaptorBlack', 'mesiahRaptorWhite', 'coreLanderBurning']) {
     const sprite = getShipCanvasSprite(spriteKey)
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
@@ -1361,6 +1371,9 @@ function warmRaidCanvasAssets() {
   for (const ship of SHIP_OPTIONS) entries.push(getShipCanvasSprite(ship.key))
   entries.push(getShipCanvasSprite('mesiahBlack'))
   entries.push(getShipCanvasSprite('mesiahWhite'))
+  entries.push(getShipCanvasSprite('mesiahRaptorBlack'))
+  entries.push(getShipCanvasSprite('mesiahRaptorWhite'))
+  entries.push(getShipCanvasSprite('coreLanderBurning'))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) entries.push(getNormalAlienCanvasSprite(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) entries.push(getEliteAlienCanvasSprite(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) entries.push(getRaidOtherCanvasSprite(key))
@@ -1375,6 +1388,9 @@ function getRaidPersistentImageUrls() {
   for (const ship of SHIP_OPTIONS) urls.add(getRaidShipSpriteUrl(ship.key))
   urls.add(getRaidShipSpriteUrl('mesiahBlack'))
   urls.add(getRaidShipSpriteUrl('mesiahWhite'))
+  urls.add(getRaidShipSpriteUrl('mesiahRaptorBlack'))
+  urls.add(getRaidShipSpriteUrl('mesiahRaptorWhite'))
+  urls.add(getRaidShipSpriteUrl('coreLanderBurning'))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) urls.add(getRaidAlienSpriteUrl(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) urls.add(getRaidEliteSpriteUrl(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) urls.add(getPublicAssetUrl(RAID_OTHER_ASSET_PATHS[key]))
@@ -1745,6 +1761,7 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     mesiahRocketCooldown: 0,
     mesiahDrones: createMesiahDrones(),
     mesiahScoutDrones: createMesiahScoutDrones(),
+    burningBlend: 0,
   }
 }
 
@@ -1833,6 +1850,7 @@ function clonePlayer(player: Player): Player {
     mesiahRocketCooldown: player.mesiahRocketCooldown ?? 0,
     mesiahDrones: normalizeMesiahDrones(player).map((drone) => ({ ...drone })),
     mesiahScoutDrones: normalizeMesiahScoutDrones(player).map((scout) => ({ ...scout })),
+    burningBlend: player.burningBlend ?? 0,
   }
 }
 
@@ -1851,6 +1869,7 @@ function getMesiahVisualShipKeyFromProgress(progress: ReturnType<typeof loadProg
 }
 
 function getRaidPlayerVisualShipKey(player: Player, progress: ReturnType<typeof loadProgress>) {
+  if (player.ship.key === 'coreLander' && (player.burningBlend ?? 0) >= 0.98) return 'coreLanderBurning'
   return player.ship.key === 'mesiah' ? getMesiahVisualShipKeyFromProgress(progress) : player.ship.key
 }
 
@@ -1912,6 +1931,7 @@ function compactPlayer(player: Player): Player {
     mesiahDroneCooldown: roundNetworkNumber(player.mesiahDroneCooldown ?? 0),
     mesiahDroneFireCooldown: roundNetworkNumber(player.mesiahDroneFireCooldown ?? 0),
     mesiahRocketCooldown: roundNetworkNumber(player.mesiahRocketCooldown ?? 0),
+    burningBlend: roundNetworkNumber(player.burningBlend ?? 0),
     mesiahDrones: normalizeMesiahDrones(player).map((drone) => ({
       ...drone,
       x: roundNetworkNumber(drone.x),
@@ -2317,7 +2337,12 @@ function getFinalBossBeamRadius(chargePattern: Enemy['chargePattern']) {
 }
 
 function getPlayerBaseAttack(player: Player) {
-  return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL
+  const burningBonus = isCoreLanderBurning(player) ? CORE_LANDER_BURNING_DAMAGE_BONUS : 0
+  return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL + burningBonus
+}
+
+function isCoreLanderBurning(player: Player) {
+  return player.ship.key === 'coreLander' && player.hp > 0 && player.hp <= 3
 }
 
 function levelUpPlayer(player: Player) {
@@ -2390,6 +2415,9 @@ function updatePlayerTimers(player: Player, dt: number, enemies: Enemy[], isSmal
   })
   player.mesiahDroneFireCooldown = Math.max(0, player.mesiahDroneFireCooldown - dt)
   player.mesiahRocketCooldown = Math.max(0, player.mesiahRocketCooldown - dt)
+  const burningTarget = isCoreLanderBurning(player) ? 1 : 0
+  const burningStep = Math.min(1, dt * 4.2)
+  player.burningBlend = clamp((player.burningBlend ?? 0) + (burningTarget - (player.burningBlend ?? 0)) * burningStep, 0, 1)
   if (player.ship.key === 'mesiah' && player.hp > 0) {
     player.mesiahDroneTimer += dt
     player.mesiahDroneCooldown = 0
@@ -5664,6 +5692,15 @@ function updateMesiahScoutDrones(player: Player, enemies: Enemy[], dt: number, i
   }
 }
 
+function drawSupportEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, rotation = 0, alpha = 0.82) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(rotation)
+  ctx.globalAlpha *= alpha
+  drawPlayerEngine(ctx, 0, size * 0.1, size * 0.78, time, 0.55)
+  ctx.restore()
+}
+
 function drawRaidOptions(
   ctx: CanvasRenderingContext2D,
   player: Player,
@@ -5689,6 +5726,7 @@ function drawRaidOptions(
     for (const side of [-1, 1]) {
       const x = toX(clamp(player.x + offset * side, 4, 96))
       const y = toY(player.y + yOffset) + Math.sin(time / 900 + (side > 0 ? 0.18 : 0)) * 2.5
+      drawSupportEngineTrail(ctx, x, y, drawSize, time, 0, 0.9)
       drawCanvasSprite(ctx, sprite, x, y, drawSize, filter, 1, 0, 1, color)
     }
   }
@@ -5716,7 +5754,7 @@ function drawRaidOptions(
   }
 
   if (isMesiah) {
-    const droneShipKey = isWhiteMesiah ? 'spaceEt' : 'rocket'
+    const droneShipKey = isWhiteMesiah ? 'mesiahRaptorWhite' : 'mesiahRaptorBlack'
     const sprite = getShipCanvasSprite(droneShipKey)
     const drawSize = Math.min(getShipSpriteSize(droneShipKey, 'option') * (viewportWidth < 860 ? 1.14 : 1.28), viewportWidth < 860 ? 35 : 54)
     for (const drone of normalizeMesiahDrones(player)) {
@@ -5728,20 +5766,22 @@ function drawRaidOptions(
       const filter = idle
         ? 'brightness(0.86) contrast(1.08) saturate(0.92)'
         : 'brightness(1.08) contrast(1.18) saturate(1.35)'
+      drawSupportEngineTrail(ctx, x, y, drawSize, time, idle ? 0 : drone.rotation, idle ? 0.7 : 0.92)
       drawCanvasSprite(ctx, sprite, x, y, drawSize, filter, alpha, idle ? 0 : drone.rotation, scale, color)
     }
   }
 
   if (supportStacks > 0) {
     if (player.ship.key === 'mesiah') {
-      const scoutShipKey = isWhiteMesiah ? 'spaceEt' : 'rocket'
+      const scoutShipKey = isWhiteMesiah ? 'mesiahRaptorWhite' : 'mesiahRaptorBlack'
       const scoutSprite = getShipCanvasSprite(scoutShipKey)
-      const scoutSizeKey = isWhiteMesiah ? 'spaceEt' : 'rocket'
+      const scoutSizeKey = scoutShipKey
       const scoutSize = Math.min(getShipSpriteSize(scoutSizeKey, 'option') * (viewportWidth < 860 ? 1.14 : 1.28), viewportWidth < 860 ? 35 : 54)
       for (const scout of normalizeMesiahScoutDrones(player)) {
         if (!scout.active || scout.stack >= supportStacks) continue
         const x = toX(scout.x)
         const y = toY(scout.y)
+        drawSupportEngineTrail(ctx, x, y, scoutSize, time, scout.rotation, 0.9)
         drawCanvasSprite(ctx, scoutSprite, x, y, scoutSize, 'brightness(1.14) contrast(1.16) saturate(1.34)', 1, scout.rotation, 1, color)
       }
     } else {
@@ -5793,6 +5833,54 @@ function drawPlayerEngine(ctx: CanvasRenderingContext2D, x: number, y: number, s
   ctx.bezierCurveTo(x + flameWidth * 0.05, top + flameHeight * 0.52, x + flameWidth * 0.18, top + flameHeight * 0.22, x + flameWidth * 0.2, top + size * 0.01)
   ctx.closePath()
   ctx.fill()
+  ctx.restore()
+}
+
+function drawCoreLanderBurningHalo(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, alpha = 1) {
+  const pulse = 0.97 + Math.sin(time / 240) * 0.035
+  const radius = size * 0.72 * pulse
+  const ringY = y + size * 0.02
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.translate(x, ringY)
+  ctx.rotate(Math.sin(time / 1500) * 0.035)
+  ctx.globalAlpha = 0.52 * alpha
+  ctx.lineCap = 'round'
+
+  const glow = ctx.createRadialGradient(0, 0, radius * 0.24, 0, 0, radius * 1.28)
+  glow.addColorStop(0, 'rgba(254,240,138,0)')
+  glow.addColorStop(0.62, 'rgba(250,204,21,0.09)')
+  glow.addColorStop(1, 'rgba(249,115,22,0)')
+  ctx.fillStyle = glow
+  ctx.beginPath()
+  ctx.arc(0, 0, radius * 1.28, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.lineWidth = Math.max(3.2, size * 0.046)
+  ctx.strokeStyle = 'rgba(239,68,68,0.24)'
+  ctx.beginPath()
+  ctx.arc(0, 0, radius, 0, Math.PI * 2)
+  ctx.stroke()
+
+  ctx.lineWidth = Math.max(2.6, size * 0.035)
+  ctx.strokeStyle = 'rgba(250,204,21,0.42)'
+  ctx.beginPath()
+  ctx.arc(0, 0, radius * 0.94, 0, Math.PI * 2)
+  ctx.stroke()
+
+  ctx.lineWidth = Math.max(1.2, size * 0.012)
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+  ctx.beginPath()
+  ctx.arc(0, 0, radius * 0.74, 0, Math.PI * 2)
+  ctx.stroke()
+
+  ctx.globalAlpha = 0.38
+  ctx.lineWidth = Math.max(0.9, size * 0.009)
+  ctx.strokeStyle = 'rgba(255,255,255,0.26)'
+  ctx.beginPath()
+  ctx.arc(0, 0, radius * 1.02, Math.PI * 1.08, Math.PI * 1.9)
+  ctx.stroke()
   ctx.restore()
 }
 
@@ -6074,17 +6162,39 @@ function drawRaidPlayer(
   const x = toX(player.x)
   const y = toY(player.y)
   const baseSize = viewportWidth < 860 ? 62 : viewportWidth > 1100 ? 86 : 76
-  const size = player.ship.key === 'mesiah' ? baseSize * 1.62 : baseSize
+  const size = player.ship.key === 'mesiah' ? baseSize * 1.62 : player.ship.key === 'coreLander' ? baseSize * 1.38 : baseSize
   const isDown = phase === 'gameover' || player.hp <= 0
   const rotation = isDown ? 28 * DEG : 0
   const scale = isDown ? 0.88 : 1
   const alpha = isDown ? 0.3 : 1
   const masteryPaintColor = cosmetics.frame ? getMasteryPaintColor(player.ship.key, color) : color
   const engineBoost = clamp(player.engineBoost ?? 0, 0, 1)
+  const coreLanderBurning = isCoreLanderBurning(player)
+  const coreLanderBurningBlend = player.ship.key === 'coreLander'
+    ? clamp(player.burningBlend ?? (coreLanderBurning ? 1 : 0), 0, 1)
+    : 0
+  const engineSize = player.ship.key === 'coreLander'
+    ? size * (0.74 + (0.62 - 0.74) * coreLanderBurningBlend)
+    : size
+  const engineY = player.ship.key === 'coreLander'
+    ? y + size * (-0.085 + (-0.02 - -0.085) * coreLanderBurningBlend)
+    : y
 
-  if (!isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, y, size, time, color, player.ship.key, engineBoost)
-  if (!isDown) drawPlayerEngine(ctx, x, y, size, time, engineBoost)
+  if (!isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, engineY, engineSize, time, color, player.ship.key, engineBoost)
+  if (!isDown) drawPlayerEngine(ctx, x, engineY, engineSize, time, engineBoost)
   if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, size, time, player.ship.key, masteryPaintColor)
+  if (!isDown && coreLanderBurningBlend > 0.04) {
+    const pulse = 0.88 + Math.sin(time / 150) * 0.12
+    drawCoreLanderBurningHalo(ctx, x, y, size, time, coreLanderBurningBlend)
+    ctx.save()
+    ctx.globalAlpha *= coreLanderBurningBlend
+    drawRadialEllipse(ctx, x, y, size * 0.54 * pulse, size * 0.64 * pulse, [
+      [0, 'rgba(254,240,138,0.22)'],
+      [0.48, 'rgba(251,191,36,0.12)'],
+      [1, 'rgba(251,146,60,0)'],
+    ])
+    ctx.restore()
+  }
 
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, size, time, clamp(player.shield / 8, 0, 1))
   else if (player.invuln > 0) drawInvulnerabilityShimmer(ctx, x, y, size, time)
@@ -6097,22 +6207,58 @@ function drawRaidPlayer(
     else drawPlasmaForceField(ctx, x, y, size, time, forceCharge)
   }
 
+  const normalSpriteFilter = cosmetics.frame
+    ? 'brightness(1.28) contrast(1.42) saturate(2.25)'
+    : 'brightness(1.12) contrast(1.14) saturate(1.26)'
+  const burningSpriteFilter = cosmetics.frame
+    ? 'brightness(1.34) contrast(1.36) saturate(1.68)'
+    : 'brightness(1.2) contrast(1.18) saturate(1.36)'
   const sprite = getShipCanvasSprite(visualShipKey)
-  const spriteGlow = player.forceField > 0
+  const spriteGlow = coreLanderBurning
+    ? 'rgba(251,191,36,0.28)'
+    : player.forceField > 0
     ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
     : player.shield > 0 ? 'rgba(252,211,77,0.16)' : player.invuln > 0 ? 'rgba(226,232,240,0.1)' : null
   if (spriteGlow) drawSpriteGlow(ctx, x, y, size, spriteGlow, 0.68)
   else if (!isDown) drawSpriteGlow(ctx, x, y, size, hexToRgba(color, 0.09), 0.55)
-  const spriteFilter = cosmetics.frame
-    ? 'brightness(1.28) contrast(1.42) saturate(2.25)'
-    : 'brightness(1.12) contrast(1.14) saturate(1.26)'
+  if (player.ship.key === 'coreLander' && coreLanderBurningBlend > 0.01) {
+    const baseSprite = getShipCanvasSprite('coreLander')
+    const burningSprite = getShipCanvasSprite('coreLanderBurning')
+    if (coreLanderBurningBlend < 0.99) {
+      drawCanvasSprite(
+        ctx,
+        baseSprite,
+        x,
+        y,
+        size,
+        normalSpriteFilter,
+        alpha * (1 - coreLanderBurningBlend),
+        rotation,
+        scale,
+        masteryPaintColor,
+      )
+    }
+    drawCanvasSprite(
+      ctx,
+      burningSprite,
+      x,
+      y,
+      size * (1 + 0.06 * coreLanderBurningBlend),
+      burningSpriteFilter,
+      alpha * coreLanderBurningBlend,
+      rotation,
+      scale,
+      masteryPaintColor,
+    )
+    return
+  }
   drawCanvasSprite(
     ctx,
     sprite,
     x,
     y,
     size,
-    spriteFilter,
+    normalSpriteFilter,
     alpha,
     rotation,
     scale,
@@ -6201,6 +6347,15 @@ const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
     accent: 'rgba(255,255,255,0.86)',
     paint: '#e2e8f0',
     trailOffsets: [-0.2, 0, 0.2],
+    auraShape: 'diamond',
+  },
+  coreLander: {
+    core: 'rgba(251,146,60,0.86)',
+    edge: 'rgba(239,68,68,0.66)',
+    soft: 'rgba(251,146,60,0.18)',
+    accent: 'rgba(255,237,213,0.9)',
+    paint: '#fb923c',
+    trailOffsets: [-0.12, 0.12],
     auraShape: 'diamond',
   },
 }
@@ -8721,6 +8876,123 @@ export function GradiusRaid({
       ctx.stroke()
       ctx.restore()
     }
+    const drawCoreBlast = (shot: Shot) => {
+      const x = toX(shot.x)
+      const y = toY(shot.y)
+      const mag = Math.hypot(shot.vx, shot.vy) || 1
+      const ux = shot.vx / mag
+      const uy = shot.vy / mag
+      const nx = -uy
+      const ny = ux
+      const burning = shot.burning === true
+      const radius = Math.max(7.2, shot.radius * visualScale * (burning ? 3.8 : 3.35))
+      const length = radius * (burning ? 6.2 : 5.35)
+      const pulse = 0.95 + Math.sin(time / 105 + shot.id) * 0.05
+      const flicker = Math.sin(time / 58 + shot.id * 1.7) * radius * 0.08
+      const headX = x + ux * radius * 0.82
+      const headY = y + uy * radius * 0.82
+      const tailX = x - ux * (length + flicker)
+      const tailY = y - uy * (length + flicker)
+
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      const outerWake = ctx.createLinearGradient(headX, headY, tailX, tailY)
+      outerWake.addColorStop(0, 'rgba(255,255,255,0.94)')
+      outerWake.addColorStop(0.18, burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.82)')
+      outerWake.addColorStop(0.42, burning ? 'rgba(103,232,249,0.52)' : 'rgba(103,232,249,0.58)')
+      outerWake.addColorStop(0.72, burning ? 'rgba(251,191,36,0.24)' : 'rgba(239,35,60,0.24)')
+      outerWake.addColorStop(1, 'rgba(239,35,60,0)')
+      ctx.strokeStyle = outerWake
+      ctx.lineWidth = radius * (burning ? 0.84 : 0.72) * pulse
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(headX, headY)
+      ctx.bezierCurveTo(
+        x + nx * radius * 0.12,
+        y + ny * radius * 0.12,
+        tailX + nx * radius * 0.06,
+        tailY + ny * radius * 0.06,
+        tailX,
+        tailY,
+      )
+      ctx.stroke()
+
+      for (let wisp = -1; wisp <= 1; wisp += 1) {
+        const sway = Math.sin(time / 92 + shot.id + wisp * 1.8) * radius * 0.08
+        const side = wisp * radius * 0.18 + sway
+        const wispTailX = tailX + nx * side
+        const wispTailY = tailY + ny * side
+        const wispMidX = x + nx * (side * 0.34)
+        const wispMidY = y + ny * (side * 0.34)
+        const wake = ctx.createLinearGradient(headX, headY, wispTailX, wispTailY)
+        wake.addColorStop(0, 'rgba(255,255,255,0.72)')
+        wake.addColorStop(0.4, burning ? 'rgba(254,240,138,0.34)' : 'rgba(125,249,255,0.34)')
+        wake.addColorStop(1, 'rgba(239,35,60,0)')
+        ctx.strokeStyle = wake
+        ctx.lineWidth = Math.max(1.1, radius * (wisp === 0 ? 0.22 : 0.13))
+        ctx.beginPath()
+        ctx.moveTo(headX - ux * radius * 0.1, headY - uy * radius * 0.1)
+        ctx.quadraticCurveTo(wispMidX, wispMidY, wispTailX, wispTailY)
+        ctx.stroke()
+      }
+
+      const coreWake = ctx.createLinearGradient(headX, headY, tailX, tailY)
+      coreWake.addColorStop(0, 'rgba(255,255,255,0.95)')
+      coreWake.addColorStop(0.34, burning ? 'rgba(254,240,138,0.86)' : 'rgba(165,243,252,0.86)')
+      coreWake.addColorStop(0.68, 'rgba(34,211,238,0.24)')
+      coreWake.addColorStop(1, 'rgba(34,211,238,0)')
+      ctx.strokeStyle = coreWake
+      ctx.lineWidth = Math.max(1.3, radius * 0.26)
+      ctx.beginPath()
+      ctx.moveTo(headX, headY)
+      ctx.lineTo(tailX + ux * radius * 0.4, tailY + uy * radius * 0.4)
+      ctx.stroke()
+
+      const flame = ctx.createLinearGradient(headX, headY, tailX, tailY)
+      flame.addColorStop(0, 'rgba(255,255,255,0.96)')
+      flame.addColorStop(0.2, burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.82)')
+      flame.addColorStop(0.52, 'rgba(103,232,249,0.42)')
+      flame.addColorStop(1, 'rgba(239,35,60,0)')
+      ctx.fillStyle = flame
+      ctx.shadowBlur = 9
+      ctx.shadowColor = burning ? 'rgba(250,204,21,0.32)' : 'rgba(34,211,238,0.3)'
+      ctx.beginPath()
+      ctx.moveTo(headX + ux * radius * 0.82, headY + uy * radius * 0.82)
+      ctx.bezierCurveTo(
+        headX + nx * radius * 0.48 - ux * radius * 0.14,
+        headY + ny * radius * 0.48 - uy * radius * 0.14,
+        x + nx * radius * 0.2 - ux * radius * 0.74,
+        y + ny * radius * 0.2 - uy * radius * 0.74,
+        tailX,
+        tailY,
+      )
+      ctx.bezierCurveTo(
+        x - nx * radius * 0.2 - ux * radius * 0.74,
+        y - ny * radius * 0.2 - uy * radius * 0.74,
+        headX - nx * radius * 0.48 - ux * radius * 0.14,
+        headY - ny * radius * 0.48 - uy * radius * 0.14,
+        headX + ux * radius * 0.82,
+        headY + uy * radius * 0.82,
+      )
+      ctx.closePath()
+      ctx.fill()
+
+      const glow = ctx.createRadialGradient(headX, headY, 1, headX, headY, radius * 1.65)
+      glow.addColorStop(0, 'rgba(255,255,255,0.98)')
+      glow.addColorStop(0.28, burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.82)')
+      glow.addColorStop(0.64, 'rgba(34,211,238,0.32)')
+      glow.addColorStop(1, 'rgba(34,211,238,0)')
+      ctx.fillStyle = glow
+      ctx.beginPath()
+      ctx.arc(headX, headY, radius * 1.65 * pulse, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.fillStyle = burning ? 'rgba(255,255,255,0.98)' : 'rgba(255,250,245,0.94)'
+      ctx.beginPath()
+      ctx.arc(headX, headY, radius * 0.42, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
     const drawPoisonCloud = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
@@ -8999,13 +9271,17 @@ export function GradiusRaid({
 
     const drawPlayerShot = (shot: Shot) => {
       if (!gfxProfile.drawAdvancedShotFx) {
-        if (shot.kind === 'laser' || shot.kind === 'rocket' || shot.kind === 'needle' || shot.kind === 'homing') drawTrail(shot, shot.kind === 'rocket' ? 'rgba(251,146,60,0.88)' : 'rgba(125,249,255,0.86)', 36, 3)
+        if (shot.kind === 'coreBlast') {
+          drawTrail(shot, shot.burning ? 'rgba(254,240,138,0.9)' : 'rgba(125,249,255,0.88)', 46, 4)
+          drawOrb(shot, shot.burning ? 'rgba(254,240,138,0.82)' : 'rgba(165,243,252,0.78)', 7)
+        } else if (shot.kind === 'laser' || shot.kind === 'rocket' || shot.kind === 'needle' || shot.kind === 'homing') drawTrail(shot, shot.kind === 'rocket' ? 'rgba(251,146,60,0.88)' : 'rgba(125,249,255,0.86)', 36, 3)
         else drawOrb(shot, 'rgba(34,197,94,0.86)', 6)
       }
       else if (shot.kind === 'laser') drawPlayerLaserBeam(shot)
       else if (shot.kind === 'spread') drawSpreadBolt(shot)
       else if (shot.kind === 'scatter') drawScatterShard(shot)
       else if (shot.kind === 'rocket') drawRocketWarhead(shot)
+      else if (shot.kind === 'coreBlast') drawCoreBlast(shot)
       else if (shot.kind === 'homing') drawMissile(shot)
       else if (shot.kind === 'needle') drawTrail(shot, 'rgba(125,249,255,0.9)', 42, 3.2)
       else drawPulseBolt(shot)
@@ -9507,6 +9783,7 @@ export function GradiusRaid({
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) return
     if (ship.key === 'mesiah' && !hasProgressionUnlockOverride() && unlockedStageRef.current < MAX_RAID_STAGE && !hasClearedRaidInProgress(progressRef.current)) return
+    if (ship.key === 'coreLander' && !isCoreLanderUnlocked(progressRef.current)) return
     selectedShipRef.current = ship
     setSelectedShipKey(ship.key)
     playerRef.current = getInitialPlayer(ship)
@@ -9548,6 +9825,8 @@ export function GradiusRaid({
     let totalStacks = 0
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
     const shipKey = player.ship.key
+    const coreLanderBurning = isCoreLanderBurning(player)
+    const coreLanderFireInterval = coreLanderBurning ? CORE_LANDER_BURNING_FIRE_INTERVAL_SECONDS : CORE_LANDER_FIRE_INTERVAL_SECONDS
     const isWhiteMesiah = shipKey === 'mesiah' && getMesiahVisualShipKeyFromProgress(progressRef.current) === 'mesiahWhite'
     const canFireMain = player.fireCooldown <= 0
     const canFireMesiahDrones = shipKey === 'mesiah' && player.hp > 0 && player.mesiahDroneFireCooldown <= 0
@@ -9588,7 +9867,7 @@ export function GradiusRaid({
               y: scout.y,
               scale: 0.72,
               main: false,
-              attackShipKey: 'gatling',
+              attackShipKey: 'fast',
               supportWeaponMode: 'laserHoming',
               target,
               rotation: scout.rotation,
@@ -9782,6 +10061,50 @@ export function GradiusRaid({
           salvoOffsets.forEach((offset, index) => {
             const side = offset < 0 ? -1 : 1
             pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 5) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.6 })
+          })
+        }
+      }
+
+      else if (attackShipKey === 'coreLander') {
+        pushShot({
+          x: emitter.x,
+          y: emitter.y - 4.8,
+          vx: 0,
+          vy: -82,
+          damage: Math.ceil((baseDamage + 9) * emitter.scale),
+          kind: 'coreBlast',
+          radius: coreLanderBurning ? 3.05 : 2.8,
+          burning: coreLanderBurning,
+        })
+        if (activeWeapons.spread) {
+          const fan = stacks.spread >= 2 ? [-30, -16, 16, 30] : [-22, 22]
+          fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 3.2, vx, vy: -88, damage, kind: 'spread', radius: 1.28 }))
+        }
+        if (activeWeapons.laser) {
+          const side = stacks.laser >= 2 ? 1.8 : 0
+          pushShot({ x: emitter.x - side, y: emitter.y - 5.4, vx: 0, vy: -134, damage: Math.ceil((baseDamage + 3 + stacks.laser) * emitter.scale), kind: 'laser', radius: 1.9, pierce: 1 + stacks.laser })
+          if (stacks.laser >= 3) {
+            pushShot({ x: emitter.x + side, y: emitter.y - 5.4, vx: 0, vy: -134, damage: Math.ceil((baseDamage + 3) * emitter.scale), kind: 'laser', radius: 1.7, pierce: 2 })
+          }
+        }
+        if (activeWeapons.scatter) {
+          const count = Math.min(8, 2 + stacks.scatter * 2)
+          for (let i = 0; i < count; i += 1) {
+            const angle = -Math.PI / 2 + (i - (count - 1) / 2) * 0.16
+            pushShot({ x: emitter.x, y: emitter.y - 2.2, vx: Math.cos(angle) * 84, vy: Math.sin(angle) * 84, damage, kind: 'scatter', radius: 1.18 })
+          }
+        }
+        if (activeWeapons.rocket) {
+          const offsets = stacks.rocket >= 2 ? [-5.6, 5.6] : [0]
+          offsets.forEach((offset) => {
+            pushShot({ x: emitter.x + offset, y: emitter.y - 1.6, vx: offset * 1.35, vy: -76, damage: Math.ceil((baseDamage + 5 + stacks.rocket) * emitter.scale), kind: 'rocket', radius: 2.18 })
+          })
+        }
+        if ((emitter.main || emitter.supportWeaponMode === 'laserHoming') && activeWeapons.homing) {
+          const salvoOffsets = emitter.supportWeaponMode === 'laserHoming' ? [-3.4, 3.4] : [-5.2, 5.2, -7, 7]
+          salvoOffsets.forEach((offset, index) => {
+            const side = offset < 0 ? -1 : 1
+            pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -2 : 0.6), vx: side * (26 + index * 4), vy: -48 - index * 4, damage: Math.ceil((baseDamage + 4) * emitter.scale), kind: 'homing', radius: 2.05, turn: 5.4 })
           })
         }
       }
@@ -10083,15 +10406,18 @@ export function GradiusRaid({
       shipKey === 'fast' ? 0.072 :       // Red Wraith — very rapid
         shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
           shipKey === 'mesiah' ? 0.082 :
+            shipKey === 'coreLander' ? coreLanderFireInterval :
           shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
             shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
               shipKey === 'spaceEt' ? 0.001 :    // Space Jet — fastest
                 shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
                   0.10                              // Black Comet — default
 
-    const tunedBaseInterval = shipKey === 'spaceEt' ? 0.002 : shipKey === 'xwing' ? 0.34 : baseInterval
+    const tunedBaseInterval = shipKey === 'coreLander' ? coreLanderFireInterval : shipKey === 'spaceEt' ? 0.002 : shipKey === 'xwing' ? 0.34 : baseInterval
     const minFireCooldown = shipKey === 'spaceEt' ? 0.032 : 0.042
-    player.fireCooldown = Math.max(minFireCooldown, (tunedBaseInterval - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
+    player.fireCooldown = shipKey === 'coreLander'
+      ? coreLanderFireInterval
+      : Math.max(minFireCooldown, (tunedBaseInterval - Math.min(0.045, totalStacks * 0.006)) / player.ship.fireRate)
     playGameSound(stacks.laser > 0 || shipKey === 'laser' || shipKey === 'xwing' ? 'laser' : 'shoot')
   }, [pushShot])
   // Keep the stable ref current so predictGuestPlayer can call firePlayer without a forward-reference issue
@@ -11602,6 +11928,44 @@ export function GradiusRaid({
       }
     }
 
+    const detonateCoreLanderBlast = (shot: Shot, sourceEnemyId?: number) => {
+      const blastRadius = CORE_LANDER_AOE_RADIUS * (shot.burning ? 1.12 : 1)
+      const splashDamage = Math.max(1, Math.ceil(shot.damage * 0.58))
+      spawnSparks(shot.x, shot.y, '#fb923c', 24, 7)
+      addRipple(shot.x, shot.y, '#fb923c', 13)
+      playGameSound('explosion')
+
+      for (const enemy of enemiesRef.current) {
+        if (enemy.hp <= 0 || enemy.id === sourceEnemyId) continue
+        const hitRange = blastRadius + enemy.radius
+        if (
+          Math.abs(shot.x - enemy.x) <= hitRange &&
+          Math.abs(shot.y - enemy.y) <= hitRange &&
+          distSq(shot, enemy) <= hitRange * hitRange
+        ) {
+          const shielded = (enemy.isBoss && (enemy.shieldTime > 0 || enemy.y < 15)) || (enemy.isMiniBoss && (enemy.shieldTime > 0 || enemy.y < 8))
+          if (shielded) continue
+          const damage = enemy.isBoss ? Math.max(1, Math.ceil(splashDamage * 0.45)) : splashDamage
+          enemy.hp = enemy.isBoss ? Math.max(1, enemy.hp - damage) : enemy.hp - damage
+          enemy.hitFlash = Math.max(enemy.hitFlash ?? 0, enemy.isBoss ? 0.18 : enemy.isMiniBoss ? 0.14 : 0.1)
+          spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fdba74' : '#fb923c', enemy.isBoss ? 12 : enemy.isMiniBoss ? 9 : 5, enemy.isBoss || enemy.isMiniBoss ? 6 : 4)
+          if (enemy.hp <= 0 && !enemy.isBoss) {
+            enemiesDestroyedRef.current += 1
+            const scoreValue = enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
+            player.score += scoreValue
+            if (remotePlayer) remotePlayer.score += scoreValue
+            spawnSparks(enemy.x, enemy.y, enemy.isMiniBoss ? '#c084fc' : '#fb7185', enemy.isMiniBoss ? 42 : 18, enemy.isMiniBoss ? 7 : 5)
+            addRipple(enemy.x, enemy.y, enemy.isMiniBoss ? '#a855f7' : '#f97316', enemy.isMiniBoss ? 14 : 9)
+            if (enemy.isMiniBoss) {
+              spawnPowerUp(enemy.x, enemy.y, Math.random() < 0.55)
+            } else {
+              spawnPowerUp(enemy.x, enemy.y)
+            }
+          }
+        }
+      }
+    }
+
     for (const bubble of expiredSquidBubbles) splitSquidBubble(bubble)
 
     for (const shot of shotsRef.current) {
@@ -11621,7 +11985,10 @@ export function GradiusRaid({
           const bubbleDamage = Math.max(1, Math.ceil(Math.min(shot.damage, bubbleHitCap) * bubbleArmor))
           bubble.hp = (bubble.hp ?? 1) - bubbleDamage
           spawnSparks(shot.x, shot.y, '#f0abfc', 5, 5)
-          if (shot.pierce && shot.pierce > 0) {
+          if (shot.kind === 'coreBlast') {
+            detonateCoreLanderBlast(shot)
+            shot.y = -999
+          } else if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
             shot.y = -999
@@ -11647,11 +12014,15 @@ export function GradiusRaid({
         ) {
           asteroid.hp -= shot.damage
           spawnSparks(shot.x, shot.y, '#fbbf24', asteroid.tier === 2 ? 5 : 3, asteroid.tier === 2 ? 5 : 3)
-          if (shot.kind === 'rocket') {
+          if (shot.kind === 'coreBlast') {
+            detonateCoreLanderBlast(shot)
+          } else if (shot.kind === 'rocket') {
             addRipple(shot.x, shot.y, '#fb923c', 8)
             playGameSound('explosion')
           }
-          if (shot.pierce && shot.pierce > 0) {
+          if (shot.kind === 'coreBlast') {
+            shot.y = -999
+          } else if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
             shot.y = -999
@@ -11673,7 +12044,10 @@ export function GradiusRaid({
         if (Math.abs(shot.x - wreck.x) <= hitX && Math.abs(shot.y - wreck.y) <= hitY) {
           wreck.hp -= shot.damage
           spawnSparks(shot.x, shot.y, '#94a3b8', 5, 5)
-          if (shot.pierce && shot.pierce > 0) {
+          if (shot.kind === 'coreBlast') {
+            detonateCoreLanderBlast(shot)
+            shot.y = -999
+          } else if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
             shot.y = -999
@@ -11711,7 +12085,10 @@ export function GradiusRaid({
           if (!bossShielded && (enemy.isBoss || enemy.isMiniBoss)) {
             addRipple(shot.x, shot.y, enemy.isBoss ? '#fca5a5' : '#c084fc', enemy.isBoss ? 7 : 5)
           }
-          if (shot.pierce && shot.pierce > 0) {
+          if (shot.kind === 'coreBlast' && !bossShielded) {
+            detonateCoreLanderBlast(shot, enemy.id)
+            shot.y = -999
+          } else if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
           } else {
             // rocket explosion
@@ -12169,6 +12546,7 @@ export function GradiusRaid({
       : 0
   const completedCampaign = hasProgressionUnlockOverride() || snapshot.unlockedStage >= MAX_RAID_STAGE || hasClearedRaidInProgress(progressRef.current)
   const mesiahUnlocked = completedCampaign
+  const coreLanderUnlocked = isCoreLanderUnlocked(progressRef.current)
   const mesiahVisualShipKey = getMesiahVisualShipKeyFromProgress(progressRef.current)
   const checkpointStage = getCheckpointStage()
   const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
@@ -12564,8 +12942,9 @@ export function GradiusRaid({
               {SHIP_OPTIONS.map((ship) => (
                 (() => {
                   const shipCopy = raidText.ships[ship.key as keyof typeof raidText.ships] ?? ship
-                  const locked = ship.key === 'mesiah' && !mesiahUnlocked
+                  const locked = (ship.key === 'mesiah' && !mesiahUnlocked) || (ship.key === 'coreLander' && !coreLanderUnlocked)
                   const shipSpriteKey = ship.key === 'mesiah' ? mesiahVisualShipKey : ship.key
+                  const lockedCopy = ship.key === 'coreLander' ? raidText.menu.coreLanderUnlock : raidText.menu.clearRaidToUnlock
                   return (
                     <button
                       key={ship.key}
@@ -12582,7 +12961,7 @@ export function GradiusRaid({
                     >
                       <RaidShipSprite shipKey={shipSpriteKey} size={getShipSpriteSize(ship.key, 'picker')} />
                       <span>{shipCopy.name}</span>
-                      <small>{locked ? raidText.menu.clearRaidToUnlock : shipCopy.role}</small>
+                      <small>{locked ? lockedCopy : shipCopy.role}</small>
                     </button>
                   )
                 })()

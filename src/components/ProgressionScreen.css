@@ -291,6 +291,18 @@
   --mastery-mark: rgba(255,255,255,0.92);
 }
 
+.progress-ship-preview__ship--coreLander {
+  --mastery-core: rgba(251,146,60,0.86);
+  --mastery-edge: rgba(239,68,68,0.64);
+  --mastery-soft: rgba(251,146,60,0.18);
+  --mastery-mark: rgba(255,237,213,0.9);
+}
+
+.progress-ship-preview__ship--coreLander img {
+  width: 86px;
+  height: 86px;
+}
+
 .progress-ship-preview__ship svg,
 .progress-ship-preview__ship img {
   position: relative;

@@ -115,6 +115,7 @@ export type ProgressState = {
   towerDefenseEndlessUnlocked: boolean
   gradiusRaidEndlessUnlocked: boolean
   mesiahShipColor: MesiahShipColor
+  gradiusEndlessTotalScore: number
   totalRuns: number
   totalScore: number
   totalPlaySeconds: number
@@ -224,6 +225,7 @@ export const CODEX_IDS: CodexId[] = [
 export const SHIP_MASTERY_LEVEL_XP = 1600
 export const SHIP_COSMETIC_SINGLE_RUN_SCORE = 500000
 export const SHIP_COSMETIC_TOTAL_SCORE = 5000000
+export const CORE_LANDER_UNLOCK_GRADIUS_ENDLESS_SCORE = 5000000
 
 const LEADERBOARD_MODES: LeaderboardMode[] = [
   'ship_defense_normal',
@@ -239,6 +241,7 @@ export function createEmptyProgress(): ProgressState {
     towerDefenseEndlessUnlocked: getStoredTowerDefenseEndlessUnlock(),
     gradiusRaidEndlessUnlocked: false,
     mesiahShipColor: 'black',
+    gradiusEndlessTotalScore: 0,
     totalRuns: 0,
     totalScore: 0,
     totalPlaySeconds: 0,
@@ -333,6 +336,9 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
 
   const isGradiusRun = result.mode === 'gradius_solo' || result.mode === 'gradius_endless' || result.mode === 'gradius_multiplayer'
   const isGradiusEndlessRun = result.mode === 'gradius_endless' || (isGradiusRun && result.raidMode === 'endless')
+  if (isGradiusEndlessRun) {
+    progress.gradiusEndlessTotalScore += Math.max(0, Math.floor(result.score))
+  }
 
   const unlockAchievement = (id: AchievementId, condition: boolean) => {
     if (!condition || progress.achievements[id]) return
@@ -458,6 +464,11 @@ export function isGradiusRaidEndlessUnlocked(progress: ProgressState) {
   )
 }
 
+export function isCoreLanderUnlocked(progress: ProgressState) {
+  if (hasProgressionUnlockOverride()) return true
+  return (progress.gradiusEndlessTotalScore ?? 0) >= CORE_LANDER_UNLOCK_GRADIUS_ENDLESS_SCORE
+}
+
 export function getStoredTowerDefenseEndlessUnlock() {
   if (typeof window === 'undefined') return false
   return window.localStorage.getItem(ENDLESS_UNLOCK_STORAGE_KEY) === 'true'
@@ -562,6 +573,10 @@ export function normalizeProgress(value: unknown): ProgressState {
     towerDefenseEndlessUnlocked: Boolean(data.towerDefenseEndlessUnlocked || getStoredTowerDefenseEndlessUnlock()),
     gradiusRaidEndlessUnlocked: Boolean(data.gradiusRaidEndlessUnlocked || data.achievements?.raid_clear || data.achievements?.fortress_fall || (data.bestStageByMode?.gradius_solo ?? 0) >= 15 || (data.bestStageByMode?.gradius_multiplayer ?? 0) >= 15),
     mesiahShipColor: data.mesiahShipColor === 'white' ? 'white' : 'black',
+    gradiusEndlessTotalScore: Math.max(
+      Math.floor(Number(data.bestScoreByMode?.gradius_endless) || 0),
+      Math.floor(Number(data.gradiusEndlessTotalScore) || 0),
+    ),
     totalRuns: Math.max(0, Math.floor(Number(data.totalRuns) || 0)),
     totalScore: Math.max(0, Math.floor(Number(data.totalScore) || 0)),
     totalPlaySeconds: Math.max(0, Math.floor(Number(data.totalPlaySeconds) || 0)),

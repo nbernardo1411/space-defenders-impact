@@ -4,6 +4,7 @@ import {
   getEquippedShipCosmetics,
   getMesiahShipColor,
   hasProgressionUnlockOverride,
+  isCoreLanderUnlocked,
   isShipCosmeticUnlocked,
   setMesiahShipColor,
   setShipCosmeticEquipped,
@@ -108,6 +109,12 @@ const SHIP_PREVIEW_VISUAL_STYLES: Record<string, ShipPreviewVisualStyle> = {
     edge: 'rgba(20,184,166,0.64)',
     soft: 'rgba(15,23,42,0.2)',
     accent: 'rgba(255,255,255,0.9)',
+  },
+  coreLander: {
+    core: 'rgba(251,146,60,0.86)',
+    edge: 'rgba(239,68,68,0.68)',
+    soft: 'rgba(251,146,60,0.18)',
+    accent: 'rgba(255,237,213,0.9)',
   },
 }
 type StageBossEntry = {
@@ -290,20 +297,23 @@ export function ProgressionScreen({
                   const mastery = progress.shipMastery[shipKey]
                   const level = mastery?.level ?? 1
                   const mesiahColor = getMesiahShipColor(progress)
+                  const lockedShip = shipKey === 'coreLander' && !isCoreLanderUnlocked(progress)
                   const previewSpriteKey = shipKey === 'mesiah' ? getMesiahPreviewSpriteKey(mesiahColor) : shipKey
                   const cosmetics = getMasteryCosmetics(mastery, text)
                   const equippedCosmetics = getEquippedShipCosmetics(progress, shipKey)
-                  const previewCosmetics = previewCosmeticShip === shipKey ? ALL_COSMETICS_PREVIEW : equippedCosmetics
+                  const previewCosmetics = lockedShip ? { trail: false, aura: false, frame: false } : previewCosmeticShip === shipKey ? ALL_COSMETICS_PREVIEW : equippedCosmetics
                   return (
                     <div className="progress-ship-mastery" key={shipKey}>
                       <button
                         className={previewCosmeticShip === shipKey ? 'progress-ship-preview progress-ship-preview--active' : 'progress-ship-preview'}
                         type="button"
                         aria-label={`${ship.name} ${text.masteryCosmetics}`}
-                        onClick={() => setPreviewCosmeticShip(previewCosmeticShip === shipKey ? null : shipKey)}
+                        onClick={() => {
+                          if (!lockedShip) setPreviewCosmeticShip(previewCosmeticShip === shipKey ? null : shipKey)
+                        }}
                       >
                         <div className={getPreviewClass(shipKey)}>
-                          <ShipCosmeticCanvasPreview shipKey={shipKey} spriteKey={previewSpriteKey} cosmetics={previewCosmetics} />
+                          <ShipCosmeticCanvasPreview shipKey={shipKey} spriteKey={previewSpriteKey} cosmetics={previewCosmetics} locked={lockedShip} />
                         </div>
                       </button>
                       <div className="progress-ship-info">
@@ -334,7 +344,7 @@ export function ProgressionScreen({
                             key={cosmetic.key}
                             type="button"
                             className={equippedCosmetics[cosmetic.key] ? 'progress-cosmetic progress-cosmetic--equipped' : cosmetic.unlocked ? 'progress-cosmetic progress-cosmetic--unlocked' : 'progress-cosmetic'}
-                            disabled={!cosmetic.unlocked}
+                            disabled={lockedShip || !cosmetic.unlocked}
                             onClick={() => onProgressChange(setShipCosmeticEquipped(shipKey, cosmetic.key, !equippedCosmetics[cosmetic.key]))}
                           >
                             <span>{cosmetic.label}</span>
@@ -599,7 +609,7 @@ function copyRecoveryCode(recoveryCode: string) {
   void navigator.clipboard?.writeText(recoveryCode)
 }
 
-function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics }: { shipKey: string; spriteKey?: string; cosmetics: Required<ShipCosmeticEquipState> }) {
+function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics, locked = false }: { shipKey: string; spriteKey?: string; cosmetics: Required<ShipCosmeticEquipState>; locked?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -627,14 +637,15 @@ function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics }: { shipKey:
       ctx.imageSmoothingQuality = 'high'
 
       const x = SHIP_PREVIEW_CANVAS_WIDTH / 2
-      const y = 40
+      const y = shipKey === 'coreLander' ? 43 : 40
+      const previewSize = shipKey === 'coreLander' ? 86 : SHIP_PREVIEW_SIZE
       const style = getShipPreviewVisualStyle(shipKey)
 
-      if (cosmetics.trail) drawPreviewMasteryTrail(ctx, x, y, SHIP_PREVIEW_SIZE, time, shipKey, style)
-      if (cosmetics.aura && image.complete) drawPreviewMasteryAura(ctx, image, x, y, SHIP_PREVIEW_SIZE, time, style)
-      drawPreviewShipSprite(ctx, image, x, y, SHIP_PREVIEW_SIZE, cosmetics.frame)
+      if (!locked && cosmetics.trail) drawPreviewMasteryTrail(ctx, x, y, previewSize, time, shipKey, style)
+      if (!locked && cosmetics.aura && image.complete) drawPreviewMasteryAura(ctx, image, x, y, previewSize, time, style)
+      drawPreviewShipSprite(ctx, image, x, y, previewSize, cosmetics.frame, locked)
 
-      if (!disposed && (cosmetics.trail || cosmetics.aura)) frameId = requestAnimationFrame(render)
+      if (!disposed && !locked && (cosmetics.trail || cosmetics.aura)) frameId = requestAnimationFrame(render)
     }
 
     image.onload = () => {
@@ -647,7 +658,7 @@ function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics }: { shipKey:
       disposed = true
       if (frameId) cancelAnimationFrame(frameId)
     }
-  }, [shipKey, spriteKey, cosmetics.trail, cosmetics.aura, cosmetics.frame])
+  }, [shipKey, spriteKey, cosmetics.trail, cosmetics.aura, cosmetics.frame, locked])
 
   return (
     <canvas
@@ -668,10 +679,10 @@ function getShipPreviewVisualStyle(shipKey: string) {
   return SHIP_PREVIEW_VISUAL_STYLES[shipKey] ?? SHIP_PREVIEW_VISUAL_STYLES.rocket
 }
 
-function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number, framed: boolean) {
+function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number, framed: boolean, locked = false) {
   if (!image.complete) return
   ctx.save()
-  ctx.filter = framed ? 'brightness(1.28) contrast(1.42) saturate(2.25)' : 'brightness(1.12) contrast(1.14) saturate(1.26)'
+  ctx.filter = locked ? 'brightness(0) contrast(1.18) drop-shadow(0 0 14px rgba(0,0,0,0.88))' : framed ? 'brightness(1.28) contrast(1.42) saturate(2.25)' : 'brightness(1.12) contrast(1.14) saturate(1.26)'
   ctx.drawImage(image, x - size / 2, y - size / 2, size, size)
   ctx.restore()
 }
@@ -679,9 +690,11 @@ function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageEl
 function drawPreviewMasteryTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string, style: ShipPreviewVisualStyle) {
   const pulse = 0.96 + Math.sin(time / 180) * 0.05
   const tailScale = shipKey === 'spaceEt' ? 1.18 : shipKey === 'dreadnought' ? 0.92 : 1
-  const top = y + size * 0.34
-  const length = size * 0.72 * tailScale * pulse
-  const width = size * (shipKey === 'dreadnought' ? 0.15 : 0.13)
+  const engineSize = shipKey === 'coreLander' ? size * 0.74 : size
+  const engineY = shipKey === 'coreLander' ? y - size * 0.085 : y
+  const top = engineY + engineSize * 0.34
+  const length = engineSize * 0.72 * tailScale * pulse
+  const width = engineSize * (shipKey === 'dreadnought' ? 0.15 : 0.13)
   const tip = top + length
 
   ctx.save()

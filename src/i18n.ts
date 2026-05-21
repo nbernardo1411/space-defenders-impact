@@ -597,6 +597,7 @@ export const RAID_TEXT = {
       bothPilotsMustFall: 'Both pilots must fall',
       stagesUnlocked: 'Stages 1-15 unlocked',
       clearRaidToUnlock: 'Clear Gradius Raid to unlock',
+      coreLanderUnlock: 'Earn 5,000,000 total Endless Flight points to unlock',
       endlessFlight: 'Endless Flight',
       endlessFlightUnlocked: 'Endless Flight unlocked',
 
@@ -650,6 +651,7 @@ export const RAID_TEXT = {
       xwing: { name: 'Crosswing Nova', role: 'Four-cannon S-foil ace' },
       spaceEt: { name: 'Space Jet', role: 'Comet-tail microfighter' },
       mesiah: { name: 'Mesiah', role: 'Post-clear command battleship' },
+      coreLander: { name: 'Core Lander', role: 'AOE comet striker. Burning awakens at low HP.' },
     },
   },
   zh: {
@@ -710,6 +712,7 @@ export const RAID_TEXT = {
       bothPilotsMustFall: '两名飞行员全部坠毁才失败',
       stagesUnlocked: '1-15 关已解锁',
       clearRaidToUnlock: '通关宇宙突击后解锁',
+      coreLanderUnlock: '累计获得 5,000,000 无尽飞行分数后解锁',
       endlessFlight: '无尽飞行',
       endlessFlightUnlocked: '无尽飞行已解锁',
 
@@ -763,6 +766,7 @@ export const RAID_TEXT = {
       xwing: { name: '十字翼新星', role: '四炮 S 翼王牌' },
       spaceEt: { name: '太空喷气机', role: '彗尾微型战机' },
       mesiah: { name: '弥赛亚', role: '通关后指挥战舰' },
+      coreLander: { name: '核心登陆者', role: '范围彗星打击机体，低 HP 进入燃烧形态' },
     },
   },
   ja: {
@@ -823,6 +827,7 @@ export const RAID_TEXT = {
       bothPilotsMustFall: '両パイロット撃墜で失敗',
       stagesUnlocked: 'ステージ 1-15 解放済み',
       clearRaidToUnlock: 'グラディウスレイドをクリアして解放',
+      coreLanderUnlock: 'エンドレス飛行で累計5,000,000ポイント獲得して解放',
       endlessFlight: 'エンドレス飛行',
       endlessFlightUnlocked: 'エンドレス飛行 解放済み',
 
@@ -876,6 +881,7 @@ export const RAID_TEXT = {
       xwing: { name: 'クロスウィングノヴァ', role: '4門Sフォイルエース' },
       spaceEt: { name: 'スペースジェット', role: '彗星尾のマイクロ戦闘機' },
       mesiah: { name: 'メサイア', role: 'クリア後の指揮戦艦' },
+      coreLander: { name: 'コアランダー', role: 'AOE彗星ストライカー。低HPでバーニング覚醒' },
     },
   },
   ko: {
@@ -936,6 +942,7 @@ export const RAID_TEXT = {
       bothPilotsMustFall: '두 파일럿 모두 격추되어야 실패',
       stagesUnlocked: '스테이지 1-15 해금됨',
       clearRaidToUnlock: '그라디우스 레이드를 클리어하면 해금',
+      coreLanderUnlock: '끝없는 비행 누적 5,000,000점을 얻으면 해금',
       endlessFlight: '끝없는 비행',
       endlessFlightUnlocked: '끝없는 비행 해금됨',
 
@@ -989,6 +996,7 @@ export const RAID_TEXT = {
       xwing: { name: '크로스윙 노바', role: '4문 S-포일 에이스' },
       spaceEt: { name: '스페이스 제트', role: '혜성 꼬리 마이크로 전투기' },
       mesiah: { name: '메시아', role: '클리어 후 지휘 전함' },
+      coreLander: { name: '코어 랜더', role: '광역 혜성 타격기. 낮은 HP에서 버닝 각성' },
     },
   },
 } as const
