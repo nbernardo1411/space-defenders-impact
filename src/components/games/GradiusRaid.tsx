@@ -175,6 +175,19 @@ type NukeStrike = {
   duration: number
 }
 
+type GodGundamBarrage = {
+  targetId: number
+  startX: number
+  startY: number
+  targetX: number
+  targetY: number
+  age: number
+  duration: number
+  hitTimer: number
+  hitIndex: number
+  seed: number
+}
+
 type AsteroidHazard = Vec & {
   id: number
   vx: number
@@ -285,6 +298,7 @@ type MultiplayerHostState = {
   nukeFlash: number
   nukeStrike: NukeStrike | null
   nukeBlastOrigin: Vec
+  godBarrage: GodGundamBarrage | null
   asteroids: AsteroidHazard[]
   asteroidWarning: number
   randomEvent: RaidRandomEvent | null
@@ -549,6 +563,9 @@ const NUKE_BOSS_DAMAGE_MIN_RATIO = 0.16
 const NUKE_BOSS_DAMAGE_MAX_RATIO = 0.38
 const NUKE_BOSS_DAMAGE_MIN_FLOOR = 550
 const NUKE_BOSS_DAMAGE_MAX_FLOOR = 2400
+const GOD_GUNDAM_BARRAGE_DURATION_SECONDS = 8
+const GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS = 0.32
+const GOD_GUNDAM_BARRAGE_FRAME_SECONDS = 0.42
 const MULTIPLAYER_BOSS_HP_MULTIPLIER = 2.5
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
@@ -588,7 +605,7 @@ let lastPickupVoiceMs = 0
 
 const DEG = Math.PI / 180
 const SIDE_VALUES = [-1, 1] as const
-const RAID_FX_CANVAS_CONTEXT_SETTINGS: CanvasRenderingContext2DSettings = { alpha: true, desynchronized: true }
+const RAID_FX_CANVAS_CONTEXT_SETTINGS: CanvasRenderingContext2DSettings = { alpha: false, desynchronized: true }
 
 type RaidGraphicsProfile = {
   dprCap: number
@@ -794,7 +811,30 @@ const RAID_FINAL_BOSS_CORE_OFFSET_X = -0.007
 const RAID_FINAL_BOSS_CORE_OFFSET_Y = -0.039
 const RAID_SQUID_BOSS_ASSET_PATH = 'assets/aliens/squid_boss.png'
 const RAID_COBRA_BOSS_ASSET_PATH = 'assets/aliens/cobra_boss.png'
+const RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH = 'assets/GundamEnemy/master-gundam.png'
+const RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS = {
+  punch: 'assets/G-gundam-attacks/punch.png',
+  kick: 'assets/G-gundam-attacks/kick.png',
+  uppercut1: 'assets/G-gundam-attacks/uppercut-1.png',
+  uppercut2: 'assets/G-gundam-attacks/uppercut-2.png',
+} as const
+type GodGundamBarragePose = keyof typeof RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
+const RAID_GOD_GUNDAM_BARRAGE_SEQUENCE: Array<{
+  pose: GodGundamBarragePose
+  side: -1 | 0 | 1
+  offsetY: number
+  impactY: number
+}> = [
+  { pose: 'punch', side: -1, offsetY: -6, impactY: -2 },
+  { pose: 'kick', side: 1, offsetY: 2, impactY: 0 },
+  { pose: 'uppercut1', side: 0, offsetY: 18, impactY: 8 },
+  { pose: 'uppercut2', side: 0, offsetY: 12, impactY: 4 },
+  { pose: 'punch', side: 1, offsetY: -9, impactY: -3 },
+  { pose: 'kick', side: -1, offsetY: 7, impactY: 2 },
+  { pose: 'uppercut1', side: -1, offsetY: 17, impactY: 7 },
+  { pose: 'uppercut2', side: 1, offsetY: 11, impactY: 4 },
+]
 const RAID_DEVIL_BOSS_ASSET_PATHS: Record<DevilBossPose, string> = {
   idle: 'assets/GundamEnemy/devil-idle-1.png',
   idle2: 'assets/GundamEnemy/devil-idle-2.png',
@@ -838,7 +878,7 @@ const RAID_FINAL_BOSS_STATIC_FILTERS = [
 const RAID_DEVIL_BOSS_BASE_FILTER = 'brightness(1.06) contrast(1.16) saturate(1.12)'
 const RAID_DEVIL_BOSS_ATTACK_FILTER = 'brightness(1.12) contrast(1.24) saturate(1.34)'
 const RAID_DEVIL_BOSS_RED_OVERLAY_FILTER = 'brightness(1.34) contrast(1.34) saturate(2.8) sepia(0.72) hue-rotate(315deg)'
-const RAID_DEVIL_SNAKE_HEAD_FILTER = 'brightness(1.24) contrast(1.2) saturate(1.34)'
+const RAID_DEVIL_MASTER_PROJECTILE_FILTER = 'brightness(1.1) contrast(1.18) saturate(1.18)'
 const RAID_DEVIL_BOSS_RED_FILTERS: Record<string, string> = {
   '0.5': 'brightness(1.20) contrast(1.31) saturate(1.82) sepia(0.29) hue-rotate(327.0deg)',
   '0.75': 'brightness(1.25) contrast(1.37) saturate(2.10) sepia(0.43) hue-rotate(318.5deg)',
@@ -855,10 +895,16 @@ const RAID_DEVIL_RETICLE_GLOW_STOPS: Array<[number, string]> = [
   [0.4, 'rgba(239,68,68,0.22)'],
   [1, 'rgba(127,29,29,0)'],
 ]
-const RAID_DEVIL_SNAKE_HEAD_GLOW_STOPS: Array<[number, string]> = [
-  [0, 'rgba(254,240,138,0.34)'],
-  [0.44, 'rgba(132,204,22,0.22)'],
-  [1, 'rgba(22,101,52,0)'],
+const RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS: Array<[number, string]> = [
+  [0, 'rgba(254,226,226,0.32)'],
+  [0.44, 'rgba(248,113,113,0.24)'],
+  [1, 'rgba(127,29,29,0)'],
+]
+const RAID_GOD_GUNDAM_BARRAGE_FILTER = 'brightness(1.08) contrast(1.14) saturate(1.14)'
+const RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.72)'],
+  [0.36, 'rgba(250,204,21,0.48)'],
+  [1, 'rgba(251,146,60,0)'],
 ]
 const RAID_PLAYER_LASER_HEAD_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.75)'],
@@ -1074,7 +1120,29 @@ function drawRadialEllipse(
   ctx.translate(x, y)
   ctx.scale(radiusX / radiusY, 1)
   const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusY)
-  stops.forEach(([offset, color]) => gradient.addColorStop(offset, color))
+  for (const [offset, color] of stops) gradient.addColorStop(offset, color)
+  ctx.fillStyle = gradient
+  ctx.beginPath()
+  ctx.arc(0, 0, radiusY, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawRadialEllipse2Stop(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radiusX: number,
+  radiusY: number,
+  startColor: string,
+  endColor: string,
+) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(radiusX / radiusY, 1)
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusY)
+  gradient.addColorStop(0, startColor)
+  gradient.addColorStop(1, endColor)
   ctx.fillStyle = gradient
   ctx.beginPath()
   ctx.arc(0, 0, radiusY, 0, Math.PI * 2)
@@ -1477,7 +1545,10 @@ function warmRaidCanvasFilterVariants() {
 
   for (const filter of RAID_SQUID_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getSquidBossCanvasSprite(), filter)
   for (const filter of RAID_COBRA_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getCobraBossCanvasSprite(), filter)
-  warmCanvasSpriteFilter(getCobraBossCanvasSprite(), RAID_DEVIL_SNAKE_HEAD_FILTER)
+  warmCanvasSpriteFilter(getDevilMasterProjectileCanvasSprite(), RAID_DEVIL_MASTER_PROJECTILE_FILTER)
+  for (const pose of Object.keys(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS) as GodGundamBarragePose[]) {
+    warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(pose), RAID_GOD_GUNDAM_BARRAGE_FILTER)
+  }
   for (const filter of RAID_FINAL_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getFinalBossCanvasSprite(), filter)
   getSquidBossTentacleTextureCanvas()
   getCobraBossBodyTextureCanvas()
@@ -1551,6 +1622,20 @@ function getDevilBossCanvasSprite(pose: DevilBossPose) {
   return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_DEVIL_BOSS_ASSET_PATHS[pose]), processDevilBossAsset)
 }
 
+function getDevilMasterProjectileCanvasSprite() {
+  const key = 'boss-image:devil-master-projectile'
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH))
+}
+
+function getGodGundamBarrageCanvasSprite(pose: GodGundamBarragePose) {
+  const key = `ship-image:god-barrage-${pose}`
+  const existing = canvasSpriteCache.get(key)
+  if (existing) return existing
+  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS[pose]))
+}
+
 function getEliteAlienCanvasSprite(variant: number) {
   const index = Math.abs(Math.trunc(variant)) % RAID_ELITE_SPRITE_COUNT
   const key = `elite-image:${index}`
@@ -1565,6 +1650,8 @@ function warmRaidCanvasAssets() {
   entries.push(getSquidBossCanvasSprite())
   entries.push(getCobraBossCanvasSprite())
   RAID_DEVIL_BOSS_POSES.forEach((pose) => entries.push(getDevilBossCanvasSprite(pose)))
+  entries.push(getDevilMasterProjectileCanvasSprite())
+  for (const pose of Object.keys(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS) as GodGundamBarragePose[]) entries.push(getGodGundamBarrageCanvasSprite(pose))
   for (const ship of SHIP_OPTIONS) entries.push(getShipCanvasSprite(ship.key))
   entries.push(getShipCanvasSprite('mesiahBlack'))
   entries.push(getShipCanvasSprite('mesiahWhite'))
@@ -1585,6 +1672,8 @@ function getRaidPersistentImageUrls() {
   urls.add(getPublicAssetUrl(RAID_SQUID_BOSS_ASSET_PATH))
   urls.add(getPublicAssetUrl(RAID_COBRA_BOSS_ASSET_PATH))
   RAID_DEVIL_BOSS_POSES.forEach((pose) => urls.add(getPublicAssetUrl(RAID_DEVIL_BOSS_ASSET_PATHS[pose])))
+  urls.add(getPublicAssetUrl(RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH))
+  for (const pose of Object.keys(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS) as GodGundamBarragePose[]) urls.add(getPublicAssetUrl(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS[pose]))
   for (const ship of SHIP_OPTIONS) urls.add(getRaidShipSpriteUrl(ship.key))
   urls.add(getRaidShipSpriteUrl('mesiahBlack'))
   urls.add(getRaidShipSpriteUrl('mesiahWhite'))
@@ -2077,6 +2166,10 @@ function getRaidPlayerVisualShipKey(player: Player, progress: ReturnType<typeof 
   return player.ship.key === 'mesiah' ? getMesiahVisualShipKeyFromProgress(progress) : player.ship.key
 }
 
+function isGodGundamBarragePilot(player: Player, progress: ReturnType<typeof loadProgress>) {
+  return player.ship.key === 'coreLander' && getCoreLanderModel(progress) === 'godGundam'
+}
+
 function hasClearedRaidInProgress(progress: ReturnType<typeof loadProgress>) {
   return isGradiusRaidEndlessUnlocked(progress)
 }
@@ -2516,6 +2609,17 @@ function getNukeBossDamage(enemy: Enemy, stage: number) {
   return enemy.bossKind === 'final'
     ? Math.max(Math.round(floor * 0.45), Math.round(damage * FINAL_BOSS_NUKE_DAMAGE_MULTIPLIER))
     : damage
+}
+
+function getGodGundamBarrageBossDamage(enemy: Enemy, stage: number, powerScore: number) {
+  const pressure = Math.max(0, stage - 1)
+  if (enemy.bossKind === 'devil') {
+    return Math.max(190 + pressure * 16 + powerScore * 12, Math.round(enemy.maxHp * 0.011))
+  }
+  if (enemy.bossKind === 'final') {
+    return Math.max(175 + pressure * 14 + powerScore * 11, Math.round(enemy.maxHp * 0.015))
+  }
+  return Math.max(150 + pressure * 12 + powerScore * 10, Math.round(enemy.maxHp * 0.018))
 }
 
 const FINAL_BOSS_SCATTER_LANE_OFFSETS = [-31, -13, 13, 31] as const
@@ -3011,7 +3115,9 @@ function playPickupVoiceLine(type: PowerKind) {
 }
 
 function getPowerScore(player: Player) {
-  return Object.values(player.weapons).reduce((sum, value) => sum + value, 0)
+  let score = 0
+  for (const key of WEAPON_KEYS) score += player.weapons[key]
+  return score
 }
 
 function resetStageLoadout(player: Player) {
@@ -3279,8 +3385,8 @@ function drawRaidBackgroundBase(ctx: CanvasRenderingContext2D, palette: RaidPale
   ctx.fillRect(0, 0, width, height)
 
   if (!isLow) {
-    drawRadialEllipse(ctx, width * 0.18, height * 0.16, width * 0.24, height * 0.24, [[0, bgA], [1, 'rgba(0,0,0,0)']])
-    drawRadialEllipse(ctx, width * 0.76, height * 0.38, width * 0.26, height * 0.26, [[0, bgB], [1, 'rgba(0,0,0,0)']])
+    drawRadialEllipse2Stop(ctx, width * 0.18, height * 0.16, width * 0.24, height * 0.24, bgA, 'rgba(0,0,0,0)')
+    drawRadialEllipse2Stop(ctx, width * 0.76, height * 0.38, width * 0.26, height * 0.26, bgB, 'rgba(0,0,0,0)')
   }
 }
 
@@ -3416,20 +3522,20 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     const nebulaDrift = Math.sin(seconds / 10)
     ctx.translate(width * 0.012 * nebulaDrift, height * 0.006 * Math.cos(seconds / 8))
     ctx.scale(1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5), 1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
-    drawRadialEllipse(ctx, width * 0.2, height * 0.72, width * 0.36, height * 0.24, [[0, nebulaA], [1, 'rgba(0,0,0,0)']])
-    drawRadialEllipse(ctx, width * 0.82, height * 0.24, width * 0.32, height * 0.22, [[0, nebulaB], [1, 'rgba(0,0,0,0)']])
+    drawRadialEllipse2Stop(ctx, width * 0.2, height * 0.72, width * 0.36, height * 0.24, nebulaA, 'rgba(0,0,0,0)')
+    drawRadialEllipse2Stop(ctx, width * 0.82, height * 0.24, width * 0.32, height * 0.22, nebulaB, 'rgba(0,0,0,0)')
     ctx.restore()
   }
 
   ctx.save()
   ctx.globalCompositeOperation = 'screen'
   if (!isLow) {
-    drawRadialEllipse(ctx, width * 0.78, height * 0.18, width * 0.48, height * 0.25, [[0, 'rgba(139,92,246,0.2)'], [1, 'rgba(0,0,0,0)']])
-    drawRadialEllipse(ctx, width * 0.14, height * 0.68, width * 0.36, height * 0.42, [[0, 'rgba(59,130,246,0.16)'], [1, 'rgba(0,0,0,0)']])
+    drawRadialEllipse2Stop(ctx, width * 0.78, height * 0.18, width * 0.48, height * 0.25, 'rgba(139,92,246,0.2)', 'rgba(0,0,0,0)')
+    drawRadialEllipse2Stop(ctx, width * 0.14, height * 0.68, width * 0.36, height * 0.42, 'rgba(59,130,246,0.16)', 'rgba(0,0,0,0)')
     if (!isMedium) {
-      drawRadialEllipse(ctx, width * 0.48, height * 0.42, width * 0.22, height * 0.18, [[0, 'rgba(236,72,153,0.11)'], [1, 'rgba(0,0,0,0)']])
-      drawRadialEllipse(ctx, width * 0.22, height * 0.22, width * 0.26, height * 0.15, [[0, 'rgba(251,191,36,0.05)'], [1, 'rgba(0,0,0,0)']])
-      drawRadialEllipse(ctx, width * 0.88, height * 0.72, width * 0.18, height * 0.32, [[0, 'rgba(34,211,238,0.06)'], [1, 'rgba(0,0,0,0)']])
+      drawRadialEllipse2Stop(ctx, width * 0.48, height * 0.42, width * 0.22, height * 0.18, 'rgba(236,72,153,0.11)', 'rgba(0,0,0,0)')
+      drawRadialEllipse2Stop(ctx, width * 0.22, height * 0.22, width * 0.26, height * 0.15, 'rgba(251,191,36,0.05)', 'rgba(0,0,0,0)')
+      drawRadialEllipse2Stop(ctx, width * 0.88, height * 0.72, width * 0.18, height * 0.32, 'rgba(34,211,238,0.06)', 'rgba(0,0,0,0)')
     }
   }
   ctx.restore()
@@ -7647,6 +7753,114 @@ function drawNukeBlast(ctx: CanvasRenderingContext2D, width: number, height: num
   ctx.restore()
 }
 
+function drawGodGundamBarrage(
+  ctx: CanvasRenderingContext2D,
+  barrage: GodGundamBarrage,
+  enemies: Enemy[],
+  toX: (value: number) => number,
+  toY: (value: number) => number,
+  viewportWidth: number,
+  time: number,
+) {
+  const durationFade = Math.min(1, barrage.age / 0.32, (barrage.duration - barrage.age) / 0.42)
+  if (durationFade <= 0) return
+
+  const visibleTargets = enemies.filter((enemy) => enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16)
+  if (visibleTargets.length === 0) return
+
+  const spriteSize = Math.max(86, Math.min(158, viewportWidth * 0.082))
+  const dashDuration = 0.46
+  const dashProgress = clamp(barrage.age / dashDuration, 0, 1)
+  if (dashProgress < 1) {
+    const easedDash = 1 - Math.pow(1 - dashProgress, 3)
+    const startX = toX(barrage.startX)
+    const startY = toY(barrage.startY)
+    const endX = toX(barrage.targetX)
+    const endY = toY(barrage.targetY)
+    const x = startX + (endX - startX) * easedDash
+    const y = startY + (endY - startY) * easedDash
+    const angle = Math.atan2(endY - startY, endX - startX)
+    const dashAlpha = Math.sin(dashProgress * Math.PI)
+    const dashSprite = getShipCanvasSprite('godGundam')
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.globalAlpha = 0.72 * dashAlpha
+    ctx.lineCap = 'round'
+    const trail = ctx.createLinearGradient(startX, startY, x, y)
+    trail.addColorStop(0, 'rgba(250,204,21,0)')
+    trail.addColorStop(0.42, 'rgba(250,204,21,0.28)')
+    trail.addColorStop(1, 'rgba(255,255,255,0.78)')
+    ctx.strokeStyle = trail
+    ctx.lineWidth = Math.max(4, spriteSize * 0.08)
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(x, y)
+    ctx.stroke()
+    ctx.translate(x, y)
+    ctx.rotate(angle + Math.PI / 2)
+    drawCanvasSpriteContain(ctx, dashSprite, 0, 0, spriteSize * 0.82, RAID_GOD_GUNDAM_BARRAGE_FILTER, 0.86 * dashAlpha, 0, 1, '#facc15')
+    ctx.restore()
+  }
+
+  const comboAge = Math.max(0, barrage.age - dashDuration * 0.45)
+  const primaryIndex = Math.max(0, visibleTargets.findIndex((enemy) => enemy.id === barrage.targetId))
+  const orderedTargets = [
+    ...visibleTargets.slice(primaryIndex, primaryIndex + 1),
+    ...visibleTargets.filter((_, index) => index !== primaryIndex),
+  ]
+
+  for (let targetIndex = 0; targetIndex < orderedTargets.length; targetIndex += 1) {
+    const target = orderedTargets[targetIndex]
+    const targetX = toX(target.x)
+    const targetRadiusX = Math.max(28, viewportWidth * (target.radius / WIDTH) * 0.72)
+    const layers = target.isBoss ? 4 : target.isMiniBoss ? 3 : 2
+    for (let layer = layers - 1; layer >= 0; layer -= 1) {
+      const localAge = comboAge - targetIndex * 0.055 - layer * 0.105 + (barrage.seed % 0.09)
+      if (localAge < 0) continue
+
+      const frame = Math.floor(localAge / GOD_GUNDAM_BARRAGE_FRAME_SECONDS)
+      const pose = RAID_GOD_GUNDAM_BARRAGE_SEQUENCE[(frame + layer + targetIndex) % RAID_GOD_GUNDAM_BARRAGE_SEQUENCE.length]
+      const frameProgress = (localAge % GOD_GUNDAM_BARRAGE_FRAME_SECONDS) / GOD_GUNDAM_BARRAGE_FRAME_SECONDS
+      const approach = frameProgress < 0.72
+        ? 1 - Math.pow(1 - frameProgress / 0.72, 3)
+        : 1 - (frameProgress - 0.72) / 0.28 * 0.16
+      const side = pose.side
+      const attackSide = side === 0 ? ((frame + targetIndex) % 2 === 0 ? -1 : 1) : side
+      const startX = targetX + attackSide * (targetRadiusX + spriteSize * (target.isBoss ? 0.5 : 0.38))
+      const hitX = targetX + attackSide * targetRadiusX * 0.22
+      const startY = toY(target.y + pose.offsetY) + Math.sin(time / 95 + frame * 1.7 + target.id) * spriteSize * 0.018
+      const hitY = toY(target.y + pose.impactY)
+      const x = startX + (hitX - startX) * approach
+      const y = startY + (hitY - startY) * approach
+      const alpha = durationFade * (1 - layer * 0.18) * Math.sin(Math.min(1, frameProgress) * Math.PI)
+      if (alpha <= 0.02) continue
+
+      if (frameProgress > 0.42 && frameProgress < 0.72) {
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.globalAlpha = alpha * 0.68
+        drawRadialEllipse(ctx, hitX, hitY, spriteSize * 0.22, spriteSize * 0.14, RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS)
+        ctx.strokeStyle = 'rgba(255,255,255,0.72)'
+        ctx.lineWidth = Math.max(1, spriteSize * 0.018)
+        ctx.beginPath()
+        ctx.moveTo(x + attackSide * spriteSize * 0.22, y - spriteSize * 0.04)
+        ctx.lineTo(hitX - attackSide * spriteSize * 0.18, hitY)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      const sprite = getGodGundamBarrageCanvasSprite(pose.pose)
+      ctx.save()
+      ctx.translate(x, y)
+      if (attackSide > 0) ctx.scale(-1, 1)
+      ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
+      ctx.shadowColor = 'rgba(250,204,21,0.28)'
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (target.isBoss ? 1 : 0.86), RAID_GOD_GUNDAM_BARRAGE_FILTER, alpha, 0, 1, '#facc15')
+      ctx.restore()
+    }
+  }
+}
+
 function drawAsteroidHazard(
   ctx: CanvasRenderingContext2D,
   asteroid: AsteroidHazard,
@@ -8500,6 +8714,7 @@ export function GradiusRaid({
   const lastRenderTimeRef = useRef(0)
   const graphicsQualityRef = useRef<GraphicsQuality>(getGraphicsQuality())
   const viewportMetricsRef = useRef<RaidViewportMetrics | null>(null)
+  const fxCanvasSmoothingQualityRef = useRef<ImageSmoothingQuality | null>(null)
   const snapshotKeyRef = useRef('')
   const paletteRef = useRef<RaidPalette>(DEFAULT_RAID_PALETTE)
   const paletteClassRef = useRef('')
@@ -8593,6 +8808,7 @@ export function GradiusRaid({
   const nukeFlashRef = useRef(0)
   const nukeStrikeRef = useRef<NukeStrike | null>(null)
   const nukeBlastOriginRef = useRef<Vec>({ x: 50, y: 46 })
+  const godBarrageRef = useRef<GodGundamBarrage | null>(null)
   const asteroidClusterTimerRef = useRef(34 + Math.random() * 18)
   const asteroidSpawnDelayRef = useRef(0)
   const asteroidWarningRef = useRef(0)
@@ -8829,6 +9045,7 @@ export function GradiusRaid({
     nukeFlash: nukeFlashRef.current,
     nukeStrike: nukeStrikeRef.current ? { ...nukeStrikeRef.current } : null,
     nukeBlastOrigin: { ...nukeBlastOriginRef.current },
+    godBarrage: godBarrageRef.current ? { ...godBarrageRef.current } : null,
     asteroidWarning: asteroidWarningRef.current,
     randomEvent: cloneRaidRandomEvent(randomEventRef.current),
   }), [])
@@ -8986,6 +9203,7 @@ export function GradiusRaid({
     nukeFlashRef.current = state.nukeFlash
     nukeStrikeRef.current = state.nukeStrike ? { ...state.nukeStrike } : null
     nukeBlastOriginRef.current = { ...state.nukeBlastOrigin }
+    godBarrageRef.current = state.godBarrage ? { ...state.godBarrage } : null
     asteroidWarningRef.current = state.asteroidWarning ?? 0
     randomEventRef.current = cloneRaidRandomEvent(state.randomEvent ?? null)
     remotePointerVisualRef.current = cloneVec(state.guestPointer)
@@ -9268,6 +9486,10 @@ export function GradiusRaid({
     if (nukeStrikeRef.current) {
       nukeStrikeRef.current.age += dt
       if (nukeStrikeRef.current.age >= nukeStrikeRef.current.duration) nukeStrikeRef.current = null
+    }
+    if (godBarrageRef.current) {
+      godBarrageRef.current.age += dt
+      if (godBarrageRef.current.age >= godBarrageRef.current.duration) godBarrageRef.current = null
     }
     nukeFlashRef.current = Math.max(0, nukeFlashRef.current - dt)
     bossAlertRef.current = Math.max(0, bossAlertRef.current - dt)
@@ -9624,13 +9846,18 @@ export function GradiusRaid({
       canvas.width = width
       canvas.height = height
       fxCanvasContextRef.current = null
+      fxCanvasSmoothingQualityRef.current = null
     }
 
     const ctx = fxCanvasContextRef.current ?? canvas.getContext('2d', RAID_FX_CANVAS_CONTEXT_SETTINGS)
     if (!ctx) return
     fxCanvasContextRef.current = ctx
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = gfxQuality === 'low' || gfxQuality === 'medium' ? 'medium' : 'high'
+    const nextSmoothingQuality: ImageSmoothingQuality = gfxQuality === 'low' || gfxQuality === 'medium' ? 'medium' : 'high'
+    if (fxCanvasSmoothingQualityRef.current !== nextSmoothingQuality) {
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = nextSmoothingQuality
+      fxCanvasSmoothingQualityRef.current = nextSmoothingQuality
+    }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, cssWidth, cssHeight)
 
@@ -10118,17 +10345,17 @@ export function GradiusRaid({
       drawRadialEllipse(ctx, 0, length * 0.18, width * 0.65, width * 0.42, RAID_SNAKE_FANG_GLOW_STOPS)
       ctx.restore()
     }
-    let devilSnakeHeadSprite: CanvasSpriteEntry | null = null
+    let devilMasterProjectileSprite: CanvasSpriteEntry | null = null
     const drawDevilSnakeHeadShot = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
       const size = Math.max(78, shot.radius * visualScale * 18.5)
-      const sprite = devilSnakeHeadSprite ?? (devilSnakeHeadSprite = getCobraBossCanvasSprite())
+      const sprite = devilMasterProjectileSprite ?? (devilMasterProjectileSprite = getDevilMasterProjectileCanvasSprite())
       ctx.save()
       ctx.translate(x, y)
       ctx.globalCompositeOperation = 'lighter'
-      drawRadialEllipse(ctx, 0, size * 0.04, size * 0.34, size * 0.54, RAID_DEVIL_SNAKE_HEAD_GLOW_STOPS)
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, size * 1.14, RAID_DEVIL_SNAKE_HEAD_FILTER, 1, 0, 1, '#84cc16')
+      drawRadialEllipse(ctx, 0, size * 0.04, size * 0.38, size * 0.54, RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS)
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, size * 1.18, RAID_DEVIL_MASTER_PROJECTILE_FILTER, 1, 0, 1, '#ef4444')
       ctx.restore()
     }
     const drawVenomSpitShot = (shot: Shot) => {
@@ -10228,6 +10455,10 @@ export function GradiusRaid({
       drawRaidEnemy(ctx, enemy, toX, toY, cssWidth, time, normalEnemyFilter)
     }
 
+    if (godBarrageRef.current) {
+      drawGodGundamBarrage(ctx, godBarrageRef.current, enemiesRef.current, toX, toY, cssWidth, time)
+    }
+
     for (const shot of shotsRef.current) drawPlayerShot(shot)
     // Guest client-side prediction: draw locally fired shots immediately without waiting for network
     for (const shot of guestLocalShotsRef.current) drawPlayerShot(shot)
@@ -10261,10 +10492,12 @@ export function GradiusRaid({
     const ownShipRef = isGuestView ? remotePlayerRef.current : playerRef.current
     const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
     const mesiahSupportVisualShipKey = getMesiahVisualShipKeyFromProgress(progressRef.current)
-    if (gfxProfile.drawOptionShips && ownShipRef) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR, mesiahSupportVisualShipKey)
-    if (gfxProfile.drawOptionShips && allyShipRef) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, mesiahSupportVisualShipKey)
-    if (ownShipRef) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current))
-    if (allyShipRef) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current))
+    const hideOwnShipForBarrage = Boolean(godBarrageRef.current && ownShipRef && isGodGundamBarragePilot(ownShipRef, progressRef.current))
+    const hideAllyShipForBarrage = Boolean(godBarrageRef.current && allyShipRef && isGodGundamBarragePilot(allyShipRef, progressRef.current))
+    if (gfxProfile.drawOptionShips && ownShipRef && !hideOwnShipForBarrage) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR, mesiahSupportVisualShipKey)
+    if (gfxProfile.drawOptionShips && allyShipRef && !hideAllyShipForBarrage) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, mesiahSupportVisualShipKey)
+    if (ownShipRef && !hideOwnShipForBarrage) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current))
+    if (allyShipRef && !hideAllyShipForBarrage) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current))
 
     for (const powerUp of powerUpsRef.current) {
       drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
@@ -10491,7 +10724,7 @@ export function GradiusRaid({
       return
     }
 
-    if (phaseRef.current !== 'playing' || stageClearRef.current > 0 || nukeCooldownRef.current > 0 || nukeStrikeRef.current) return
+    if (phaseRef.current !== 'playing' || stageClearRef.current > 0 || nukeCooldownRef.current > 0 || nukeStrikeRef.current || godBarrageRef.current) return
     if (sourcePlayer.hp <= 0) return
 
     const visibleEnemies = enemiesRef.current.filter((enemy) => (
@@ -10504,12 +10737,36 @@ export function GradiusRaid({
     if (!hasTargets) return
 
     const player = sourcePlayer
+    const priorityTarget = visibleEnemies.find((enemy) => enemy.isBoss) ?? visibleEnemies.find((enemy) => enemy.isMiniBoss)
+    if (isGodGundamBarragePilot(player, progressRef.current)) {
+      if (!priorityTarget) return
+      nukeCooldownRef.current = getNukeCooldownSeconds(stageRef.current)
+      player.invuln = Math.max(player.invuln, GOD_GUNDAM_BARRAGE_DURATION_SECONDS + 0.75)
+      godBarrageRef.current = {
+        targetId: priorityTarget.id,
+        startX: player.x,
+        startY: player.y,
+        targetX: priorityTarget.x,
+        targetY: priorityTarget.y,
+        age: 0,
+        duration: GOD_GUNDAM_BARRAGE_DURATION_SECONDS,
+        hitTimer: 0,
+        hitIndex: 0,
+        seed: Math.random() * 1000,
+      }
+      player.y = HEIGHT + 18
+      addRipple(priorityTarget.x, priorityTarget.y, '#facc15', priorityTarget.isBoss ? 18 : 13)
+      addRipple(player.x, player.y, '#fef3c7', 13)
+      spawnSparks(priorityTarget.x, priorityTarget.y, '#facc15', priorityTarget.isBoss ? 42 : 26, 7)
+      playGameSound('combo')
+      syncSnapshot()
+      return
+    }
     nukeCooldownRef.current = getNukeCooldownSeconds(stageRef.current)
     player.invuln = Math.max(player.invuln, 1.15)
 
     let targetX = 50
     let targetY = 46
-    const priorityTarget = visibleEnemies.find((enemy) => enemy.isBoss) ?? visibleEnemies.find((enemy) => enemy.isMiniBoss)
     if (priorityTarget) {
       targetX = clamp(priorityTarget.x, 18, 82)
       targetY = clamp(priorityTarget.y + 5, 18, 58)
@@ -10608,6 +10865,7 @@ export function GradiusRaid({
     nukeFlashRef.current = 0
     nukeStrikeRef.current = null
     nukeBlastOriginRef.current = { x: 50, y: 46 }
+    godBarrageRef.current = null
     leaderboardSubmittedRef.current = false
     runStartTimeRef.current = performance.now()
     runReportedRef.current = false
@@ -11413,18 +11671,18 @@ export function GradiusRaid({
     const stage = stageRef.current
     const player = playerRef.current
     const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, raidModeRef.current, playerName)
-    if (forceLocalDevilTest) {
-      fullyBuffRaidPlayer(player)
-      if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
-      nukeCooldownRef.current = 0
-    }
     const powerScore = getPowerScore(playerRef.current)
     const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
     const bossKind: BossKind = raidModeRef.current === 'endless'
       ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current, isCreatorPlayerName(playerName))
       : stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
+    if (bossKind === 'devil') {
+      fullyBuffRaidPlayer(player)
+      if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
+      nukeCooldownRef.current = 0
+    }
     const hpMultiplier =
-      bossKind === 'devil' ? 60 :
+      bossKind === 'devil' ? 55 :
         bossKind === 'final' ? 13.4 :
           bossKind === 'snake' ? 8.25 :
             bossKind === 'squid' ? 7.45 :
@@ -11437,7 +11695,10 @@ export function GradiusRaid({
                     1.16
     const stagePressure = Math.max(0, stage - 1)
     const multiplayerBossMultiplier = multiplayerSessionRef.current ? MULTIPLAYER_BOSS_HP_MULTIPLIER : 1
-    const hp = Math.round((1450 + wave * 180 + stagePressure * 320 + powerScore * 90) * hpMultiplier * multiplayerBossMultiplier)
+    const bossBaseHp = bossKind === 'devil'
+      ? 1300 + wave * 165 + stagePressure * 290 + powerScore * 80
+      : 1450 + wave * 180 + stagePressure * 320 + powerScore * 90
+    const hp = Math.round(bossBaseHp * hpMultiplier * multiplayerBossMultiplier)
     const radius =
       bossKind === 'devil' ? 12.8 :
         bossKind === 'final' ? 25 :
@@ -11879,6 +12140,23 @@ export function GradiusRaid({
         detonateNuke(strike.targetX, strike.targetY)
       }
     }
+    if (godBarrageRef.current) {
+      const barrage = godBarrageRef.current
+      barrage.age = Math.min(barrage.duration, barrage.age + dt)
+      if (barrage.age >= barrage.duration) {
+        godBarrageRef.current = null
+        if (isGodGundamBarragePilot(player, progressRef.current)) {
+          player.x = clamp(barrage.startX, 8, 92)
+          player.y = Math.min(player.y, 82)
+          player.invuln = Math.max(player.invuln, 0.6)
+        }
+        const remotePlayer = remotePlayerRef.current
+        if (remotePlayer && isGodGundamBarragePilot(remotePlayer, progressRef.current)) {
+          remotePlayer.y = Math.min(remotePlayer.y, 84)
+          remotePlayer.invuln = Math.max(remotePlayer.invuln, 0.6)
+        }
+      }
+    }
     if (stageClearRef.current > 0) {
       const before = stageClearRef.current
       stageClearRef.current = Math.max(0, stageClearRef.current - dt)
@@ -11932,6 +12210,7 @@ export function GradiusRaid({
         wrecksRef.current = []
         shotsRef.current = []
         enemyShotsRef.current = []
+        godBarrageRef.current = null
         asteroidClusterTimerRef.current = getAsteroidClusterInterval()
         randomEventTimerRef.current = getRandomEventInterval()
         spawnLockRef.current = 1.2
@@ -11973,19 +12252,33 @@ export function GradiusRaid({
       return
     }
 
-    if (player.hp > 0) {
+    const playerInGodBarrage = Boolean(godBarrageRef.current && isGodGundamBarragePilot(player, progressRef.current))
+    if (playerInGodBarrage) {
+      player.y = HEIGHT + 18
+      player.invuln = Math.max(player.invuln, 0.16)
+      pointerTargetRef.current = null
+      pointerVisualRef.current = null
+    }
+    if (player.hp > 0 && !playerInGodBarrage) {
       movePlayerWithInput(player, dt, pointerTargetRef.current, keysRef.current)
     }
     const remotePlayer = remotePlayerRef.current
-    if (remotePlayer && remotePlayer.hp > 0) {
+    const remotePlayerInGodBarrage = Boolean(remotePlayer && godBarrageRef.current && isGodGundamBarragePilot(remotePlayer, progressRef.current))
+    if (remotePlayerInGodBarrage && remotePlayer) {
+      remotePlayer.y = HEIGHT + 18
+      remotePlayer.invuln = Math.max(remotePlayer.invuln, 0.16)
+      remotePointerTargetRef.current = null
+      remotePointerVisualRef.current = null
+    }
+    if (remotePlayer && remotePlayer.hp > 0 && !remotePlayerInGodBarrage) {
       movePlayerWithInput(remotePlayer, dt, remotePointerTargetRef.current, remoteKeysRef.current)
     }
 
     const isSmallViewport = Boolean(viewportMetricsRef.current && viewportMetricsRef.current.cssWidth < 640)
-    if (player.hp > 0) updatePlayerTimers(player, dt, enemiesRef.current, isSmallViewport)
-    if (remotePlayer && remotePlayer.hp > 0) updatePlayerTimers(remotePlayer, dt, enemiesRef.current, isSmallViewport)
-    if (player.hp > 0) firePlayer(player)
-    if (remotePlayer && remotePlayer.hp > 0) firePlayer(remotePlayer)
+    if (player.hp > 0 && !playerInGodBarrage) updatePlayerTimers(player, dt, enemiesRef.current, isSmallViewport)
+    if (remotePlayer && remotePlayer.hp > 0 && !remotePlayerInGodBarrage) updatePlayerTimers(remotePlayer, dt, enemiesRef.current, isSmallViewport)
+    if (player.hp > 0 && !playerInGodBarrage) firePlayer(player)
+    if (remotePlayer && remotePlayer.hp > 0 && !remotePlayerInGodBarrage) firePlayer(remotePlayer)
     const livingPlayersThisTick = remotePlayer
       ? (player.hp > 0 ? (remotePlayer.hp > 0 ? [player, remotePlayer] : [player]) : remotePlayer.hp > 0 ? [remotePlayer] : [])
       : (player.hp > 0 ? [player] : [])
@@ -13185,6 +13478,97 @@ export function GradiusRaid({
     let bossDefeatedThisFrame = false
     let preserveLoadoutForSuperBoss = false
     let completedRun = false
+    const markEnemyDefeatedByBarrage = (enemy: Enemy) => {
+      enemiesDestroyedRef.current += 1
+      if (enemy.isBoss) {
+        bossesDefeatedRef.current += 1
+        enemy.defeatTimer = STAGE_CLEAR_SECONDS
+        if (enemy.bossKind === 'devil') {
+          enemy.devilDefeatedTimer = enemy.defeatTimer
+          enemy.devilVisualPose = 'rage'
+          enemy.devilPoseChangedAt = now
+        }
+      }
+      const scoreValue = enemy.bossKind === 'devil' ? 150000 : enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
+      player.score += scoreValue
+      if (remotePlayerRef.current) {
+        remotePlayerRef.current.score += scoreValue
+      }
+      spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fda4af' : enemy.isMiniBoss ? '#c084fc' : '#fb7185', enemy.isBoss ? 60 : enemy.isMiniBoss ? 42 : 18, enemy.isBoss ? 8 : enemy.isMiniBoss ? 7 : 5)
+      addRipple(enemy.x, enemy.y, enemy.isBoss ? '#fb7185' : enemy.isMiniBoss ? '#a855f7' : '#f97316', enemy.isBoss ? 18 : enemy.isMiniBoss ? 14 : 9)
+      if (enemy.isMiniBoss) {
+        spawnPowerUp(enemy.x, enemy.y, Math.random() < 0.55)
+      } else if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
+      if (enemy.isBoss) {
+        bossDefeatedThisFrame = true
+        const clearedStage = stageRef.current
+        if (raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
+          completedRun = true
+          victoryPendingRef.current = true
+          unlockedStageRef.current = MAX_RAID_STAGE
+          if (!coOpRunRef.current) {
+            saveUnlockedStage(MAX_RAID_STAGE)
+            saveCheckpointStage(14)
+          }
+          bossAlertRef.current = 2.4
+          bossMessageRef.current = 'clear'
+        } else {
+          const nextStage = clearedStage + 1
+          preserveLoadoutForSuperBoss = nextStage % 5 === 0
+          pendingNextStageRef.current = nextStage
+          if (raidModeRef.current !== 'endless') {
+            unlockedStageRef.current = Math.max(unlockedStageRef.current, Math.min(nextStage, MAX_RAID_STAGE))
+            if (!coOpRunRef.current) saveUnlockedStage(unlockedStageRef.current)
+          }
+          if (raidModeRef.current !== 'endless' && !coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
+            saveCheckpointStage(nextStage)
+          }
+          bossAlertRef.current = 2.4
+          bossMessageRef.current = 'clear'
+        }
+        playGameSound('levelup')
+        playGameSound('combo')
+        window.setTimeout(() => playGameSound('score'), 180)
+      }
+      playGameSound(enemy.isBoss || enemy.isMiniBoss ? 'explosion_big' : 'explosion')
+    }
+    const godBarrage = godBarrageRef.current
+    if (godBarrage && !bossDefeatedThisFrame) {
+      const barrageTargets = enemiesRef.current.filter((enemy) => enemy.hp > 0 && enemy.y > -18 && enemy.y < HEIGHT + 16)
+      if (barrageTargets.length === 0) {
+        godBarrageRef.current = null
+      } else {
+        godBarrage.hitTimer -= dt
+        const powerScore = getPowerScore(player) + (remotePlayerRef.current ? Math.round(getPowerScore(remotePlayerRef.current) * 0.6) : 0)
+        while (godBarrage.hitTimer <= 0 && !bossDefeatedThisFrame) {
+          godBarrage.hitTimer += GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS
+          godBarrage.hitIndex += 1
+          let hitAnyTarget = false
+          for (const target of barrageTargets) {
+            if (target.hp <= 0) continue
+            const damage = target.isBoss || target.isMiniBoss
+              ? getGodGundamBarrageBossDamage(target, stageRef.current, powerScore)
+              : Math.max(46 + stageRef.current * 5 + powerScore * 3, Math.round(target.maxHp * 0.34))
+            target.shieldTime = 0
+            target.hp -= damage
+            target.hitFlash = Math.max(target.hitFlash ?? 0, target.isBoss ? 0.26 : target.isMiniBoss ? 0.2 : 0.14)
+            hitAnyTarget = true
+            const side = (godBarrage.hitIndex + target.id) % 2 === 0 ? -1 : 1
+            spawnSparks(target.x + side * target.radius * 0.34, target.y + ((godBarrage.hitIndex + target.id) % 3 - 1) * 4, '#facc15', target.isBoss ? 18 : target.isMiniBoss ? 12 : 7, 6)
+            if ((godBarrage.hitIndex + target.id) % 3 === 0) addRipple(target.x, target.y, '#fbbf24', target.isBoss ? 10 : target.isMiniBoss ? 7 : 5)
+            if (target.hp <= 0) {
+              markEnemyDefeatedByBarrage(target)
+              if (target.isBoss) {
+                godBarrageRef.current = null
+                break
+              }
+            }
+          }
+          if (hitAnyTarget && godBarrage.hitIndex % 3 === 0) playGameSound('hit')
+          if (!hitAnyTarget) godBarrageRef.current = null
+        }
+      }
+    }
     for (const shot of shotsRef.current) {
       for (const enemy of enemiesRef.current) {
         if (enemy.hp <= 0) continue
@@ -13304,6 +13688,7 @@ export function GradiusRaid({
       if (completedRun) {
         shotsRef.current = []
         enemyShotsRef.current = []
+        godBarrageRef.current = null
         enemiesRef.current = defeatedBoss ? [defeatedBoss] : []
         asteroidsRef.current = []
         meteorsRef.current = []
@@ -13347,6 +13732,7 @@ export function GradiusRaid({
       spawnLockRef.current = STAGE_CLEAR_SECONDS + 1.2
       shotsRef.current = []
       enemyShotsRef.current = []
+      godBarrageRef.current = null
       enemiesRef.current = enemiesRef.current.filter((enemy) => enemy.isBoss && enemy.hp <= 0)
       asteroidsRef.current = []
       meteorsRef.current = []
@@ -13687,10 +14073,16 @@ export function GradiusRaid({
   const coreLanderVisualShipKey = getCoreLanderModel(progressRef.current)
   const checkpointStage = getCheckpointStage()
   const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
+  const usingGodBarrage = player.ship.key === 'coreLander' && coreLanderVisualShipKey === 'godGundam'
   const nukeCooldown = Math.ceil(snapshot.nukeCooldown)
   const nukeStageLocked = snapshot.phase === 'playing' && snapshot.stageClear > 0
   const nukeReady = snapshot.phase === 'playing' && !nukeStageLocked && snapshot.nukeCooldown <= 0
-  const nukeDisplay = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? `${nukeCooldown}s` : hudText.nuke
+  const specialLabel = usingGodBarrage ? hudText.barrage : hudText.nuke
+  const specialLaunchLabel = usingGodBarrage ? hudText.launchBarrage : hudText.launchNuke
+  const specialLockedLabel = usingGodBarrage ? hudText.barrageLocked : hudText.nukeLocked
+  const specialCoolingLabel = usingGodBarrage ? hudText.barrageCooling : hudText.nukeCooling
+  const specialAvailableLabel = usingGodBarrage ? hudText.barrageAvailable : hudText.nukeAvailable
+  const nukeDisplay = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? `${nukeCooldown}s` : specialLabel
   const nukeHint = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? hudText.cooldown : hudText.space
   const bossIncoming = snapshot.bossAlert > 0 && snapshot.bossMessage === 'incoming'
   const bossClear = snapshot.bossAlert > 0 && snapshot.bossMessage === 'clear'
@@ -13770,7 +14162,7 @@ export function GradiusRaid({
           type="button"
           onClick={() => activateNuke()}
           disabled={!nukeReady}
-          aria-label={nukeReady ? hudText.launchNuke : nukeStageLocked ? hudText.nukeLocked : snapshot.phase === 'playing' ? `${hudText.nukeCooling} ${nukeCooldown} ${hudText.seconds}` : hudText.nukeAvailable}
+          aria-label={nukeReady ? specialLaunchLabel : nukeStageLocked ? specialLockedLabel : snapshot.phase === 'playing' ? `${specialCoolingLabel} ${nukeCooldown} ${hudText.seconds}` : specialAvailableLabel}
         >
           <span className="raid__nuke-mark" aria-hidden="true">
             <i />
@@ -13801,14 +14193,14 @@ export function GradiusRaid({
           className="raid__nuke-quick"
           type="button"
           onClick={() => activateNuke()}
-          aria-label={hudText.launchNuke}
+          aria-label={specialLaunchLabel}
         >
           <span className="raid__nuke-quick-mark" aria-hidden="true">
             <i />
             <i />
             <i />
           </span>
-          <span className="raid__nuke-quick-text">{hudText.nuke}</span>
+          <span className="raid__nuke-quick-text">{specialLabel}</span>
         </button>
       )}
 
