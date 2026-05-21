@@ -16,6 +16,7 @@ export const RAID_SHIP_SPRITE_PATHS: Record<string, string> = {
   coreLander: 'assets/ships/core-lander.png',
   coreLanderBurning: 'assets/ships/core-lander-burning.png',
   godGundam: 'assets/ships/god-gundam.png',
+  godGundamBurning: 'assets/ships/god-gundam-burning.png',
 }
 
 export const RAID_ALIEN_SPRITE_COUNT = 8

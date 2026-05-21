@@ -424,6 +424,7 @@ function getShipSpriteSize(shipKey: string, context: 'player' | 'option' | 'pick
   if (shipKey === 'mesiah') return context === 'player' ? 128 : context === 'option' ? 38 : 112
   if (shipKey === 'mesiahRaptorBlack' || shipKey === 'mesiahRaptorWhite') return context === 'player' ? 74 : context === 'option' ? 36 : 80
   if (shipKey === 'godGundam') return context === 'player' ? 122 : context === 'option' ? 40 : 116
+  if (shipKey === 'godGundamBurning') return context === 'player' ? 122 : context === 'option' ? 40 : 116
   if (shipKey === 'coreLanderBurning') return context === 'player' ? 116 : context === 'option' ? 46 : 112
   if (shipKey === 'coreLander') return context === 'player' ? 110 : context === 'option' ? 44 : 108
   if (shipKey === 'dreadnought') return context === 'player' ? 88 : context === 'option' ? 40 : 88
@@ -469,6 +470,10 @@ const MESIAH_DRONE_MAX_FIRE_RANGE = 19
 const MESIAH_ROCKET_FIRE_INTERVAL_SECONDS = 0.36
 const MESIAH_DRONE_HOME_OFFSET = 11.6
 const MESIAH_DRONE_MOBILE_HOME_OFFSET = 18.5
+const GOD_GUNDAM_BURNING_BODY_SCALE = 1.09
+const GOD_GUNDAM_BURNING_BODY_Y_OFFSET = -0.064
+const GOD_GUNDAM_BURNING_HALO_SCALE = 0.86
+const GOD_GUNDAM_BURNING_HALO_Y_OFFSET = -0.15
 const NORMAL_POWER_DROP_COOLDOWN = 3.8
 const POWER_PITY_KILLS = 12
 const GAMEPLAY_SNAPSHOT_INTERVAL_MS = 100
@@ -1278,7 +1283,7 @@ function warmRaidCanvasFilterVariants() {
     const sprite = getShipCanvasSprite(ship.key)
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
-  for (const spriteKey of ['mesiahBlack', 'mesiahWhite', 'mesiahRaptorBlack', 'mesiahRaptorWhite', 'coreLanderBurning', 'godGundam']) {
+  for (const spriteKey of ['mesiahBlack', 'mesiahWhite', 'mesiahRaptorBlack', 'mesiahRaptorWhite', 'coreLanderBurning', 'godGundam', 'godGundamBurning']) {
     const sprite = getShipCanvasSprite(spriteKey)
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
@@ -1381,6 +1386,7 @@ function warmRaidCanvasAssets() {
   entries.push(getShipCanvasSprite('mesiahRaptorWhite'))
   entries.push(getShipCanvasSprite('coreLanderBurning'))
   entries.push(getShipCanvasSprite('godGundam'))
+  entries.push(getShipCanvasSprite('godGundamBurning'))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) entries.push(getNormalAlienCanvasSprite(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) entries.push(getEliteAlienCanvasSprite(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) entries.push(getRaidOtherCanvasSprite(key))
@@ -1399,6 +1405,7 @@ function getRaidPersistentImageUrls() {
   urls.add(getRaidShipSpriteUrl('mesiahRaptorWhite'))
   urls.add(getRaidShipSpriteUrl('coreLanderBurning'))
   urls.add(getRaidShipSpriteUrl('godGundam'))
+  urls.add(getRaidShipSpriteUrl('godGundamBurning'))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) urls.add(getRaidAlienSpriteUrl(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) urls.add(getRaidEliteSpriteUrl(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) urls.add(getPublicAssetUrl(RAID_OTHER_ASSET_PATHS[key]))
@@ -6499,7 +6506,10 @@ function drawRaidPlayer(
   if (!isDown && coreLanderBurningBlend > 0.04) {
     const pulse = 0.88 + Math.sin(time / 150) * 0.12
     drawCoreLanderBurningCometWake(ctx, x, y, renderSize, time, coreLanderBurningBlend, coreLanderUsesGodModel)
-    drawCoreLanderBurningHalo(ctx, x, y, renderSize, time, coreLanderBurningBlend)
+    const haloX = x
+    const haloY = coreLanderUsesGodModel ? y + renderSize * GOD_GUNDAM_BURNING_HALO_Y_OFFSET : y
+    const haloSize = coreLanderUsesGodModel ? renderSize * GOD_GUNDAM_BURNING_HALO_SCALE : renderSize
+    drawCoreLanderBurningHalo(ctx, haloX, haloY, haloSize, time, coreLanderBurningBlend)
     ctx.save()
     ctx.globalAlpha *= coreLanderBurningBlend
     drawRadialEllipse(ctx, x, y, renderSize * 0.54 * pulse, renderSize * 0.64 * pulse, [
@@ -6568,20 +6578,51 @@ function drawRaidPlayer(
     )
     return
   }
-  drawCanvasSprite(
-    ctx,
-    sprite,
-    x,
-    y,
-    renderSize,
-    coreLanderUsesGodModel && coreLanderBurningBlend > 0.01
-      ? getGodGundamBurningSpriteFilter(coreLanderBurningBlend, coreLanderBurningRage)
-      : normalSpriteFilter,
-    alpha,
-    rotation,
-    scale,
-    masteryPaintColor,
-  )
+  if (coreLanderUsesGodModel && coreLanderBurningBlend > 0.01) {
+    const baseSprite = getShipCanvasSprite('godGundam')
+    const burningSprite = getShipCanvasSprite('godGundamBurning')
+    const burningRenderSize = renderSize * GOD_GUNDAM_BURNING_BODY_SCALE
+    const burningY = y + renderSize * GOD_GUNDAM_BURNING_BODY_Y_OFFSET
+    if (coreLanderBurningBlend < 0.99) {
+      drawCanvasSprite(
+        ctx,
+        baseSprite,
+        x,
+        y,
+        renderSize,
+        normalSpriteFilter,
+        alpha * (1 - coreLanderBurningBlend),
+        rotation,
+        scale,
+        masteryPaintColor,
+      )
+    }
+    drawCanvasSprite(
+      ctx,
+      burningSprite,
+      x,
+      burningY,
+      burningRenderSize,
+      getGodGundamBurningSpriteFilter(coreLanderBurningBlend, coreLanderBurningRage),
+      alpha * coreLanderBurningBlend,
+      rotation,
+      scale,
+      masteryPaintColor,
+    )
+  } else {
+    drawCanvasSprite(
+      ctx,
+      sprite,
+      x,
+      y,
+      renderSize,
+      normalSpriteFilter,
+      alpha,
+      rotation,
+      scale,
+      masteryPaintColor,
+    )
+  }
   if (drawGodGundamEngineOverSprite) {
     ctx.save()
     ctx.globalAlpha *= 0.7
