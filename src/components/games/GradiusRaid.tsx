@@ -596,13 +596,15 @@ const GOD_GUNDAM_MELEE_BURNING_RANGE_BONUS = 4
 const GOD_GUNDAM_MELEE_EXHAUST_LIMIT_SECONDS = 15
 const GOD_GUNDAM_MELEE_EXHAUST_COOLDOWN_SECONDS = 5
 const GOD_GUNDAM_MELEE_HEAT_RECOVERY_PER_SECOND = 1.65
-const GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS = 0.08
-const GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS = 0.24
-const GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND = 4.8
-const GOD_GUNDAM_MELEE_BOSS_DAMAGE_MULTIPLIER = 0.72
-const GOD_GUNDAM_MELEE_MINIBOSS_DAMAGE_MULTIPLIER = 0.86
-const GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER = 1.5
-const GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER = 0.55
+const GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS = 0.1
+const GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS = 0.34
+const GOD_GUNDAM_DEFEAT_HOLD_SECONDS = 0.22
+const GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND = 7.4
+const GOD_GUNDAM_MELEE_BOSS_DAMAGE_MULTIPLIER = 0.92
+const GOD_GUNDAM_MELEE_MINIBOSS_DAMAGE_MULTIPLIER = 1.08
+const GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER = 1.62
+const GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER = 0.68
+const GOD_GUNDAM_STAGE_ATTACK_BONUS = 0.9
 const MULTIPLAYER_BOSS_HP_MULTIPLIER = 2.5
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
@@ -2714,7 +2716,12 @@ function getGodGundamMeleeRange(player: Player) {
   return GOD_GUNDAM_MELEE_RANGE + (isCoreLanderBurning(player) ? GOD_GUNDAM_MELEE_BURNING_RANGE_BONUS : 0)
 }
 
-function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy) {
+function getGodGundamStageAttackBonus(stage: number) {
+  const pressure = Math.max(0, stage - 1)
+  return pressure * GOD_GUNDAM_STAGE_ATTACK_BONUS + Math.max(0, stage - 5) * 0.22
+}
+
+function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy, stage = 1) {
   const burningMultiplier = isCoreLanderBurning(player)
     ? GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER + GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER * getCoreLanderBurningRage(player)
     : 1
@@ -2723,7 +2730,7 @@ function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy) {
     : target.isMiniBoss
       ? GOD_GUNDAM_MELEE_MINIBOSS_DAMAGE_MULTIPLIER
       : 1
-  return getPlayerBaseAttack(player) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * burningMultiplier * targetMultiplier
+  return (getPlayerBaseAttack(player) + getGodGundamStageAttackBonus(stage)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * burningMultiplier * targetMultiplier
 }
 
 function getGodGundamPassivePose(index: number): GodGundamBarragePose {
@@ -7874,9 +7881,6 @@ function drawNukeBlast(ctx: CanvasRenderingContext2D, width: number, height: num
   ctx.restore()
 }
 
-function getGodGundamBarragePoseSprite(pose: GodGundamBarragePose) {
-  return getGodGundamBarrageCanvasSprite(pose)
-}
 
 function drawGodGundamBarrage(
   ctx: CanvasRenderingContext2D,
@@ -8027,48 +8031,102 @@ function drawGodGundamPassiveStrikes(
   toY: (value: number) => number,
   viewportWidth: number,
 ) {
+  const punchSprite = getGodGundamBarrageCanvasSprite('punch')
+  const kickSprite = getGodGundamBarrageCanvasSprite('kick')
+  const uppercut1Sprite = getGodGundamBarrageCanvasSprite('uppercut1')
+  const uppercut2Sprite = getGodGundamBarrageCanvasSprite('uppercut2')
+  const katana1Sprite = getGodGundamBarrageCanvasSprite('katana1')
+  const katana2Sprite = getGodGundamBarrageCanvasSprite('katana2')
+
   for (const strike of strikes) {
     const burning = Boolean(strike.burning)
     const strikeFilter = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER : RAID_GOD_GUNDAM_BARRAGE_FILTER
     const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
     const energyColor = burning ? '#f59e0b' : '#facc15'
+    const shadowColor = burning ? 'rgba(251,146,60,0.42)' : 'rgba(250,204,21,0.32)'
     const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * strike.size
     const targetRadius = Math.max(12, viewportWidth * (strike.targetRadius / WIDTH) * 0.78)
     const progress = clamp(strike.age / strike.duration, 0, 1)
     const fade = Math.sin(progress * Math.PI)
     if (fade <= 0.02) continue
-    const eased = 1 - Math.pow(1 - Math.min(1, progress * 1.18), 3)
+
     const startX = toX(strike.sourceX)
     const startY = toY(strike.sourceY)
     const hitX = toX(strike.x)
     const hitY = toY(strike.y)
-    const arc = Math.sin(progress * Math.PI) * spriteSize * 0.12
-    const x = startX + (hitX - startX) * eased
-    const y = startY + (hitY - startY) * eased - arc
-    const sprite = getGodGundamBarragePoseSprite(strike.pose)
-    const slashAlpha = fade * 0.78
+    const baseSide = strike.side
+    const layers = 3
 
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = slashAlpha
-    ctx.strokeStyle = 'rgba(254,240,138,0.76)'
-    ctx.lineWidth = Math.max(1.2, spriteSize * 0.018)
+    ctx.globalAlpha = fade * 0.76
+    const trail = ctx.createLinearGradient(startX, startY, hitX, hitY)
+    trail.addColorStop(0, 'rgba(250,204,21,0)')
+    trail.addColorStop(0.38, burning ? 'rgba(251,146,60,0.34)' : 'rgba(250,204,21,0.28)')
+    trail.addColorStop(1, 'rgba(255,255,255,0.78)')
+    ctx.strokeStyle = trail
+    ctx.lineWidth = Math.max(2.4, spriteSize * 0.038)
+    ctx.lineCap = 'round'
     ctx.beginPath()
     ctx.moveTo(startX, startY)
-    ctx.quadraticCurveTo((startX + hitX) * 0.5, Math.min(startY, hitY) - spriteSize * 0.12, hitX, hitY)
+    ctx.quadraticCurveTo((startX + hitX) * 0.5, Math.min(startY, hitY) - spriteSize * 0.18, hitX, hitY)
     ctx.stroke()
-    if (progress > 0.34 && progress < 0.82) {
-      drawRadialEllipse(ctx, hitX, hitY, targetRadius * 0.82, targetRadius * 0.44, impactStops)
+    if (progress > 0.18 && progress < 0.9) {
+      drawRadialEllipse(ctx, hitX, hitY, targetRadius * (0.88 + progress * 0.18), targetRadius * 0.48, impactStops)
     }
     ctx.restore()
 
-    ctx.save()
-    ctx.translate(x, y)
-    if (strike.side > 0) ctx.scale(-1, 1)
-    ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
-    ctx.shadowColor = burning ? 'rgba(251,146,60,0.42)' : 'rgba(250,204,21,0.32)'
-    drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize, strikeFilter, fade, 0, 1, energyColor)
-    ctx.restore()
+    for (let layer = layers - 1; layer >= 0; layer -= 1) {
+      const localProgress = clamp(progress * 1.18 - layer * 0.16, 0, 1)
+      if (localProgress <= 0 || localProgress >= 1) continue
+      const pose = RAID_GOD_GUNDAM_BARRAGE_SEQUENCE[(strike.id + layer) % RAID_GOD_GUNDAM_BARRAGE_SEQUENCE.length]
+      const attackSide = pose.side === 0 ? baseSide : pose.side
+      const prep = 1 - localProgress / 0.72
+      const approach = localProgress < 0.72
+        ? 1 - prep * prep * prep
+        : 1 - (localProgress - 0.72) / 0.28 * 0.14
+      const startAttackX = hitX + attackSide * (targetRadius + spriteSize * (0.36 + layer * 0.08))
+      const startAttackY = hitY + pose.offsetY * (viewportWidth / WIDTH) - spriteSize * 0.08 * layer
+      const impactX = hitX + attackSide * targetRadius * 0.2
+      const impactY = hitY + pose.impactY * (viewportWidth / WIDTH)
+      const x = startAttackX + (impactX - startAttackX) * approach
+      const y = startAttackY + (impactY - startAttackY) * approach
+      const alpha = fade * (1 - layer * 0.18) * Math.sin(localProgress * Math.PI)
+      if (alpha <= 0.02) continue
+
+      if (localProgress > 0.38 && localProgress < 0.78) {
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.globalAlpha = alpha * 0.58
+        drawRadialEllipse(ctx, impactX, impactY, spriteSize * 0.24, spriteSize * 0.14, impactStops)
+        ctx.strokeStyle = 'rgba(255,255,255,0.68)'
+        ctx.lineWidth = Math.max(1, spriteSize * 0.018)
+        ctx.beginPath()
+        ctx.moveTo(x + attackSide * spriteSize * 0.22, y - spriteSize * 0.04)
+        ctx.lineTo(impactX - attackSide * spriteSize * 0.16, impactY)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      const sprite = pose.pose === 'punch'
+        ? punchSprite
+        : pose.pose === 'kick'
+          ? kickSprite
+          : pose.pose === 'uppercut1'
+            ? uppercut1Sprite
+            : pose.pose === 'uppercut2'
+              ? uppercut2Sprite
+              : pose.pose === 'katana1'
+                ? katana1Sprite
+                : katana2Sprite
+      ctx.save()
+      ctx.translate(x, y)
+      if (attackSide > 0) ctx.scale(-1, 1)
+      ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
+      ctx.shadowColor = shadowColor
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (0.88 + layer * 0.08), strikeFilter, alpha, 0, 1, energyColor)
+      ctx.restore()
+    }
   }
 }
 
@@ -11253,7 +11311,7 @@ export function GradiusRaid({
     const canFireMesiahDrones = shipKey === 'mesiah' && player.hp > 0 && player.mesiahDroneFireCooldown <= 0
     if (!canFireMain && !canFireMesiahDrones) return
 
-    const baseDamage = getPlayerBaseAttack(player)
+    const baseDamage = getPlayerBaseAttack(player) + (isGodGundamBarragePilot(player, progressRef.current) ? getGodGundamStageAttackBonus(stageRef.current) : 0)
     const isArk = shipKey === 'dreadnought'
     const isSmallViewport = viewportMetricsRef.current?.cssWidth ? viewportMetricsRef.current.cssWidth < 640 : false
     const defaultScoutOffset = isArk
@@ -12922,6 +12980,16 @@ export function GradiusRaid({
     const enemies = enemiesRef.current
     let liveEnemyCount = 0
     for (const enemy of enemies) {
+      if (!enemy.isBoss && enemy.hp <= 0) {
+        const defeatTimer = Math.max(0, (enemy.defeatTimer ?? 0) - dt)
+        if (defeatTimer > 0) {
+          enemy.defeatTimer = defeatTimer
+          enemy.hitFlash = Math.max(enemy.hitFlash ?? 0, defeatTimer)
+          enemies[liveEnemyCount] = enemy
+          liveEnemyCount += 1
+        }
+        continue
+      }
       const t = nowSeconds + enemy.phase
       const bossKind = enemy.bossKind ?? 'carrier'
       const finalRage = bossKind === 'final' ? clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1) : 0
@@ -13762,6 +13830,7 @@ export function GradiusRaid({
       if (enemy.isMiniBoss) {
         spawnPowerUp(enemy.x, enemy.y, Math.random() < 0.55)
       } else if (!enemy.isBoss) spawnPowerUp(enemy.x, enemy.y)
+      if (!enemy.isBoss) enemy.defeatTimer = Math.max(enemy.defeatTimer ?? 0, GOD_GUNDAM_DEFEAT_HOLD_SECONDS)
       if (enemy.isBoss) {
         bossDefeatedThisFrame = true
         const clearedStage = stageRef.current
@@ -13903,14 +13972,14 @@ export function GradiusRaid({
 
       if (candidate.kind === 'enemy') {
         const targetEnemy = candidate.target as Enemy
-        const damage = getGodGundamMeleeDamagePerSecond(owner, targetEnemy) * dt
+        const damage = getGodGundamMeleeDamagePerSecond(owner, targetEnemy, stageRef.current) * dt
         targetEnemy.shieldTime = 0
         targetEnemy.hp -= damage
         targetEnemy.hitFlash = Math.max(targetEnemy.hitFlash ?? 0, targetEnemy.isBoss ? 0.18 : targetEnemy.isMiniBoss ? 0.14 : 0.1)
         if (targetEnemy.hp <= 0) markEnemyDefeatedByBarrage(targetEnemy)
       } else if (candidate.kind === 'asteroid') {
         const targetAsteroid = candidate.target as AsteroidHazard
-        targetAsteroid.hp -= getPlayerBaseAttack(owner) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.15 * dt
+        targetAsteroid.hp -= (getPlayerBaseAttack(owner) + getGodGundamStageAttackBonus(stageRef.current)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.35 * dt
         if (targetAsteroid.hp <= 0) {
           const scoreValue = 180 + stageRef.current * 15 + targetAsteroid.tier * 80
           player.score += scoreValue
@@ -13922,7 +13991,7 @@ export function GradiusRaid({
       } else {
         const targetBubble = candidate.target as Shot
         const splitHp = targetBubble.hp ?? 120
-        targetBubble.hp = (targetBubble.hp ?? 1) - getPlayerBaseAttack(owner) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.25 * dt
+        targetBubble.hp = (targetBubble.hp ?? 1) - (getPlayerBaseAttack(owner) + getGodGundamStageAttackBonus(stageRef.current)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.42 * dt
         if ((targetBubble.hp ?? 0) <= 0) {
           splitSquidBubble({ ...targetBubble, hp: splitHp })
           targetBubble.life = 0
@@ -14032,7 +14101,6 @@ export function GradiusRaid({
               }
             }
           }
-          if (hitAnyTarget && godBarrage.hitIndex % 3 === 0) playGameSound('hit')
           if (!hitAnyTarget) godBarrageRef.current = null
         }
       }
