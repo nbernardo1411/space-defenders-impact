@@ -73,6 +73,9 @@ type Player = Vec & {
   godMeleeExhaust: number
   godMeleeVisualTimer: number
   godMeleeCloak: number
+  godMeleeChainX: number
+  godMeleeChainY: number
+  godMeleeLastTargetKey: string
 }
 
 type Shot = Vec & {
@@ -191,6 +194,7 @@ type GodGundamBarrage = {
   hitIndex: number
   seed: number
   damageMultiplier?: number
+  burning?: boolean
 }
 
 type GodGundamPassiveStrike = Vec & {
@@ -203,6 +207,7 @@ type GodGundamPassiveStrike = Vec & {
   duration: number
   size: number
   targetRadius: number
+  burning?: boolean
 }
 
 type AsteroidHazard = Vec & {
@@ -586,12 +591,12 @@ const GOD_GUNDAM_BARRAGE_FRAME_SECONDS = 0.42
 const GOD_GUNDAM_BARRAGE_BASE_DAMAGE_MULTIPLIER = 0.55
 const GOD_GUNDAM_BARRAGE_BURNING_DAMAGE_MULTIPLIER = 1.35
 const GOD_GUNDAM_BARRAGE_BURNING_RAGE_DAMAGE_MULTIPLIER = 0.25
-const GOD_GUNDAM_MELEE_RANGE = 15.5
-const GOD_GUNDAM_MELEE_BURNING_RANGE_BONUS = 2.2
+const GOD_GUNDAM_MELEE_RANGE = 29
+const GOD_GUNDAM_MELEE_BURNING_RANGE_BONUS = 4
 const GOD_GUNDAM_MELEE_EXHAUST_LIMIT_SECONDS = 15
 const GOD_GUNDAM_MELEE_EXHAUST_COOLDOWN_SECONDS = 5
 const GOD_GUNDAM_MELEE_HEAT_RECOVERY_PER_SECOND = 1.65
-const GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS = 0.15
+const GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS = 0.08
 const GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS = 0.24
 const GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND = 4.8
 const GOD_GUNDAM_MELEE_BOSS_DAMAGE_MULTIPLIER = 0.72
@@ -942,10 +947,17 @@ const RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS: Array<[number, string]> = [
   [1, 'rgba(127,29,29,0)'],
 ]
 const RAID_GOD_GUNDAM_BARRAGE_FILTER = 'brightness(1.08) contrast(1.14) saturate(1.14)'
+const RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER = 'brightness(1.32) contrast(1.32) saturate(2.3) sepia(0.55) hue-rotate(342deg)'
 const RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.72)'],
   [0.36, 'rgba(250,204,21,0.48)'],
   [1, 'rgba(251,146,60,0)'],
+]
+const RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.82)'],
+  [0.28, 'rgba(254,240,138,0.66)'],
+  [0.62, 'rgba(251,146,60,0.38)'],
+  [1, 'rgba(220,38,38,0)'],
 ]
 const RAID_PLAYER_LASER_HEAD_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.75)'],
@@ -1589,6 +1601,7 @@ function warmRaidCanvasFilterVariants() {
   warmCanvasSpriteFilter(getDevilMasterProjectileCanvasSprite(), RAID_DEVIL_MASTER_PROJECTILE_FILTER)
   for (const pose of Object.keys(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS) as GodGundamBarragePose[]) {
     warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(pose), RAID_GOD_GUNDAM_BARRAGE_FILTER)
+    warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(pose), RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER)
   }
   for (const filter of RAID_FINAL_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getFinalBossCanvasSprite(), filter)
   getSquidBossTentacleTextureCanvas()
@@ -2099,6 +2112,9 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     godMeleeExhaust: 0,
     godMeleeVisualTimer: 0,
     godMeleeCloak: 0,
+    godMeleeChainX: 50,
+    godMeleeChainY: 82,
+    godMeleeLastTargetKey: '',
   }
 }
 
@@ -2192,6 +2208,9 @@ function clonePlayer(player: Player): Player {
     godMeleeExhaust: player.godMeleeExhaust ?? 0,
     godMeleeVisualTimer: player.godMeleeVisualTimer ?? 0,
     godMeleeCloak: player.godMeleeCloak ?? 0,
+    godMeleeChainX: player.godMeleeChainX ?? player.x,
+    godMeleeChainY: player.godMeleeChainY ?? player.y,
+    godMeleeLastTargetKey: player.godMeleeLastTargetKey ?? '',
   }
 }
 
@@ -2287,6 +2306,9 @@ function compactPlayer(player: Player): Player {
     godMeleeExhaust: roundNetworkNumber(player.godMeleeExhaust ?? 0),
     godMeleeVisualTimer: roundNetworkNumber(player.godMeleeVisualTimer ?? 0),
     godMeleeCloak: roundNetworkNumber(player.godMeleeCloak ?? 0),
+    godMeleeChainX: roundNetworkNumber(player.godMeleeChainX ?? player.x),
+    godMeleeChainY: roundNetworkNumber(player.godMeleeChainY ?? player.y),
+    godMeleeLastTargetKey: player.godMeleeLastTargetKey ?? '',
     mesiahDrones: normalizeMesiahDrones(player).map((drone) => ({
       ...drone,
       x: roundNetworkNumber(drone.x),
@@ -7868,6 +7890,11 @@ function drawGodGundamBarrage(
   const durationFade = Math.min(1, barrage.age / 0.32, (barrage.duration - barrage.age) / 0.42)
   if (durationFade <= 0) return
 
+  const burning = Boolean(barrage.burning)
+  const barrageFilter = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER : RAID_GOD_GUNDAM_BARRAGE_FILTER
+  const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
+  const energyColor = burning ? '#f59e0b' : '#facc15'
+  const shadowColor = burning ? 'rgba(251,146,60,0.38)' : 'rgba(250,204,21,0.28)'
   const visibleTargets = godBarrageDrawTargetsScratch
   visibleTargets.length = 0
   for (let index = 0; index < enemies.length; index += 1) {
@@ -7891,7 +7918,7 @@ function drawGodGundamBarrage(
     const y = startY + (endY - startY) * easedDash
     const angle = Math.atan2(endY - startY, endX - startX)
     const dashAlpha = Math.sin(dashProgress * Math.PI)
-    const dashSprite = getShipCanvasSprite('godGundam')
+    const dashSprite = getShipCanvasSprite(burning ? 'godGundamBurning' : 'godGundam')
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     ctx.globalAlpha = 0.72 * dashAlpha
@@ -7908,7 +7935,7 @@ function drawGodGundamBarrage(
     ctx.stroke()
     ctx.translate(x, y)
     ctx.rotate(angle + Math.PI / 2)
-    drawCanvasSpriteContain(ctx, dashSprite, 0, 0, spriteSize * 0.82, RAID_GOD_GUNDAM_BARRAGE_FILTER, 0.86 * dashAlpha, 0, 1, '#facc15')
+    drawCanvasSpriteContain(ctx, dashSprite, 0, 0, spriteSize * 0.82, barrageFilter, 0.86 * dashAlpha, 0, 1, energyColor)
     ctx.restore()
   }
 
@@ -7961,7 +7988,7 @@ function drawGodGundamBarrage(
         ctx.save()
         ctx.globalCompositeOperation = 'lighter'
         ctx.globalAlpha = alpha * 0.68
-        drawRadialEllipse(ctx, hitX, hitY, spriteSize * 0.22, spriteSize * 0.14, RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS)
+        drawRadialEllipse(ctx, hitX, hitY, spriteSize * 0.22, spriteSize * 0.14, impactStops)
         ctx.strokeStyle = 'rgba(255,255,255,0.72)'
         ctx.lineWidth = Math.max(1, spriteSize * 0.018)
         ctx.beginPath()
@@ -7986,8 +8013,8 @@ function drawGodGundamBarrage(
       ctx.translate(x, y)
       if (attackSide > 0) ctx.scale(-1, 1)
       ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
-      ctx.shadowColor = 'rgba(250,204,21,0.28)'
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (target.isBoss ? 1 : 0.86), RAID_GOD_GUNDAM_BARRAGE_FILTER, alpha, 0, 1, '#facc15')
+      ctx.shadowColor = shadowColor
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (target.isBoss ? 1 : 0.86), barrageFilter, alpha, 0, 1, energyColor)
       ctx.restore()
     }
   }
@@ -8001,6 +8028,10 @@ function drawGodGundamPassiveStrikes(
   viewportWidth: number,
 ) {
   for (const strike of strikes) {
+    const burning = Boolean(strike.burning)
+    const strikeFilter = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER : RAID_GOD_GUNDAM_BARRAGE_FILTER
+    const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
+    const energyColor = burning ? '#f59e0b' : '#facc15'
     const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * strike.size
     const targetRadius = Math.max(12, viewportWidth * (strike.targetRadius / WIDTH) * 0.78)
     const progress = clamp(strike.age / strike.duration, 0, 1)
@@ -8027,7 +8058,7 @@ function drawGodGundamPassiveStrikes(
     ctx.quadraticCurveTo((startX + hitX) * 0.5, Math.min(startY, hitY) - spriteSize * 0.12, hitX, hitY)
     ctx.stroke()
     if (progress > 0.34 && progress < 0.82) {
-      drawRadialEllipse(ctx, hitX, hitY, targetRadius * 0.82, targetRadius * 0.44, RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS)
+      drawRadialEllipse(ctx, hitX, hitY, targetRadius * 0.82, targetRadius * 0.44, impactStops)
     }
     ctx.restore()
 
@@ -8035,8 +8066,8 @@ function drawGodGundamPassiveStrikes(
     ctx.translate(x, y)
     if (strike.side > 0) ctx.scale(-1, 1)
     ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
-    ctx.shadowColor = 'rgba(250,204,21,0.32)'
-    drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize, RAID_GOD_GUNDAM_BARRAGE_FILTER, fade, 0, 1, '#facc15')
+    ctx.shadowColor = burning ? 'rgba(251,146,60,0.42)' : 'rgba(250,204,21,0.32)'
+    drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize, strikeFilter, fade, 0, 1, energyColor)
     ctx.restore()
   }
 }
@@ -10973,6 +11004,7 @@ export function GradiusRaid({
         hitIndex: 0,
         seed: Math.random() * 1000,
         damageMultiplier: getGodGundamBarrageDamageMultiplier(player),
+        burning: isCoreLanderBurning(player),
       }
       player.y = HEIGHT + 18
       addRipple(barrageTarget.x, barrageTarget.y, '#facc15', barrageTarget.isBoss ? 18 : 13)
@@ -11210,7 +11242,6 @@ export function GradiusRaid({
 
   const firePlayer = useCallback((sourcePlayer = playerRef.current) => {
     const player = sourcePlayer
-    if (isGodGundamBarragePilot(player, progressRef.current)) return
     const stacks = player.weapons
     let totalStacks = 0
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
@@ -13765,20 +13796,25 @@ export function GradiusRaid({
       playGameSound(enemy.isBoss || enemy.isMiniBoss ? 'explosion_big' : 'explosion')
     }
     const spawnGodGundamPassiveStrike = (owner: Player, target: Vec & { radius: number }, visualIndex: number) => {
-      const side = owner.x <= target.x ? -1 : 1
+      const sourceX = owner.godMeleeChainX ?? owner.x
+      const sourceY = owner.godMeleeChainY ?? owner.y
+      const side = sourceX <= target.x ? -1 : 1
       godMeleeStrikesRef.current.push({
         id: godMeleeStrikeId++,
         x: target.x,
         y: target.y,
-        sourceX: owner.x,
-        sourceY: owner.y,
+        sourceX,
+        sourceY,
         pose: getGodGundamPassivePose(visualIndex),
         side,
         age: 0,
         duration: GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS,
         size: 0.86,
         targetRadius: target.radius,
+        burning: isCoreLanderBurning(owner),
       })
+      owner.godMeleeChainX = target.x
+      owner.godMeleeChainY = target.y
     }
     const updateGodGundamMeleePassive = (owner: Player) => {
       if (!isGodGundamBarragePilot(owner, progressRef.current) || owner.hp <= 0) {
@@ -13790,54 +13826,57 @@ export function GradiusRaid({
       }
       if ((owner.godMeleeExhaust ?? 0) > 0) {
         owner.godMeleeHeat = Math.max(0, (owner.godMeleeHeat ?? 0) - dt * 4)
+        owner.godMeleeChainX = owner.x
+        owner.godMeleeChainY = owner.y
         return
       }
 
       const range = getGodGundamMeleeRange(owner)
-      const rangeSqPadding = range * range
-      let targetEnemy: Enemy | null = null
-      let targetAsteroid: AsteroidHazard | null = null
-      let targetBubble: Shot | null = null
-      let nearestDistance = Infinity
+      type GodMeleeCandidate = {
+        target: (Enemy | AsteroidHazard | Shot) & { id: number; radius: number }
+        kind: 'enemy' | 'asteroid' | 'bubble'
+        key: string
+      }
+      const meleeCandidates: Array<GodMeleeCandidate & { distance: number }> = []
+      const chainOrigin = { x: owner.godMeleeChainX ?? owner.x, y: owner.godMeleeChainY ?? owner.y }
+      const lastTargetKey = owner.godMeleeLastTargetKey ?? ''
+      const considerTarget = (target: (Enemy | AsteroidHazard | Shot) & { id: number; radius: number }, key: string, kind: GodMeleeCandidate['kind'], hitRange: number) => {
+        const ownerDistance = distSq(owner, target)
+        if (ownerDistance > hitRange * hitRange) return
+        const chainDistance = distSq(chainOrigin, target)
+        meleeCandidates.push({ target, kind, key, distance: chainDistance })
+      }
       for (const enemy of enemiesRef.current) {
         if (enemy.hp <= 0 || enemy.y < -18 || enemy.y > HEIGHT + 16) continue
-        const hitRange = range + enemy.radius * 0.55
-        const distance = distSq(owner, enemy)
-        if (distance <= hitRange * hitRange && distance < nearestDistance) {
-          targetEnemy = enemy
-          targetAsteroid = null
-          targetBubble = null
-          nearestDistance = distance
-        }
+        considerTarget(enemy, `e:${enemy.id}`, 'enemy', range + enemy.radius)
       }
       for (const asteroid of asteroidsRef.current) {
         if (asteroid.hp <= 0 || asteroid.y < -asteroid.radius - 20 || asteroid.y > HEIGHT + asteroid.radius + 20) continue
-        const hitRange = range + asteroid.radius * 0.35
-        const distance = distSq(owner, asteroid)
-        if (distance <= Math.max(rangeSqPadding, hitRange * hitRange) && distance < nearestDistance) {
-          targetEnemy = null
-          targetAsteroid = asteroid
-          targetBubble = null
-          nearestDistance = distance
-        }
+        considerTarget(asteroid, `a:${asteroid.id}`, 'asteroid', Math.max(range, range + asteroid.radius * 0.55))
       }
       for (const bubble of enemyShotsRef.current) {
         if (bubble.kind !== 'squidBubble' || (bubble.hp ?? 1) <= 0 || bubble.y < -18 || bubble.y > HEIGHT + 18) continue
-        const hitRange = range + bubble.radius * 1.6
-        const distance = distSq(owner, bubble)
-        if (distance <= hitRange * hitRange && distance < nearestDistance) {
-          targetEnemy = null
-          targetAsteroid = null
-          targetBubble = bubble
-          nearestDistance = distance
+        considerTarget(bubble, `b:${bubble.id}`, 'bubble', range + bubble.radius * 2.2)
+      }
+      let preferredTarget: (GodMeleeCandidate & { distance: number }) | null = null
+      let fallbackTarget: (GodMeleeCandidate & { distance: number }) | null = null
+      for (const candidate of meleeCandidates) {
+        if (candidate.key !== lastTargetKey) {
+          if (!preferredTarget || candidate.distance < preferredTarget.distance) preferredTarget = candidate
+        } else if (!fallbackTarget || candidate.distance < fallbackTarget.distance) {
+          fallbackTarget = candidate
         }
       }
-
-      const target = targetEnemy ?? targetAsteroid ?? targetBubble
-      if (!target) {
+      const candidate = preferredTarget ?? fallbackTarget
+      if (!candidate) {
         owner.godMeleeHeat = Math.max(0, (owner.godMeleeHeat ?? 0) - dt * GOD_GUNDAM_MELEE_HEAT_RECOVERY_PER_SECOND)
+        owner.godMeleeChainX = owner.x
+        owner.godMeleeChainY = owner.y
+        owner.godMeleeLastTargetKey = ''
         return
       }
+      const target = candidate.target
+      owner.godMeleeLastTargetKey = candidate.key
 
       owner.godMeleeHeat = (owner.godMeleeHeat ?? 0) + dt
       owner.godMeleeCloak = Math.max(owner.godMeleeCloak ?? 0, GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS * 0.9)
@@ -13846,6 +13885,9 @@ export function GradiusRaid({
         owner.godMeleeHeat = 0
         owner.godMeleeExhaust = GOD_GUNDAM_MELEE_EXHAUST_COOLDOWN_SECONDS
         owner.godMeleeCloak = 0
+        owner.godMeleeChainX = owner.x
+        owner.godMeleeChainY = owner.y
+        owner.godMeleeLastTargetKey = ''
         addRipple(owner.x, owner.y, '#facc15', 14)
         spawnSparks(owner.x, owner.y, '#facc15', 26, 6)
         return
@@ -13854,17 +13896,20 @@ export function GradiusRaid({
       if ((owner.godMeleeVisualTimer ?? 0) <= 0) {
         spawnGodGundamPassiveStrike(owner, target, godMeleeStrikeId)
         owner.godMeleeVisualTimer = GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS
-        spawnSparks(target.x, target.y, '#facc15', targetEnemy?.isBoss ? 12 : targetEnemy?.isMiniBoss ? 9 : 6, 5)
-        if (godMeleeStrikeId % 4 === 0) addRipple(target.x, target.y, '#fbbf24', targetEnemy?.isBoss ? 9 : 6)
+        const strikeEnemy = candidate.kind === 'enemy' ? candidate.target as Enemy : null
+        spawnSparks(target.x, target.y, '#facc15', strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, 5)
+        if (godMeleeStrikeId % 4 === 0) addRipple(target.x, target.y, '#fbbf24', strikeEnemy?.isBoss ? 9 : 6)
       }
 
-      if (targetEnemy) {
+      if (candidate.kind === 'enemy') {
+        const targetEnemy = candidate.target as Enemy
         const damage = getGodGundamMeleeDamagePerSecond(owner, targetEnemy) * dt
         targetEnemy.shieldTime = 0
         targetEnemy.hp -= damage
         targetEnemy.hitFlash = Math.max(targetEnemy.hitFlash ?? 0, targetEnemy.isBoss ? 0.18 : targetEnemy.isMiniBoss ? 0.14 : 0.1)
         if (targetEnemy.hp <= 0) markEnemyDefeatedByBarrage(targetEnemy)
-      } else if (targetAsteroid) {
+      } else if (candidate.kind === 'asteroid') {
+        const targetAsteroid = candidate.target as AsteroidHazard
         targetAsteroid.hp -= getPlayerBaseAttack(owner) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.15 * dt
         if (targetAsteroid.hp <= 0) {
           const scoreValue = 180 + stageRef.current * 15 + targetAsteroid.tier * 80
@@ -13874,7 +13919,8 @@ export function GradiusRaid({
           addRipple(targetAsteroid.x, targetAsteroid.y, targetAsteroid.tier === 2 ? '#fb923c' : '#fbbf24', targetAsteroid.tier === 2 ? 15 : 9)
           playGameSound(targetAsteroid.tier === 2 ? 'explosion_big' : 'explosion')
         }
-      } else if (targetBubble) {
+      } else {
+        const targetBubble = candidate.target as Shot
         const splitHp = targetBubble.hp ?? 120
         targetBubble.hp = (targetBubble.hp ?? 1) - getPlayerBaseAttack(owner) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.25 * dt
         if ((targetBubble.hp ?? 0) <= 0) {
