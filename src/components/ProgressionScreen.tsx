@@ -122,10 +122,10 @@ const SHIP_PREVIEW_VISUAL_STYLES: Record<string, ShipPreviewVisualStyle> = {
     accent: 'rgba(255,237,213,0.9)',
   },
   godGundam: {
-    core: 'rgba(250,204,21,0.88)',
-    edge: 'rgba(37,99,235,0.72)',
-    soft: 'rgba(250,204,21,0.2)',
-    accent: 'rgba(239,68,68,0.78)',
+    core: 'rgba(251,191,36,0.92)',
+    edge: 'rgba(217,119,6,0.78)',
+    soft: 'rgba(245,158,11,0.28)',
+    accent: 'rgba(254,240,138,0.94)',
   },
 }
 type StageBossEntry = {
@@ -683,7 +683,7 @@ function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics, locked = fal
 
       if (!locked && cosmetics.trail && !drawTrailOverSprite) drawPreviewMasteryTrail(ctx, x, y, previewSize, time, visualKey, style)
       if (!locked && cosmetics.aura && image.complete) drawPreviewMasteryAura(ctx, image, x, y, previewSize, time, style)
-      drawPreviewShipSprite(ctx, image, x, y, previewSize, cosmetics.frame, locked)
+      drawPreviewShipSprite(ctx, image, x, y, previewSize, cosmetics.frame, locked, visualKey)
       if (!locked && cosmetics.trail && drawTrailOverSprite) {
         ctx.save()
         ctx.globalAlpha *= 0.72
@@ -725,10 +725,15 @@ function getShipPreviewVisualStyle(shipKey: string) {
   return SHIP_PREVIEW_VISUAL_STYLES[shipKey] ?? SHIP_PREVIEW_VISUAL_STYLES.rocket
 }
 
-function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number, framed: boolean, locked = false) {
+function getPreviewShipFrameFilter(shipKey: string) {
+  if (shipKey === 'godGundam') return 'brightness(1.18) contrast(1.34) saturate(2.45) sepia(0.46) hue-rotate(350deg)'
+  return 'brightness(1.28) contrast(1.42) saturate(2.25)'
+}
+
+function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number, framed: boolean, locked = false, shipKey = '') {
   if (!image.complete) return
   ctx.save()
-  ctx.filter = locked ? 'brightness(0) contrast(1.18) drop-shadow(0 0 14px rgba(0,0,0,0.88))' : framed ? 'brightness(1.28) contrast(1.42) saturate(2.25)' : 'brightness(1.12) contrast(1.14) saturate(1.26)'
+  ctx.filter = locked ? 'brightness(0) contrast(1.18) drop-shadow(0 0 14px rgba(0,0,0,0.88))' : framed ? getPreviewShipFrameFilter(shipKey) : 'brightness(1.12) contrast(1.14) saturate(1.26)'
   ctx.drawImage(image, x - size / 2, y - size / 2, size, size)
   ctx.restore()
 }

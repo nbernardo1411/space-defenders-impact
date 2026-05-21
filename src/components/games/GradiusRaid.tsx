@@ -451,8 +451,10 @@ const WEAPON_FIRE_INTERVALS: Record<WeaponKey, number> = {
 const WEAPON_KEYS: WeaponKey[] = ['spread', 'laser', 'scatter', 'rocket', 'homing']
 const CORE_LANDER_FIRE_INTERVAL_SECONDS = 0.5
 const CORE_LANDER_BURNING_FIRE_INTERVAL_SECONDS = 0.32
+const CORE_LANDER_BURNING_RAGE_FIRE_INTERVAL_REDUCTION = 0.1
 const CORE_LANDER_BASE_DAMAGE_BONUS = 4
 const CORE_LANDER_BURNING_DAMAGE_BONUS = 7
+const CORE_LANDER_BURNING_RAGE_DAMAGE_BONUS = 8
 const CORE_LANDER_AOE_RADIUS = 12.5
 const FORCE_FIELD_ARMOR = 5
 const PLAYER_MAX_RANK = 20
@@ -2344,12 +2346,27 @@ function getFinalBossBeamRadius(chargePattern: Enemy['chargePattern']) {
 
 function getPlayerBaseAttack(player: Player) {
   const coreLanderBonus = player.ship.key === 'coreLander' ? CORE_LANDER_BASE_DAMAGE_BONUS : 0
-  const burningBonus = isCoreLanderBurning(player) ? CORE_LANDER_BURNING_DAMAGE_BONUS : 0
+  const burningBonus = isCoreLanderBurning(player)
+    ? CORE_LANDER_BURNING_DAMAGE_BONUS + CORE_LANDER_BURNING_RAGE_DAMAGE_BONUS * getCoreLanderBurningRage(player)
+    : 0
   return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL + coreLanderBonus + burningBonus
 }
 
 function isCoreLanderBurning(player: Player) {
   return player.ship.key === 'coreLander' && player.hp > 0 && player.hp <= 3
+}
+
+function getCoreLanderBurningRage(player: Player) {
+  if (!isCoreLanderBurning(player)) return 0
+  return clamp((3 - player.hp) / 2, 0, 1)
+}
+
+function getCoreLanderFireInterval(player: Player) {
+  if (!isCoreLanderBurning(player)) return CORE_LANDER_FIRE_INTERVAL_SECONDS
+  return Math.max(
+    0.2,
+    CORE_LANDER_BURNING_FIRE_INTERVAL_SECONDS - CORE_LANDER_BURNING_RAGE_FIRE_INTERVAL_REDUCTION * getCoreLanderBurningRage(player),
+  )
 }
 
 function levelUpPlayer(player: Player) {
@@ -5974,8 +5991,8 @@ function getCoreBlastSprite(radius: number, burning: boolean, frameBucket: numbe
   const length = roundedRadius * (burning ? 6.2 : 5.35)
   const pulse = 0.95 + Math.sin(frameBucket * Math.PI * 2) * 0.05
   const flicker = Math.sin(frameBucket * Math.PI * 2 + 1.7) * roundedRadius * 0.08
-  const width = roundedRadius * 4.2
-  const height = Math.ceil((length + roundedRadius * 4.2 + Math.abs(flicker)) * 1.18)
+  const width = roundedRadius * 3.45
+  const height = Math.ceil((length + roundedRadius * 3.5 + Math.abs(flicker)) * 1.12)
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil(width)
   canvas.height = height
@@ -6014,8 +6031,8 @@ function getCoreBlastSprite(radius: number, burning: boolean, frameBucket: numbe
     const side = wisp * roundedRadius * 0.18 + sway
     const wispTailX = x + side
     const wake = ctx.createLinearGradient(x, headY, wispTailX, tailY)
-    wake.addColorStop(0, 'rgba(255,255,255,0.72)')
-    wake.addColorStop(0.4, burning ? 'rgba(251,191,36,0.42)' : 'rgba(251,146,60,0.36)')
+    wake.addColorStop(0, 'rgba(255,255,255,0.56)')
+    wake.addColorStop(0.4, burning ? 'rgba(251,191,36,0.28)' : 'rgba(251,146,60,0.24)')
     wake.addColorStop(1, 'rgba(239,35,60,0)')
     ctx.strokeStyle = wake
     ctx.lineWidth = Math.max(1.1, roundedRadius * (wisp === 0 ? 0.22 : 0.13))
@@ -6043,8 +6060,8 @@ function getCoreBlastSprite(radius: number, burning: boolean, frameBucket: numbe
   flame.addColorStop(0.52, 'rgba(249,115,22,0.48)')
   flame.addColorStop(1, 'rgba(239,35,60,0)')
   ctx.fillStyle = flame
-  ctx.shadowBlur = 9
-  ctx.shadowColor = burning ? 'rgba(250,204,21,0.36)' : 'rgba(249,115,22,0.34)'
+  ctx.shadowBlur = 4
+  ctx.shadowColor = burning ? 'rgba(250,204,21,0.22)' : 'rgba(249,115,22,0.2)'
   ctx.beginPath()
   ctx.moveTo(x, headY - roundedRadius * 0.82)
   ctx.bezierCurveTo(
@@ -6066,14 +6083,14 @@ function getCoreBlastSprite(radius: number, burning: boolean, frameBucket: numbe
   ctx.closePath()
   ctx.fill()
 
-  const glow = ctx.createRadialGradient(x, headY, 1, x, headY, roundedRadius * 1.65)
-  glow.addColorStop(0, 'rgba(255,255,255,0.98)')
-  glow.addColorStop(0.28, burning ? 'rgba(254,240,138,0.86)' : 'rgba(254,215,170,0.84)')
-  glow.addColorStop(0.64, 'rgba(249,115,22,0.4)')
+  const glow = ctx.createRadialGradient(x, headY, 1, x, headY, roundedRadius * 1.28)
+  glow.addColorStop(0, 'rgba(255,255,255,0.82)')
+  glow.addColorStop(0.28, burning ? 'rgba(254,240,138,0.54)' : 'rgba(254,215,170,0.52)')
+  glow.addColorStop(0.64, 'rgba(249,115,22,0.22)')
   glow.addColorStop(1, 'rgba(239,68,68,0)')
   ctx.fillStyle = glow
   ctx.beginPath()
-  ctx.arc(x, headY, roundedRadius * 1.65 * pulse, 0, Math.PI * 2)
+  ctx.arc(x, headY, roundedRadius * 1.28 * pulse, 0, Math.PI * 2)
   ctx.fill()
 
   ctx.fillStyle = burning ? 'rgba(255,255,255,0.98)' : 'rgba(255,250,245,0.94)'
@@ -6382,6 +6399,7 @@ function drawRaidPlayer(
   const coreLanderBurningBlend = player.ship.key === 'coreLander'
     ? clamp(player.burningBlend ?? (coreLanderBurning ? 1 : 0), 0, 1)
     : 0
+  const coreLanderBurningRage = player.ship.key === 'coreLander' ? getCoreLanderBurningRage(player) : 0
   const engineSize = player.ship.key === 'coreLander'
     ? coreLanderUsesGodModel
       ? renderSize * 0.28
@@ -6423,14 +6441,17 @@ function drawRaidPlayer(
   }
 
   const normalSpriteFilter = cosmetics.frame
-    ? 'brightness(1.28) contrast(1.42) saturate(2.25)'
+    ? getShipFrameSpriteFilter(cosmeticShipKey)
     : 'brightness(1.12) contrast(1.14) saturate(1.26)'
   const burningSpriteFilter = cosmetics.frame
     ? 'brightness(1.34) contrast(1.36) saturate(1.68)'
     : 'brightness(1.2) contrast(1.18) saturate(1.36)'
   const sprite = getShipCanvasSprite(visualShipKey)
+  const godGundamBurningHeat = coreLanderBurningBlend * (0.35 + coreLanderBurningRage * 0.65)
   const spriteGlow = coreLanderBurning
-    ? 'rgba(251,191,36,0.28)'
+    ? coreLanderUsesGodModel
+      ? `rgba(251,${Math.round(191 - 74 * coreLanderBurningRage)},${Math.round(36 - 20 * coreLanderBurningRage)},${(0.28 + coreLanderBurningRage * 0.16).toFixed(2)})`
+      : 'rgba(251,191,36,0.28)'
     : player.forceField > 0
     ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
     : player.shield > 0 ? 'rgba(252,211,77,0.16)' : player.invuln > 0 ? 'rgba(226,232,240,0.1)' : null
@@ -6474,7 +6495,7 @@ function drawRaidPlayer(
     y,
     renderSize,
     coreLanderUsesGodModel && coreLanderBurningBlend > 0.01
-      ? `brightness(${(1.22 + coreLanderBurningBlend * 0.28).toFixed(2)}) contrast(${(1.16 + coreLanderBurningBlend * 0.16).toFixed(2)}) saturate(${(1.36 + coreLanderBurningBlend * 0.72).toFixed(2)}) sepia(${(coreLanderBurningBlend * 0.74).toFixed(2)}) hue-rotate(352deg)`
+      ? `brightness(${(1.22 + godGundamBurningHeat * 0.44).toFixed(2)}) contrast(${(1.16 + godGundamBurningHeat * 0.2).toFixed(2)}) saturate(${(1.36 + godGundamBurningHeat * 1.22).toFixed(2)}) sepia(${(coreLanderBurningBlend * (0.68 + coreLanderBurningRage * 0.24)).toFixed(2)}) hue-rotate(${(352 - coreLanderBurningRage * 18).toFixed(1)}deg)`
       : normalSpriteFilter,
     alpha,
     rotation,
@@ -6585,11 +6606,11 @@ const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
     auraShape: 'diamond',
   },
   godGundam: {
-    core: 'rgba(250,204,21,0.88)',
-    edge: 'rgba(37,99,235,0.72)',
-    soft: 'rgba(250,204,21,0.2)',
-    accent: 'rgba(239,68,68,0.78)',
-    paint: '#facc15',
+    core: 'rgba(251,191,36,0.92)',
+    edge: 'rgba(217,119,6,0.78)',
+    soft: 'rgba(245,158,11,0.28)',
+    accent: 'rgba(254,240,138,0.94)',
+    paint: '#f59e0b',
     trailOffsets: [-0.08, 0.08],
     auraShape: 'cross',
   },
@@ -6609,6 +6630,11 @@ function getMasteryVisualStyle(shipKey: string, color: string): MasteryVisualSty
 
 function getMasteryPaintColor(shipKey: string, fallbackColor: string) {
   return MASTERY_VISUAL_STYLES[shipKey]?.paint ?? fallbackColor
+}
+
+function getShipFrameSpriteFilter(shipKey: string) {
+  if (shipKey === 'godGundam') return 'brightness(1.18) contrast(1.34) saturate(2.45) sepia(0.46) hue-rotate(350deg)'
+  return 'brightness(1.28) contrast(1.42) saturate(2.25)'
 }
 
 function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color: string, shipKey: string, engineBoost = 0) {
@@ -9414,8 +9440,8 @@ export function GradiusRaid({
     const drawPlayerShot = (shot: Shot) => {
       if (!gfxProfile.drawAdvancedShotFx) {
         if (shot.kind === 'coreBlast') {
-          drawTrail(shot, shot.burning ? 'rgba(251,191,36,0.9)' : 'rgba(249,115,22,0.88)', 46, 4)
-          drawOrb(shot, shot.burning ? 'rgba(254,240,138,0.84)' : 'rgba(251,146,60,0.8)', 7)
+          drawTrail(shot, shot.burning ? 'rgba(251,191,36,0.56)' : 'rgba(249,115,22,0.52)', 34, 2.8)
+          drawOrb(shot, shot.burning ? 'rgba(254,240,138,0.62)' : 'rgba(251,146,60,0.58)', 5.6)
         } else if (shot.kind === 'laser' || shot.kind === 'rocket' || shot.kind === 'needle' || shot.kind === 'homing') drawTrail(shot, shot.kind === 'rocket' ? 'rgba(251,146,60,0.88)' : 'rgba(125,249,255,0.86)', 36, 3)
         else drawOrb(shot, 'rgba(34,197,94,0.86)', 6)
       }
@@ -9968,7 +9994,7 @@ export function GradiusRaid({
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
     const shipKey = player.ship.key
     const coreLanderBurning = isCoreLanderBurning(player)
-    const coreLanderFireInterval = coreLanderBurning ? CORE_LANDER_BURNING_FIRE_INTERVAL_SECONDS : CORE_LANDER_FIRE_INTERVAL_SECONDS
+    const coreLanderFireInterval = getCoreLanderFireInterval(player)
     const isWhiteMesiah = shipKey === 'mesiah' && getMesiahVisualShipKeyFromProgress(progressRef.current) === 'mesiahWhite'
     const canFireMain = player.fireCooldown <= 0
     const canFireMesiahDrones = shipKey === 'mesiah' && player.hp > 0 && player.mesiahDroneFireCooldown <= 0
