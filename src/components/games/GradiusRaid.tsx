@@ -84,7 +84,7 @@ type Shot = Vec & {
   vx: number
   vy: number
   damage: number
-  kind: WeaponKey | 'pulse' | 'coreBlast' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud' | 'squidBubble' | 'squidInk' | 'squidSpine' | 'snakeFang' | 'devilSnakeHead' | 'venomSpit'
+  kind: WeaponKey | 'pulse' | 'coreBlast' | 'spiegelKunai' | 'enemy' | 'boss' | 'plasma' | 'blade' | 'orbShot' | 'superShot' | 'needle' | 'voidShot' | 'beam' | 'scatterBoss' | 'poisonCloud' | 'squidBubble' | 'squidInk' | 'squidSpine' | 'snakeFang' | 'devilSnakeHead' | 'venomSpit'
   radius: number
   pierce?: number
   turn?: number
@@ -518,6 +518,8 @@ const CORE_LANDER_BASE_DAMAGE_BONUS = 4
 const CORE_LANDER_BURNING_DAMAGE_BONUS = 7
 const CORE_LANDER_BURNING_RAGE_DAMAGE_BONUS = 14
 const CORE_LANDER_AOE_RADIUS = 12.5
+const SPIEGEL_KUNAI_DAMAGE_MULTIPLIER = 0.34
+const SPIEGEL_KUNAI_SPLASH_DAMAGE_MULTIPLIER = 0.34
 const FORCE_FIELD_ARMOR = 5
 const PLAYER_MAX_RANK = 20
 const PLAYER_BASE_ATTACK_PER_LEVEL = 0.65
@@ -1008,6 +1010,17 @@ const RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.72)'],
   [0.36, 'rgba(250,204,21,0.48)'],
   [1, 'rgba(251,146,60,0)'],
+]
+const RAID_SPIEGEL_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
+  [0, 'rgba(248,250,252,0.72)'],
+  [0.38, 'rgba(248,113,113,0.42)'],
+  [1, 'rgba(15,23,42,0)'],
+]
+const RAID_SPIEGEL_MIRAGE_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
+  [0, 'rgba(255,255,255,0.76)'],
+  [0.34, 'rgba(203,213,225,0.5)'],
+  [0.72, 'rgba(248,113,113,0.28)'],
+  [1, 'rgba(15,23,42,0)'],
 ]
 const RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.82)'],
@@ -1658,7 +1671,7 @@ function warmRaidCanvasFilterVariants() {
   for (const model of RAID_CORE_LANDER_COMBAT_MODELS) {
     for (const pose of Object.keys(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model]) as GodGundamBarragePose[]) {
       warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(model, pose), getCoreLanderBarrageFilter(model, false))
-      warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(model, pose), RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER)
+      warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(model, pose), getCoreLanderBarrageFilter(model, true))
     }
   }
   for (const filter of RAID_FINAL_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getFinalBossCanvasSprite(), filter)
@@ -2322,8 +2335,24 @@ function getCoreLanderBarrageSequence(model: CoreLanderCombatModel) {
 }
 
 function getCoreLanderBarrageFilter(model: CoreLanderCombatModel, burning: boolean) {
+  if (burning && model === 'spiegel') return 'brightness(1.24) contrast(1.24) saturate(1.45) hue-rotate(166deg)'
   if (burning) return RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER
   return model === 'spiegel' ? RAID_SPIEGEL_BARRAGE_FILTER : RAID_GOD_GUNDAM_BARRAGE_FILTER
+}
+
+function getCoreLanderBarrageImpactStops(model: CoreLanderCombatModel, burning: boolean) {
+  if (model === 'spiegel') return burning ? RAID_SPIEGEL_MIRAGE_BARRAGE_IMPACT_STOPS : RAID_SPIEGEL_BARRAGE_IMPACT_STOPS
+  return burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
+}
+
+function getCoreLanderBarrageEnergyColor(model: CoreLanderCombatModel, burning: boolean) {
+  if (model === 'spiegel') return burning ? '#e2e8f0' : '#f87171'
+  return burning ? '#f59e0b' : '#facc15'
+}
+
+function getCoreLanderBarrageShadowColor(model: CoreLanderCombatModel, burning: boolean) {
+  if (model === 'spiegel') return burning ? 'rgba(226,232,240,0.34)' : 'rgba(248,113,113,0.28)'
+  return burning ? 'rgba(251,146,60,0.38)' : 'rgba(250,204,21,0.28)'
 }
 
 function getCoreLanderBarragePoseScale(model: CoreLanderCombatModel, pose: GodGundamBarragePose) {
@@ -2332,6 +2361,10 @@ function getCoreLanderBarragePoseScale(model: CoreLanderCombatModel, pose: GodGu
 
 function shouldMirrorCoreLanderBarragePose(model: CoreLanderCombatModel, attackSide: -1 | 1) {
   return model === 'spiegel' ? attackSide < 0 : attackSide > 0
+}
+
+function isCoreLanderAoeShot(shot: Shot) {
+  return shot.kind === 'coreBlast' || shot.kind === 'spiegelKunai'
 }
 
 function hasClearedRaidInProgress(progress: ReturnType<typeof loadProgress>) {
@@ -7196,6 +7229,32 @@ function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.restore()
 }
 
+function drawSpiegelBurningMirage(
+  ctx: CanvasRenderingContext2D,
+  sprite: CanvasSpriteEntry,
+  x: number,
+  y: number,
+  size: number,
+  time: number,
+  alpha: number,
+  engineBoost: number,
+) {
+  const strength = clamp(alpha * (0.14 + engineBoost * 0.92), 0, 1)
+  if (strength <= 0.02) return
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  const filter = 'brightness(1.24) contrast(1.2) saturate(1.35) hue-rotate(164deg)'
+  for (let index = 3; index >= 1; index -= 1) {
+    const phase = time / 92 + index * 1.73
+    const ghostAlpha = strength * (0.22 - index * 0.04)
+    const ghostX = x + Math.sin(phase) * size * (0.018 + index * 0.012)
+    const ghostY = y + size * (0.04 + index * 0.052)
+    drawCanvasSprite(ctx, sprite, ghostX, ghostY, size * (1 + index * 0.01), filter, ghostAlpha, 0, 1, '#e2e8f0', false)
+  }
+  ctx.restore()
+}
+
 function drawRaidPlayer(
   ctx: CanvasRenderingContext2D,
   player: Player,
@@ -7242,20 +7301,24 @@ function drawRaidPlayer(
   if (!drawGodGundamEngineOverSprite && !isDown) drawPlayerEngine(ctx, x, engineY, engineSize, time, engineBoost)
   if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, renderSize, time, cosmeticShipKey, masteryPaintColor)
   if (!isDown && coreLanderBurningBlend > 0.04) {
-    const pulse = 0.88 + Math.sin(time / 150) * 0.12
-    drawCoreLanderBurningCometWake(ctx, x, y, renderSize, time, coreLanderBurningBlend, Boolean(coreLanderCombatModel))
-    const haloX = x
-    const haloY = coreLanderCombatModel ? y + renderSize * GOD_GUNDAM_BURNING_HALO_Y_OFFSET : y
-    const haloSize = coreLanderCombatModel ? renderSize * GOD_GUNDAM_BURNING_HALO_SCALE : renderSize
-    drawCoreLanderBurningHalo(ctx, haloX, haloY, haloSize, time, coreLanderBurningBlend)
-    ctx.save()
-    ctx.globalAlpha *= coreLanderBurningBlend
-    drawRadialEllipse(ctx, x, y, renderSize * 0.54 * pulse, renderSize * 0.64 * pulse, [
-      [0, 'rgba(254,240,138,0.22)'],
-      [0.48, 'rgba(251,191,36,0.12)'],
-      [1, 'rgba(251,146,60,0)'],
-    ])
-    ctx.restore()
+    if (coreLanderCombatModel === 'spiegel') {
+      drawSpiegelBurningMirage(ctx, getShipCanvasSprite('spiegel'), x, y, renderSize, time, coreLanderBurningBlend, engineBoost)
+    } else {
+      const pulse = 0.88 + Math.sin(time / 150) * 0.12
+      drawCoreLanderBurningCometWake(ctx, x, y, renderSize, time, coreLanderBurningBlend, Boolean(coreLanderCombatModel))
+      const haloX = x
+      const haloY = coreLanderCombatModel ? y + renderSize * GOD_GUNDAM_BURNING_HALO_Y_OFFSET : y
+      const haloSize = coreLanderCombatModel ? renderSize * GOD_GUNDAM_BURNING_HALO_SCALE : renderSize
+      drawCoreLanderBurningHalo(ctx, haloX, haloY, haloSize, time, coreLanderBurningBlend)
+      ctx.save()
+      ctx.globalAlpha *= coreLanderBurningBlend
+      drawRadialEllipse(ctx, x, y, renderSize * 0.54 * pulse, renderSize * 0.64 * pulse, [
+        [0, 'rgba(254,240,138,0.22)'],
+        [0.48, 'rgba(251,191,36,0.12)'],
+        [1, 'rgba(251,146,60,0)'],
+      ])
+      ctx.restore()
+    }
   }
 
   if (player.shield > 0) drawHoneycombShield(ctx, x, y, renderSize, time, clamp(player.shield / 8, 0, 1))
@@ -7278,7 +7341,9 @@ function drawRaidPlayer(
   const sprite = getShipCanvasSprite(visualShipKey)
   const spriteGlow = coreLanderBurning
     ? coreLanderCombatModel
-      ? `rgba(251,${Math.round(191 - 74 * coreLanderBurningRage)},${Math.round(36 - 20 * coreLanderBurningRage)},${(0.28 + coreLanderBurningRage * 0.16).toFixed(2)})`
+      ? coreLanderCombatModel === 'spiegel'
+        ? `rgba(${Math.round(226 - 74 * coreLanderBurningRage)},${Math.round(232 - 119 * coreLanderBurningRage)},${Math.round(240 - 127 * coreLanderBurningRage)},${(0.18 + coreLanderBurningRage * 0.1).toFixed(2)})`
+        : `rgba(251,${Math.round(191 - 74 * coreLanderBurningRage)},${Math.round(36 - 20 * coreLanderBurningRage)},${(0.28 + coreLanderBurningRage * 0.16).toFixed(2)})`
       : 'rgba(251,191,36,0.28)'
     : player.forceField > 0
     ? player.ship.key === 'spaceEt' ? 'rgba(125,249,255,0.46)' : 'rgba(34,211,238,0.34)'
@@ -7318,11 +7383,7 @@ function drawRaidPlayer(
   }
   if (coreLanderCombatModel && coreLanderBurningBlend > 0.01) {
     const baseSprite = getShipCanvasSprite(coreLanderCombatModel)
-    const usesBurningSprite = coreLanderCombatModel === 'godGundam'
-    const burningSprite = getShipCanvasSprite(usesBurningSprite ? 'godGundamBurning' : coreLanderCombatModel)
-    const burningRenderSize = usesBurningSprite ? renderSize * GOD_GUNDAM_BURNING_BODY_SCALE : renderSize
-    const burningY = usesBurningSprite ? y + renderSize * GOD_GUNDAM_BURNING_BODY_Y_OFFSET : y
-    if (coreLanderBurningBlend < 0.99) {
+    if (coreLanderCombatModel === 'spiegel') {
       drawCanvasSprite(
         ctx,
         baseSprite,
@@ -7330,24 +7391,43 @@ function drawRaidPlayer(
         y,
         renderSize,
         normalSpriteFilter,
-        alpha * (1 - coreLanderBurningBlend),
+        alpha,
+        rotation,
+        scale,
+        masteryPaintColor,
+      )
+    } else {
+      const usesBurningSprite = coreLanderCombatModel === 'godGundam'
+      const burningSprite = getShipCanvasSprite(usesBurningSprite ? 'godGundamBurning' : coreLanderCombatModel)
+      const burningRenderSize = usesBurningSprite ? renderSize * GOD_GUNDAM_BURNING_BODY_SCALE : renderSize
+      const burningY = usesBurningSprite ? y + renderSize * GOD_GUNDAM_BURNING_BODY_Y_OFFSET : y
+      if (coreLanderBurningBlend < 0.99) {
+        drawCanvasSprite(
+          ctx,
+          baseSprite,
+          x,
+          y,
+          renderSize,
+          normalSpriteFilter,
+          alpha * (1 - coreLanderBurningBlend),
+          rotation,
+          scale,
+          masteryPaintColor,
+        )
+      }
+      drawCanvasSprite(
+        ctx,
+        burningSprite,
+        x,
+        burningY,
+        burningRenderSize,
+        getGodGundamBurningSpriteFilter(coreLanderBurningBlend, coreLanderBurningRage),
+        alpha * coreLanderBurningBlend,
         rotation,
         scale,
         masteryPaintColor,
       )
     }
-    drawCanvasSprite(
-      ctx,
-      burningSprite,
-      x,
-      burningY,
-      burningRenderSize,
-      getGodGundamBurningSpriteFilter(coreLanderBurningBlend, coreLanderBurningRage),
-      alpha * coreLanderBurningBlend,
-      rotation,
-      scale,
-      masteryPaintColor,
-    )
   } else {
     drawCanvasSprite(
       ctx,
@@ -7999,9 +8079,9 @@ function drawGodGundamBarrage(
   const sequence = getCoreLanderBarrageSequence(model)
   const burning = Boolean(barrage.burning)
   const barrageFilter = getCoreLanderBarrageFilter(model, burning)
-  const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
-  const energyColor = burning ? '#f59e0b' : '#facc15'
-  const shadowColor = burning ? 'rgba(251,146,60,0.38)' : 'rgba(250,204,21,0.28)'
+  const impactStops = getCoreLanderBarrageImpactStops(model, burning)
+  const energyColor = getCoreLanderBarrageEnergyColor(model, burning)
+  const shadowColor = getCoreLanderBarrageShadowColor(model, burning)
   const visibleTargets = godBarrageDrawTargetsScratch
   visibleTargets.length = 0
   for (let index = 0; index < enemies.length; index += 1) {
@@ -8031,8 +8111,8 @@ function drawGodGundamBarrage(
     ctx.globalAlpha = 0.72 * dashAlpha
     ctx.lineCap = 'round'
     const trail = ctx.createLinearGradient(startX, startY, x, y)
-    trail.addColorStop(0, 'rgba(250,204,21,0)')
-    trail.addColorStop(0.42, 'rgba(250,204,21,0.28)')
+    trail.addColorStop(0, model === 'spiegel' ? 'rgba(248,113,113,0)' : 'rgba(250,204,21,0)')
+    trail.addColorStop(0.42, model === 'spiegel' ? 'rgba(226,232,240,0.24)' : 'rgba(250,204,21,0.28)')
     trail.addColorStop(1, 'rgba(255,255,255,0.78)')
     ctx.strokeStyle = trail
     ctx.lineWidth = Math.max(4, spriteSize * 0.08)
@@ -8123,9 +8203,9 @@ function drawGodGundamPassiveStrikes(
     const sequence = getCoreLanderBarrageSequence(model)
     const burning = Boolean(strike.burning)
     const strikeFilter = getCoreLanderBarrageFilter(model, burning)
-    const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
-    const energyColor = burning ? '#f59e0b' : '#facc15'
-    const shadowColor = burning ? 'rgba(251,146,60,0.42)' : 'rgba(250,204,21,0.32)'
+    const impactStops = getCoreLanderBarrageImpactStops(model, burning)
+    const energyColor = getCoreLanderBarrageEnergyColor(model, burning)
+    const shadowColor = getCoreLanderBarrageShadowColor(model, burning)
     const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * Math.max(1, strike.size)
     const targetRadius = Math.max(12, viewportWidth * (strike.targetRadius / WIDTH) * 0.78)
     const progress = clamp(strike.age / strike.duration, 0, 1)
@@ -10483,6 +10563,50 @@ export function GradiusRaid({
       ctx.drawImage(sprite, -sprite.width / 2, -radius * 2.2, sprite.width, sprite.height)
       ctx.restore()
     }
+    const drawSpiegelKunai = (shot: Shot) => {
+      const x = toX(shot.x)
+      const y = toY(shot.y)
+      const radius = Math.max(5.4, shot.radius * visualScale * 2.55)
+      const angle = Math.atan2(shot.vy, shot.vx) + Math.PI / 2
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(angle)
+      ctx.globalCompositeOperation = 'lighter'
+      const trail = ctx.createLinearGradient(0, radius * 1.9, 0, -radius * 0.2)
+      trail.addColorStop(0, 'rgba(15,23,42,0)')
+      trail.addColorStop(0.38, 'rgba(148,163,184,0.2)')
+      trail.addColorStop(1, 'rgba(248,250,252,0.62)')
+      ctx.strokeStyle = trail
+      ctx.lineWidth = Math.max(1.1, radius * 0.22)
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(0, radius * 1.55)
+      ctx.lineTo(0, -radius * 0.2)
+      ctx.stroke()
+
+      ctx.shadowBlur = Math.max(6, radius * 0.8)
+      ctx.shadowColor = 'rgba(248,113,113,0.24)'
+      ctx.fillStyle = 'rgba(226,232,240,0.92)'
+      ctx.strokeStyle = 'rgba(239,68,68,0.78)'
+      ctx.lineWidth = Math.max(1, radius * 0.12)
+      ctx.beginPath()
+      ctx.moveTo(0, -radius * 1.55)
+      ctx.lineTo(radius * 0.38, -radius * 0.18)
+      ctx.lineTo(0, radius * 0.22)
+      ctx.lineTo(-radius * 0.38, -radius * 0.18)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+
+      ctx.shadowBlur = 0
+      ctx.fillStyle = 'rgba(15,23,42,0.86)'
+      ctx.fillRect(-radius * 0.13, radius * 0.08, radius * 0.26, radius * 0.74)
+      ctx.strokeStyle = 'rgba(250,204,21,0.58)'
+      ctx.beginPath()
+      ctx.arc(0, radius * 1.02, radius * 0.24, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
     const drawPoisonCloud = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
@@ -10757,9 +10881,14 @@ export function GradiusRaid({
 
     const drawPlayerShot = (shot: Shot) => {
       if (!gfxProfile.drawAdvancedShotFx) {
-        if (shot.kind === 'coreBlast') {
-          drawTrail(shot, shot.burning ? 'rgba(251,191,36,0.56)' : 'rgba(249,115,22,0.52)', 34, 2.8)
-          drawOrb(shot, shot.burning ? 'rgba(254,240,138,0.62)' : 'rgba(251,146,60,0.58)', 5.6)
+        if (isCoreLanderAoeShot(shot)) {
+          if (shot.kind === 'spiegelKunai') {
+            drawTrail(shot, 'rgba(226,232,240,0.48)', 28, 1.8)
+            drawOrb(shot, 'rgba(248,113,113,0.54)', 4.4)
+          } else {
+            drawTrail(shot, shot.burning ? 'rgba(251,191,36,0.56)' : 'rgba(249,115,22,0.52)', 34, 2.8)
+            drawOrb(shot, shot.burning ? 'rgba(254,240,138,0.62)' : 'rgba(251,146,60,0.58)', 5.6)
+          }
         } else if (shot.kind === 'laser' || shot.kind === 'rocket' || shot.kind === 'needle' || shot.kind === 'homing') drawTrail(shot, shot.kind === 'rocket' ? 'rgba(251,146,60,0.88)' : 'rgba(125,249,255,0.86)', 36, 3)
         else drawOrb(shot, 'rgba(34,197,94,0.86)', 6)
       }
@@ -10768,6 +10897,7 @@ export function GradiusRaid({
       else if (shot.kind === 'scatter') drawScatterShard(shot)
       else if (shot.kind === 'rocket') drawRocketWarhead(shot)
       else if (shot.kind === 'coreBlast') drawCoreBlast(shot)
+      else if (shot.kind === 'spiegelKunai') drawSpiegelKunai(shot)
       else if (shot.kind === 'homing') drawMissile(shot)
       else if (shot.kind === 'needle') drawTrail(shot, 'rgba(125,249,255,0.9)', 42, 3.2)
       else drawPulseBolt(shot)
@@ -11143,9 +11273,11 @@ export function GradiusRaid({
         burning: isCoreLanderBurning(player),
       }
       player.y = HEIGHT + 18
-      addRipple(barrageTarget.x, barrageTarget.y, '#facc15', barrageTarget.isBoss ? 18 : 13)
-      addRipple(player.x, player.y, '#fef3c7', 13)
-      spawnSparks(barrageTarget.x, barrageTarget.y, '#facc15', barrageTarget.isBoss ? 42 : 26, 7)
+      const barrageColor = barrageModel === 'spiegel' ? '#f87171' : '#facc15'
+      const launchColor = barrageModel === 'spiegel' ? '#e2e8f0' : '#fef3c7'
+      addRipple(barrageTarget.x, barrageTarget.y, barrageColor, barrageTarget.isBoss ? 18 : 13)
+      addRipple(player.x, player.y, launchColor, 13)
+      spawnSparks(barrageTarget.x, barrageTarget.y, barrageColor, barrageTarget.isBoss ? 42 : 26, 7)
       playGameSound('combo')
       syncSnapshot()
       return
@@ -11384,6 +11516,7 @@ export function GradiusRaid({
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
     const shipKey = player.ship.key
     const coreLanderBurning = isCoreLanderBurning(player)
+    const coreLanderCombatModel = shipKey === 'coreLander' ? getCoreLanderCombatModel(progressRef.current) : null
     const coreLanderFireInterval = getCoreLanderFireInterval(player)
     const isWhiteMesiah = shipKey === 'mesiah' && getMesiahVisualShipKeyFromProgress(progressRef.current) === 'mesiahWhite'
     const canFireMain = player.fireCooldown <= 0
@@ -11625,16 +11758,35 @@ export function GradiusRaid({
       }
 
       else if (attackShipKey === 'coreLander') {
-        pushShot({
-          x: emitter.x,
-          y: emitter.y - 4.8,
-          vx: 0,
-          vy: -82,
-          damage: Math.ceil((baseDamage + 9) * emitter.scale),
-          kind: 'coreBlast',
-          radius: coreLanderBurning ? 3.05 : 2.8,
-          burning: coreLanderBurning,
-        })
+        if (coreLanderCombatModel === 'spiegel') {
+          ;[
+            { offset: -2.8, vx: -18, vy: -91 },
+            { offset: 0, vx: 0, vy: -96 },
+            { offset: 2.8, vx: 18, vy: -91 },
+          ].forEach((kunai) => {
+            pushShot({
+              x: emitter.x + kunai.offset * emitter.scale,
+              y: emitter.y - 4.8,
+              vx: kunai.vx,
+              vy: kunai.vy,
+              damage: Math.max(1, Math.ceil((baseDamage + 4) * emitter.scale * SPIEGEL_KUNAI_DAMAGE_MULTIPLIER)),
+              kind: 'spiegelKunai',
+              radius: coreLanderBurning ? 2.35 : 2.15,
+              burning: coreLanderBurning,
+            })
+          })
+        } else {
+          pushShot({
+            x: emitter.x,
+            y: emitter.y - 4.8,
+            vx: 0,
+            vy: -82,
+            damage: Math.ceil((baseDamage + 9) * emitter.scale),
+            kind: 'coreBlast',
+            radius: coreLanderBurning ? 3.05 : 2.8,
+            burning: coreLanderBurning,
+          })
+        }
         if (activeWeapons.spread) {
           const fan = stacks.spread >= 2 ? [-30, -16, 16, 30] : [-22, 22]
           fan.forEach((vx) => pushShot({ x: emitter.x, y: emitter.y - 3.2, vx, vy: -88, damage, kind: 'spread', radius: 1.28 }))
@@ -13749,10 +13901,11 @@ export function GradiusRaid({
     }
 
     const detonateCoreLanderBlast = (shot: Shot, sourceEnemyId?: number) => {
+      const spiegelKunai = shot.kind === 'spiegelKunai'
       const blastRadius = CORE_LANDER_AOE_RADIUS * (shot.burning ? 1.12 : 1)
-      const splashDamage = Math.max(1, Math.ceil(shot.damage * 0.58))
-      spawnSparks(shot.x, shot.y, '#fb923c', 24, 7)
-      addRipple(shot.x, shot.y, '#fb923c', 13)
+      const splashDamage = Math.max(1, Math.ceil(shot.damage * (spiegelKunai ? SPIEGEL_KUNAI_SPLASH_DAMAGE_MULTIPLIER : 0.58)))
+      spawnSparks(shot.x, shot.y, spiegelKunai ? '#e2e8f0' : '#fb923c', spiegelKunai ? 14 : 24, spiegelKunai ? 5 : 7)
+      addRipple(shot.x, shot.y, spiegelKunai ? '#f87171' : '#fb923c', spiegelKunai ? 9 : 13)
       playGameSound('explosion')
 
       for (const enemy of enemiesRef.current) {
@@ -13768,7 +13921,7 @@ export function GradiusRaid({
           const damage = enemy.isBoss ? Math.max(1, Math.ceil(splashDamage * 0.45)) : splashDamage
           enemy.hp = enemy.isBoss ? Math.max(1, enemy.hp - damage) : enemy.hp - damage
           enemy.hitFlash = Math.max(enemy.hitFlash ?? 0, enemy.isBoss ? 0.18 : enemy.isMiniBoss ? 0.14 : 0.1)
-          spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fdba74' : '#fb923c', enemy.isBoss ? 12 : enemy.isMiniBoss ? 9 : 5, enemy.isBoss || enemy.isMiniBoss ? 6 : 4)
+          spawnSparks(enemy.x, enemy.y, spiegelKunai ? '#cbd5e1' : enemy.isBoss ? '#fdba74' : '#fb923c', enemy.isBoss ? 12 : enemy.isMiniBoss ? 9 : 5, enemy.isBoss || enemy.isMiniBoss ? 6 : 4)
           if (enemy.hp <= 0 && !enemy.isBoss) {
             enemiesDestroyedRef.current += 1
             const scoreValue = enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
@@ -13806,7 +13959,7 @@ export function GradiusRaid({
           const bubbleDamage = Math.max(1, Math.ceil(Math.min(shot.damage, bubbleHitCap) * bubbleArmor))
           bubble.hp = (bubble.hp ?? 1) - bubbleDamage
           spawnSparks(shot.x, shot.y, '#f0abfc', 5, 5)
-          if (shot.kind === 'coreBlast') {
+          if (isCoreLanderAoeShot(shot)) {
             detonateCoreLanderBlast(shot)
             shot.y = -999
           } else if (shot.pierce && shot.pierce > 0) {
@@ -13835,13 +13988,13 @@ export function GradiusRaid({
         ) {
           asteroid.hp -= shot.damage
           spawnSparks(shot.x, shot.y, '#fbbf24', asteroid.tier === 2 ? 5 : 3, asteroid.tier === 2 ? 5 : 3)
-          if (shot.kind === 'coreBlast') {
+          if (isCoreLanderAoeShot(shot)) {
             detonateCoreLanderBlast(shot)
           } else if (shot.kind === 'rocket') {
             addRipple(shot.x, shot.y, '#fb923c', 8)
             playGameSound('explosion')
           }
-          if (shot.kind === 'coreBlast') {
+          if (isCoreLanderAoeShot(shot)) {
             shot.y = -999
           } else if (shot.pierce && shot.pierce > 0) {
             shot.pierce -= 1
@@ -13865,7 +14018,7 @@ export function GradiusRaid({
         if (Math.abs(shot.x - wreck.x) <= hitX && Math.abs(shot.y - wreck.y) <= hitY) {
           wreck.hp -= shot.damage
           spawnSparks(shot.x, shot.y, '#94a3b8', 5, 5)
-          if (shot.kind === 'coreBlast') {
+          if (isCoreLanderAoeShot(shot)) {
             detonateCoreLanderBlast(shot)
             shot.y = -999
           } else if (shot.pierce && shot.pierce > 0) {
@@ -13983,6 +14136,9 @@ export function GradiusRaid({
         return
       }
 
+      const ownerModel = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
+      const meleeColor = ownerModel === 'spiegel' ? '#f87171' : '#facc15'
+      const meleeRippleColor = ownerModel === 'spiegel' ? '#e2e8f0' : '#fbbf24'
       const range = getGodGundamMeleeRange(owner)
       type GodMeleeCandidate = {
         target: (Enemy | AsteroidHazard | Shot) & { id: number; radius: number }
@@ -14040,8 +14196,8 @@ export function GradiusRaid({
         owner.godMeleeChainX = owner.x
         owner.godMeleeChainY = owner.y
         owner.godMeleeLastTargetKey = ''
-        addRipple(owner.x, owner.y, '#facc15', 14)
-        spawnSparks(owner.x, owner.y, '#facc15', 26, 6)
+        addRipple(owner.x, owner.y, meleeColor, 14)
+        spawnSparks(owner.x, owner.y, meleeColor, 26, 6)
         return
       }
 
@@ -14049,8 +14205,8 @@ export function GradiusRaid({
         spawnGodGundamPassiveStrike(owner, target, godMeleeStrikeId)
         owner.godMeleeVisualTimer = GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS
         const strikeEnemy = candidate.kind === 'enemy' ? candidate.target as Enemy : null
-        spawnSparks(target.x, target.y, '#facc15', strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, 5)
-        if (godMeleeStrikeId % 4 === 0) addRipple(target.x, target.y, '#fbbf24', strikeEnemy?.isBoss ? 9 : 6)
+        spawnSparks(target.x, target.y, meleeColor, strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, 5)
+        if (godMeleeStrikeId % 4 === 0) addRipple(target.x, target.y, meleeRippleColor, strikeEnemy?.isBoss ? 9 : 6)
       }
 
       if (candidate.kind === 'enemy') {
@@ -14206,7 +14362,7 @@ export function GradiusRaid({
           if (!bossShielded && (enemy.isBoss || enemy.isMiniBoss)) {
             addRipple(shot.x, shot.y, enemy.isBoss ? '#fca5a5' : '#c084fc', enemy.isBoss ? 7 : 5)
           }
-          if (shot.kind === 'coreBlast' && !bossShielded) {
+          if (isCoreLanderAoeShot(shot) && !bossShielded) {
             detonateCoreLanderBlast(shot, enemy.id)
             shot.y = -999
           } else if (shot.pierce && shot.pierce > 0) {
