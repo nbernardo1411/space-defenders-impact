@@ -1,4 +1,4 @@
-export type LanguageCode = 'en' | 'zh' | 'ja' | 'ko'
+﻿export type LanguageCode = 'en' | 'zh' | 'ja' | 'ko'
 
 export type LanguageText = typeof TEXT.en
 
@@ -605,6 +605,9 @@ export const RAID_TEXT = {
       coreLanderUnlock: 'Earn 5,000,000 total Endless Flight points to unlock',
       endlessFlight: 'Endless Flight',
       endlessFlightUnlocked: 'Endless Flight unlocked',
+      loadingAssets: 'Loading Raid Assets',
+      loadingAssetsCopy: 'Warming ships, bosses, attacks, and audio so launch stays smooth.',
+      loadingAssetsReady: 'Ready to launch',
 
       restartEndless: 'Restart Endless',
       mobileFollowsFinger: 'Mobile follows above finger',
@@ -725,6 +728,9 @@ export const RAID_TEXT = {
       coreLanderUnlock: '累计获得 5,000,000 无尽飞行分数后解锁',
       endlessFlight: '无尽飞行',
       endlessFlightUnlocked: '无尽飞行已解锁',
+      loadingAssets: '正在加载突击资源',
+      loadingAssetsCopy: '正在预热战机、Boss、攻击和音频，让出击更流畅。',
+      loadingAssetsReady: '可以出击',
 
       restartEndless: '重开无尽飞行',
       mobileFollowsFinger: '移动端跟随手指上方',
@@ -845,6 +851,9 @@ export const RAID_TEXT = {
       coreLanderUnlock: 'エンドレス飛行で累計5,000,000ポイント獲得して解放',
       endlessFlight: 'エンドレス飛行',
       endlessFlightUnlocked: 'エンドレス飛行 解放済み',
+      loadingAssets: 'レイド素材を読み込み中',
+      loadingAssetsCopy: '機体、ボス、攻撃、音声を事前読み込みして出撃を滑らかにします。',
+      loadingAssetsReady: '出撃準備完了',
 
       restartEndless: 'エンドレス再開',
       mobileFollowsFinger: 'モバイルは指の上を追従',
@@ -965,6 +974,9 @@ export const RAID_TEXT = {
       coreLanderUnlock: '끝없는 비행 누적 5,000,000점을 얻으면 해금',
       endlessFlight: '끝없는 비행',
       endlessFlightUnlocked: '끝없는 비행 해금됨',
+      loadingAssets: '레이드 에셋 로딩 중',
+      loadingAssetsCopy: '기체, 보스, 공격, 오디오를 미리 준비해 부드럽게 출격합니다.',
+      loadingAssetsReady: '출격 준비 완료',
 
       restartEndless: '끝없는 비행 다시 시작',
       mobileFollowsFinger: '모바일은 손가락 위를 따라감',

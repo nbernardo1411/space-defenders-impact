@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM, type GameSoundKind } from './sound'
 import type { GraphicsQuality } from './sound'
@@ -18,6 +18,7 @@ type MirageBossKind = 'squid' | 'snake'
 type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 type RaidMode = 'campaign' | 'endless'
+type RaidAssetPreloadState = { status: 'idle' | 'loading' | 'ready'; loaded: number; total: number }
 type DevilBossPose = 'idle' | 'idle2' | 'attack' | 'attack2' | 'rage'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
 type RaidRandomEventKind = 'meteor' | 'solar' | 'rift' | 'wreck' | 'ambush' | 'ion'
@@ -691,6 +692,7 @@ const RAID_AUDIO_CACHE_NAME = 'space-defender-audio-v1'
 const RAID_PERSISTENT_CACHE_VERSION = 'gradius-raid-assets-v2'
 const RAID_PERSISTENT_CACHE_STORAGE_KEY = 'gradiusRaidPersistentAssetCache'
 let raidPersistentAssetCachePromise: Promise<void> | null = null
+let raidPersistentAssetCacheComplete = false
 
 function getRaidGraphicsProfile(quality: GraphicsQuality, isSmallViewport: boolean, isMultiplayer: boolean): RaidGraphicsProfile {
   const cacheKey = `${quality}:${isSmallViewport ? 1 : 0}:${isMultiplayer ? 1 : 0}`
@@ -860,6 +862,7 @@ const coreLanderBurningHaloSpriteCache = new Map<string, HTMLCanvasElement>()
 const godBarrageDrawTargetsScratch: Enemy[] = []
 const godBarrageDamageTargetsScratch: Enemy[] = []
 let raidCanvasAssetWarmPromise: Promise<void> | null = null
+let raidCanvasAssetWarmComplete = false
 
 const RAID_OTHER_ASSET_PATHS = {
   asteroid: 'assets/others/asteroid.webp',
@@ -1875,46 +1878,117 @@ async function cacheRaidPersistentUrl(cache: Cache | null, url: string) {
   }
 }
 
-async function cacheRaidPersistentGroup(cacheName: string, urls: string[]) {
+async function cacheRaidPersistentGroup(cacheName: string, urls: string[], onProgress?: () => void) {
   const cache = typeof caches === 'undefined' ? null : await caches.open(cacheName)
   const queue = [...new Set(urls)]
   const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
     while (queue.length > 0) {
       const url = queue.shift()
-      if (url) await cacheRaidPersistentUrl(cache, url)
+      if (url) {
+        await cacheRaidPersistentUrl(cache, url)
+        onProgress?.()
+      }
     }
   })
   await Promise.all(workers)
 }
 
-function warmRaidPersistentAssetCache() {
-  if (typeof window === 'undefined' || typeof fetch === 'undefined') return Promise.resolve()
-  if (!raidPersistentAssetCachePromise) {
-    raidPersistentAssetCachePromise = Promise.all([
-      cacheRaidPersistentGroup(RAID_IMAGE_CACHE_NAME, getRaidPersistentImageUrls()),
-      cacheRaidPersistentGroup(RAID_AUDIO_CACHE_NAME, getRaidPersistentAudioUrls()),
-    ]).then(() => {
-      try {
-        window.localStorage.setItem(RAID_PERSISTENT_CACHE_STORAGE_KEY, RAID_PERSISTENT_CACHE_VERSION)
-      } catch {
-        // Cache API and HTTP cache are the source of truth; localStorage is just a warm marker.
-      }
-    }).catch(() => undefined)
-  }
-  return raidPersistentAssetCachePromise
+function getRaidPersistentAssetGroups() {
+  return [
+    { cacheName: RAID_IMAGE_CACHE_NAME, urls: getRaidPersistentImageUrls() },
+    { cacheName: RAID_AUDIO_CACHE_NAME, urls: getRaidPersistentAudioUrls() },
+  ]
 }
 
-function preloadRaidCanvasAssets() {
-  void warmRaidPersistentAssetCache()
-  if (!raidCanvasAssetWarmPromise) {
-    const entries = warmRaidCanvasAssets()
-    raidCanvasAssetWarmPromise = Promise.all(entries.map((entry) => entry.ready)).then(() => {
+function getRaidPersistentAssetCount() {
+  return getRaidPersistentAssetGroups().reduce((total, group) => total + new Set(group.urls).size, 0)
+}
+
+function warmRaidPersistentAssetCache(onProgress?: (loaded: number, total: number) => void) {
+  const groups = getRaidPersistentAssetGroups()
+  const total = getRaidPersistentAssetCount()
+
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') {
+    onProgress?.(total, total)
+    return Promise.resolve()
+  }
+
+  if (raidPersistentAssetCacheComplete) {
+    onProgress?.(total, total)
+    return Promise.resolve()
+  }
+
+  if (!onProgress && raidPersistentAssetCachePromise) return raidPersistentAssetCachePromise
+
+  let loaded = 0
+  onProgress?.(loaded, total)
+  const warmPromise = Promise.all(groups.map((group) => cacheRaidPersistentGroup(group.cacheName, group.urls, () => {
+    loaded += 1
+    onProgress?.(Math.min(loaded, total), total)
+  }))).then(() => {
+    raidPersistentAssetCacheComplete = true
+    try {
+      window.localStorage.setItem(RAID_PERSISTENT_CACHE_STORAGE_KEY, RAID_PERSISTENT_CACHE_VERSION)
+    } catch {
+      // Cache API and HTTP cache are the source of truth; localStorage is just a warm marker.
+    }
+  }).catch(() => undefined)
+
+  if (!raidPersistentAssetCachePromise) raidPersistentAssetCachePromise = warmPromise
+  return warmPromise
+}
+
+function preloadRaidCanvasAssets(onProgress?: (loaded: number, total: number) => void) {
+  const entries = warmRaidCanvasAssets()
+  const total = entries.length
+
+  if (raidCanvasAssetWarmComplete) {
+    onProgress?.(total, total)
+    return Promise.resolve()
+  }
+
+  if (!onProgress && raidCanvasAssetWarmPromise) return raidCanvasAssetWarmPromise
+
+  let loaded = 0
+  onProgress?.(loaded, total)
+  const warmPromise = Promise.all(entries.map((entry) => entry.ready.then(() => {
+    loaded += 1
+    onProgress?.(Math.min(loaded, total), total)
+  }))).then(() => {
+    if (!raidCanvasAssetWarmComplete) {
       warmRaidCanvasFilterVariants()
-    })
-  }
-  return raidCanvasAssetWarmPromise
+      raidCanvasAssetWarmComplete = true
+    }
+  })
+
+  if (!raidCanvasAssetWarmPromise) raidCanvasAssetWarmPromise = warmPromise
+  return warmPromise
 }
 
+function preloadRaidGameplayAssets(onProgress?: (loaded: number, total: number) => void) {
+  const canvasTotal = warmRaidCanvasAssets().length
+  const persistentTotal = getRaidPersistentAssetCount()
+  const total = Math.max(1, canvasTotal + persistentTotal)
+  let canvasLoaded = raidCanvasAssetWarmComplete ? canvasTotal : 0
+  let persistentLoaded = raidPersistentAssetCacheComplete ? persistentTotal : 0
+  const report = () => onProgress?.(Math.min(canvasLoaded + persistentLoaded, total), total)
+
+  report()
+  return Promise.all([
+    preloadRaidCanvasAssets((loaded) => {
+      canvasLoaded = loaded
+      report()
+    }),
+    warmRaidPersistentAssetCache((loaded) => {
+      persistentLoaded = loaded
+      report()
+    }),
+  ]).then(() => {
+    canvasLoaded = canvasTotal
+    persistentLoaded = persistentTotal
+    report()
+  })
+}
 function getNormalAlienImageFilter(baseFilter: string, enemy: Enemy) {
   const hueOffsets = [-18, 24, -8, 36, -30, 12, 44, -40]
   const index = Math.abs(Math.trunc(enemy.variant)) % hueOffsets.length
@@ -9299,6 +9373,7 @@ export function GradiusRaid({
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [briefingStep, setBriefingStep] = useState(0)
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
+  const [assetPreload, setAssetPreload] = useState<RaidAssetPreloadState>({ status: 'idle', loaded: 0, total: 1 })
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
     phase: 'select',
     player: getInitialPlayer(),
@@ -9335,9 +9410,17 @@ export function GradiusRaid({
     if (multiplayerSession) coOpRunRef.current = true
   }, [multiplayerSession])
 
-  useEffect(() => {
-    void preloadRaidCanvasAssets()
+  const preloadRaidAssetsForMenu = useCallback(async (showLoading = false) => {
+    if (showLoading) setAssetPreload((state) => state.status === 'ready' ? state : { status: 'loading', loaded: state.loaded, total: Math.max(1, state.total) })
+    await preloadRaidGameplayAssets((loaded, total) => {
+      setAssetPreload({ status: loaded >= total ? 'ready' : 'loading', loaded, total: Math.max(1, total) })
+    })
+    setAssetPreload((state) => ({ ...state, status: 'ready', loaded: state.total, total: Math.max(1, state.total) }))
   }, [])
+
+  useEffect(() => {
+    void preloadRaidAssetsForMenu(true)
+  }, [preloadRaidAssetsForMenu])
 
   const resetGuestPredictionState = useCallback(() => {
     guestPositionCorrectionRef.current = { x: 0, y: 0 }
@@ -11368,7 +11451,7 @@ export function GradiusRaid({
   const resetGame = useCallback(async (startStage = 1, fullyBuffed = false, mode: RaidMode = raidModeRef.current) => {
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) return
-    await preloadRaidCanvasAssets()
+    await preloadRaidAssetsForMenu(true)
     progressRef.current = loadProgress()
     shipCosmeticsCacheRef.current.clear()
 
@@ -11471,7 +11554,7 @@ export function GradiusRaid({
     stopBGM()
     startRaidBgm(stageRef.current, 'cruise')
     syncSnapshot()
-  }, [playerName, resetGuestPredictionState, startRaidBgm, syncSnapshot])
+  }, [playerName, preloadRaidAssetsForMenu, resetGuestPredictionState, startRaidBgm, syncSnapshot])
 
   useEffect(() => {
     const session = multiplayerSessionRef.current
@@ -11497,14 +11580,14 @@ export function GradiusRaid({
       multiplayerConnectionQualityRef.current = 'good'
       setMultiplayerConnection({ quality: 'good', label: 'Link good', rtt: null })
       resetGuestPredictionState()
-      void preloadRaidCanvasAssets().then(() => {
+      void preloadRaidAssetsForMenu(true).then(() => {
         phaseRef.current = 'playing'
         stopBGM()
         startRaidBgmRef.current(stageRef.current, 'cruise')
         syncSnapshot()
       })
     }
-  }, [multiplayerSession, resetGame, resetGuestPredictionState, syncSnapshot])
+  }, [multiplayerSession, preloadRaidAssetsForMenu, resetGame, resetGuestPredictionState, syncSnapshot])
 
   const openBriefing = useCallback(() => {
     const session = multiplayerSessionRef.current
@@ -14932,6 +15015,8 @@ export function GradiusRaid({
   const endingWingmen = ['xwing', 'dreadnought', 'spaceEt'].filter((shipKey) => shipKey !== player.ship.key && shipKey !== snapshot.allyPlayer?.ship.key)
   const endingBossesDefeated = Math.max(bossesDefeatedRef.current, snapshot.phase === 'victory' ? 3 : 0)
   const endingNukesUsed = nukesUsedRef.current
+  const assetPreloadPercent = Math.min(100, Math.round(assetPreload.loaded / Math.max(1, assetPreload.total) * 100))
+  const showAssetPreloadOverlay = assetPreload.status !== 'ready' && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'victory'
 
   return (
     <div
@@ -15031,6 +15116,19 @@ export function GradiusRaid({
           </span>
           <span className="raid__nuke-quick-text">{specialLabel}</span>
         </button>
+      )}
+
+      {showAssetPreloadOverlay && (
+        <div className="raid__asset-loading" role="status" aria-live="polite">
+          <div className="raid__asset-loading-panel">
+            <div className="raid__kicker">{menuText.loadingAssets}</div>
+            <strong>{assetPreloadPercent}%</strong>
+            <div className="raid__asset-loading-bar" aria-hidden="true">
+              <i style={{ width: `${assetPreloadPercent}%` }} />
+            </div>
+            <p>{assetPreloadPercent >= 100 ? menuText.loadingAssetsReady : menuText.loadingAssetsCopy}</p>
+          </div>
+        </div>
       )}
 
       {bossIncoming && (
