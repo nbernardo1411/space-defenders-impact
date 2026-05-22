@@ -218,6 +218,7 @@ type GodGundamPassiveStrike = Vec & {
   size: number
   targetRadius: number
   burning?: boolean
+  clone?: boolean
 }
 
 type AsteroidHazard = Vec & {
@@ -7442,7 +7443,9 @@ function drawRaidPlayer(
   if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, renderSize, time, cosmeticShipKey, masteryPaintColor)
   if (!isDown && coreLanderBurningBlend > 0.04) {
     if (coreLanderCombatModel === 'spiegel') {
-      drawSpiegelBurningMirage(ctx, getShipCanvasSprite('spiegel'), renderSize, coreLanderBurningBlend, player.spiegelAfterimageStrength ?? 0, player.spiegelAfterimages ?? [], toX, toY)
+      if ((player.godMeleeCloak ?? 0) <= 0) {
+        drawSpiegelBurningMirage(ctx, getShipCanvasSprite('spiegel'), renderSize, coreLanderBurningBlend, player.spiegelAfterimageStrength ?? 0, player.spiegelAfterimages ?? [], toX, toY)
+      }
     } else {
       const pulse = 0.88 + Math.sin(time / 150) * 0.12
       drawCoreLanderBurningCometWake(ctx, x, y, renderSize, time, coreLanderBurningBlend, Boolean(coreLanderCombatModel))
@@ -7532,7 +7535,7 @@ function drawRaidPlayer(
           y + renderSize * 0.04,
           renderSize * 0.9,
           normalSpriteFilter,
-          alpha * coreLanderBurningBlend * 0.44,
+          alpha * coreLanderBurningBlend * 0.28,
           rotation + side * 0.04,
           scale,
           masteryPaintColor,
@@ -8262,18 +8265,20 @@ function drawGodGundamBarrage(
     const dashSprite = getShipCanvasSprite(model === 'godGundam' && burning ? 'godGundamBurning' : model)
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = 0.72 * dashAlpha
+    ctx.globalAlpha = (model === 'spiegel' ? 0.42 : 0.72) * dashAlpha
     ctx.lineCap = 'round'
-    const trail = ctx.createLinearGradient(startX, startY, x, y)
-    trail.addColorStop(0, model === 'spiegel' ? 'rgba(248,113,113,0)' : 'rgba(250,204,21,0)')
-    trail.addColorStop(0.42, model === 'spiegel' ? 'rgba(226,232,240,0.24)' : 'rgba(250,204,21,0.28)')
-    trail.addColorStop(1, 'rgba(255,255,255,0.78)')
-    ctx.strokeStyle = trail
-    ctx.lineWidth = Math.max(4, spriteSize * 0.08)
-    ctx.beginPath()
-    ctx.moveTo(startX, startY)
-    ctx.lineTo(x, y)
-    ctx.stroke()
+    if (model !== 'spiegel') {
+      const trail = ctx.createLinearGradient(startX, startY, x, y)
+      trail.addColorStop(0, 'rgba(250,204,21,0)')
+      trail.addColorStop(0.42, 'rgba(250,204,21,0.28)')
+      trail.addColorStop(1, 'rgba(255,255,255,0.78)')
+      ctx.strokeStyle = trail
+      ctx.lineWidth = Math.max(4, spriteSize * 0.08)
+      ctx.beginPath()
+      ctx.moveTo(startX, startY)
+      ctx.lineTo(x, y)
+      ctx.stroke()
+    }
     ctx.translate(x, y)
     ctx.rotate(angle + Math.PI / 2)
     drawCanvasSpriteContain(ctx, dashSprite, 0, 0, spriteSize * 0.82, barrageFilter, 0.86 * dashAlpha, 0, 1, energyColor)
@@ -8356,11 +8361,13 @@ function drawGodGundamPassiveStrikes(
     const model = strike.model ?? 'godGundam'
     const sequence = getCoreLanderBarrageSequence(model)
     const burning = Boolean(strike.burning)
+    const clone = Boolean(strike.clone)
+    const cloneFade = clone ? 0.38 : 1
     const strikeFilter = getCoreLanderBarrageFilter(model, burning)
     const impactStops = getCoreLanderBarrageImpactStops(model, burning)
     const energyColor = getCoreLanderBarrageEnergyColor(model, burning)
     const shadowColor = getCoreLanderBarrageShadowColor(model, burning)
-    const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * Math.max(1, strike.size)
+    const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * Math.max(1, strike.size) * (clone ? 0.94 : 1)
     const targetRadius = Math.max(12, viewportWidth * (strike.targetRadius / WIDTH) * 0.78)
     const progress = clamp(strike.age / strike.duration, 0, 1)
     const fade = Math.sin(progress * Math.PI)
@@ -8375,20 +8382,25 @@ function drawGodGundamPassiveStrikes(
 
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = fade * 0.76
-    const trail = ctx.createLinearGradient(startX, startY, hitX, hitY)
-    trail.addColorStop(0, 'rgba(250,204,21,0)')
-    trail.addColorStop(0.38, burning ? 'rgba(251,146,60,0.34)' : 'rgba(250,204,21,0.28)')
-    trail.addColorStop(1, 'rgba(255,255,255,0.78)')
-    ctx.strokeStyle = trail
-    ctx.lineWidth = Math.max(2.4, spriteSize * 0.038)
-    ctx.lineCap = 'round'
-    ctx.beginPath()
-    ctx.moveTo(startX, startY)
-    ctx.quadraticCurveTo((startX + hitX) * 0.5, Math.min(startY, hitY) - spriteSize * 0.18, hitX, hitY)
-    ctx.stroke()
+    ctx.globalAlpha = fade * (clone ? 0.2 : 0.76)
+    if (model !== 'spiegel') {
+      const trail = ctx.createLinearGradient(startX, startY, hitX, hitY)
+      trail.addColorStop(0, 'rgba(250,204,21,0)')
+      trail.addColorStop(0.38, burning ? 'rgba(251,146,60,0.34)' : 'rgba(250,204,21,0.28)')
+      trail.addColorStop(1, 'rgba(255,255,255,0.78)')
+      ctx.strokeStyle = trail
+      ctx.lineWidth = Math.max(2.4, spriteSize * 0.038)
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(startX, startY)
+      ctx.quadraticCurveTo((startX + hitX) * 0.5, Math.min(startY, hitY) - spriteSize * 0.18, hitX, hitY)
+      ctx.stroke()
+    }
     if (progress > 0.18 && progress < 0.9) {
+      ctx.save()
+      ctx.globalAlpha *= clone ? 0.42 : 1
       drawRadialEllipse(ctx, hitX, hitY, targetRadius * (0.88 + progress * 0.18), targetRadius * 0.48, impactStops)
+      ctx.restore()
     }
     ctx.restore()
 
@@ -8413,7 +8425,7 @@ function drawGodGundamPassiveStrikes(
       if (localProgress > 0.38 && localProgress < 0.78) {
         ctx.save()
         ctx.globalCompositeOperation = 'lighter'
-        ctx.globalAlpha = alpha * 0.58
+        ctx.globalAlpha = alpha * (clone ? 0.24 : 0.58)
         drawRadialEllipse(ctx, impactX, impactY, spriteSize * 0.24, spriteSize * 0.14, impactStops)
         ctx.strokeStyle = 'rgba(255,255,255,0.68)'
         ctx.lineWidth = Math.max(1, spriteSize * 0.018)
@@ -8429,9 +8441,9 @@ function drawGodGundamPassiveStrikes(
       ctx.save()
       ctx.translate(x, y)
       if (shouldMirrorCoreLanderBarragePose(model, attackSide)) ctx.scale(-1, 1)
-      ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
+      ctx.shadowBlur = Math.max(5, spriteSize * (clone ? 0.045 : 0.08))
       ctx.shadowColor = shadowColor
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (1 + layer * 0.06) * poseScale, strikeFilter, alpha, 0, 1, energyColor)
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (1 + layer * 0.06) * poseScale, strikeFilter, alpha * cloneFade, 0, 1, energyColor)
       ctx.restore()
     }
   }
@@ -14281,6 +14293,7 @@ export function GradiusRaid({
         size: 1,
         targetRadius: target.radius,
         burning: isCoreLanderBurning(owner),
+        clone: preserveChain,
       })
       if (!preserveChain) {
         owner.godMeleeChainX = target.x
