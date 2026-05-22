@@ -46,6 +46,10 @@ type MesiahScoutUnit = MesiahDroneUnit & {
   stack: number
 }
 
+type SpiegelAfterimage = Vec & {
+  life: number
+}
+
 type Player = Vec & {
   hp: number
   maxHp: number
@@ -64,6 +68,7 @@ type Player = Vec & {
   weaponTimers: Record<WeaponKey, number>
   engineBoost: number
   spiegelAfterimageStrength: number
+  spiegelAfterimages: SpiegelAfterimage[]
   mesiahDroneTimer: number
   mesiahDroneCooldown: number
   mesiahDroneFireCooldown: number
@@ -2178,6 +2183,7 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     weaponTimers: { ...EMPTY_WEAPON_TIMERS },
     engineBoost: 0,
     spiegelAfterimageStrength: 0,
+    spiegelAfterimages: [],
     mesiahDroneTimer: ship.key === 'mesiah' ? 0.01 : 0,
     mesiahDroneCooldown: 0,
     mesiahDroneFireCooldown: 0,
@@ -2275,6 +2281,7 @@ function clonePlayer(player: Player): Player {
     optionStacks: player.optionStacks ?? (player.optionTimer > 0 ? 1 : 0),
     engineBoost: player.engineBoost ?? 0,
     spiegelAfterimageStrength: player.spiegelAfterimageStrength ?? 0,
+    spiegelAfterimages: (player.spiegelAfterimages ?? []).map((afterimage) => ({ ...afterimage })),
     mesiahDroneTimer: player.mesiahDroneTimer ?? 0,
     mesiahDroneCooldown: player.mesiahDroneCooldown ?? 0,
     mesiahDroneFireCooldown: player.mesiahDroneFireCooldown ?? 0,
@@ -2419,6 +2426,11 @@ function compactPlayer(player: Player): Player {
     fireCooldown: roundNetworkNumber(player.fireCooldown),
     engineBoost: roundNetworkNumber(player.engineBoost),
     spiegelAfterimageStrength: roundNetworkNumber(player.spiegelAfterimageStrength ?? 0),
+    spiegelAfterimages: (player.spiegelAfterimages ?? []).map((afterimage) => ({
+      x: roundNetworkNumber(afterimage.x),
+      y: roundNetworkNumber(afterimage.y),
+      life: roundNetworkNumber(afterimage.life),
+    })),
     mesiahDroneTimer: roundNetworkNumber(player.mesiahDroneTimer ?? 0),
     mesiahDroneCooldown: roundNetworkNumber(player.mesiahDroneCooldown ?? 0),
     mesiahDroneFireCooldown: roundNetworkNumber(player.mesiahDroneFireCooldown ?? 0),
@@ -3019,10 +3031,27 @@ function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | nu
   const boostEase = targetEngineBoost > (player.engineBoost ?? 0) ? 11.5 : 5.5
   player.engineBoost = (player.engineBoost ?? 0) + (targetEngineBoost - (player.engineBoost ?? 0)) * Math.min(1, dt * boostEase)
   const targetAfterimage = clamp(moveSpeed / 38, 0, 1)
-  const afterimageEase = targetAfterimage > (player.spiegelAfterimageStrength ?? 0) ? 14 : 6.5
+  const afterimageEase = targetAfterimage > (player.spiegelAfterimageStrength ?? 0) ? 16 : 3.2
   player.spiegelAfterimageStrength = (player.spiegelAfterimageStrength ?? 0) + (targetAfterimage - (player.spiegelAfterimageStrength ?? 0)) * Math.min(1, dt * afterimageEase)
-}
 
+  const afterimages = player.spiegelAfterimages ?? []
+  let write = 0
+  for (const afterimage of afterimages) {
+    afterimage.life -= dt * 1.85
+    if (afterimage.life <= 0) continue
+    afterimages[write] = afterimage
+    write += 1
+  }
+  afterimages.length = write
+  if (targetAfterimage > 0.08) {
+    const latest = afterimages[0]
+    if (!latest || distSq(latest, { x: previousX, y: previousY }) > 0.34) {
+      afterimages.unshift({ x: previousX, y: previousY, life: 1 })
+    }
+  }
+  afterimages.length = Math.min(afterimages.length, 8)
+  player.spiegelAfterimages = afterimages
+}
 function getRiftCenter(event: RaidRandomEvent) {
   return {
     x: 50 + Math.sin(event.age * 1.3 + event.seed) * 18,
@@ -7235,26 +7264,26 @@ function drawCometForceField(ctx: CanvasRenderingContext2D, x: number, y: number
 function drawSpiegelBurningMirage(
   ctx: CanvasRenderingContext2D,
   sprite: CanvasSpriteEntry,
-  x: number,
-  y: number,
   size: number,
-  time: number,
   alpha: number,
   movement: number,
+  afterimages: SpiegelAfterimage[],
+  toX: (value: number) => number,
+  toY: (value: number) => number,
 ) {
-  const strength = clamp(alpha * movement, 0, 1)
+  const strength = clamp(alpha * Math.max(movement, afterimages[0]?.life ?? 0), 0, 1)
   if (strength <= 0.025) return
 
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   const filter = 'brightness(1.08) contrast(1.16) saturate(1.08)'
-  for (let index = 4; index >= 1; index -= 1) {
-    const phase = time / 88 + index * 1.37
-    const ghostAlpha = strength * (0.22 - index * 0.035)
-    const sway = Math.sin(phase) * size * (0.018 + index * 0.01)
-    const ghostX = x - sway * 0.5
-    const ghostY = y + size * (0.034 + index * 0.044)
-    drawCanvasSprite(ctx, sprite, ghostX, ghostY, size * (1 + index * 0.004), filter, ghostAlpha, 0, 1, PLAYER_COLOR, false)
+  const maxGhosts = Math.min(afterimages.length, 8)
+  for (let index = maxGhosts - 1; index >= 0; index -= 1) {
+    const afterimage = afterimages[index]
+    const life = clamp(afterimage.life, 0, 1)
+    const ghostAlpha = strength * life * (0.25 - index * 0.018)
+    if (ghostAlpha <= 0.012) continue
+    drawCanvasSprite(ctx, sprite, toX(afterimage.x), toY(afterimage.y), size * (0.985 + life * 0.018), filter, ghostAlpha, 0, 1, PLAYER_COLOR, false)
   }
   ctx.restore()
 }
@@ -7306,7 +7335,7 @@ function drawRaidPlayer(
   if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, renderSize, time, cosmeticShipKey, masteryPaintColor)
   if (!isDown && coreLanderBurningBlend > 0.04) {
     if (coreLanderCombatModel === 'spiegel') {
-      drawSpiegelBurningMirage(ctx, getShipCanvasSprite('spiegel'), x, y, renderSize, time, coreLanderBurningBlend, player.spiegelAfterimageStrength ?? 0)
+      drawSpiegelBurningMirage(ctx, getShipCanvasSprite('spiegel'), renderSize, coreLanderBurningBlend, player.spiegelAfterimageStrength ?? 0, player.spiegelAfterimages ?? [], toX, toY)
     } else {
       const pulse = 0.88 + Math.sin(time / 150) * 0.12
       drawCoreLanderBurningCometWake(ctx, x, y, renderSize, time, coreLanderBurningBlend, Boolean(coreLanderCombatModel))
