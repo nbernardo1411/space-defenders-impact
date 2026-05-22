@@ -3,13 +3,14 @@ import { LeaderboardsScreen } from './components/LeaderboardsScreen'
 import { ProgressionScreen } from './components/ProgressionScreen'
 import { RaidMultiplayerLobby, type RaidMultiplayerSession } from './components/RaidMultiplayerLobby'
 import { RunResultsOverlay } from './components/RunResultsOverlay'
-import { GradiusRaid } from './components/games/GradiusRaid'
+import { GradiusRaid, preloadGradiusRaidAssets, type RaidAssetPreloadState } from './components/games/GradiusRaid'
 import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl } from './components/games/RaidShipSprite'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
 import {
   getInitialLanguage,
   getLanguageText,
+  getRaidText,
   getReleaseText,
   isLanguageCode,
   LANGUAGE_OPTIONS,
@@ -20,7 +21,7 @@ import { getStoredPlayerName, getStoredRecoveryCode, hasStoredPlayerName, isCrea
 import { getStoredTowerDefenseEndlessUnlock, loadProgress, normalizeProgress, recordRunResult, saveProgress, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
-// Placeholder coins (not displayed — kept for prop compatibility)
+// Placeholder coins (not displayed - kept for prop compatibility)
 const DEFAULT_COINS = [
   { id: '1', name: 'Alpha', symbol: 'A', image: '' },
 ]
@@ -95,8 +96,10 @@ function App() {
   const [endlessUnlocked, setEndlessUnlocked] = useState(getStoredTowerDefenseEndlessUnlock)
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress())
   const [lastRunUpdate, setLastRunUpdate] = useState<{ result: RunResult; update: ProgressUpdate } | null>(null)
+  const [raidAssetPreload, setRaidAssetPreload] = useState<RaidAssetPreloadState>({ status: 'idle', loaded: 0, total: 1 })
 
   const text = useMemo(() => getLanguageText(language), [language])
+  const raidText = useMemo(() => getRaidText(language), [language])
   const releaseText = useMemo(() => getReleaseText(language), [language])
   const creatorUnlock = isCreatorPlayerName(playerName)
   const canPlayEndless = endlessUnlocked || creatorUnlock
@@ -107,6 +110,23 @@ function App() {
     }),
     [cutsceneIndex, text],
   )
+  const raidAssetPreloadPercent = Math.min(100, Math.round(raidAssetPreload.loaded / Math.max(1, raidAssetPreload.total) * 100))
+  const raidAssetsReady = raidAssetPreload.status === 'ready'
+
+  useEffect(() => {
+    let cancelled = false
+    setRaidAssetPreload((state) => state.status === 'ready' ? state : { status: 'loading', loaded: state.loaded, total: Math.max(1, state.total) })
+    void preloadGradiusRaidAssets((loaded, total) => {
+      if (cancelled) return
+      setRaidAssetPreload({ status: loaded >= total ? 'ready' : 'loading', loaded, total: Math.max(1, total) })
+    }).then(() => {
+      if (cancelled) return
+      setRaidAssetPreload((state) => ({ status: 'ready', loaded: state.total, total: Math.max(1, state.total) }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleLanguageChange = (nextLanguage: string) => {
     if (!isLanguageCode(nextLanguage)) return
@@ -263,6 +283,7 @@ function App() {
   }
 
   const startRocketRaid = () => {
+    if (!raidAssetsReady) return
     setScreen('rocketMode')
   }
 
@@ -456,10 +477,16 @@ function App() {
             </div>
 
             <div className={canPlayEndless ? 'start-screen__actions' : 'start-screen__actions start-screen__actions--three'} aria-label="Game modes">
-              <button className="start-screen__button start-screen__button--raid" onClick={startRocketRaid}>
+              <button
+                className={raidAssetsReady ? "start-screen__button start-screen__button--raid" : "start-screen__button start-screen__button--raid start-screen__button--loading"}
+                onClick={startRocketRaid}
+                disabled={!raidAssetsReady}
+              >
                 <span className="start-screen__button-kicker">{text.title.raidKicker}</span>
                 <span className="start-screen__button-title">{text.title.raidTitle}</span>
-                <span className="start-screen__button-copy">{text.title.raidCopy}</span>
+                <span className="start-screen__button-copy">
+                  {raidAssetsReady ? text.title.raidCopy : `${raidText.menu.loadingAssets} ${raidAssetPreloadPercent}%`}
+                </span>
               </button>
               <button className="start-screen__button" onClick={startCutscene}>
                 <span className="start-screen__button-kicker">{text.title.storyKicker}</span>
@@ -493,6 +520,18 @@ function App() {
             </div>
           </div>
         </div>
+        {!raidAssetsReady && (
+          <div className="start-screen__asset-loading" role="status" aria-live="polite">
+            <div className="start-screen__asset-loading-panel">
+              <span>{raidText.menu.loadingAssets}</span>
+              <strong>{raidAssetPreloadPercent}%</strong>
+              <div className="start-screen__asset-loading-bar" aria-hidden="true">
+                <i style={{ width: `${raidAssetPreloadPercent}%` }} />
+              </div>
+              <p>{raidText.menu.loadingAssetsCopy}</p>
+            </div>
+          </div>
+        )}
         {playerNamePrompt}
         {runResultsOverlay}
       </div>

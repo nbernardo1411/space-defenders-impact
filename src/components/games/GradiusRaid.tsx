@@ -18,7 +18,7 @@ type MirageBossKind = 'squid' | 'snake'
 type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 type RaidMode = 'campaign' | 'endless'
-type RaidAssetPreloadState = { status: 'idle' | 'loading' | 'ready'; loaded: number; total: number }
+export type RaidAssetPreloadState = { status: 'idle' | 'loading' | 'ready'; loaded: number; total: number }
 type DevilBossPose = 'idle' | 'idle2' | 'attack' | 'attack2' | 'rage'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
 type RaidRandomEventKind = 'meteor' | 'solar' | 'rift' | 'wreck' | 'ambush' | 'ion'
@@ -618,7 +618,7 @@ const GOD_GUNDAM_MELEE_MINIBOSS_DAMAGE_MULTIPLIER = 1.08
 const GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER = 1.62
 const GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER = 1.15
 const SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER = 0.32
-const SPIEGEL_SHADOW_CLONE_OFFSET = 7.2
+const SPIEGEL_SHADOW_CLONE_OFFSET = 12
 const GOD_GUNDAM_STAGE_ATTACK_BONUS = 0.9
 const MULTIPLAYER_BOSS_HP_MULTIPLIER = 2.5
 const BOSS_RESPAWN_SECONDS = 90
@@ -1967,7 +1967,7 @@ function preloadRaidCanvasAssets(onProgress?: (loaded: number, total: number) =>
   return warmPromise
 }
 
-function preloadRaidGameplayAssets(onProgress?: (loaded: number, total: number) => void) {
+export function preloadGradiusRaidAssets(onProgress?: (loaded: number, total: number) => void) {
   const canvasTotal = warmRaidCanvasAssets().length
   const persistentTotal = getRaidPersistentAssetCount()
   const total = Math.max(1, canvasTotal + persistentTotal)
@@ -1990,6 +1990,12 @@ function preloadRaidGameplayAssets(onProgress?: (loaded: number, total: number) 
     persistentLoaded = persistentTotal
     report()
   })
+}
+
+function getRaidAssetPreloadInitialState(): RaidAssetPreloadState {
+  const total = Math.max(1, warmRaidCanvasAssets().length + getRaidPersistentAssetCount())
+  const ready = raidCanvasAssetWarmComplete && raidPersistentAssetCacheComplete
+  return { status: ready ? 'ready' : 'idle', loaded: ready ? total : 0, total }
 }
 function getNormalAlienImageFilter(baseFilter: string, enemy: Enemy) {
   const hueOffsets = [-18, 24, -8, 36, -30, 12, 44, -40]
@@ -2967,7 +2973,8 @@ function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy, stage =
 }
 function getGodGundamPassivePose(index: number, model: CoreLanderCombatModel): GodGundamBarragePose {
   const sequence = getCoreLanderBarrageSequence(model)
-  return sequence[index % sequence.length].pose
+  const safeIndex = ((index % sequence.length) + sequence.length) % sequence.length
+  return sequence[safeIndex].pose
 }
 
 const FINAL_BOSS_SCATTER_LANE_OFFSETS = [-31, -13, 13, 31] as const
@@ -7521,7 +7528,7 @@ function drawRaidPlayer(
         drawCanvasSprite(
           ctx,
           baseSprite,
-          x + side * renderSize * 0.34,
+          x + side * renderSize * 0.52,
           y + renderSize * 0.04,
           renderSize * 0.9,
           normalSpriteFilter,
@@ -8388,7 +8395,7 @@ function drawGodGundamPassiveStrikes(
     for (let layer = layers - 1; layer >= 0; layer -= 1) {
       const localProgress = clamp(progress * 1.18 - layer * 0.16, 0, 1)
       if (localProgress <= 0 || localProgress >= 1) continue
-      const pose = sequence[(strike.id + layer) % sequence.length]
+      const pose = sequence[((strike.id + layer) % sequence.length + sequence.length) % sequence.length]
       const attackSide = pose.side === 0 ? baseSide : pose.side
       const prep = 1 - localProgress / 0.72
       const approach = localProgress < 0.72
@@ -9399,7 +9406,7 @@ export function GradiusRaid({
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [briefingStep, setBriefingStep] = useState(0)
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
-  const [assetPreload, setAssetPreload] = useState<RaidAssetPreloadState>({ status: 'idle', loaded: 0, total: 1 })
+  const [assetPreload, setAssetPreload] = useState<RaidAssetPreloadState>(getRaidAssetPreloadInitialState)
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
     phase: 'select',
     player: getInitialPlayer(),
@@ -9438,7 +9445,7 @@ export function GradiusRaid({
 
   const preloadRaidAssetsForMenu = useCallback(async (showLoading = false) => {
     if (showLoading) setAssetPreload((state) => state.status === 'ready' ? state : { status: 'loading', loaded: state.loaded, total: Math.max(1, state.total) })
-    await preloadRaidGameplayAssets((loaded, total) => {
+    await preloadGradiusRaidAssets((loaded, total) => {
       setAssetPreload({ status: loaded >= total ? 'ready' : 'loading', loaded, total: Math.max(1, total) })
     })
     setAssetPreload((state) => ({ ...state, status: 'ready', loaded: state.total, total: Math.max(1, state.total) }))
@@ -9687,7 +9694,7 @@ export function GradiusRaid({
         remotePlayerRef.current = clonePlayer(nextGuestPlayer)
         resetGuestPredictionState()
       } else {
-        // ── Client-side prediction reconciliation ──────────────────────────────────
+        // -- Client-side prediction reconciliation ----------------------------------
         // Do NOT pull position toward the host's stale value every packet —
         // that would create a constant backward drag proportional to ping.
         // Instead, measure the error and drain it invisibly over ~125 ms.
@@ -11776,7 +11783,7 @@ export function GradiusRaid({
         ? { ...EMPTY_WEAPON_FLAGS, laser: firingWeapons.laser, homing: firingWeapons.homing }
         : emitter.baseOnly ? EMPTY_WEAPON_FLAGS : firingWeapons
 
-      // ── MESIAH DRONE: detached Space Jet support fire for white Mesiah ──
+      // -- MESIAH DRONE: detached Space Jet support fire for white Mesiah --
       if (attackShipKey === 'mesiahDroneSpaceJet') {
         const target = emitter.target
         if (!target || !emitter.canFire) return
@@ -11794,7 +11801,7 @@ export function GradiusRaid({
         mesiahDroneFired = true
       }
 
-      // ── MESIAH DRONE: detached Black Comet support fire ──
+      // -- MESIAH DRONE: detached Black Comet support fire --
       else if (attackShipKey === 'mesiahDrone') {
         const target = emitter.target
         if (!target || !emitter.canFire) return
@@ -11836,7 +11843,7 @@ export function GradiusRaid({
         }
       }
 
-      // ── RED WRAITH: rapid twin needle streams ──
+      // -- RED WRAITH: rapid twin needle streams --
       else if (attackShipKey === 'fast') {
         pushShot({ x: emitter.x - 1.2, y: emitter.y - 3, vx: -3, vy: -110, damage, kind: 'needle' as any, radius: 1.1 })
         pushShot({ x: emitter.x + 1.2, y: emitter.y - 3, vx: 3, vy: -110, damage, kind: 'needle' as any, radius: 1.1 })
@@ -11873,7 +11880,7 @@ export function GradiusRaid({
         }
       }
 
-      // ── MESIAH: Red Wraith stream plus default rocket pair ──
+      // -- MESIAH: Red Wraith stream plus default rocket pair --
       else if (attackShipKey === 'mesiah') {
         const boostedDamage = Math.ceil((baseDamage + 2) * emitter.scale)
         pushShot({ x: emitter.x - 1.45, y: emitter.y - 3.4, vx: -3, vy: -116, damage: boostedDamage, kind: 'needle' as any, radius: 1.12 })
@@ -12020,7 +12027,7 @@ export function GradiusRaid({
         }
       }
 
-      // ── NIGHT LANCE: single thick slow piercing laser ray ──
+      // -- NIGHT LANCE: single thick slow piercing laser ray --
       else if (attackShipKey === 'laser') {
         pushShot({
           x: emitter.x,
@@ -12074,7 +12081,7 @@ export function GradiusRaid({
         }
       }
 
-      // ── OBSIDIAN ARK: slow heavy rocket core ──
+      // -- OBSIDIAN ARK: slow heavy rocket core --
       else if (attackShipKey === 'dreadnought') {
         // CORE WEAPON (this was missing)
         pushShot({
@@ -12165,7 +12172,7 @@ export function GradiusRaid({
         }
       }
 
-      // ── CROSSWING NOVA: forward-aligned S-foil cannons ──
+      // -- CROSSWING NOVA: forward-aligned S-foil cannons --
       else if (attackShipKey === 'xwing') {
         const wingOffset = emitter.main ? 4.2 : 2.7
         const innerOffset = emitter.main ? 1.65 : 1.05
@@ -12206,7 +12213,7 @@ export function GradiusRaid({
         }
       }
 
-      // ── SPACE JET: single thin fast green laser line ──
+      // -- SPACE JET: single thin fast green laser line --
       else if (attackShipKey === 'spaceEt') {
         const phaseDrift = (shotId % 3) - 1
         pushShot({
@@ -12250,7 +12257,7 @@ export function GradiusRaid({
           })
         }
       }
-      // ── FALLBACK ──
+      // -- FALLBACK --
       else {
         pushShot({ x: emitter.x, y: emitter.y - 3.6, vx: 0, vy: -96, damage, kind: 'pulse', radius: 1.35 })
       }
