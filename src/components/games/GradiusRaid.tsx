@@ -1741,11 +1741,15 @@ function getDevilMasterProjectileCanvasSprite() {
   return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH))
 }
 
+function processSpiegelBarrageAsset(image: HTMLImageElement) {
+  return makeSpriteProcessingCanvas(image, 760)
+}
+
 function getGodGundamBarrageCanvasSprite(model: CoreLanderCombatModel, pose: GodGundamBarragePose) {
   const key = `ship-image:${model}-barrage-${pose}`
   const existing = canvasSpriteCache.get(key)
   if (existing) return existing
-  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model][pose]))
+  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model][pose]), model === 'spiegel' ? processSpiegelBarrageAsset : undefined)
 }
 
 function getEliteAlienCanvasSprite(variant: number) {
