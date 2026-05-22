@@ -6,7 +6,7 @@ import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAI
 import { isCreatorPlayerName, submitLeaderboardScore } from '../../leaderboards'
 import { getRaidText } from '../../i18n'
 import type { LanguageCode } from '../../i18n'
-import { getCoreLanderModel, getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, isLocalProgressionTestHost, loadProgress, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
+import { getCoreLanderModel, getEquippedShipCosmetics, getMesiahShipColor, hasProgressionUnlockOverride, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, isLocalProgressionTestHost, loadProgress, type CoreLanderModel, type RunResult, type RunStatus, type ShipCosmeticEquipState } from '../../progression'
 import './GradiusRaid.css'
 
 type WeaponKey = 'spread' | 'laser' | 'scatter' | 'rocket' | 'homing'
@@ -21,6 +21,7 @@ type RaidMode = 'campaign' | 'endless'
 type DevilBossPose = 'idle' | 'idle2' | 'attack' | 'attack2' | 'rage'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
 type RaidRandomEventKind = 'meteor' | 'solar' | 'rift' | 'wreck' | 'ambush' | 'ion'
+type CoreLanderCombatModel = Extract<CoreLanderModel, 'godGundam' | 'spiegel'>
 
 type Vec = { x: number; y: number }
 
@@ -183,6 +184,7 @@ type NukeStrike = {
 }
 
 type GodGundamBarrage = {
+  model?: CoreLanderCombatModel
   targetId: number
   startX: number
   startY: number
@@ -201,6 +203,7 @@ type GodGundamPassiveStrike = Vec & {
   id: number
   sourceX: number
   sourceY: number
+  model: CoreLanderCombatModel
   pose: GodGundamBarragePose
   side: -1 | 1
   age: number
@@ -482,6 +485,7 @@ function getShipSpriteSize(shipKey: string, context: 'player' | 'option' | 'pick
   if (shipKey === 'mesiahRaptorBlack' || shipKey === 'mesiahRaptorWhite') return context === 'player' ? 74 : context === 'option' ? 36 : 80
   if (shipKey === 'godGundam') return context === 'player' ? 122 : context === 'option' ? 40 : 116
   if (shipKey === 'godGundamBurning') return context === 'player' ? 122 : context === 'option' ? 40 : 116
+  if (shipKey === 'spiegel') return context === 'player' ? 122 : context === 'option' ? 40 : 116
   if (shipKey === 'coreLanderBurning') return context === 'player' ? 116 : context === 'option' ? 46 : 112
   if (shipKey === 'coreLander') return context === 'player' ? 110 : context === 'option' ? 44 : 108
   if (shipKey === 'dreadnought') return context === 'player' ? 88 : context === 'option' ? 40 : 88
@@ -854,7 +858,8 @@ const RAID_FINAL_BOSS_CORE_OFFSET_Y = -0.039
 const RAID_SQUID_BOSS_ASSET_PATH = 'assets/aliens/squid_boss.png'
 const RAID_COBRA_BOSS_ASSET_PATH = 'assets/aliens/cobra_boss.png'
 const RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH = 'assets/GundamEnemy/master-gundam.png'
-const RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS = {
+const RAID_CORE_LANDER_COMBAT_MODELS: CoreLanderCombatModel[] = ['godGundam', 'spiegel']
+const RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS: Record<string, string> = {
   punch: 'assets/G-gundam-attacks/punch.png',
   kick: 'assets/G-gundam-attacks/kick.png',
   uppercut1: 'assets/G-gundam-attacks/uppercut-1.png',
@@ -862,14 +867,30 @@ const RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS = {
   katana1: 'assets/G-gundam-attacks/katana-1.png',
   katana2: 'assets/G-gundam-attacks/katana-2.png',
 } as const
-type GodGundamBarragePose = keyof typeof RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS
+const RAID_SPIEGEL_BARRAGE_ASSET_PATHS: Record<string, string> = {
+  attack: 'assets/G-gundam-attacks/spiegel-attack.png',
+  kick: 'assets/G-gundam-attacks/spiegel-kick.png',
+  kunaiThrow: 'assets/G-gundam-attacks/spiegel-kunai-throw.png',
+  kunaiThrowAbove: 'assets/G-gundam-attacks/spiegel-kunai-throw-above.png',
+  punch: 'assets/G-gundam-attacks/spiegel-punch.png',
+  shadowAttack: 'assets/G-gundam-attacks/spiegel-shadow-attack.png',
+  spin: 'assets/G-gundam-attacks/spiegel-spin.png',
+  stop: 'assets/G-gundam-attacks/spiegel-stop.png',
+  upperAttack: 'assets/G-gundam-attacks/spiegel-upper-attack.png',
+} as const
+const RAID_CORE_LANDER_BARRAGE_ASSET_PATHS: Record<CoreLanderCombatModel, Record<string, string>> = {
+  godGundam: RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS,
+  spiegel: RAID_SPIEGEL_BARRAGE_ASSET_PATHS,
+}
+type GodGundamBarragePose = string
 type RaidOtherAssetKey = keyof typeof RAID_OTHER_ASSET_PATHS
-const RAID_GOD_GUNDAM_BARRAGE_SEQUENCE: Array<{
+type CoreLanderBarrageMove = {
   pose: GodGundamBarragePose
   side: -1 | 0 | 1
   offsetY: number
   impactY: number
-}> = [
+}
+const RAID_GOD_GUNDAM_BARRAGE_SEQUENCE: CoreLanderBarrageMove[] = [
   { pose: 'punch', side: -1, offsetY: -6, impactY: -2 },
   { pose: 'katana1', side: -1, offsetY: -2, impactY: -1 },
   { pose: 'katana2', side: -1, offsetY: 1, impactY: 0 },
@@ -883,6 +904,38 @@ const RAID_GOD_GUNDAM_BARRAGE_SEQUENCE: Array<{
   { pose: 'uppercut1', side: -1, offsetY: 17, impactY: 7 },
   { pose: 'uppercut2', side: 1, offsetY: 11, impactY: 4 },
 ]
+const RAID_SPIEGEL_BARRAGE_SEQUENCE: CoreLanderBarrageMove[] = [
+  { pose: 'shadowAttack', side: -1, offsetY: -4, impactY: -2 },
+  { pose: 'attack', side: 1, offsetY: -2, impactY: -1 },
+  { pose: 'punch', side: -1, offsetY: -5, impactY: -2 },
+  { pose: 'kunaiThrow', side: 1, offsetY: 1, impactY: 0 },
+  { pose: 'kick', side: 1, offsetY: 4, impactY: 1 },
+  { pose: 'spin', side: 0, offsetY: 2, impactY: 0 },
+  { pose: 'upperAttack', side: -1, offsetY: 16, impactY: 7 },
+  { pose: 'kunaiThrowAbove', side: 0, offsetY: 18, impactY: 8 },
+  { pose: 'stop', side: 1, offsetY: 10, impactY: 4 },
+  { pose: 'attack', side: -1, offsetY: -6, impactY: -2 },
+  { pose: 'kick', side: -1, offsetY: 5, impactY: 2 },
+  { pose: 'shadowAttack', side: 1, offsetY: -2, impactY: -1 },
+]
+const RAID_CORE_LANDER_BARRAGE_SEQUENCES: Record<CoreLanderCombatModel, CoreLanderBarrageMove[]> = {
+  godGundam: RAID_GOD_GUNDAM_BARRAGE_SEQUENCE,
+  spiegel: RAID_SPIEGEL_BARRAGE_SEQUENCE,
+}
+const RAID_CORE_LANDER_BARRAGE_POSE_SCALES: Record<CoreLanderCombatModel, Record<string, number>> = {
+  godGundam: {},
+  spiegel: {
+    attack: 0.94,
+    kick: 0.94,
+    kunaiThrow: 0.94,
+    kunaiThrowAbove: 0.9,
+    punch: 0.94,
+    shadowAttack: 0.78,
+    spin: 0.84,
+    stop: 0.9,
+    upperAttack: 1.02,
+  },
+}
 const RAID_DEVIL_BOSS_ASSET_PATHS: Record<DevilBossPose, string> = {
   idle: 'assets/GundamEnemy/devil-idle-1.png',
   idle2: 'assets/GundamEnemy/devil-idle-2.png',
@@ -949,6 +1002,7 @@ const RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS: Array<[number, string]> = [
   [1, 'rgba(127,29,29,0)'],
 ]
 const RAID_GOD_GUNDAM_BARRAGE_FILTER = 'brightness(1.08) contrast(1.14) saturate(1.14)'
+const RAID_SPIEGEL_BARRAGE_FILTER = 'brightness(1.08) contrast(1.18) saturate(1.18)'
 const RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER = 'brightness(1.32) contrast(1.32) saturate(2.3) sepia(0.55) hue-rotate(342deg)'
 const RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.72)'],
@@ -1578,7 +1632,7 @@ function warmRaidCanvasFilterVariants() {
     const sprite = getShipCanvasSprite(ship.key)
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
-  for (const spriteKey of ['mesiahBlack', 'mesiahWhite', 'mesiahRaptorBlack', 'mesiahRaptorWhite', 'coreLanderBurning', 'godGundam', 'godGundamBurning']) {
+  for (const spriteKey of ['mesiahBlack', 'mesiahWhite', 'mesiahRaptorBlack', 'mesiahRaptorWhite', 'coreLanderBurning', 'godGundam', 'godGundamBurning', 'spiegel']) {
     const sprite = getShipCanvasSprite(spriteKey)
     for (const filter of RAID_SHIP_STATIC_FILTERS) warmCanvasSpriteFilter(sprite, filter)
   }
@@ -1601,9 +1655,11 @@ function warmRaidCanvasFilterVariants() {
   for (const filter of RAID_SQUID_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getSquidBossCanvasSprite(), filter)
   for (const filter of RAID_COBRA_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getCobraBossCanvasSprite(), filter)
   warmCanvasSpriteFilter(getDevilMasterProjectileCanvasSprite(), RAID_DEVIL_MASTER_PROJECTILE_FILTER)
-  for (const pose of Object.keys(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS) as GodGundamBarragePose[]) {
-    warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(pose), RAID_GOD_GUNDAM_BARRAGE_FILTER)
-    warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(pose), RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER)
+  for (const model of RAID_CORE_LANDER_COMBAT_MODELS) {
+    for (const pose of Object.keys(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model]) as GodGundamBarragePose[]) {
+      warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(model, pose), getCoreLanderBarrageFilter(model, false))
+      warmCanvasSpriteFilter(getGodGundamBarrageCanvasSprite(model, pose), RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER)
+    }
   }
   for (const filter of RAID_FINAL_BOSS_STATIC_FILTERS) warmCanvasSpriteFilter(getFinalBossCanvasSprite(), filter)
   getSquidBossTentacleTextureCanvas()
@@ -1685,11 +1741,11 @@ function getDevilMasterProjectileCanvasSprite() {
   return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH))
 }
 
-function getGodGundamBarrageCanvasSprite(pose: GodGundamBarragePose) {
-  const key = `ship-image:god-barrage-${pose}`
+function getGodGundamBarrageCanvasSprite(model: CoreLanderCombatModel, pose: GodGundamBarragePose) {
+  const key = `ship-image:${model}-barrage-${pose}`
   const existing = canvasSpriteCache.get(key)
   if (existing) return existing
-  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS[pose]))
+  return makeImageCanvasSprite(key, getPublicAssetUrl(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model][pose]))
 }
 
 function getEliteAlienCanvasSprite(variant: number) {
@@ -1707,7 +1763,9 @@ function warmRaidCanvasAssets() {
   entries.push(getCobraBossCanvasSprite())
   RAID_DEVIL_BOSS_POSES.forEach((pose) => entries.push(getDevilBossCanvasSprite(pose)))
   entries.push(getDevilMasterProjectileCanvasSprite())
-  for (const pose of Object.keys(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS) as GodGundamBarragePose[]) entries.push(getGodGundamBarrageCanvasSprite(pose))
+  for (const model of RAID_CORE_LANDER_COMBAT_MODELS) {
+    for (const pose of Object.keys(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model]) as GodGundamBarragePose[]) entries.push(getGodGundamBarrageCanvasSprite(model, pose))
+  }
   for (const ship of SHIP_OPTIONS) entries.push(getShipCanvasSprite(ship.key))
   entries.push(getShipCanvasSprite('mesiahBlack'))
   entries.push(getShipCanvasSprite('mesiahWhite'))
@@ -1716,6 +1774,7 @@ function warmRaidCanvasAssets() {
   entries.push(getShipCanvasSprite('coreLanderBurning'))
   entries.push(getShipCanvasSprite('godGundam'))
   entries.push(getShipCanvasSprite('godGundamBurning'))
+  entries.push(getShipCanvasSprite('spiegel'))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) entries.push(getNormalAlienCanvasSprite(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) entries.push(getEliteAlienCanvasSprite(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) entries.push(getRaidOtherCanvasSprite(key))
@@ -1729,7 +1788,9 @@ function getRaidPersistentImageUrls() {
   urls.add(getPublicAssetUrl(RAID_COBRA_BOSS_ASSET_PATH))
   RAID_DEVIL_BOSS_POSES.forEach((pose) => urls.add(getPublicAssetUrl(RAID_DEVIL_BOSS_ASSET_PATHS[pose])))
   urls.add(getPublicAssetUrl(RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH))
-  for (const pose of Object.keys(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS) as GodGundamBarragePose[]) urls.add(getPublicAssetUrl(RAID_GOD_GUNDAM_BARRAGE_ASSET_PATHS[pose]))
+  for (const model of RAID_CORE_LANDER_COMBAT_MODELS) {
+    for (const pose of Object.keys(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model]) as GodGundamBarragePose[]) urls.add(getPublicAssetUrl(RAID_CORE_LANDER_BARRAGE_ASSET_PATHS[model][pose]))
+  }
   for (const ship of SHIP_OPTIONS) urls.add(getRaidShipSpriteUrl(ship.key))
   urls.add(getRaidShipSpriteUrl('mesiahBlack'))
   urls.add(getRaidShipSpriteUrl('mesiahWhite'))
@@ -1738,6 +1799,7 @@ function getRaidPersistentImageUrls() {
   urls.add(getRaidShipSpriteUrl('coreLanderBurning'))
   urls.add(getRaidShipSpriteUrl('godGundam'))
   urls.add(getRaidShipSpriteUrl('godGundamBurning'))
+  urls.add(getRaidShipSpriteUrl('spiegel'))
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) urls.add(getRaidAlienSpriteUrl(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) urls.add(getRaidEliteSpriteUrl(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) urls.add(getPublicAssetUrl(RAID_OTHER_ASSET_PATHS[key]))
@@ -2231,18 +2293,37 @@ function getMesiahVisualShipKeyFromProgress(progress: ReturnType<typeof loadProg
 }
 
 function getRaidPlayerVisualShipKey(player: Player, progress: ReturnType<typeof loadProgress>) {
-  if (player.ship.key === 'coreLander' && getCoreLanderModel(progress) === 'godGundam') return 'godGundam'
+  const coreModel = getCoreLanderCombatModel(progress)
+  if (player.ship.key === 'coreLander' && coreModel) return coreModel
   if (player.ship.key === 'coreLander' && (player.burningBlend ?? 0) >= 0.98) return 'coreLanderBurning'
   return player.ship.key === 'mesiah' ? getMesiahVisualShipKeyFromProgress(progress) : player.ship.key
 }
 
+function getCoreLanderCombatModel(progress: ReturnType<typeof loadProgress>): CoreLanderCombatModel | null {
+  const model = getCoreLanderModel(progress)
+  return model === 'godGundam' || model === 'spiegel' ? model : null
+}
+
 function isGodGundamBarragePilot(player: Player, progress: ReturnType<typeof loadProgress>) {
-  return player.ship.key === 'coreLander' && getCoreLanderModel(progress) === 'godGundam'
+  return player.ship.key === 'coreLander' && Boolean(getCoreLanderCombatModel(progress))
 }
 
 function getGodGundamGameplayRenderSize(viewportWidth: number) {
   const baseSize = viewportWidth < 860 ? 62 : viewportWidth > 1100 ? 86 : 76
   return baseSize * 1.38 * 1.08
+}
+
+function getCoreLanderBarrageSequence(model: CoreLanderCombatModel) {
+  return RAID_CORE_LANDER_BARRAGE_SEQUENCES[model] ?? RAID_GOD_GUNDAM_BARRAGE_SEQUENCE
+}
+
+function getCoreLanderBarrageFilter(model: CoreLanderCombatModel, burning: boolean) {
+  if (burning) return RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER
+  return model === 'spiegel' ? RAID_SPIEGEL_BARRAGE_FILTER : RAID_GOD_GUNDAM_BARRAGE_FILTER
+}
+
+function getCoreLanderBarragePoseScale(model: CoreLanderCombatModel, pose: GodGundamBarragePose) {
+  return RAID_CORE_LANDER_BARRAGE_POSE_SCALES[model]?.[pose] ?? 1
 }
 
 function hasClearedRaidInProgress(progress: ReturnType<typeof loadProgress>) {
@@ -2733,8 +2814,9 @@ function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy, stage =
   return (getPlayerBaseAttack(player) + getGodGundamStageAttackBonus(stage)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * burningMultiplier * targetMultiplier
 }
 
-function getGodGundamPassivePose(index: number): GodGundamBarragePose {
-  return RAID_GOD_GUNDAM_BARRAGE_SEQUENCE[index % RAID_GOD_GUNDAM_BARRAGE_SEQUENCE.length].pose
+function getGodGundamPassivePose(index: number, model: CoreLanderCombatModel): GodGundamBarragePose {
+  const sequence = getCoreLanderBarrageSequence(model)
+  return sequence[index % sequence.length].pose
 }
 
 const FINAL_BOSS_SCATTER_LANE_OFFSETS = [-31, -13, 13, 31] as const
@@ -7128,35 +7210,35 @@ function drawRaidPlayer(
   const alpha = isDown ? 0.3 : 1
   const engineBoost = clamp(player.engineBoost ?? 0, 0, 1)
   const coreLanderBurning = isCoreLanderBurning(player)
-  const coreLanderUsesGodModel = player.ship.key === 'coreLander' && visualShipKey === 'godGundam'
-  const renderSize = coreLanderUsesGodModel ? size * 1.08 : size
-  const cosmeticShipKey = coreLanderUsesGodModel ? 'godGundam' : player.ship.key
+  const coreLanderCombatModel: CoreLanderCombatModel | null = player.ship.key === 'coreLander' && (visualShipKey === 'godGundam' || visualShipKey === 'spiegel') ? visualShipKey : null
+  const renderSize = coreLanderCombatModel ? size * 1.08 : size
+  const cosmeticShipKey = coreLanderCombatModel ?? player.ship.key
   const masteryPaintColor = cosmetics.frame ? getMasteryPaintColor(cosmeticShipKey, color) : color
   const coreLanderBurningBlend = player.ship.key === 'coreLander'
     ? clamp(player.burningBlend ?? (coreLanderBurning ? 1 : 0), 0, 1)
     : 0
   const coreLanderBurningRage = player.ship.key === 'coreLander' ? getCoreLanderBurningRage(player) : 0
   const engineSize = player.ship.key === 'coreLander'
-    ? coreLanderUsesGodModel
+    ? coreLanderCombatModel
       ? renderSize * 0.28
       : renderSize * (0.74 + (0.62 - 0.74) * coreLanderBurningBlend)
     : renderSize
   const engineY = player.ship.key === 'coreLander'
-    ? coreLanderUsesGodModel
+    ? coreLanderCombatModel
       ? y - renderSize * 0.285
       : y + renderSize * (-0.085 + (-0.02 - -0.085) * coreLanderBurningBlend)
     : y
-  const drawGodGundamEngineOverSprite = !isDown && coreLanderUsesGodModel
+  const drawGodGundamEngineOverSprite = !isDown && Boolean(coreLanderCombatModel)
 
   if (!drawGodGundamEngineOverSprite && !isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, engineY, engineSize, time, color, cosmeticShipKey, engineBoost)
   if (!drawGodGundamEngineOverSprite && !isDown) drawPlayerEngine(ctx, x, engineY, engineSize, time, engineBoost)
   if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, renderSize, time, cosmeticShipKey, masteryPaintColor)
   if (!isDown && coreLanderBurningBlend > 0.04) {
     const pulse = 0.88 + Math.sin(time / 150) * 0.12
-    drawCoreLanderBurningCometWake(ctx, x, y, renderSize, time, coreLanderBurningBlend, coreLanderUsesGodModel)
+    drawCoreLanderBurningCometWake(ctx, x, y, renderSize, time, coreLanderBurningBlend, Boolean(coreLanderCombatModel))
     const haloX = x
-    const haloY = coreLanderUsesGodModel ? y + renderSize * GOD_GUNDAM_BURNING_HALO_Y_OFFSET : y
-    const haloSize = coreLanderUsesGodModel ? renderSize * GOD_GUNDAM_BURNING_HALO_SCALE : renderSize
+    const haloY = coreLanderCombatModel ? y + renderSize * GOD_GUNDAM_BURNING_HALO_Y_OFFSET : y
+    const haloSize = coreLanderCombatModel ? renderSize * GOD_GUNDAM_BURNING_HALO_SCALE : renderSize
     drawCoreLanderBurningHalo(ctx, haloX, haloY, haloSize, time, coreLanderBurningBlend)
     ctx.save()
     ctx.globalAlpha *= coreLanderBurningBlend
@@ -7187,7 +7269,7 @@ function drawRaidPlayer(
     : 'brightness(1.2) contrast(1.18) saturate(1.36)'
   const sprite = getShipCanvasSprite(visualShipKey)
   const spriteGlow = coreLanderBurning
-    ? coreLanderUsesGodModel
+    ? coreLanderCombatModel
       ? `rgba(251,${Math.round(191 - 74 * coreLanderBurningRage)},${Math.round(36 - 20 * coreLanderBurningRage)},${(0.28 + coreLanderBurningRage * 0.16).toFixed(2)})`
       : 'rgba(251,191,36,0.28)'
     : player.forceField > 0
@@ -7195,7 +7277,7 @@ function drawRaidPlayer(
     : player.shield > 0 ? 'rgba(252,211,77,0.16)' : player.invuln > 0 ? 'rgba(226,232,240,0.1)' : null
   if (spriteGlow) drawSpriteGlow(ctx, x, y, renderSize, spriteGlow, 0.68)
   else if (!isDown) drawSpriteGlow(ctx, x, y, renderSize, hexToRgba(color, 0.09), 0.55)
-  if (player.ship.key === 'coreLander' && !coreLanderUsesGodModel && coreLanderBurningBlend > 0.01) {
+  if (player.ship.key === 'coreLander' && !coreLanderCombatModel && coreLanderBurningBlend > 0.01) {
     const baseSprite = getShipCanvasSprite('coreLander')
     const burningSprite = getShipCanvasSprite('coreLanderBurning')
     if (coreLanderBurningBlend < 0.99) {
@@ -7226,11 +7308,12 @@ function drawRaidPlayer(
     )
     return
   }
-  if (coreLanderUsesGodModel && coreLanderBurningBlend > 0.01) {
-    const baseSprite = getShipCanvasSprite('godGundam')
-    const burningSprite = getShipCanvasSprite('godGundamBurning')
-    const burningRenderSize = renderSize * GOD_GUNDAM_BURNING_BODY_SCALE
-    const burningY = y + renderSize * GOD_GUNDAM_BURNING_BODY_Y_OFFSET
+  if (coreLanderCombatModel && coreLanderBurningBlend > 0.01) {
+    const baseSprite = getShipCanvasSprite(coreLanderCombatModel)
+    const usesBurningSprite = coreLanderCombatModel === 'godGundam'
+    const burningSprite = getShipCanvasSprite(usesBurningSprite ? 'godGundamBurning' : coreLanderCombatModel)
+    const burningRenderSize = usesBurningSprite ? renderSize * GOD_GUNDAM_BURNING_BODY_SCALE : renderSize
+    const burningY = usesBurningSprite ? y + renderSize * GOD_GUNDAM_BURNING_BODY_Y_OFFSET : y
     if (coreLanderBurningBlend < 0.99) {
       drawCanvasSprite(
         ctx,
@@ -7383,6 +7466,15 @@ const MASTERY_VISUAL_STYLES: Record<string, MasteryVisualStyle> = {
     trailOffsets: [-0.08, 0.08],
     auraShape: 'cross',
   },
+  spiegel: {
+    core: 'rgba(248,250,252,0.88)',
+    edge: 'rgba(239,68,68,0.74)',
+    soft: 'rgba(15,23,42,0.24)',
+    accent: 'rgba(250,204,21,0.84)',
+    paint: '#ef4444',
+    trailOffsets: [-0.08, 0.08],
+    auraShape: 'stealth',
+  },
 }
 
 function getMasteryVisualStyle(shipKey: string, color: string): MasteryVisualStyle {
@@ -7403,6 +7495,7 @@ function getMasteryPaintColor(shipKey: string, fallbackColor: string) {
 
 function getShipFrameSpriteFilter(shipKey: string) {
   if (shipKey === 'godGundam') return 'brightness(1.18) contrast(1.34) saturate(2.45) sepia(0.46) hue-rotate(350deg)'
+  if (shipKey === 'spiegel') return 'brightness(1.2) contrast(1.34) saturate(1.9) sepia(0.24) hue-rotate(342deg)'
   return 'brightness(1.28) contrast(1.42) saturate(2.25)'
 }
 
@@ -7414,7 +7507,7 @@ function getGodGundamBurningSpriteFilter(blend: number, rage: number) {
 }
 
 function drawMasteryEngineTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color: string, shipKey: string, engineBoost = 0) {
-  if (shipKey === 'godGundam') {
+  if (shipKey === 'godGundam' || shipKey === 'spiegel') {
     const ventOffset = size * 0.08
     drawSingleMasteryEngineTrail(ctx, x - ventOffset, y, size, time, color, shipKey, engineBoost)
     drawSingleMasteryEngineTrail(ctx, x + ventOffset, y, size, time, color, shipKey, engineBoost)
@@ -7894,8 +7987,10 @@ function drawGodGundamBarrage(
   const durationFade = Math.min(1, barrage.age / 0.32, (barrage.duration - barrage.age) / 0.42)
   if (durationFade <= 0) return
 
+  const model = barrage.model ?? 'godGundam'
+  const sequence = getCoreLanderBarrageSequence(model)
   const burning = Boolean(barrage.burning)
-  const barrageFilter = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER : RAID_GOD_GUNDAM_BARRAGE_FILTER
+  const barrageFilter = getCoreLanderBarrageFilter(model, burning)
   const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
   const energyColor = burning ? '#f59e0b' : '#facc15'
   const shadowColor = burning ? 'rgba(251,146,60,0.38)' : 'rgba(250,204,21,0.28)'
@@ -7922,7 +8017,7 @@ function drawGodGundamBarrage(
     const y = startY + (endY - startY) * easedDash
     const angle = Math.atan2(endY - startY, endX - startX)
     const dashAlpha = Math.sin(dashProgress * Math.PI)
-    const dashSprite = getShipCanvasSprite(burning ? 'godGundamBurning' : 'godGundam')
+    const dashSprite = getShipCanvasSprite(model === 'godGundam' && burning ? 'godGundamBurning' : model)
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     ctx.globalAlpha = 0.72 * dashAlpha
@@ -7953,13 +8048,6 @@ function drawGodGundamBarrage(
   }
   const seedOffset = barrage.seed % 0.09
   const spriteScale = 1 / GOD_GUNDAM_BARRAGE_FRAME_SECONDS
-  const punchSprite = getGodGundamBarrageCanvasSprite('punch')
-  const kickSprite = getGodGundamBarrageCanvasSprite('kick')
-  const uppercut1Sprite = getGodGundamBarrageCanvasSprite('uppercut1')
-  const uppercut2Sprite = getGodGundamBarrageCanvasSprite('uppercut2')
-  const katana1Sprite = getGodGundamBarrageCanvasSprite('katana1')
-  const katana2Sprite = getGodGundamBarrageCanvasSprite('katana2')
-
   for (let drawIndex = 0; drawIndex < visibleTargetCount; drawIndex += 1) {
     const targetIndex = drawIndex === 0 ? primaryIndex : drawIndex <= primaryIndex ? drawIndex - 1 : drawIndex
     const target = visibleTargets[targetIndex]
@@ -7971,7 +8059,7 @@ function drawGodGundamBarrage(
       if (localAge < 0) continue
 
       const frame = Math.floor(localAge * spriteScale)
-      const pose = RAID_GOD_GUNDAM_BARRAGE_SEQUENCE[(frame + layer + drawIndex) % RAID_GOD_GUNDAM_BARRAGE_SEQUENCE.length]
+      const pose = sequence[(frame + layer + drawIndex) % sequence.length]
       const frameProgress = (localAge % GOD_GUNDAM_BARRAGE_FRAME_SECONDS) * spriteScale
       const approachPrep = 1 - frameProgress / 0.72
       const approach = frameProgress < 0.72
@@ -8002,23 +8090,14 @@ function drawGodGundamBarrage(
         ctx.restore()
       }
 
-      const sprite = pose.pose === 'punch'
-        ? punchSprite
-        : pose.pose === 'kick'
-          ? kickSprite
-          : pose.pose === 'uppercut1'
-            ? uppercut1Sprite
-            : pose.pose === 'uppercut2'
-              ? uppercut2Sprite
-              : pose.pose === 'katana1'
-                ? katana1Sprite
-                : katana2Sprite
+      const sprite = getGodGundamBarrageCanvasSprite(model, pose.pose)
+      const poseScale = getCoreLanderBarragePoseScale(model, pose.pose)
       ctx.save()
       ctx.translate(x, y)
       if (attackSide > 0) ctx.scale(-1, 1)
       ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
       ctx.shadowColor = shadowColor
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (target.isBoss ? 1 : 0.86), barrageFilter, alpha, 0, 1, energyColor)
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (target.isBoss ? 1 : 0.86) * poseScale, barrageFilter, alpha, 0, 1, energyColor)
       ctx.restore()
     }
   }
@@ -8031,16 +8110,11 @@ function drawGodGundamPassiveStrikes(
   toY: (value: number) => number,
   viewportWidth: number,
 ) {
-  const punchSprite = getGodGundamBarrageCanvasSprite('punch')
-  const kickSprite = getGodGundamBarrageCanvasSprite('kick')
-  const uppercut1Sprite = getGodGundamBarrageCanvasSprite('uppercut1')
-  const uppercut2Sprite = getGodGundamBarrageCanvasSprite('uppercut2')
-  const katana1Sprite = getGodGundamBarrageCanvasSprite('katana1')
-  const katana2Sprite = getGodGundamBarrageCanvasSprite('katana2')
-
   for (const strike of strikes) {
+    const model = strike.model ?? 'godGundam'
+    const sequence = getCoreLanderBarrageSequence(model)
     const burning = Boolean(strike.burning)
-    const strikeFilter = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER : RAID_GOD_GUNDAM_BARRAGE_FILTER
+    const strikeFilter = getCoreLanderBarrageFilter(model, burning)
     const impactStops = burning ? RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS : RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS
     const energyColor = burning ? '#f59e0b' : '#facc15'
     const shadowColor = burning ? 'rgba(251,146,60,0.42)' : 'rgba(250,204,21,0.32)'
@@ -8079,7 +8153,7 @@ function drawGodGundamPassiveStrikes(
     for (let layer = layers - 1; layer >= 0; layer -= 1) {
       const localProgress = clamp(progress * 1.18 - layer * 0.16, 0, 1)
       if (localProgress <= 0 || localProgress >= 1) continue
-      const pose = RAID_GOD_GUNDAM_BARRAGE_SEQUENCE[(strike.id + layer) % RAID_GOD_GUNDAM_BARRAGE_SEQUENCE.length]
+      const pose = sequence[(strike.id + layer) % sequence.length]
       const attackSide = pose.side === 0 ? baseSide : pose.side
       const prep = 1 - localProgress / 0.72
       const approach = localProgress < 0.72
@@ -8108,23 +8182,14 @@ function drawGodGundamPassiveStrikes(
         ctx.restore()
       }
 
-      const sprite = pose.pose === 'punch'
-        ? punchSprite
-        : pose.pose === 'kick'
-          ? kickSprite
-          : pose.pose === 'uppercut1'
-            ? uppercut1Sprite
-            : pose.pose === 'uppercut2'
-              ? uppercut2Sprite
-              : pose.pose === 'katana1'
-                ? katana1Sprite
-                : katana2Sprite
+      const sprite = getGodGundamBarrageCanvasSprite(model, pose.pose)
+      const poseScale = getCoreLanderBarragePoseScale(model, pose.pose)
       ctx.save()
       ctx.translate(x, y)
       if (attackSide > 0) ctx.scale(-1, 1)
       ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
       ctx.shadowColor = shadowColor
-      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (1 + layer * 0.06), strikeFilter, alpha, 0, 1, energyColor)
+      drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (1 + layer * 0.06) * poseScale, strikeFilter, alpha, 0, 1, energyColor)
       ctx.restore()
     }
   }
@@ -11051,9 +11116,11 @@ export function GradiusRaid({
     }
     if (isGodGundamBarragePilot(player, progressRef.current)) {
       if (!barrageTarget) return
+      const barrageModel = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
       nukeCooldownRef.current = getNukeCooldownSeconds(stageRef.current)
       player.invuln = Math.max(player.invuln, GOD_GUNDAM_BARRAGE_DURATION_SECONDS + 0.75)
       godBarrageRef.current = {
+        model: barrageModel,
         targetId: barrageTarget.id,
         startX: player.x,
         startY: player.y,
@@ -13871,6 +13938,7 @@ export function GradiusRaid({
       playGameSound(enemy.isBoss || enemy.isMiniBoss ? 'explosion_big' : 'explosion')
     }
     const spawnGodGundamPassiveStrike = (owner: Player, target: Vec & { radius: number }, visualIndex: number) => {
+      const model = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
       const sourceX = owner.godMeleeChainX ?? owner.x
       const sourceY = owner.godMeleeChainY ?? owner.y
       const side = sourceX <= target.x ? -1 : 1
@@ -13880,7 +13948,8 @@ export function GradiusRaid({
         y: target.y,
         sourceX,
         sourceY,
-        pose: getGodGundamPassivePose(visualIndex),
+        model,
+        pose: getGodGundamPassivePose(visualIndex, model),
         side,
         age: 0,
         duration: GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS,
@@ -14619,7 +14688,7 @@ export function GradiusRaid({
   const coreLanderVisualShipKey = getCoreLanderModel(progressRef.current)
   const checkpointStage = getCheckpointStage()
   const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
-  const usingGodBarrage = player.ship.key === 'coreLander' && coreLanderVisualShipKey === 'godGundam'
+  const usingGodBarrage = player.ship.key === 'coreLander' && (coreLanderVisualShipKey === 'godGundam' || coreLanderVisualShipKey === 'spiegel')
   const nukeCooldown = Math.ceil(snapshot.nukeCooldown)
   const nukeStageLocked = snapshot.phase === 'playing' && snapshot.stageClear > 0
   const nukeReady = snapshot.phase === 'playing' && !nukeStageLocked && snapshot.nukeCooldown <= 0

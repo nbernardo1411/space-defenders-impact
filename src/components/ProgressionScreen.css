@@ -385,6 +385,10 @@
   background: linear-gradient(135deg, #facc15, #2563eb 38%, #ef4444 72%, #f8fafc);
 }
 
+.progress-ship-color__swatch--spiegel {
+  background: linear-gradient(135deg, #111827, #ef4444 42%, #f8fafc 68%, #facc15);
+}
+
 .progress-ship-preview__ship--trail::after {
   content: '';
   position: absolute;

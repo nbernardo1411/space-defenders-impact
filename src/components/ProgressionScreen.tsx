@@ -127,6 +127,12 @@ const SHIP_PREVIEW_VISUAL_STYLES: Record<string, ShipPreviewVisualStyle> = {
     soft: 'rgba(245,158,11,0.28)',
     accent: 'rgba(254,240,138,0.94)',
   },
+  spiegel: {
+    core: 'rgba(248,250,252,0.88)',
+    edge: 'rgba(239,68,68,0.74)',
+    soft: 'rgba(15,23,42,0.24)',
+    accent: 'rgba(250,204,21,0.84)',
+  },
 }
 type StageBossEntry = {
   kind: BriefingBossKind
@@ -361,8 +367,8 @@ export function ProgressionScreen({
                         {shipKey === 'coreLander' ? (
                           <div className="progress-ship-color" aria-label={text.coreLanderModel}>
                             <span>{text.coreLanderModel}</span>
-                            {(['coreLander', 'godGundam'] as CoreLanderModel[]).map((model) => {
-                              const lockedModel = model === 'godGundam' && !coreLanderGodUnlocked
+                            {(['coreLander', 'godGundam', 'spiegel'] as CoreLanderModel[]).map((model) => {
+                              const lockedModel = model !== 'coreLander' && !coreLanderGodUnlocked
                               return (
                                 <button
                                   key={model}
@@ -372,7 +378,7 @@ export function ProgressionScreen({
                                   onClick={() => onProgressChange(setCoreLanderModel(model))}
                                 >
                                   <i className={`progress-ship-color__swatch progress-ship-color__swatch--${model}`} />
-                                  {model === 'godGundam' ? text.coreLanderGodGundam : text.coreLanderDefault}
+                                  {model === 'godGundam' ? text.coreLanderGodGundam : model === 'spiegel' ? text.coreLanderSpiegel : text.coreLanderDefault}
                                   {lockedModel ? <small>{text.cosmeticLocked}: {CORE_LANDER_GOD_GUNDAM_UNLOCK_SCORE.toLocaleString()} {text.coreLanderScore}</small> : null}
                                 </button>
                               )
@@ -681,10 +687,11 @@ function ShipCosmeticCanvasPreview({ shipKey, spriteKey, cosmetics, locked = fal
 
       const x = SHIP_PREVIEW_CANVAS_WIDTH / 2
       const visualKey = spriteKey ?? shipKey
-      const y = visualKey === 'godGundam' ? 46 : shipKey === 'coreLander' ? 43 : 40
-      const previewSize = visualKey === 'godGundam' ? 96 : shipKey === 'coreLander' ? 86 : SHIP_PREVIEW_SIZE
+      const usesCombatModel = visualKey === 'godGundam' || visualKey === 'spiegel'
+      const y = usesCombatModel ? 46 : shipKey === 'coreLander' ? 43 : 40
+      const previewSize = usesCombatModel ? 96 : shipKey === 'coreLander' ? 86 : SHIP_PREVIEW_SIZE
       const style = getShipPreviewVisualStyle(visualKey)
-      const drawTrailOverSprite = visualKey === 'godGundam'
+      const drawTrailOverSprite = usesCombatModel
 
       if (!locked && cosmetics.trail && !drawTrailOverSprite) drawPreviewMasteryTrail(ctx, x, y, previewSize, time, visualKey, style)
       if (!locked && cosmetics.aura && image.complete) drawPreviewMasteryAura(ctx, image, x, y, previewSize, time, style)
@@ -732,6 +739,7 @@ function getShipPreviewVisualStyle(shipKey: string) {
 
 function getPreviewShipFrameFilter(shipKey: string) {
   if (shipKey === 'godGundam') return 'brightness(1.18) contrast(1.34) saturate(2.45) sepia(0.46) hue-rotate(350deg)'
+  if (shipKey === 'spiegel') return 'brightness(1.2) contrast(1.34) saturate(1.9) sepia(0.24) hue-rotate(342deg)'
   return 'brightness(1.28) contrast(1.42) saturate(2.25)'
 }
 
@@ -746,9 +754,10 @@ function drawPreviewShipSprite(ctx: CanvasRenderingContext2D, image: HTMLImageEl
 function drawPreviewMasteryTrail(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, shipKey: string, style: ShipPreviewVisualStyle) {
   const pulse = 0.96 + Math.sin(time / 180) * 0.05
   const tailScale = shipKey === 'spaceEt' ? 1.18 : shipKey === 'dreadnought' ? 0.92 : 1
-  const engineSize = shipKey === 'godGundam' ? size * 0.28 : shipKey === 'coreLander' ? size * 0.74 : size
-  const engineY = shipKey === 'godGundam' ? y - size * 0.285 : shipKey === 'coreLander' ? y - size * 0.085 : y
-  if (shipKey === 'godGundam') {
+  const usesCombatModel = shipKey === 'godGundam' || shipKey === 'spiegel'
+  const engineSize = usesCombatModel ? size * 0.28 : shipKey === 'coreLander' ? size * 0.74 : size
+  const engineY = usesCombatModel ? y - size * 0.285 : shipKey === 'coreLander' ? y - size * 0.085 : y
+  if (usesCombatModel) {
     const ventOffset = engineSize * 0.08
     drawSinglePreviewMasteryTrail(ctx, x - ventOffset, engineY, engineSize, pulse, tailScale, shipKey, style)
     drawSinglePreviewMasteryTrail(ctx, x + ventOffset, engineY, engineSize, pulse, tailScale, shipKey, style)

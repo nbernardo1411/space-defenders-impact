@@ -111,7 +111,7 @@ export type ShipMasteryRecord = {
 export type ShipCosmeticKey = 'trail' | 'aura' | 'frame'
 export type ShipCosmeticEquipState = Partial<Record<ShipCosmeticKey, boolean>>
 export type MesiahShipColor = 'black' | 'white'
-export type CoreLanderModel = 'coreLander' | 'godGundam'
+export type CoreLanderModel = 'coreLander' | 'godGundam' | 'spiegel'
 
 export type ProgressState = {
   version: 1
@@ -539,12 +539,12 @@ export function setMesiahShipColor(color: MesiahShipColor) {
 }
 
 export function getCoreLanderModel(progress: ProgressState): CoreLanderModel {
-  return progress.coreLanderModel === 'godGundam' && isCoreLanderGodGundamUnlocked(progress) ? 'godGundam' : 'coreLander'
+  return (progress.coreLanderModel === 'godGundam' || progress.coreLanderModel === 'spiegel') && isCoreLanderGodGundamUnlocked(progress) ? progress.coreLanderModel : 'coreLander'
 }
 
 export function setCoreLanderModel(model: CoreLanderModel) {
   const progress = loadProgress()
-  progress.coreLanderModel = model === 'godGundam' && isCoreLanderGodGundamUnlocked(progress) ? 'godGundam' : 'coreLander'
+  progress.coreLanderModel = (model === 'godGundam' || model === 'spiegel') && isCoreLanderGodGundamUnlocked(progress) ? model : 'coreLander'
   saveProgress(progress)
   return progress
 }
@@ -597,7 +597,7 @@ export function normalizeProgress(value: unknown): ProgressState {
     towerDefenseEndlessUnlocked: Boolean(data.towerDefenseEndlessUnlocked || getStoredTowerDefenseEndlessUnlock()),
     gradiusRaidEndlessUnlocked: Boolean(data.gradiusRaidEndlessUnlocked || data.achievements?.raid_clear || data.achievements?.fortress_fall || (data.bestStageByMode?.gradius_solo ?? 0) >= 15 || (data.bestStageByMode?.gradius_multiplayer ?? 0) >= 15),
     mesiahShipColor: data.mesiahShipColor === 'white' ? 'white' : 'black',
-    coreLanderModel: data.coreLanderModel === 'godGundam' && isCoreLanderGodGundamUnlocked({ ...empty, ...data, shipMastery } as ProgressState) ? 'godGundam' : 'coreLander',
+    coreLanderModel: (data.coreLanderModel === 'godGundam' || data.coreLanderModel === 'spiegel') && isCoreLanderGodGundamUnlocked({ ...empty, ...data, shipMastery } as ProgressState) ? data.coreLanderModel : 'coreLander',
     gradiusEndlessTotalScore: Math.max(
       Math.floor(Number(data.bestScoreByMode?.gradius_endless) || 0),
       Math.floor(Number(data.gradiusEndlessTotalScore) || 0),
