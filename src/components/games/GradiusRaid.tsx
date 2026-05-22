@@ -617,6 +617,8 @@ const GOD_GUNDAM_MELEE_BOSS_DAMAGE_MULTIPLIER = 0.92
 const GOD_GUNDAM_MELEE_MINIBOSS_DAMAGE_MULTIPLIER = 1.08
 const GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER = 1.62
 const GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER = 1.15
+const SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER = 0.32
+const SPIEGEL_SHADOW_CLONE_OFFSET = 7.2
 const GOD_GUNDAM_STAGE_ATTACK_BONUS = 0.9
 const MULTIPLAYER_BOSS_HP_MULTIPLIER = 2.5
 const BOSS_RESPAWN_SECONDS = 90
@@ -2924,25 +2926,36 @@ function getGodGundamBarrageBossDamage(enemy: Enemy, stage: number, powerScore: 
   return Math.max(150 + pressure * 12 + powerScore * 10, Math.round(enemy.maxHp * 0.018))
 }
 
-function getGodGundamBarrageDamageMultiplier(player: Player) {
-  if (!isCoreLanderBurning(player)) return GOD_GUNDAM_BARRAGE_BASE_DAMAGE_MULTIPLIER
+function isSpiegelCombatModel(model?: CoreLanderCombatModel | null) {
+  return model === 'spiegel'
+}
+
+function hasSpiegelShadowClones(player: Player, model?: CoreLanderCombatModel | null) {
+  return isCoreLanderBurning(player) && isSpiegelCombatModel(model ?? getCoreLanderCombatModel(loadProgress()))
+}
+
+function canUseGodGundamBurningDamage(player: Player, model?: CoreLanderCombatModel | null) {
+  return isCoreLanderBurning(player) && !isSpiegelCombatModel(model ?? getCoreLanderCombatModel(loadProgress()))
+}
+
+function getGodGundamBarrageDamageMultiplier(player: Player, model?: CoreLanderCombatModel | null) {
+  if (!canUseGodGundamBurningDamage(player, model)) return GOD_GUNDAM_BARRAGE_BASE_DAMAGE_MULTIPLIER
   return GOD_GUNDAM_BARRAGE_BASE_DAMAGE_MULTIPLIER * (
     GOD_GUNDAM_BARRAGE_BURNING_DAMAGE_MULTIPLIER +
     GOD_GUNDAM_BARRAGE_BURNING_RAGE_DAMAGE_MULTIPLIER * getCoreLanderBurningRage(player)
   )
 }
 
-function getGodGundamMeleeRange(player: Player) {
-  return GOD_GUNDAM_MELEE_RANGE + (isCoreLanderBurning(player) ? GOD_GUNDAM_MELEE_BURNING_RANGE_BONUS : 0)
+function getGodGundamMeleeRange(player: Player, model?: CoreLanderCombatModel | null) {
+  return GOD_GUNDAM_MELEE_RANGE + (canUseGodGundamBurningDamage(player, model) ? GOD_GUNDAM_MELEE_BURNING_RANGE_BONUS : 0)
 }
-
 function getGodGundamStageAttackBonus(stage: number) {
   const pressure = Math.max(0, stage - 1)
   return pressure * GOD_GUNDAM_STAGE_ATTACK_BONUS + Math.max(0, stage - 5) * 0.22
 }
 
-function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy, stage = 1) {
-  const burningMultiplier = isCoreLanderBurning(player)
+function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy, stage = 1, model?: CoreLanderCombatModel | null) {
+  const burningMultiplier = canUseGodGundamBurningDamage(player, model)
     ? GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER + GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER * getCoreLanderBurningRage(player)
     : 1
   const targetMultiplier = target.isBoss
@@ -2952,7 +2965,6 @@ function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy, stage =
       : 1
   return (getPlayerBaseAttack(player) + getGodGundamStageAttackBonus(stage)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * burningMultiplier * targetMultiplier
 }
-
 function getGodGundamPassivePose(index: number, model: CoreLanderCombatModel): GodGundamBarragePose {
   const sequence = getCoreLanderBarrageSequence(model)
   return sequence[index % sequence.length].pose
@@ -3037,13 +3049,13 @@ function getDevilBossRedFilter(redStep: number) {
 }
 
 function getPlayerBaseAttack(player: Player) {
+  const coreLanderModel = player.ship.key === 'coreLander' ? getCoreLanderCombatModel(loadProgress()) : null
   const coreLanderBonus = player.ship.key === 'coreLander' ? CORE_LANDER_BASE_DAMAGE_BONUS : 0
-  const burningBonus = isCoreLanderBurning(player)
+  const burningBonus = canUseGodGundamBurningDamage(player, coreLanderModel)
     ? CORE_LANDER_BURNING_DAMAGE_BONUS + CORE_LANDER_BURNING_RAGE_DAMAGE_BONUS * getCoreLanderBurningRage(player)
     : 0
   return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL + coreLanderBonus + burningBonus
 }
-
 function fullyBuffRaidPlayer(player: Player) {
   player.rank = PLAYER_MAX_RANK
   player.hp = player.maxHp
@@ -7505,6 +7517,20 @@ function drawRaidPlayer(
   if (coreLanderCombatModel && coreLanderBurningBlend > 0.01) {
     const baseSprite = getShipCanvasSprite(coreLanderCombatModel)
     if (coreLanderCombatModel === 'spiegel') {
+      for (const side of [-1, 1] as const) {
+        drawCanvasSprite(
+          ctx,
+          baseSprite,
+          x + side * renderSize * 0.34,
+          y + renderSize * 0.04,
+          renderSize * 0.9,
+          normalSpriteFilter,
+          alpha * coreLanderBurningBlend * 0.44,
+          rotation + side * 0.04,
+          scale,
+          masteryPaintColor,
+        )
+      }
       drawCanvasSprite(
         ctx,
         baseSprite,
@@ -11399,7 +11425,7 @@ export function GradiusRaid({
         hitTimer: 0,
         hitIndex: 0,
         seed: Math.random() * 1000,
-        damageMultiplier: getGodGundamBarrageDamageMultiplier(player),
+        damageMultiplier: getGodGundamBarrageDamageMultiplier(player, barrageModel),
         burning: isCoreLanderBurning(player),
       }
       player.y = HEIGHT + 18
@@ -14229,10 +14255,10 @@ export function GradiusRaid({
       }
       playGameSound(enemy.isBoss || enemy.isMiniBoss ? 'explosion_big' : 'explosion')
     }
-    const spawnGodGundamPassiveStrike = (owner: Player, target: Vec & { radius: number }, visualIndex: number) => {
+    const spawnGodGundamPassiveStrike = (owner: Player, target: Vec & { radius: number }, visualIndex: number, sourceOverride?: Vec, preserveChain = false) => {
       const model = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
-      const sourceX = owner.godMeleeChainX ?? owner.x
-      const sourceY = owner.godMeleeChainY ?? owner.y
+      const sourceX = sourceOverride?.x ?? owner.godMeleeChainX ?? owner.x
+      const sourceY = sourceOverride?.y ?? owner.godMeleeChainY ?? owner.y
       const side = sourceX <= target.x ? -1 : 1
       godMeleeStrikesRef.current.push({
         id: godMeleeStrikeId++,
@@ -14249,8 +14275,10 @@ export function GradiusRaid({
         targetRadius: target.radius,
         burning: isCoreLanderBurning(owner),
       })
-      owner.godMeleeChainX = target.x
-      owner.godMeleeChainY = target.y
+      if (!preserveChain) {
+        owner.godMeleeChainX = target.x
+        owner.godMeleeChainY = target.y
+      }
     }
     const updateGodGundamMeleePassive = (owner: Player) => {
       if (!isGodGundamBarragePilot(owner, progressRef.current) || owner.hp <= 0) {
@@ -14270,7 +14298,7 @@ export function GradiusRaid({
       const ownerModel = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
       const meleeColor = ownerModel === 'spiegel' ? '#f87171' : '#facc15'
       const meleeRippleColor = ownerModel === 'spiegel' ? '#e2e8f0' : '#fbbf24'
-      const range = getGodGundamMeleeRange(owner)
+      const range = getGodGundamMeleeRange(owner, ownerModel)
       type GodMeleeCandidate = {
         target: (Enemy | AsteroidHazard | Shot) & { id: number; radius: number }
         kind: 'enemy' | 'asteroid' | 'bubble'
@@ -14314,7 +14342,6 @@ export function GradiusRaid({
         owner.godMeleeLastTargetKey = ''
         return
       }
-      const target = candidate.target
       owner.godMeleeLastTargetKey = candidate.key
 
       owner.godMeleeHeat = (owner.godMeleeHeat ?? 0) + dt
@@ -14332,41 +14359,98 @@ export function GradiusRaid({
         return
       }
 
-      if ((owner.godMeleeVisualTimer ?? 0) <= 0) {
-        spawnGodGundamPassiveStrike(owner, target, godMeleeStrikeId)
-        owner.godMeleeVisualTimer = GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS
-        const strikeEnemy = candidate.kind === 'enemy' ? candidate.target as Enemy : null
-        spawnSparks(target.x, target.y, meleeColor, strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, 5)
-        playCoreLanderPhysicalAttackSound(godMeleeStrikeId + target.id)
-        if (godMeleeStrikeId % 4 === 0) addRipple(target.x, target.y, meleeRippleColor, strikeEnemy?.isBoss ? 9 : 6)
+      const spiegelClonesActive = hasSpiegelShadowClones(owner, ownerModel)
+      const isMeleeCandidateAlive = (meleeCandidate: GodMeleeCandidate) => {
+        if (meleeCandidate.kind === 'enemy') return (meleeCandidate.target as Enemy).hp > 0
+        if (meleeCandidate.kind === 'asteroid') return (meleeCandidate.target as AsteroidHazard).hp > 0
+        return ((meleeCandidate.target as Shot).hp ?? 1) > 0 && ((meleeCandidate.target as Shot).life ?? 0) > 0
       }
-
-      if (candidate.kind === 'enemy') {
-        const targetEnemy = candidate.target as Enemy
-        const damage = getGodGundamMeleeDamagePerSecond(owner, targetEnemy, stageRef.current) * dt
-        targetEnemy.shieldTime = 0
-        targetEnemy.hp -= damage
-        targetEnemy.hitFlash = Math.max(targetEnemy.hitFlash ?? 0, targetEnemy.isBoss ? 0.18 : targetEnemy.isMiniBoss ? 0.14 : 0.1)
-        if (targetEnemy.hp <= 0) markEnemyDefeatedByBarrage(targetEnemy)
-      } else if (candidate.kind === 'asteroid') {
-        const targetAsteroid = candidate.target as AsteroidHazard
-        targetAsteroid.hp -= (getPlayerBaseAttack(owner) + getGodGundamStageAttackBonus(stageRef.current)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.35 * dt
-        if (targetAsteroid.hp <= 0) {
-          const scoreValue = 180 + stageRef.current * 15 + targetAsteroid.tier * 80
-          player.score += scoreValue
-          if (remotePlayerRef.current) remotePlayerRef.current.score += scoreValue
-          spawnSparks(targetAsteroid.x, targetAsteroid.y, targetAsteroid.tier === 2 ? '#fb923c' : '#fbbf24', targetAsteroid.tier === 2 ? 38 : 22, targetAsteroid.tier === 2 ? 8 : 5)
-          addRipple(targetAsteroid.x, targetAsteroid.y, targetAsteroid.tier === 2 ? '#fb923c' : '#fbbf24', targetAsteroid.tier === 2 ? 15 : 9)
-          playGameSound(targetAsteroid.tier === 2 ? 'explosion_big' : 'explosion')
+      const pickSpiegelCloneCandidate = (side: -1 | 1, usedKeys: Set<string>) => {
+        const living = meleeCandidates.filter((meleeCandidate) => isMeleeCandidateAlive(meleeCandidate))
+        const alternatives = living.filter((meleeCandidate) => !usedKeys.has(meleeCandidate.key))
+        const pool = alternatives.length > 0 ? alternatives : living
+        let best: (GodMeleeCandidate & { distance: number }) | null = null
+        let bestScore = Number.POSITIVE_INFINITY
+        for (const meleeCandidate of pool) {
+          const directionBias = side < 0
+            ? Math.max(0, meleeCandidate.target.x - owner.x)
+            : Math.max(0, owner.x - meleeCandidate.target.x)
+          const score = meleeCandidate.distance + directionBias * directionBias * 0.8 + Math.abs(meleeCandidate.target.y - owner.y) * 1.8
+          if (score < bestScore) {
+            best = meleeCandidate
+            bestScore = score
+          }
         }
-      } else {
-        const targetBubble = candidate.target as Shot
+        return best
+      }
+      const drawMeleeCandidateHit = (meleeCandidate: GodMeleeCandidate & { distance: number }, visualIndex: number, sourceOverride?: Vec, clone = false) => {
+        const hitTarget = meleeCandidate.target
+        spawnGodGundamPassiveStrike(owner, hitTarget, visualIndex, sourceOverride, clone)
+        const strikeEnemy = meleeCandidate.kind === 'enemy' ? meleeCandidate.target as Enemy : null
+        spawnSparks(hitTarget.x, hitTarget.y, clone ? '#e2e8f0' : meleeColor, strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, clone ? 4 : 5)
+        if (!clone) playCoreLanderPhysicalAttackSound(godMeleeStrikeId + hitTarget.id)
+        if (!clone && godMeleeStrikeId % 4 === 0) addRipple(hitTarget.x, hitTarget.y, meleeRippleColor, strikeEnemy?.isBoss ? 9 : 6)
+        if (clone && visualIndex % 3 === 0) addRipple(hitTarget.x, hitTarget.y, '#e2e8f0', strikeEnemy?.isBoss ? 7 : 5)
+      }
+      const damageMeleeCandidate = (meleeCandidate: GodMeleeCandidate & { distance: number }, damageScale = 1) => {
+        if (meleeCandidate.kind === 'enemy') {
+          const targetEnemy = meleeCandidate.target as Enemy
+          if (targetEnemy.hp <= 0) return false
+          const damage = getGodGundamMeleeDamagePerSecond(owner, targetEnemy, stageRef.current, ownerModel) * dt * damageScale
+          targetEnemy.shieldTime = 0
+          targetEnemy.hp -= damage
+          targetEnemy.hitFlash = Math.max(targetEnemy.hitFlash ?? 0, targetEnemy.isBoss ? 0.18 : targetEnemy.isMiniBoss ? 0.14 : 0.1)
+          if (targetEnemy.hp <= 0) markEnemyDefeatedByBarrage(targetEnemy)
+          return true
+        }
+        if (meleeCandidate.kind === 'asteroid') {
+          const targetAsteroid = meleeCandidate.target as AsteroidHazard
+          if (targetAsteroid.hp <= 0) return false
+          targetAsteroid.hp -= (getPlayerBaseAttack(owner) + getGodGundamStageAttackBonus(stageRef.current)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.35 * dt * damageScale
+          if (targetAsteroid.hp <= 0) {
+            const scoreValue = 180 + stageRef.current * 15 + targetAsteroid.tier * 80
+            player.score += scoreValue
+            if (remotePlayerRef.current) remotePlayerRef.current.score += scoreValue
+            spawnSparks(targetAsteroid.x, targetAsteroid.y, targetAsteroid.tier === 2 ? '#fb923c' : '#fbbf24', targetAsteroid.tier === 2 ? 38 : 22, targetAsteroid.tier === 2 ? 8 : 5)
+            addRipple(targetAsteroid.x, targetAsteroid.y, targetAsteroid.tier === 2 ? '#fb923c' : '#fbbf24', targetAsteroid.tier === 2 ? 15 : 9)
+            playGameSound(targetAsteroid.tier === 2 ? 'explosion_big' : 'explosion')
+          }
+          return true
+        }
+        const targetBubble = meleeCandidate.target as Shot
+        if ((targetBubble.hp ?? 1) <= 0) return false
         const splitHp = targetBubble.hp ?? 120
-        targetBubble.hp = (targetBubble.hp ?? 1) - (getPlayerBaseAttack(owner) + getGodGundamStageAttackBonus(stageRef.current)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.42 * dt
+        targetBubble.hp = (targetBubble.hp ?? 1) - (getPlayerBaseAttack(owner) + getGodGundamStageAttackBonus(stageRef.current)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.42 * dt * damageScale
         if ((targetBubble.hp ?? 0) <= 0) {
           splitSquidBubble({ ...targetBubble, hp: splitHp })
           targetBubble.life = 0
           targetBubble.y = HEIGHT + 99
+        }
+        return true
+      }
+
+      if ((owner.godMeleeVisualTimer ?? 0) <= 0) {
+        drawMeleeCandidateHit(candidate, godMeleeStrikeId)
+        if (spiegelClonesActive) {
+          const visualUsedKeys = new Set<string>([candidate.key])
+          for (const side of [-1, 1] as const) {
+            const cloneCandidate = pickSpiegelCloneCandidate(side, visualUsedKeys)
+            if (!cloneCandidate) continue
+            drawMeleeCandidateHit(cloneCandidate, godMeleeStrikeId + side * 17, { x: owner.x + side * SPIEGEL_SHADOW_CLONE_OFFSET, y: owner.y + 1.5 }, true)
+            visualUsedKeys.add(cloneCandidate.key)
+          }
+        }
+        owner.godMeleeVisualTimer = GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS
+      }
+
+      damageMeleeCandidate(candidate)
+      if (spiegelClonesActive) {
+        const usedCloneKeys = new Set<string>([candidate.key])
+        for (const side of [-1, 1] as const) {
+          const cloneCandidate = pickSpiegelCloneCandidate(side, usedCloneKeys)
+          if (!cloneCandidate) continue
+          damageMeleeCandidate(cloneCandidate, SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER)
+          usedCloneKeys.add(cloneCandidate.key)
         }
       }
     }
@@ -14412,7 +14496,8 @@ export function GradiusRaid({
             : getPowerScore(remoteOwner)
           : 0
         const powerScore = playerPowerScore + (remoteOwner ? Math.round(remotePowerScore * 0.6) : 0)
-        const damageMultiplier = godBarrage.damageMultiplier ?? getGodGundamBarrageDamageMultiplier(player)
+        const barrageModel = godBarrage.model ?? 'godGundam'
+        const damageMultiplier = godBarrage.damageMultiplier ?? getGodGundamBarrageDamageMultiplier(player, barrageModel)
         while (godBarrage.hitTimer <= 0 && !bossDefeatedThisFrame) {
           godBarrage.hitTimer += GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS
           godBarrage.hitIndex += 1
@@ -14437,6 +14522,42 @@ export function GradiusRaid({
               if (target.isBoss) {
                 godBarrageRef.current = null
                 break
+              }
+            }
+          }
+          if (!bossDefeatedThisFrame && godBarrageRef.current && barrageModel === 'spiegel' && godBarrage.burning) {
+            const cloneTargets = barrageTargets.filter((target) => target.hp > 0)
+            const cloneUsedTargetIds = new Set<number>()
+            for (const side of [-1, 1] as const) {
+              let cloneTarget: Enemy | null = null
+              let bestCloneScore = Number.POSITIVE_INFINITY
+              for (const target of cloneTargets) {
+                if (cloneUsedTargetIds.has(target.id) && cloneTargets.length > 1) continue
+                const directionBias = side < 0 ? Math.max(0, target.x - player.x) : Math.max(0, player.x - target.x)
+                const score = directionBias * directionBias + Math.abs(target.y - player.y) * 1.5 + ((godBarrage.hitIndex + target.id) % 7) * 3
+                if (score < bestCloneScore) {
+                  cloneTarget = target
+                  bestCloneScore = score
+                }
+              }
+              if (!cloneTarget) continue
+              const clonePower = cloneTarget.isBoss || cloneTarget.isMiniBoss
+                ? getGodGundamBarrageBossDamage(cloneTarget, stageRef.current, powerScore)
+                : Math.max(46 + stageRef.current * 5 + powerScore * 3, Math.round(cloneTarget.maxHp * 0.34))
+              const cloneDamage = Math.max(1, Math.round(clonePower * damageMultiplier * SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER))
+              spawnGodGundamPassiveStrike(player, cloneTarget, godBarrage.hitIndex + cloneTarget.id + side * 23, { x: player.x + side * SPIEGEL_SHADOW_CLONE_OFFSET, y: player.y + 1.5 }, true)
+              cloneTarget.shieldTime = 0
+              cloneTarget.hp -= cloneDamage
+              cloneTarget.hitFlash = Math.max(cloneTarget.hitFlash ?? 0, cloneTarget.isBoss ? 0.2 : cloneTarget.isMiniBoss ? 0.16 : 0.11)
+              hitAnyTarget = true
+              cloneUsedTargetIds.add(cloneTarget.id)
+              spawnSparks(cloneTarget.x + side * cloneTarget.radius * 0.28, cloneTarget.y, '#e2e8f0', cloneTarget.isBoss ? 12 : cloneTarget.isMiniBoss ? 8 : 5, 5)
+              if (cloneTarget.hp <= 0) {
+                markEnemyDefeatedByBarrage(cloneTarget)
+                if (cloneTarget.isBoss) {
+                  godBarrageRef.current = null
+                  break
+                }
               }
             }
           }
