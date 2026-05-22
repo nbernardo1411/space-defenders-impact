@@ -42,6 +42,9 @@ export type GameSoundKind =
   | 'artillery'
   | 'explosion'
   | 'explosion_big'
+  | 'g_atk_punch_1'
+  | 'g_atk_punch_2'
+  | 'g_atk_kick'
   | 'select_tower'
 
 type SoundPackConfig = {
@@ -86,6 +89,9 @@ const DEFAULT_AUDIO_PACK: SoundPackConfig = {
     artillery: getPublicAssetUrl('audio/sfx_cannon.wav'),
     explosion: getPublicAssetUrl('audio/sfx_explosion_small.wav'),
     explosion_big: getPublicAssetUrl('audio/sfx_explosion_big.wav'),
+    g_atk_punch_1: getPublicAssetUrl('audio/G-Atk/punch-1.mp3'),
+    g_atk_punch_2: getPublicAssetUrl('audio/G-Atk/punch-2.mp3'),
+    g_atk_kick: getPublicAssetUrl('audio/G-Atk/kick.mp3'),
     shoot: getPublicAssetUrl('audio/sfx_shoot.wav'),
     pop: getPublicAssetUrl('audio/sfx_hit.wav'),
     combo: getPublicAssetUrl('audio/sfx_combo.wav'),
@@ -123,6 +129,9 @@ const KIND_OUTPUT_GAIN: Partial<Record<GameSoundKind, number>> = {
   artillery: 0.5,
   explosion: 0.68,
   explosion_big: 0.6,
+  g_atk_punch_1: 0.52,
+  g_atk_punch_2: 0.52,
+  g_atk_kick: 0.5,
   shoot: 0.78,
 }
 const RECENT_SFX_WINDOW_MS = 240
@@ -133,6 +142,9 @@ const RAPID_FIRE_MIN_INTERVAL_MS: Partial<Record<GameSoundKind, number>> = {
   hit: 28,
   explosion: 40,
   explosion_big: 55,
+  g_atk_punch_1: 72,
+  g_atk_punch_2: 72,
+  g_atk_kick: 82,
 }
 
 function mergeAudioMix(base: AudioMixSettings, override?: Partial<AudioMixSettings>): AudioMixSettings {

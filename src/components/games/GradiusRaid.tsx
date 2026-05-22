@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM } from './sound'
+import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM, type GameSoundKind } from './sound'
 import type { GraphicsQuality } from './sound'
 import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
 import { isCreatorPlayerName, submitLeaderboardScore } from '../../leaderboards'
@@ -653,6 +653,17 @@ let powerId = 1
 let sparkId = 1
 let rippleId = 1
 let godMeleeStrikeId = 1
+let lastCoreLanderPhysicalSoundAt = 0
+const CORE_LANDER_PHYSICAL_ATTACK_SOUNDS: readonly GameSoundKind[] = ['g_atk_punch_1', 'g_atk_punch_2', 'g_atk_kick']
+
+function playCoreLanderPhysicalAttackSound(seed = Math.random()) {
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  if (now - lastCoreLanderPhysicalSoundAt < 76) return
+  lastCoreLanderPhysicalSoundAt = now
+  const noise = Math.abs(Math.sin(seed * 12.9898) * 43758.5453)
+  const index = Math.floor(noise) % CORE_LANDER_PHYSICAL_ATTACK_SOUNDS.length
+  playGameSound(CORE_LANDER_PHYSICAL_ATTACK_SOUNDS[index])
+}
 let lastPickupVoiceMs = 0
 
 const DEG = Math.PI / 180
@@ -1847,6 +1858,9 @@ function getRaidPersistentAudioUrls() {
     getPublicAssetUrl('audio/sfx_ui_clear.wav'),
     getPublicAssetUrl('audio/sfx_countdown.wav'),
     getPublicAssetUrl('audio/sfx_score.wav'),
+    getPublicAssetUrl('audio/G-Atk/punch-1.mp3'),
+    getPublicAssetUrl('audio/G-Atk/punch-2.mp3'),
+    getPublicAssetUrl('audio/G-Atk/kick.mp3'),
   ]
 }
 
@@ -11311,6 +11325,7 @@ export function GradiusRaid({
       addRipple(barrageTarget.x, barrageTarget.y, barrageColor, barrageTarget.isBoss ? 18 : 13)
       addRipple(player.x, player.y, launchColor, 13)
       spawnSparks(barrageTarget.x, barrageTarget.y, barrageColor, barrageTarget.isBoss ? 42 : 26, 7)
+      playCoreLanderPhysicalAttackSound(godMeleeStrikeId + barrageTarget.id)
       playGameSound('combo')
       syncSnapshot()
       return
@@ -14239,6 +14254,7 @@ export function GradiusRaid({
         owner.godMeleeVisualTimer = GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS
         const strikeEnemy = candidate.kind === 'enemy' ? candidate.target as Enemy : null
         spawnSparks(target.x, target.y, meleeColor, strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, 5)
+        playCoreLanderPhysicalAttackSound(godMeleeStrikeId + target.id)
         if (godMeleeStrikeId % 4 === 0) addRipple(target.x, target.y, meleeRippleColor, strikeEnemy?.isBoss ? 9 : 6)
       }
 
@@ -14373,6 +14389,7 @@ export function GradiusRaid({
               }
             }
           }
+          if (hitAnyTarget) playCoreLanderPhysicalAttackSound(godBarrage.hitIndex + (godBarrage.seed % 9))
           if (!hitAnyTarget) godBarrageRef.current = null
         }
       }
