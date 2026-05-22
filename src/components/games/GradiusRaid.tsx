@@ -219,6 +219,7 @@ type GodGundamPassiveStrike = Vec & {
   targetRadius: number
   burning?: boolean
   clone?: boolean
+  attackSideOverride?: -1 | 1
 }
 
 type AsteroidHazard = Vec & {
@@ -1028,6 +1029,7 @@ const RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS: Array<[number, string]> = [
 ]
 const RAID_GOD_GUNDAM_BARRAGE_FILTER = 'brightness(1.08) contrast(1.14) saturate(1.14)'
 const RAID_SPIEGEL_BARRAGE_FILTER = 'brightness(1.08) contrast(1.18) saturate(1.18)'
+const RAID_SPIEGEL_SHADOW_CLONE_FILTER = 'brightness(0.36) contrast(1.35) saturate(0.36)'
 const RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER = 'brightness(1.32) contrast(1.32) saturate(2.3) sepia(0.55) hue-rotate(342deg)'
 const RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.72)'],
@@ -1038,6 +1040,11 @@ const RAID_SPIEGEL_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
   [0, 'rgba(248,250,252,0.72)'],
   [0.38, 'rgba(248,113,113,0.42)'],
   [1, 'rgba(15,23,42,0)'],
+]
+const RAID_SPIEGEL_SHADOW_CLONE_IMPACT_STOPS: Array<[number, string]> = [
+  [0, 'rgba(15,23,42,0.42)'],
+  [0.46, 'rgba(2,6,23,0.24)'],
+  [1, 'rgba(0,0,0,0)'],
 ]
 const RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
   [0, 'rgba(255,255,255,0.82)'],
@@ -8357,16 +8364,19 @@ function drawGodGundamPassiveStrikes(
   toY: (value: number) => number,
   viewportWidth: number,
 ) {
+  for (const clonePass of [true, false]) {
   for (const strike of strikes) {
+    if (Boolean(strike.clone) !== clonePass) continue
     const model = strike.model ?? 'godGundam'
     const sequence = getCoreLanderBarrageSequence(model)
     const burning = Boolean(strike.burning)
     const clone = Boolean(strike.clone)
-    const cloneFade = clone ? 0.38 : 1
-    const strikeFilter = getCoreLanderBarrageFilter(model, burning)
-    const impactStops = getCoreLanderBarrageImpactStops(model, burning)
-    const energyColor = getCoreLanderBarrageEnergyColor(model, burning)
-    const shadowColor = getCoreLanderBarrageShadowColor(model, burning)
+    const cloneFade = clone ? 0.28 : 1
+    const forcedAttackSide = strike.attackSideOverride
+    const strikeFilter = clone && model === 'spiegel' ? RAID_SPIEGEL_SHADOW_CLONE_FILTER : getCoreLanderBarrageFilter(model, burning)
+    const impactStops = clone && model === 'spiegel' ? RAID_SPIEGEL_SHADOW_CLONE_IMPACT_STOPS : getCoreLanderBarrageImpactStops(model, burning)
+    const energyColor = clone && model === 'spiegel' ? '#020617' : getCoreLanderBarrageEnergyColor(model, burning)
+    const shadowColor = clone && model === 'spiegel' ? 'rgba(0,0,0,0.72)' : getCoreLanderBarrageShadowColor(model, burning)
     const spriteSize = getGodGundamGameplayRenderSize(viewportWidth) * Math.max(1, strike.size) * (clone ? 0.94 : 1)
     const targetRadius = Math.max(12, viewportWidth * (strike.targetRadius / WIDTH) * 0.78)
     const progress = clamp(strike.age / strike.duration, 0, 1)
@@ -8408,13 +8418,14 @@ function drawGodGundamPassiveStrikes(
       const localProgress = clamp(progress * 1.18 - layer * 0.16, 0, 1)
       if (localProgress <= 0 || localProgress >= 1) continue
       const pose = sequence[((strike.id + layer) % sequence.length + sequence.length) % sequence.length]
-      const attackSide = pose.side === 0 ? baseSide : pose.side
+      const attackSide = forcedAttackSide ?? (pose.side === 0 ? baseSide : pose.side)
       const prep = 1 - localProgress / 0.72
       const approach = localProgress < 0.72
         ? 1 - prep * prep * prep
         : 1 - (localProgress - 0.72) / 0.28 * 0.14
       const startAttackX = hitX + attackSide * (targetRadius + spriteSize * (0.36 + layer * 0.08))
-      const startAttackY = hitY + pose.offsetY * (viewportWidth / WIDTH) - spriteSize * 0.08 * layer
+      const forcedSourceOffsetY = forcedAttackSide && model === 'spiegel' ? clamp(toY(strike.sourceY) - hitY, -spriteSize * 0.42, spriteSize * 0.42) : 0
+      const startAttackY = hitY + pose.offsetY * (viewportWidth / WIDTH) + forcedSourceOffsetY - spriteSize * 0.08 * layer
       const impactX = hitX + attackSide * targetRadius * 0.2
       const impactY = hitY + pose.impactY * (viewportWidth / WIDTH)
       const x = startAttackX + (impactX - startAttackX) * approach
@@ -8446,6 +8457,7 @@ function drawGodGundamPassiveStrikes(
       drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (1 + layer * 0.06) * poseScale, strikeFilter, alpha * cloneFade, 0, 1, energyColor)
       ctx.restore()
     }
+  }
   }
 }
 
@@ -11107,11 +11119,11 @@ export function GradiusRaid({
       drawRaidEnemy(ctx, enemy, toX, toY, cssWidth, time, normalEnemyFilter)
     }
 
-    if (godBarrageRef.current) {
-      drawGodGundamBarrage(ctx, godBarrageRef.current, enemiesRef.current, toX, toY, cssWidth, time)
-    }
     if (godMeleeStrikesRef.current.length > 0) {
       drawGodGundamPassiveStrikes(ctx, godMeleeStrikesRef.current, toX, toY, cssWidth)
+    }
+    if (godBarrageRef.current) {
+      drawGodGundamBarrage(ctx, godBarrageRef.current, enemiesRef.current, toX, toY, cssWidth, time)
     }
 
     for (const shot of shotsRef.current) drawPlayerShot(shot)
@@ -14274,7 +14286,7 @@ export function GradiusRaid({
       }
       playGameSound(enemy.isBoss || enemy.isMiniBoss ? 'explosion_big' : 'explosion')
     }
-    const spawnGodGundamPassiveStrike = (owner: Player, target: Vec & { radius: number }, visualIndex: number, sourceOverride?: Vec, preserveChain = false) => {
+    const spawnGodGundamPassiveStrike = (owner: Player, target: Vec & { radius: number }, visualIndex: number, sourceOverride?: Vec, preserveChain = false, attackSideOverride?: -1 | 1) => {
       const model = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
       const sourceX = sourceOverride?.x ?? owner.godMeleeChainX ?? owner.x
       const sourceY = sourceOverride?.y ?? owner.godMeleeChainY ?? owner.y
@@ -14294,6 +14306,7 @@ export function GradiusRaid({
         targetRadius: target.radius,
         burning: isCoreLanderBurning(owner),
         clone: preserveChain,
+        attackSideOverride,
       })
       if (!preserveChain) {
         owner.godMeleeChainX = target.x
@@ -14403,9 +14416,9 @@ export function GradiusRaid({
         }
         return best
       }
-      const drawMeleeCandidateHit = (meleeCandidate: GodMeleeCandidate & { distance: number }, visualIndex: number, sourceOverride?: Vec, clone = false) => {
+      const drawMeleeCandidateHit = (meleeCandidate: GodMeleeCandidate & { distance: number }, visualIndex: number, sourceOverride?: Vec, clone = false, attackSideOverride?: -1 | 1) => {
         const hitTarget = meleeCandidate.target
-        spawnGodGundamPassiveStrike(owner, hitTarget, visualIndex, sourceOverride, clone)
+        spawnGodGundamPassiveStrike(owner, hitTarget, visualIndex, sourceOverride, clone, attackSideOverride)
         const strikeEnemy = meleeCandidate.kind === 'enemy' ? meleeCandidate.target as Enemy : null
         spawnSparks(hitTarget.x, hitTarget.y, clone ? '#e2e8f0' : meleeColor, strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, clone ? 4 : 5)
         if (!clone) playCoreLanderPhysicalAttackSound(godMeleeStrikeId + hitTarget.id)
@@ -14456,7 +14469,7 @@ export function GradiusRaid({
           for (const side of [-1, 1] as const) {
             const cloneCandidate = pickSpiegelCloneCandidate(side, visualUsedKeys)
             if (!cloneCandidate) continue
-            drawMeleeCandidateHit(cloneCandidate, godMeleeStrikeId + side * 17, { x: owner.x + side * SPIEGEL_SHADOW_CLONE_OFFSET, y: owner.y + 1.5 }, true)
+            drawMeleeCandidateHit(cloneCandidate, godMeleeStrikeId + side * 17, { x: owner.x + side * SPIEGEL_SHADOW_CLONE_OFFSET, y: owner.y + (side < 0 ? -7 : 7) }, true, side)
             visualUsedKeys.add(cloneCandidate.key)
           }
         }
@@ -14565,7 +14578,7 @@ export function GradiusRaid({
                 ? getGodGundamBarrageBossDamage(cloneTarget, stageRef.current, powerScore)
                 : Math.max(46 + stageRef.current * 5 + powerScore * 3, Math.round(cloneTarget.maxHp * 0.34))
               const cloneDamage = Math.max(1, Math.round(clonePower * damageMultiplier * SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER))
-              spawnGodGundamPassiveStrike(player, cloneTarget, godBarrage.hitIndex + cloneTarget.id + side * 23, { x: player.x + side * SPIEGEL_SHADOW_CLONE_OFFSET, y: player.y + 1.5 }, true)
+              spawnGodGundamPassiveStrike(player, cloneTarget, godBarrage.hitIndex + cloneTarget.id + side * 23, { x: player.x + side * SPIEGEL_SHADOW_CLONE_OFFSET, y: player.y + (side < 0 ? -7 : 7) }, true, side)
               cloneTarget.shieldTime = 0
               cloneTarget.hp -= cloneDamage
               cloneTarget.hitFlash = Math.max(cloneTarget.hitFlash ?? 0, cloneTarget.isBoss ? 0.2 : cloneTarget.isMiniBoss ? 0.16 : 0.11)
