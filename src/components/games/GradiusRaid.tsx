@@ -2330,6 +2330,10 @@ function getCoreLanderBarragePoseScale(model: CoreLanderCombatModel, pose: GodGu
   return RAID_CORE_LANDER_BARRAGE_POSE_SCALES[model]?.[pose] ?? 1
 }
 
+function shouldMirrorCoreLanderBarragePose(model: CoreLanderCombatModel, attackSide: -1 | 1) {
+  return model === 'spiegel' ? attackSide < 0 : attackSide > 0
+}
+
 function hasClearedRaidInProgress(progress: ReturnType<typeof loadProgress>) {
   return isGradiusRaidEndlessUnlocked(progress)
 }
@@ -8098,7 +8102,7 @@ function drawGodGundamBarrage(
       const poseScale = getCoreLanderBarragePoseScale(model, pose.pose)
       ctx.save()
       ctx.translate(x, y)
-      if (attackSide > 0) ctx.scale(-1, 1)
+      if (shouldMirrorCoreLanderBarragePose(model, attackSide)) ctx.scale(-1, 1)
       ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
       ctx.shadowColor = shadowColor
       drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (target.isBoss ? 1 : 0.86) * poseScale, barrageFilter, alpha, 0, 1, energyColor)
@@ -8190,7 +8194,7 @@ function drawGodGundamPassiveStrikes(
       const poseScale = getCoreLanderBarragePoseScale(model, pose.pose)
       ctx.save()
       ctx.translate(x, y)
-      if (attackSide > 0) ctx.scale(-1, 1)
+      if (shouldMirrorCoreLanderBarragePose(model, attackSide)) ctx.scale(-1, 1)
       ctx.shadowBlur = Math.max(8, spriteSize * 0.08)
       ctx.shadowColor = shadowColor
       drawCanvasSpriteContain(ctx, sprite, 0, 0, spriteSize * (1 + layer * 0.06) * poseScale, strikeFilter, alpha, 0, 1, energyColor)
