@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { RaidShipSprite } from './games/RaidShipSprite'
 import { getLanguageText, getRaidText, type LanguageCode } from '../i18n'
 
+const DEFAULT_RAID_RELAY_URL = 'https://space-raid-relay.onrender.com'
+
 type RoomPlayer = {
   id: string
   name: string
@@ -47,7 +49,7 @@ const getDefaultRelayUrl = () => {
     return 'ws://localhost:8787'
   }
 
-  return ''
+  return DEFAULT_RAID_RELAY_URL
 }
 
 const normalizeRelayUrl = (value: string) => {

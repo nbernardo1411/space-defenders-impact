@@ -24,6 +24,7 @@ export const PLAYER_NAME_STORAGE_KEY = 'space-defenders-player-name'
 export const PLAYER_ID_STORAGE_KEY = 'space-defenders-player-id'
 export const PLAYER_RECOVERY_CODE_STORAGE_KEY = 'space-defenders-player-recovery-code'
 export const CREATOR_PLAYER_NAME = 'zukito'
+const DEFAULT_RAID_RELAY_URL = 'https://space-raid-relay.onrender.com'
 
 export const LEADERBOARD_MODES: Array<{
   key: LeaderboardMode
@@ -156,7 +157,7 @@ export function getLeaderboardApiBase(): string {
     return 'http://localhost:8787'
   }
 
-  return ''
+  return DEFAULT_RAID_RELAY_URL
 }
 
 export async function fetchLeaderboards(): Promise<LeaderboardMap> {
