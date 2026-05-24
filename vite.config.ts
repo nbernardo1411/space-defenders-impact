@@ -39,6 +39,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,mp3,ogg,wav,json,webmanifest}'],
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -54,7 +56,6 @@ export default defineConfig({
               cacheName: 'space-defender-raid-images-v1',
               expiration: {
                 maxEntries: 128,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
               cacheableResponse: {
                 statuses: [0, 200],
@@ -69,7 +70,6 @@ export default defineConfig({
               cacheName: 'space-defender-audio-v1',
               expiration: {
                 maxEntries: 32,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
               cacheableResponse: {
                 statuses: [0, 200],
