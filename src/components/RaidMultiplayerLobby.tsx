@@ -45,7 +45,12 @@ const getDefaultRelayUrl = () => {
   const configuredUrl = import.meta.env.VITE_RAID_RELAY_URL
   if (configuredUrl) return configuredUrl
 
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+  if (
+    import.meta.env.DEV &&
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location.hostname) &&
+    ['5173', '4173'].includes(window.location.port)
+  ) {
     return 'ws://localhost:8787'
   }
 

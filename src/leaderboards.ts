@@ -153,7 +153,12 @@ export function getLeaderboardApiBase(): string {
       .replace(/\/$/, '')
   }
 
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+  if (
+    import.meta.env.DEV &&
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location.hostname) &&
+    ['5173', '4173'].includes(window.location.port)
+  ) {
     return 'http://localhost:8787'
   }
 
