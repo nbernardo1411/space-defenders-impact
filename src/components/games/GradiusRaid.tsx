@@ -9355,11 +9355,18 @@ const POWER_PICKUP_SPRITE_FRAMES = 16
 const POWER_PICKUP_SPIN_BUCKETS = 8
 const powerPickupSpriteCache = new Map<string, HTMLCanvasElement>()
 
+function getPowerPickupSpriteScale() {
+  if (typeof window === 'undefined') return 2
+  return clamp(window.devicePixelRatio || 1, 1, 2.5)
+}
+
 function getPowerPickupSprite(type: PowerKind, size: number, phaseBucket: number, spinBucket: number) {
   const normalizedSize = Math.round(size)
   const normalizedPhase = ((phaseBucket % POWER_PICKUP_SPRITE_FRAMES) + POWER_PICKUP_SPRITE_FRAMES) % POWER_PICKUP_SPRITE_FRAMES
   const normalizedSpin = ((spinBucket % POWER_PICKUP_SPIN_BUCKETS) + POWER_PICKUP_SPIN_BUCKETS) % POWER_PICKUP_SPIN_BUCKETS
-  const cacheKey = `${type}|${normalizedSize}|${normalizedPhase}|${normalizedSpin}`
+  const spriteScale = getPowerPickupSpriteScale()
+  const scaledBucket = Math.round(spriteScale * 10) / 10
+  const cacheKey = `${type}|${normalizedSize}|${normalizedPhase}|${normalizedSpin}|${scaledBucket}`
   const cached = powerPickupSpriteCache.get(cacheKey)
   if (cached) return cached
 
@@ -9370,12 +9377,13 @@ function getPowerPickupSprite(type: PowerKind, size: number, phaseBucket: number
   const ringRadius = normalizedSize * 0.54 * pulse
   const canvasSize = Math.ceil(normalizedSize * 2.45)
   const canvas = document.createElement('canvas')
-  canvas.width = canvasSize
-  canvas.height = canvasSize
+  canvas.width = Math.ceil(canvasSize * spriteScale)
+  canvas.height = Math.ceil(canvasSize * spriteScale)
   const spriteCtx = canvas.getContext('2d')
   if (!spriteCtx) return canvas
 
-  spriteCtx.translate(canvas.width / 2, canvas.height / 2)
+  spriteCtx.scale(spriteScale, spriteScale)
+  spriteCtx.translate(canvasSize / 2, canvasSize / 2)
   spriteCtx.globalCompositeOperation = 'lighter'
   drawRadialEllipse(spriteCtx, 0, 0, normalizedSize * 0.9, normalizedSize * 0.74, [
     [0, 'rgba(255,255,255,0.2)'],
@@ -9496,7 +9504,8 @@ function drawPowerUpCanvas(
   const phaseBucket = Math.round((((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * POWER_PICKUP_SPRITE_FRAMES)
   const spinBucket = Math.round((((powerUp.spin % 360) + 360) % 360) / 360 * POWER_PICKUP_SPIN_BUCKETS)
   const sprite = getPowerPickupSprite(powerUp.type, size, phaseBucket, spinBucket)
-  ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2)
+  const drawSize = Math.ceil(size * 2.45)
+  ctx.drawImage(sprite, x - drawSize / 2, y - drawSize / 2, drawSize, drawSize)
 }
 
 function drawFinalChargeLines(
