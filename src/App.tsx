@@ -18,7 +18,7 @@ import {
   type LanguageCode,
 } from './i18n'
 import { getStoredPlayerName, getStoredRecoveryCode, hasStoredPlayerName, isCreatorPlayerName, registerPlayerName, restorePlayerName, saveStoredPlayerName, uploadPlayerProgress, type PlayerNameRegistrationResult } from './leaderboards'
-import { getStoredTowerDefenseEndlessUnlock, loadProgress, normalizeProgress, recordRunResult, saveProgress, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
+import { getStoredTowerDefenseEndlessUnlock, loadProgress, normalizeProgress, recordRunResult, resetProgressForNewAccount, saveProgress, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed - kept for prop compatibility)
@@ -138,7 +138,12 @@ function App() {
     void uploadPlayerProgress(nextProgress)
   }
 
-  const applyRegisteredPlayer = (result: PlayerNameRegistrationResult, fallbackName: string, uploadLocalWhenEmpty = true) => {
+  const applyRegisteredPlayer = (
+    result: PlayerNameRegistrationResult,
+    fallbackName: string,
+    options: { uploadLocalWhenEmpty?: boolean; resetLocalWhenEmpty?: boolean } = {},
+  ) => {
+    const { uploadLocalWhenEmpty = true, resetLocalWhenEmpty = false } = options
     const nextName = saveStoredPlayerName(result.playerName ?? fallbackName)
     setPlayerName(nextName)
     setPlayerNameDraft(nextName)
@@ -152,6 +157,14 @@ function App() {
       saveProgress(cloudProgress)
       setProgress(cloudProgress)
       setEndlessUnlocked(cloudProgress.towerDefenseEndlessUnlocked)
+      return
+    }
+
+    if (resetLocalWhenEmpty) {
+      const freshProgress = resetProgressForNewAccount()
+      setProgress(freshProgress)
+      setEndlessUnlocked(freshProgress.towerDefenseEndlessUnlocked)
+      syncCloudProgress(freshProgress)
       return
     }
 
@@ -320,7 +333,9 @@ function App() {
       return
     }
 
-    applyRegisteredPlayer(result, playerNameDraft)
+    applyRegisteredPlayer(result, playerNameDraft, {
+      resetLocalWhenEmpty: !playerNameRestoreMode,
+    })
   }
 
   const playerNamePrompt = showPlayerNamePrompt ? (

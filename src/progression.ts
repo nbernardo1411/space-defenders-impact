@@ -297,6 +297,18 @@ export function saveProgress(progress: ProgressState) {
   window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(normalized))
 }
 
+export function resetProgressForNewAccount(): ProgressState {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(ENDLESS_UNLOCK_STORAGE_KEY)
+  }
+  const progress = {
+    ...createEmptyProgress(),
+    towerDefenseEndlessUnlocked: false,
+  }
+  saveProgress(progress)
+  return progress
+}
+
 export function recordRunResult(result: RunResult): ProgressUpdate {
   const progress = loadProgress()
   const unlockedAchievements: AchievementId[] = []
