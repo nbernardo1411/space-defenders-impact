@@ -636,6 +636,8 @@ const FINAL_BOSS_BEAM_TRIDENT_RADIUS = 4.35
 const FINAL_BOSS_BEAM_SCATTER_RADIUS = 4.7
 const MAX_SPARKS = 45
 const MAX_RIPPLES = 6
+const SPARK_POOL_LIMIT = MAX_SPARKS * 5
+const RIPPLE_POOL_LIMIT = MAX_RIPPLES * 8
 const MAX_ASTEROIDS = 16
 const MAX_METEORS = 18
 const MAX_ION_STRIKES = 8
@@ -648,6 +650,9 @@ const RANDOM_EVENT_WARNING_SECONDS = 2.45
 const RANDOM_EVENT_MIN_SECONDS = 34
 const RANDOM_EVENT_MAX_SECONDS = 56
 const RAID_BACKGROUND_THEME_COUNT = 5
+const ENEMY_COLLISION_BUCKET_SIZE = 10
+const ENEMY_COLLISION_BUCKET_PADDING = 28
+const ENEMY_COLLISION_BUCKET_COUNT = Math.ceil((HEIGHT + ENEMY_COLLISION_BUCKET_PADDING * 2) / ENEMY_COLLISION_BUCKET_SIZE)
 
 let shotId = 1
 let enemyId = 1
@@ -660,6 +665,8 @@ let sparkId = 1
 let rippleId = 1
 let godMeleeStrikeId = 1
 let lastCoreLanderPhysicalSoundAt = 0
+const sparkPool: Spark[] = []
+const ripplePool: Ripple[] = []
 const CORE_LANDER_PHYSICAL_ATTACK_SOUNDS: readonly GameSoundKind[] = ['g_atk_punch_1', 'g_atk_punch_2', 'g_atk_kick']
 
 function playCoreLanderPhysicalAttackSound(seed = Math.random()) {
@@ -868,6 +875,8 @@ const godBarrageDrawTargetsScratch: Enemy[] = []
 const godBarrageDamageTargetsScratch: Enemy[] = []
 let raidCanvasAssetWarmPromise: Promise<void> | null = null
 let raidCanvasAssetWarmComplete = false
+let raidPixiAssetWarmPromise: Promise<void> | null = null
+let raidPixiAssetWarmComplete = false
 
 const RAID_OTHER_ASSET_PATHS = {
   asteroid: 'assets/others/asteroid.png',
@@ -1149,6 +1158,26 @@ const BACKGROUND_SPEED_LINES = [
   { x: 0.88, length: 135, width: 1, delay: -0.34, color: 'cyan' },
 ] as const
 
+const RAID_PLANET_DEPTH_SCALES = [
+  [1.08, 0.74, 0.88],
+  [0.72, 1.2, 0.62],
+  [1.34, 0.66, 1.08],
+  [0.9, 1.42, 0.72],
+  [1.18, 0.84, 1.28],
+  [0.64, 1.06, 0.82],
+] as const
+
+function getRaidPlanetDepthScale(stageTheme: number, planetIndex: number) {
+  const stageIndex = (((Math.floor(stageTheme) - 1) % RAID_PLANET_DEPTH_SCALES.length) + RAID_PLANET_DEPTH_SCALES.length) % RAID_PLANET_DEPTH_SCALES.length
+  return RAID_PLANET_DEPTH_SCALES[stageIndex][planetIndex] ?? 1
+}
+
+function shouldDrawRaidStarTrail(star: typeof BACKGROUND_STARS[number], index: number, quality: GraphicsQuality) {
+  if (quality === 'low' || quality === 'medium') return false
+  if (quality === 'high') return star.tint > 0.82 && index % 4 === 0
+  return star.tint > 0.74 && index % 3 === 0
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
 }
@@ -1163,6 +1192,47 @@ function compactInPlace<T>(items: T[], keep: (item: T) => boolean) {
   }
   items.length = liveCount
   return items
+}
+
+type EnemyCollisionBuckets = Enemy[][]
+
+function createEnemyCollisionBuckets(): EnemyCollisionBuckets {
+  return Array.from({ length: ENEMY_COLLISION_BUCKET_COUNT }, () => [])
+}
+
+function getEnemyCollisionBucketIndex(y: number) {
+  return clamp(Math.floor((y + ENEMY_COLLISION_BUCKET_PADDING) / ENEMY_COLLISION_BUCKET_SIZE), 0, ENEMY_COLLISION_BUCKET_COUNT - 1)
+}
+
+function resetEnemyCollisionBuckets(buckets: EnemyCollisionBuckets) {
+  for (let index = 0; index < buckets.length; index += 1) buckets[index].length = 0
+}
+
+function buildEnemyCollisionBuckets(enemies: Enemy[], buckets: EnemyCollisionBuckets, largeEnemies: Enemy[]) {
+  resetEnemyCollisionBuckets(buckets)
+  largeEnemies.length = 0
+  for (const enemy of enemies) {
+    if (enemy.hp <= 0) continue
+    if (enemy.isBoss || enemy.isMiniBoss || enemy.radius > 8) {
+      largeEnemies.push(enemy)
+      continue
+    }
+    const startBucket = getEnemyCollisionBucketIndex(enemy.y - enemy.radius)
+    const endBucket = getEnemyCollisionBucketIndex(enemy.y + enemy.radius)
+    for (let bucket = startBucket; bucket <= endBucket; bucket += 1) buckets[bucket].push(enemy)
+  }
+}
+
+function collectShotCollisionCandidates(shot: Shot, buckets: EnemyCollisionBuckets, largeEnemies: Enemy[], candidates: Enemy[]) {
+  candidates.length = 0
+  for (const enemy of largeEnemies) candidates.push(enemy)
+  const startBucket = getEnemyCollisionBucketIndex(shot.y - shot.radius)
+  const endBucket = getEnemyCollisionBucketIndex(shot.y + shot.radius)
+  for (let bucket = startBucket; bucket <= endBucket; bucket += 1) {
+    const bucketEnemies = buckets[bucket]
+    for (const enemy of bucketEnemies) candidates.push(enemy)
+  }
+  return candidates
 }
 
 function getMaxActiveEliteEnemies(stage: number, isMultiplayer: boolean) {
@@ -1210,8 +1280,59 @@ function readRaidPalette(root: HTMLElement): RaidPalette {
   }
 }
 
+function recycleSpark(spark: Spark) {
+  if (sparkPool.length < SPARK_POOL_LIMIT) sparkPool.push(spark)
+}
+
+function recycleSparkList(sparks: Spark[]) {
+  for (const spark of sparks) recycleSpark(spark)
+  sparks.length = 0
+}
+
+function acquireSpark(x: number, y: number, vx: number, vy: number, life: number, color: string, size: number): Spark {
+  const spark = sparkPool.pop()
+  if (spark) {
+    spark.id = sparkId++
+    spark.x = x
+    spark.y = y
+    spark.vx = vx
+    spark.vy = vy
+    spark.life = life
+    spark.maxLife = 0.9
+    spark.color = color
+    spark.size = size
+    return spark
+  }
+  return { id: sparkId++, x, y, vx, vy, life, maxLife: 0.9, color, size }
+}
+
+function recycleRipple(ripple: Ripple) {
+  if (ripplePool.length < RIPPLE_POOL_LIMIT) ripplePool.push(ripple)
+}
+
+function recycleRippleList(ripples: Ripple[]) {
+  for (const ripple of ripples) recycleRipple(ripple)
+  ripples.length = 0
+}
+
+function acquireRipple(x: number, y: number, color: string, size: number, life: number): Ripple {
+  const ripple = ripplePool.pop()
+  if (ripple) {
+    ripple.id = rippleId++
+    ripple.x = x
+    ripple.y = y
+    ripple.color = color
+    ripple.size = size
+    ripple.life = life
+    ripple.maxLife = life
+    return ripple
+  }
+  return { id: rippleId++, x, y, color, size, life, maxLife: life }
+}
+
 function updateSparksInPlace(sparks: Spark[], dt: number) {
   const start = Math.max(0, sparks.length - MAX_SPARKS)
+  for (let index = 0; index < start; index += 1) recycleSpark(sparks[index])
   let write = 0
   for (let index = start; index < sparks.length; index += 1) {
     const spark = sparks[index]
@@ -1221,6 +1342,8 @@ function updateSparksInPlace(sparks: Spark[], dt: number) {
     if (spark.life > 0) {
       sparks[write] = spark
       write += 1
+    } else {
+      recycleSpark(spark)
     }
   }
   sparks.length = write
@@ -1228,6 +1351,7 @@ function updateSparksInPlace(sparks: Spark[], dt: number) {
 
 function updateRipplesInPlace(ripples: Ripple[], dt: number) {
   const start = Math.max(0, ripples.length - MAX_RIPPLES)
+  for (let index = 0; index < start; index += 1) recycleRipple(ripples[index])
   let write = 0
   for (let index = start; index < ripples.length; index += 1) {
     const ripple = ripples[index]
@@ -1235,6 +1359,8 @@ function updateRipplesInPlace(ripples: Ripple[], dt: number) {
     if (ripple.life > 0) {
       ripples[write] = ripple
       write += 1
+    } else {
+      recycleRipple(ripple)
     }
   }
   ripples.length = write
@@ -1976,13 +2102,54 @@ function preloadRaidCanvasAssets(onProgress?: (loaded: number, total: number) =>
   return warmPromise
 }
 
+function getRaidPixiBackgroundAssetCount() {
+  return Object.keys(RAID_OTHER_ASSET_PATHS).length
+}
+
+function preloadRaidPixiBackgroundAssets(onProgress?: (loaded: number, total: number) => void) {
+  const entries = Object.values(RAID_OTHER_ASSET_PATHS)
+  const total = entries.length
+
+  if (typeof window === 'undefined') {
+    onProgress?.(total, total)
+    return Promise.resolve()
+  }
+
+  if (raidPixiAssetWarmComplete) {
+    onProgress?.(total, total)
+    return Promise.resolve()
+  }
+
+  if (!onProgress && raidPixiAssetWarmPromise) return raidPixiAssetWarmPromise
+
+  let loaded = 0
+  onProgress?.(loaded, total)
+  const warmPromise = Promise.all(entries.map(async (path) => {
+    try {
+      await Assets.load(getPublicAssetUrl(path))
+    } catch {
+      // Pixi background assets are optional because the canvas fallback can still draw.
+    } finally {
+      loaded += 1
+      onProgress?.(Math.min(loaded, total), total)
+    }
+  })).then(() => {
+    raidPixiAssetWarmComplete = true
+  })
+
+  if (!raidPixiAssetWarmPromise) raidPixiAssetWarmPromise = warmPromise
+  return warmPromise
+}
+
 export function preloadGradiusRaidAssets(onProgress?: (loaded: number, total: number) => void) {
   const canvasTotal = warmRaidCanvasAssets().length
   const persistentTotal = getRaidPersistentAssetCount()
-  const total = Math.max(1, canvasTotal + persistentTotal)
+  const pixiTotal = getRaidPixiBackgroundAssetCount()
+  const total = Math.max(1, canvasTotal + persistentTotal + pixiTotal)
   let canvasLoaded = raidCanvasAssetWarmComplete ? canvasTotal : 0
   let persistentLoaded = raidPersistentAssetCacheComplete ? persistentTotal : 0
-  const report = () => onProgress?.(Math.min(canvasLoaded + persistentLoaded, total), total)
+  let pixiLoaded = raidPixiAssetWarmComplete ? pixiTotal : 0
+  const report = () => onProgress?.(Math.min(canvasLoaded + persistentLoaded + pixiLoaded, total), total)
 
   report()
   return Promise.all([
@@ -1994,16 +2161,21 @@ export function preloadGradiusRaidAssets(onProgress?: (loaded: number, total: nu
       persistentLoaded = loaded
       report()
     }),
+    preloadRaidPixiBackgroundAssets((loaded) => {
+      pixiLoaded = loaded
+      report()
+    }),
   ]).then(() => {
     canvasLoaded = canvasTotal
     persistentLoaded = persistentTotal
+    pixiLoaded = pixiTotal
     report()
   })
 }
 
 function getRaidAssetPreloadInitialState(): RaidAssetPreloadState {
-  const total = Math.max(1, warmRaidCanvasAssets().length + getRaidPersistentAssetCount())
-  const ready = raidCanvasAssetWarmComplete && raidPersistentAssetCacheComplete
+  const total = Math.max(1, warmRaidCanvasAssets().length + getRaidPersistentAssetCount() + getRaidPixiBackgroundAssetCount())
+  const ready = raidCanvasAssetWarmComplete && raidPersistentAssetCacheComplete && raidPixiAssetWarmComplete
   return { status: ready ? 'ready' : 'idle', loaded: ready ? total : 0, total }
 }
 function getNormalAlienImageFilter(baseFilter: string, enemy: Enemy) {
@@ -3888,19 +4060,19 @@ function getRaidStarfieldCache(width: number, height: number, quality: GraphicsQ
     if (nearLayer) {
       for (let index = 0; index < starLimit; index += 1) {
         const star = BACKGROUND_STARS[index]
-        if (star.tint <= 0.58) continue
+        if (!shouldDrawRaidStarTrail(star, index, quality)) continue
         const x = star.x * width
         const y = star.y * nearLayerHeight
-        nearLayer.ctx.globalAlpha = star.alpha * 0.42
-        const trail = nearLayer.ctx.createLinearGradient(x, y - 18, x, y + 28)
+        nearLayer.ctx.globalAlpha = star.alpha * 0.26
+        const trail = nearLayer.ctx.createLinearGradient(x, y - 14, x, y + 22)
         trail.addColorStop(0, 'rgba(255,255,255,0)')
-        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)')
+        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.36)')
         trail.addColorStop(1, 'rgba(255,255,255,0)')
         nearLayer.ctx.strokeStyle = trail
-        nearLayer.ctx.lineWidth = Math.max(1, star.size * 0.8)
+        nearLayer.ctx.lineWidth = Math.max(1, star.size * 0.65)
         nearLayer.ctx.beginPath()
-        nearLayer.ctx.moveTo(x, y - 18)
-        nearLayer.ctx.lineTo(x, y + 28)
+        nearLayer.ctx.moveTo(x, y - 14)
+        nearLayer.ctx.lineTo(x, y + 22)
         nearLayer.ctx.stroke()
       }
       nearTrailCanvas = nearLayer.canvas
@@ -4016,7 +4188,7 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
       gradient.addColorStop(0, 'rgba(255,255,255,0)')
       gradient.addColorStop(0.46, lineColor)
       gradient.addColorStop(1, 'rgba(255,255,255,0)')
-      ctx.globalAlpha = 0.58
+      ctx.globalAlpha = 0.36
       ctx.strokeStyle = gradient
       ctx.lineWidth = line.width
       ctx.beginPath()
@@ -4042,17 +4214,17 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
       ctx.arc(x, farY, star.size * 0.62, 0, Math.PI * 2)
       ctx.fill()
 
-      if (!isLow && !isMedium && star.tint > 0.58) {
-        ctx.globalAlpha = star.alpha * 0.42
-        const trail = ctx.createLinearGradient(x, nearY - 18, x, nearY + 28)
+      if (shouldDrawRaidStarTrail(star, index, quality)) {
+        ctx.globalAlpha = star.alpha * 0.26
+        const trail = ctx.createLinearGradient(x, nearY - 14, x, nearY + 22)
         trail.addColorStop(0, 'rgba(255,255,255,0)')
-        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)')
+        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.36)')
         trail.addColorStop(1, 'rgba(255,255,255,0)')
         ctx.strokeStyle = trail
-        ctx.lineWidth = Math.max(1, star.size * 0.8)
+        ctx.lineWidth = Math.max(1, star.size * 0.65)
         ctx.beginPath()
-        ctx.moveTo(x, nearY - 18)
-        ctx.lineTo(x, nearY + 28)
+        ctx.moveTo(x, nearY - 14)
+        ctx.lineTo(x, nearY + 22)
         ctx.stroke()
       }
     }
@@ -4063,9 +4235,9 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   const planet1Y = ((seconds / 28 + 0.9) % 1) * planetBase - height * 0.1
   const planet2Y = ((seconds / 42 + 0.64) % 1) * planetBase - height * 0.08
   const planet3Y = ((seconds / 58 + 0.42) % 1) * planetBase - height * 0.06
-  const planet1R = Math.min(width * 0.105, 96)
-  const planet2R = Math.min(width * 0.045, 36)
-  const planet3R = Math.min(width * 0.03, 26)
+  const planet1R = Math.min(width * 0.105, 96) * getRaidPlanetDepthScale(stageTheme, 0)
+  const planet2R = Math.min(width * 0.045, 36) * getRaidPlanetDepthScale(stageTheme, 1)
+  const planet3R = Math.min(width * 0.03, 26) * getRaidPlanetDepthScale(stageTheme, 2)
 
   if (!isLow) {
     if (isSurfaceStage) {
@@ -4307,7 +4479,7 @@ class PixiRaidBackground {
       this.updateStarfield(width, height, seconds, quality, dpr, palette.starTint, palette.streak)
       this.updateSpeedLines(width, height, seconds, palette.streak, isLow, isMedium)
       this.updateSurface(width, height, seconds, palette, quality, stageTheme)
-      this.updatePlanets(width, height, seconds, palette, isLow, isMedium)
+      this.updatePlanets(width, height, seconds, palette, stageTheme, isLow, isMedium)
       this.updateBackgroundObjects(width, height, seconds, isLow, isMedium)
       this.updateAmbientExplosions(width, height, seconds, isLow, isMedium)
       app.render()
@@ -4483,16 +4655,16 @@ class PixiRaidBackground {
         if (!isLow && !isMedium) {
           for (let index = 0; index < starLimit; index += 1) {
             const star = BACKGROUND_STARS[index]
-            if (star.tint <= 0.58) continue
+            if (!shouldDrawRaidStarTrail(star, index, quality)) continue
             const x = star.x * width
             const y = star.y * nearLayerHeight
-            layer.moveTo(x, y - 18)
-            layer.lineTo(x, y + 28)
-            const trailFill = getPixiFill(star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)', star.alpha * 0.42)
+            layer.moveTo(x, y - 14)
+            layer.lineTo(x, y + 22)
+            const trailFill = getPixiFill(star.tint > 0.78 ? streak : 'rgba(255,255,255,0.36)', star.alpha * 0.26)
             layer.stroke({
               color: trailFill.color,
               alpha: trailFill.alpha,
-              width: Math.max(1, star.size * 0.8),
+              width: Math.max(1, star.size * 0.65),
               cap: 'round',
             })
           }
@@ -4533,7 +4705,7 @@ class PixiRaidBackground {
       const x = line.x * width
       graphics.moveTo(x, y)
       graphics.lineTo(x, y + line.length)
-      const stroke = getPixiFill(lineColor, 0.58)
+      const stroke = getPixiFill(lineColor, 0.36)
       graphics.stroke({ color: stroke.color, alpha: stroke.alpha, width: line.width, cap: 'round' })
     }
   }
@@ -4615,14 +4787,14 @@ class PixiRaidBackground {
     graphics.rect(0, 0, width, height).fill(getPixiFill('rgba(0,0,0,0.42)', 0.18))
   }
 
-  private updatePlanets(width: number, height: number, seconds: number, palette: RaidPalette, isLow: boolean, isMedium: boolean) {
+  private updatePlanets(width: number, height: number, seconds: number, palette: RaidPalette, stageTheme: number, isLow: boolean, isMedium: boolean) {
     const planetBase = height * 1.3
     const planet1Y = ((seconds / 28 + 0.9) % 1) * planetBase - height * 0.1
     const planet2Y = ((seconds / 42 + 0.64) % 1) * planetBase - height * 0.08
     const planet3Y = ((seconds / 58 + 0.42) % 1) * planetBase - height * 0.06
-    const planet1R = Math.min(width * 0.105, 96)
-    const planet2R = Math.min(width * 0.045, 36)
-    const planet3R = Math.min(width * 0.03, 26)
+    const planet1R = Math.min(width * 0.105, 96) * getRaidPlanetDepthScale(stageTheme, 0)
+    const planet2R = Math.min(width * 0.045, 36) * getRaidPlanetDepthScale(stageTheme, 1)
+    const planet3R = Math.min(width * 0.03, 26) * getRaidPlanetDepthScale(stageTheme, 2)
     const planet1 = this.assetTextures.get('planet1')
     const planet2 = this.assetTextures.get('planet2')
     const planet3 = this.assetTextures.get('planet3')
@@ -9981,6 +10153,9 @@ export function GradiusRaid({
   const spawnedSquidBubblesRef = useRef<Shot[]>([])
   const spawnedAsteroidsRef = useRef<AsteroidHazard[]>([])
   const enemiesRef = useRef<Enemy[]>([])
+  const enemyCollisionBucketsRef = useRef<EnemyCollisionBuckets>(createEnemyCollisionBuckets())
+  const largeEnemyCollisionRef = useRef<Enemy[]>([])
+  const shotCollisionCandidatesRef = useRef<Enemy[]>([])
   const asteroidsRef = useRef<AsteroidHazard[]>([])
   const meteorsRef = useRef<MeteorHazard[]>([])
   const ionStrikesRef = useRef<IonStrike[]>([])
@@ -10904,10 +11079,12 @@ export function GradiusRaid({
     if (quality === 'low') return
     const profile = getRaidGraphicsProfile(quality, false, Boolean(multiplayerSessionRef.current))
     if (ripplesRef.current.length >= profile.maxRipples) {
-      ripplesRef.current.splice(0, ripplesRef.current.length - Math.max(0, profile.maxRipples - 1))
+      const trimCount = ripplesRef.current.length - Math.max(0, profile.maxRipples - 1)
+      for (let index = 0; index < trimCount; index += 1) recycleRipple(ripplesRef.current[index])
+      ripplesRef.current.splice(0, trimCount)
     }
     const rippleLife = 0.32
-    ripplesRef.current.push({ id: rippleId++, x, y, color, size: size * 0.72, life: rippleLife, maxLife: rippleLife })
+    ripplesRef.current.push(acquireRipple(x, y, color, size * 0.72, rippleLife))
   }, [])
 
   const stopRaidBgm = useCallback(() => {
@@ -11862,20 +12039,20 @@ export function GradiusRaid({
     for (let i = 0; i < spawnCount; i += 1) {
       const angle = Math.random() * Math.PI * 2
       const speed = 10 + Math.random() * 32
-      sparksRef.current.push({
-        id: sparkId++,
+      sparksRef.current.push(acquireSpark(
         x,
         y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: 0.3 + Math.random() * 0.6,
-        maxLife: 0.9,
+        Math.cos(angle) * speed,
+        Math.sin(angle) * speed,
+        0.3 + Math.random() * 0.6,
         color,
-        size: size * (0.55 + Math.random() * 0.8),
-      })
+        size * (0.55 + Math.random() * 0.8),
+      ))
     }
     if (sparksRef.current.length > profile.maxSparks) {
-      sparksRef.current.splice(0, sparksRef.current.length - profile.maxSparks)
+      const trimCount = sparksRef.current.length - profile.maxSparks
+      for (let index = 0; index < trimCount; index += 1) recycleSpark(sparksRef.current[index])
+      sparksRef.current.splice(0, trimCount)
     }
   }, [])
 
@@ -12189,8 +12366,8 @@ export function GradiusRaid({
     ionStrikesRef.current = []
     wrecksRef.current = []
     powerUpsRef.current = []
-    sparksRef.current = []
-    ripplesRef.current = []
+    recycleSparkList(sparksRef.current)
+    recycleRippleList(ripplesRef.current)
     phaseRef.current = 'playing'
     raidModeRef.current = mode
     stageRef.current = stage
@@ -15275,8 +15452,13 @@ export function GradiusRaid({
         }
       }
     }
+    const enemyCollisionBuckets = enemyCollisionBucketsRef.current
+    const largeEnemyCollision = largeEnemyCollisionRef.current
+    const shotCollisionCandidates = shotCollisionCandidatesRef.current
+    buildEnemyCollisionBuckets(enemiesRef.current, enemyCollisionBuckets, largeEnemyCollision)
     for (const shot of shotsRef.current) {
-      for (const enemy of enemiesRef.current) {
+      const collisionCandidates = collectShotCollisionCandidates(shot, enemyCollisionBuckets, largeEnemyCollision, shotCollisionCandidates)
+      for (const enemy of collisionCandidates) {
         if (enemy.hp <= 0) continue
         const hitRange = shot.radius + enemy.radius
         if (
