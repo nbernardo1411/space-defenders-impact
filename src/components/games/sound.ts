@@ -43,6 +43,8 @@ export type GameSoundKind =
   | 'artillery'
   | 'explosion'
   | 'explosion_big'
+  | 'nuke_explosion'
+  | 'destroyed_explosion'
   | 'g_atk_punch_1'
   | 'g_atk_punch_2'
   | 'g_atk_kick'
@@ -90,6 +92,8 @@ const DEFAULT_AUDIO_PACK: SoundPackConfig = {
     artillery: getPublicAssetUrl('audio/sfx_cannon.wav'),
     explosion: getPublicAssetUrl('audio/sfx_explosion_small.wav'),
     explosion_big: getPublicAssetUrl('audio/sfx_explosion_big.wav'),
+    nuke_explosion: getPublicAssetUrl('audio/sfx_nuke.mp3'),
+    destroyed_explosion: getPublicAssetUrl('audio/sfx_destroyed_explosion.mp3'),
     g_atk_punch_1: getPublicAssetUrl('audio/G-Atk/punch-1.mp3'),
     g_atk_punch_2: getPublicAssetUrl('audio/G-Atk/punch-2.mp3'),
     g_atk_kick: getPublicAssetUrl('audio/G-Atk/kick.mp3'),
@@ -121,6 +125,9 @@ let soundPackCache: SoundPackConfig | null = null
 let audioMixCache: AudioMixSettings | null = null
 let bgmElement: HTMLAudioElement | null = null
 let noiseBuffer: AudioBuffer | null = null
+let bgmTargetVolume = 0
+let bgmDuckAnimation = 0
+let bgmDuckRestoreTimer = 0
 const recentSfxTimesMs: number[] = []
 const lastKindPlayMs: Partial<Record<GameSoundKind, number>> = {}
 
@@ -131,14 +138,20 @@ const KIND_OUTPUT_GAIN: Partial<Record<GameSoundKind, number>> = {
   artillery: 0.5,
   explosion: 0.68,
   explosion_big: 0.6,
+  nuke_explosion: 0.74,
+  destroyed_explosion: 0.46,
   g_atk_punch_1: 0.52,
   g_atk_punch_2: 0.52,
   g_atk_kick: 0.5,
   shoot: 0.78,
-  stinger: 0.58,
-  stinger_2: 0.58,
+  stinger: 1.05,
+  stinger_2: 1.08,
 }
 const RECENT_SFX_WINDOW_MS = 240
+const BGM_STINGER_DUCK_VOLUME = 0.26
+const BGM_STINGER_DUCK_ATTACK_MS = 80
+const BGM_STINGER_DUCK_HOLD_MS = 760
+const BGM_STINGER_DUCK_RELEASE_MS = 620
 const RAPID_FIRE_MIN_INTERVAL_MS: Partial<Record<GameSoundKind, number>> = {
   laser: 32,
   shoot: 26,
@@ -146,6 +159,8 @@ const RAPID_FIRE_MIN_INTERVAL_MS: Partial<Record<GameSoundKind, number>> = {
   hit: 28,
   explosion: 40,
   explosion_big: 55,
+  nuke_explosion: 900,
+  destroyed_explosion: 115,
   g_atk_punch_1: 72,
   g_atk_punch_2: 72,
   g_atk_kick: 82,
@@ -264,7 +279,14 @@ export function setGameAudioMixSettings(settings: Partial<AudioMixSettings>) {
 function getKindBusGain(kind: GameSoundKind) {
   const mix = getGameAudioMixSettings()
   const kindGain = KIND_OUTPUT_GAIN[kind] ?? 1
-  if (kind === 'explosion' || kind === 'explosion_big' || kind === 'rocket' || kind === 'artillery') {
+  if (
+    kind === 'explosion' ||
+    kind === 'explosion_big' ||
+    kind === 'nuke_explosion' ||
+    kind === 'destroyed_explosion' ||
+    kind === 'rocket' ||
+    kind === 'artillery'
+  ) {
     return mix.master * mix.explosion * kindGain
   }
   if (kind === 'laser') {
@@ -285,6 +307,43 @@ function getKindBusGain(kind: GameSoundKind) {
     return mix.master * mix.ui * kindGain
   }
   return mix.master * kindGain
+}
+
+function getBgmTargetVolume(pack = getSoundPackConfig()) {
+  const mix = getGameAudioMixSettings()
+  return clamp01((pack.bgmVolume ?? 0.32) * mix.master * mix.bgm)
+}
+
+function setBgmVolumeSmooth(target: number, durationMs: number) {
+  if (typeof window === 'undefined' || !bgmElement) return
+  const audio = bgmElement
+  const startVolume = audio.volume
+  const startedAt = nowMs()
+  if (bgmDuckAnimation) window.cancelAnimationFrame(bgmDuckAnimation)
+
+  const step = () => {
+    if (bgmElement !== audio) return
+    const progress = durationMs <= 0 ? 1 : clamp01((nowMs() - startedAt) / durationMs)
+    const eased = 1 - Math.pow(1 - progress, 3)
+    audio.volume = clamp01(startVolume + (target - startVolume) * eased)
+    if (progress < 1) {
+      bgmDuckAnimation = window.requestAnimationFrame(step)
+    } else {
+      bgmDuckAnimation = 0
+    }
+  }
+  step()
+}
+
+function duckBgmForStinger() {
+  if (typeof window === 'undefined' || !bgmElement) return
+  if (bgmDuckRestoreTimer) window.clearTimeout(bgmDuckRestoreTimer)
+  const duckedVolume = bgmTargetVolume * BGM_STINGER_DUCK_VOLUME
+  setBgmVolumeSmooth(duckedVolume, BGM_STINGER_DUCK_ATTACK_MS)
+  bgmDuckRestoreTimer = window.setTimeout(() => {
+    bgmDuckRestoreTimer = 0
+    setBgmVolumeSmooth(bgmTargetVolume, BGM_STINGER_DUCK_RELEASE_MS)
+  }, BGM_STINGER_DUCK_HOLD_MS)
 }
 
 function loadSoundPackConfig(): SoundPackConfig {
@@ -502,8 +561,8 @@ export function startBGM() {
     const audio = new Audio(pack.bgm)
     audio.loop = true
     audio.preload = 'auto'
-    const mix = getGameAudioMixSettings()
-    audio.volume = clamp01((pack.bgmVolume ?? 0.32) * mix.master * mix.bgm)
+    bgmTargetVolume = getBgmTargetVolume(pack)
+    audio.volume = bgmTargetVolume
     bgmElement = audio
     void audio.play().catch(() => {
       // If BGM cannot play, stay silent instead of using the synth fallback.
@@ -515,6 +574,13 @@ export function startBGM() {
 
 export function stopBGM() {
   try {
+    if (typeof window !== 'undefined') {
+      if (bgmDuckAnimation) window.cancelAnimationFrame(bgmDuckAnimation)
+      if (bgmDuckRestoreTimer) window.clearTimeout(bgmDuckRestoreTimer)
+    }
+    bgmDuckAnimation = 0
+    bgmDuckRestoreTimer = 0
+    bgmTargetVolume = 0
     if (bgmElement) {
       bgmElement.pause()
       bgmElement.currentTime = 0
@@ -534,6 +600,9 @@ export function playGameSound(
     const eventGain = getSfxEventGain(kind)
     if (eventGain <= 0) return
     const kindGain = eventGain * getKindBusGain(kind)
+    if (kind === 'stinger' || kind === 'stinger_2') {
+      duckBgmForStinger()
+    }
 
     if (kind === 'explosion') {
       playExplosionBoom(false, eventGain)
@@ -546,6 +615,11 @@ export function playGameSound(
 
     const hasSample = tryPlaySample(kind, eventGain)
     if (hasSample) return
+
+    if (kind === 'nuke_explosion' || kind === 'destroyed_explosion') {
+      playExplosionBoom(true, eventGain)
+      return
+    }
 
     if (kind === 'flap') {
       tone(440, 70, 'triangle', 0.06, 0, kindGain)
