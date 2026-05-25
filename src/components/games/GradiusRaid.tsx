@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
+import { Application, Assets, Container, FillGradient, Graphics, Sprite, Texture } from 'pixi.js'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM, type GameSoundKind } from './sound'
 import type { GraphicsQuality } from './sound'
 import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
@@ -674,7 +674,7 @@ let lastPickupVoiceMs = 0
 
 const DEG = Math.PI / 180
 const SIDE_VALUES = [-1, 1] as const
-const RAID_FX_CANVAS_CONTEXT_SETTINGS: CanvasRenderingContext2DSettings = { alpha: false, desynchronized: true }
+const RAID_FX_CANVAS_CONTEXT_SETTINGS: CanvasRenderingContext2DSettings = { alpha: true, desynchronized: true }
 
 type RaidGraphicsProfile = {
   dprCap: number
@@ -870,7 +870,7 @@ let raidCanvasAssetWarmPromise: Promise<void> | null = null
 let raidCanvasAssetWarmComplete = false
 
 const RAID_OTHER_ASSET_PATHS = {
-  asteroid: 'assets/others/asteroid.webp',
+  asteroid: 'assets/others/asteroid.png',
   comet: 'assets/others/comet.png',
   galaxy: 'assets/others/galaxy.png',
   galaxy2: 'assets/others/galaxy_2.png',
@@ -4145,15 +4145,6 @@ type PixiRaidBackgroundFrame = {
   dpr: number
 }
 
-function makePixiGeneratedTexture(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void) {
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.ceil(width))
-  canvas.height = Math.max(1, Math.ceil(height))
-  const ctx = canvas.getContext('2d')
-  if (ctx) draw(ctx)
-  return Texture.from(canvas)
-}
-
 function setPixiSpriteContain(sprite: Sprite, texture: Texture, x: number, y: number, width: number, height: number, alpha: number, rotation = 0) {
   const textureWidth = Math.max(1, texture.width)
   const textureHeight = Math.max(1, texture.height)
@@ -4167,24 +4158,48 @@ function setPixiSpriteContain(sprite: Sprite, texture: Texture, x: number, y: nu
   sprite.visible = alpha > 0
 }
 
+function parsePixiCssColor(color: string) {
+  const trimmed = color.trim()
+  const rgba = trimmed.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i)
+  if (rgba) {
+    const r = clamp(Number(rgba[1]) || 0, 0, 255)
+    const g = clamp(Number(rgba[2]) || 0, 0, 255)
+    const b = clamp(Number(rgba[3]) || 0, 0, 255)
+    const a = clamp(rgba[4] === undefined ? 1 : Number(rgba[4]) || 0, 0, 1)
+    return { color: (r << 16) | (g << 8) | b, alpha: a, source: [r / 255, g / 255, b / 255, a] }
+  }
+  const hex = trimmed.match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (hex) {
+    const raw = hex[1].length === 3 ? hex[1].split('').map((char) => char + char).join('') : hex[1]
+    const value = Number.parseInt(raw, 16)
+    return { color: value, alpha: 1, source: [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255, 1] }
+  }
+  return { color: 0xffffff, alpha: 1, source: [1, 1, 1, 1] }
+}
+
+function getPixiFill(color: string, alpha = 1) {
+  const parsed = parsePixiCssColor(color)
+  return { color: parsed.color, alpha: parsed.alpha * alpha }
+}
+
 class PixiRaidBackground {
   private app: Application | null = null
   private readonly scene = new Container()
-  private readonly baseSprite = new Sprite(Texture.WHITE)
-  private readonly nebulaSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
-  private readonly ambientGlowSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly baseGraphics = new Graphics()
+  private readonly nebulaGraphics = new Graphics()
+  private readonly ambientGlowGraphics = new Graphics()
   private readonly galaxySprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
   private readonly planetSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
-  private readonly farStarSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
-  private readonly nearStarSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
-  private readonly speedLineSprites = BACKGROUND_SPEED_LINES.map(() => new Sprite(Texture.WHITE))
+  private readonly farStarLayers = [new Graphics(), new Graphics(), new Graphics()]
+  private readonly nearStarLayers = [new Graphics(), new Graphics(), new Graphics()]
+  private readonly speedLineGraphics = new Graphics()
+  private readonly surfaceGraphics = new Graphics()
   private readonly asteroidSprites = BACKGROUND_ASTEROIDS.map(() => new Sprite(Texture.WHITE))
   private readonly debrisSprites = BACKGROUND_DEBRIS.map(() => new Sprite(Texture.WHITE))
-  private readonly explosionSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly explosionGraphics = new Graphics()
   private readonly assetTextures = new Map<PixiRaidAssetKey, Texture>()
-  private readonly speedLineTextureCache = new Map<string, Texture>()
+  private readonly gradientCache = new Map<string, FillGradient>()
   private baseKey = ''
-  private glowKey = ''
   private starfieldKey = ''
   private width = 0
   private height = 0
@@ -4206,17 +4221,18 @@ class PixiRaidBackground {
       })
       this.app = app
       app.stage.addChild(this.scene)
-      this.scene.addChild(this.baseSprite)
-      this.nebulaSprites.forEach((sprite) => this.scene.addChild(sprite))
-      this.ambientGlowSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.scene.addChild(this.baseGraphics)
+      this.scene.addChild(this.nebulaGraphics)
+      this.scene.addChild(this.ambientGlowGraphics)
       this.galaxySprites.forEach((sprite) => this.scene.addChild(sprite))
-      this.farStarSprites.forEach((sprite) => this.scene.addChild(sprite))
-      this.nearStarSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.farStarLayers.forEach((layer) => this.scene.addChild(layer))
+      this.nearStarLayers.forEach((layer) => this.scene.addChild(layer))
+      this.scene.addChild(this.speedLineGraphics)
+      this.scene.addChild(this.surfaceGraphics)
       this.planetSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.asteroidSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.debrisSprites.forEach((sprite) => this.scene.addChild(sprite))
-      this.speedLineSprites.forEach((sprite) => this.scene.addChild(sprite))
-      this.explosionSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.scene.addChild(this.explosionGraphics)
 
       const canvas = app.canvas as HTMLCanvasElement
       canvas.className = 'raid__pixi-background-canvas'
@@ -4231,6 +4247,8 @@ class PixiRaidBackground {
   }
 
   destroy() {
+    this.gradientCache.forEach((gradient) => gradient.destroy())
+    this.gradientCache.clear()
     this.app?.destroy({ removeView: true }, { children: true })
     this.app = null
   }
@@ -4239,36 +4257,39 @@ class PixiRaidBackground {
     const app = this.app
     if (!app) return false
 
-    const { width, height, dpr, palette, quality, stageTheme, time } = frame
-    const seconds = time / 1000
-    const isLow = quality === 'low'
-    const isMedium = quality === 'medium'
+    try {
+      const { width, height, dpr, palette, quality, stageTheme, time } = frame
+      const seconds = time / 1000
+      const isLow = quality === 'low'
+      const isMedium = quality === 'medium'
 
-    if (this.width !== width || this.height !== height || this.dpr !== dpr) {
-      this.width = width
-      this.height = height
-      this.dpr = dpr
-      app.renderer.resize(width, height, dpr)
-      const canvas = app.canvas as HTMLCanvasElement
-      canvas.style.width = `${width}px`
-      canvas.style.height = `${height}px`
-      this.baseKey = ''
-      this.glowKey = ''
-      this.starfieldKey = ''
+      if (this.width !== width || this.height !== height || this.dpr !== dpr) {
+        this.width = width
+        this.height = height
+        this.dpr = dpr
+        app.renderer.resize(width, height, dpr)
+        const canvas = app.canvas as HTMLCanvasElement
+        canvas.style.width = `${width}px`
+        canvas.style.height = `${height}px`
+        this.baseKey = ''
+        this.starfieldKey = ''
+      }
+
+      this.updateBaseGraphics(palette, width, height, quality, dpr)
+      this.updateNebula(width, height, seconds, palette, isLow)
+      this.updateAmbientGlows(width, height, isLow, isMedium, palette)
+      this.updateGalaxies(width, height, seconds, stageTheme, isLow, isMedium)
+      this.updateStarfield(width, height, seconds, quality, dpr, palette.starTint, palette.streak)
+      this.updateSpeedLines(width, height, seconds, palette.streak, isLow, isMedium)
+      this.updateSurface(width, height, seconds, palette, quality, stageTheme)
+      this.updatePlanets(width, height, seconds, palette, isLow, isMedium)
+      this.updateBackgroundObjects(width, height, seconds, isLow, isMedium)
+      this.updateAmbientExplosions(width, height, seconds, isLow, isMedium)
+      app.render()
+      return true
+    } catch {
+      return false
     }
-
-    this.updateBaseTexture(palette, width, height, quality, stageTheme, dpr)
-    this.updateGlowTextures(palette)
-    this.updateNebula(width, height, seconds, isLow)
-    this.updateAmbientGlows(width, height, isLow, isMedium)
-    this.updateGalaxies(width, height, seconds, stageTheme, isLow, isMedium)
-    this.updateStarfield(width, height, seconds, quality, dpr, palette.starTint, palette.streak)
-    this.updatePlanets(width, height, seconds, palette, isLow, isMedium)
-    this.updateBackgroundObjects(width, height, seconds, isLow, isMedium)
-    this.updateSpeedLines(width, height, seconds, palette.streak, isLow, isMedium)
-    this.updateAmbientExplosions(width, height, seconds, isLow, isMedium)
-    app.render()
-    return true
   }
 
   private async loadAssets() {
@@ -4283,70 +4304,98 @@ class PixiRaidBackground {
     }))
   }
 
-  private updateBaseTexture(palette: RaidPalette, width: number, height: number, quality: GraphicsQuality, stageTheme: number, dpr: number) {
-    const key = getRaidBackgroundBaseCacheKey(palette, width, height, quality, dpr) + `|pixi|${stageTheme % 2}`
-    if (this.baseKey !== key) {
-      this.baseKey = key
-      this.baseSprite.texture = makePixiGeneratedTexture(width * dpr, height * dpr, (ctx) => {
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        drawRaidBackgroundBase(ctx, palette, width, height, quality)
-        if (quality !== 'low' && stageTheme % 2 === 0) drawPlanetSurface(ctx, palette, width, height, 0, quality)
-      })
-      this.baseSprite.anchor.set(0)
+  private getGradient(key: string, options: object) {
+    let gradient = this.gradientCache.get(key)
+    if (!gradient) {
+      gradient = new FillGradient(options as never)
+      this.gradientCache.set(key, gradient)
     }
-    this.baseSprite.position.set(0, 0)
-    this.baseSprite.width = width
-    this.baseSprite.height = height
-    this.baseSprite.alpha = 1
+    return gradient
   }
 
-  private updateGlowTextures(palette: RaidPalette) {
-    const key = [
-      palette.nebulaA,
-      palette.nebulaB,
-      palette.bgA,
-      palette.bgB,
-    ].join('|')
-    if (this.glowKey === key) return
-    this.glowKey = key
-    this.nebulaSprites[0].texture = makePixiGeneratedTexture(512, 384, (ctx) => drawRadialEllipse2Stop(ctx, 256, 192, 256, 192, palette.nebulaA, 'rgba(0,0,0,0)'))
-    this.nebulaSprites[1].texture = makePixiGeneratedTexture(512, 384, (ctx) => drawRadialEllipse2Stop(ctx, 256, 192, 256, 192, palette.nebulaB, 'rgba(0,0,0,0)'))
-    this.ambientGlowSprites[0].texture = makePixiGeneratedTexture(640, 320, (ctx) => drawRadialEllipse2Stop(ctx, 320, 160, 320, 160, 'rgba(139,92,246,0.2)', 'rgba(0,0,0,0)'))
-    this.ambientGlowSprites[1].texture = makePixiGeneratedTexture(520, 520, (ctx) => drawRadialEllipse2Stop(ctx, 260, 260, 260, 260, 'rgba(59,130,246,0.16)', 'rgba(0,0,0,0)'))
-    this.ambientGlowSprites[2].texture = makePixiGeneratedTexture(360, 300, (ctx) => drawRadialEllipse2Stop(ctx, 180, 150, 180, 150, 'rgba(236,72,153,0.11)', 'rgba(0,0,0,0)'))
+  private fillRadial(graphics: Graphics, x: number, y: number, radiusX: number, radiusY: number, startColor: string, endColor: string, alpha = 1) {
+    const gradient = this.getGradient(`radial|${startColor}|${endColor}`, {
+      type: 'radial',
+      center: { x: 0.5, y: 0.5 },
+      outerCenter: { x: 0.5, y: 0.5 },
+      innerRadius: 0,
+      outerRadius: 0.5,
+      colorStops: [
+        { offset: 0, color: parsePixiCssColor(startColor).source },
+        { offset: 1, color: parsePixiCssColor(endColor).source },
+      ],
+    })
+    graphics.ellipse(x, y, radiusX, radiusY).fill({ fill: gradient, alpha })
   }
 
-  private updateNebula(width: number, height: number, seconds: number, isLow: boolean) {
-    for (const sprite of this.nebulaSprites) sprite.visible = !isLow
+  private updateBaseGraphics(palette: RaidPalette, width: number, height: number, quality: GraphicsQuality, dpr: number) {
+    const key = `${getRaidBackgroundBaseCacheKey(palette, width, height, quality, dpr)}|pixi-native`
+    if (this.baseKey === key) return
+    this.baseKey = key
+
+    const base = this.baseGraphics
+    base.clear()
+    const gradient = this.getGradient(`base|${palette.baseTop}|${palette.baseMid}|${palette.baseBottom}`, {
+      type: 'linear',
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 1 },
+      colorStops: [
+        { offset: 0, color: parsePixiCssColor(palette.baseTop).source },
+        { offset: 0.45, color: parsePixiCssColor(palette.baseMid).source },
+        { offset: 1, color: parsePixiCssColor(palette.baseBottom).source },
+      ],
+    })
+    base.rect(0, 0, width, height).fill(gradient)
+
+    if (quality !== 'low') {
+      this.fillRadial(base, width * 0.18, height * 0.16, width * 0.24, height * 0.24, palette.bgA, 'rgba(0,0,0,0)')
+      this.fillRadial(base, width * 0.76, height * 0.38, width * 0.26, height * 0.26, palette.bgB, 'rgba(0,0,0,0)')
+    }
+  }
+
+  private updateNebula(width: number, height: number, seconds: number, palette: RaidPalette, isLow: boolean) {
+    const graphics = this.nebulaGraphics
+    graphics.clear()
+    graphics.visible = !isLow
     if (isLow) return
 
     const drift = Math.sin(seconds / 10)
-    setPixiSpriteContain(
-      this.nebulaSprites[0],
-      this.nebulaSprites[0].texture,
+    const scaleX = 1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5)
+    const scaleY = 1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5)
+    this.fillRadial(
+      graphics,
       width * 0.2 + width * 0.012 * drift,
       height * 0.72 + height * 0.006 * Math.cos(seconds / 8),
-      width * 0.72 * (1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5)),
-      height * 0.48 * (1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5)),
-      1,
+      width * 0.36 * scaleX,
+      height * 0.24 * scaleY,
+      palette.nebulaA,
+      'rgba(0,0,0,0)',
     )
-    setPixiSpriteContain(
-      this.nebulaSprites[1],
-      this.nebulaSprites[1].texture,
+    this.fillRadial(
+      graphics,
       width * 0.82 + width * 0.012 * drift,
       height * 0.24 + height * 0.006 * Math.cos(seconds / 8),
-      width * 0.64 * (1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5)),
-      height * 0.44 * (1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5)),
-      1,
+      width * 0.32 * scaleX,
+      height * 0.22 * scaleY,
+      palette.nebulaB,
+      'rgba(0,0,0,0)',
     )
   }
 
-  private updateAmbientGlows(width: number, height: number, isLow: boolean, isMedium: boolean) {
-    for (const sprite of this.ambientGlowSprites) sprite.visible = !isLow
+  private updateAmbientGlows(width: number, height: number, isLow: boolean, isMedium: boolean, palette: RaidPalette) {
+    const graphics = this.ambientGlowGraphics
+    graphics.clear()
+    graphics.alpha = 1
+    graphics.visible = !isLow
     if (isLow) return
-    setPixiSpriteContain(this.ambientGlowSprites[0], this.ambientGlowSprites[0].texture, width * 0.78, height * 0.18, width * 0.96, height * 0.5, 1)
-    setPixiSpriteContain(this.ambientGlowSprites[1], this.ambientGlowSprites[1].texture, width * 0.14, height * 0.68, width * 0.72, height * 0.84, 1)
-    setPixiSpriteContain(this.ambientGlowSprites[2], this.ambientGlowSprites[2].texture, width * 0.48, height * 0.42, width * 0.44, height * 0.36, isMedium ? 0 : 1)
+    this.fillRadial(graphics, width * 0.78, height * 0.18, width * 0.48, height * 0.25, 'rgba(139,92,246,0.2)', 'rgba(0,0,0,0)')
+    this.fillRadial(graphics, width * 0.14, height * 0.68, width * 0.36, height * 0.42, 'rgba(59,130,246,0.16)', 'rgba(0,0,0,0)')
+    if (!isMedium) {
+      this.fillRadial(graphics, width * 0.48, height * 0.42, width * 0.22, height * 0.18, 'rgba(236,72,153,0.11)', 'rgba(0,0,0,0)')
+      this.fillRadial(graphics, width * 0.22, height * 0.22, width * 0.26, height * 0.15, 'rgba(251,191,36,0.05)', 'rgba(0,0,0,0)')
+      this.fillRadial(graphics, width * 0.88, height * 0.72, width * 0.18, height * 0.32, 'rgba(34,211,238,0.06)', 'rgba(0,0,0,0)')
+    }
+    if (palette.bgA === 'transparent') graphics.alpha = 0.98
   }
 
   private updateGalaxies(width: number, height: number, seconds: number, stageTheme: number, isLow: boolean, isMedium: boolean) {
@@ -4385,35 +4434,160 @@ class PixiRaidBackground {
 
   private updateStarfield(width: number, height: number, seconds: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
     const key = getRaidStarfieldCacheKey(width, height, quality, dpr, starTint, streak)
-    const cache = getRaidStarfieldCache(width, height, quality, dpr, starTint, streak)
-    if (!cache) return
+    const isLow = quality === 'low'
+    const isMedium = quality === 'medium'
+    const isHigh = quality === 'high'
+    const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
+    const farLayerHeight = height * 1.26
+    const nearLayerHeight = height * 1.38
 
     if (this.starfieldKey !== key) {
       this.starfieldKey = key
-      const farTexture = Texture.from(cache.farCanvas)
-      for (const sprite of this.farStarSprites) sprite.texture = farTexture
-      if (cache.nearTrailCanvas) {
-        const nearTexture = Texture.from(cache.nearTrailCanvas)
-        for (const sprite of this.nearStarSprites) sprite.texture = nearTexture
+      for (const layer of this.farStarLayers) {
+        layer.clear()
+        for (let index = 0; index < starLimit; index += 1) {
+          const star = BACKGROUND_STARS[index]
+          layer.circle(star.x * width, star.y * farLayerHeight, star.size * 0.62).fill(getPixiFill(
+            star.tint > 0.66 ? starTint : star.tint > 0.33 ? 'rgba(125,211,252,0.55)' : 'rgba(255,255,255,0.76)',
+            star.alpha * 0.52,
+          ))
+        }
+      }
+      for (const layer of this.nearStarLayers) {
+        layer.clear()
+        if (!isLow && !isMedium) {
+          for (let index = 0; index < starLimit; index += 1) {
+            const star = BACKGROUND_STARS[index]
+            if (star.tint <= 0.58) continue
+            const x = star.x * width
+            const y = star.y * nearLayerHeight
+            layer.moveTo(x, y - 18)
+            layer.lineTo(x, y + 28)
+            const trailFill = getPixiFill(star.tint > 0.78 ? streak : 'rgba(255,255,255,0.42)', star.alpha * 0.42)
+            layer.stroke({
+              color: trailFill.color,
+              alpha: trailFill.alpha,
+              width: Math.max(1, star.size * 0.8),
+              cap: 'round',
+            })
+          }
+        }
       }
     }
 
-    this.updateScrollingSprites(this.farStarSprites, width, cache.farLayerHeight, seconds * 15 - height * 0.13, true)
-    this.updateScrollingSprites(this.nearStarSprites, width, cache.nearLayerHeight, seconds * 72 - height * 0.19, Boolean(cache.nearTrailCanvas))
+    this.updateScrollingGraphics(this.farStarLayers, farLayerHeight, seconds * 15 - height * 0.13, true)
+    this.updateScrollingGraphics(this.nearStarLayers, nearLayerHeight, seconds * 72 - height * 0.19, !isLow && !isMedium)
   }
 
-  private updateScrollingSprites(sprites: Sprite[], width: number, layerHeight: number, offset: number, visible: boolean) {
+  private updateScrollingGraphics(layers: Graphics[], layerHeight: number, offset: number, visible: boolean) {
     if (layerHeight <= 0) return
     const y = ((offset % layerHeight) + layerHeight) % layerHeight
-    for (let index = 0; index < sprites.length; index += 1) {
-      const sprite = sprites[index]
-      sprite.anchor.set(0)
-      sprite.position.set(0, y + (index - 1) * layerHeight)
-      sprite.width = width
-      sprite.height = layerHeight
-      sprite.alpha = visible ? 1 : 0
-      sprite.visible = visible
+    for (let index = 0; index < layers.length; index += 1) {
+      const layer = layers[index]
+      layer.position.set(0, y + (index - 1) * layerHeight)
+      layer.alpha = visible ? 1 : 0
+      layer.visible = visible
     }
+  }
+
+  private updateSpeedLines(width: number, height: number, seconds: number, streak: string, isLow: boolean, isMedium: boolean) {
+    const graphics = this.speedLineGraphics
+    graphics.clear()
+    graphics.visible = !isLow
+    if (isLow) return
+
+    const speedLineLimit = isMedium ? 2 : BACKGROUND_SPEED_LINES.length
+    for (let index = 0; index < speedLineLimit; index += 1) {
+      const line = BACKGROUND_SPEED_LINES[index]
+      const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
+      const lineColor =
+        line.color === 'streak' ? streak :
+          line.color === 'red' ? 'rgba(239,35,60,0.42)' :
+            line.color === 'cyan' ? 'rgba(125,211,252,0.28)' :
+              'rgba(255,255,255,0.26)'
+      const x = line.x * width
+      graphics.moveTo(x, y)
+      graphics.lineTo(x, y + line.length)
+      const stroke = getPixiFill(lineColor, 0.58)
+      graphics.stroke({ color: stroke.color, alpha: stroke.alpha, width: line.width, cap: 'round' })
+    }
+  }
+
+  private updateSurface(width: number, height: number, seconds: number, palette: RaidPalette, quality: GraphicsQuality, stageTheme: number) {
+    const graphics = this.surfaceGraphics
+    graphics.clear()
+    const visible = quality !== 'low' && stageTheme % 2 === 0
+    graphics.visible = visible
+    if (!visible) return
+
+    const { surfaceMode, surfaceA, surfaceC } = palette
+    const groundStops =
+      surfaceMode === 'sea' ? ['rgba(3, 57, 70, 0.96)', 'rgba(8, 96, 116, 0.9)', 'rgba(2, 16, 28, 0.98)'] :
+        surfaceMode === 'lava' ? ['rgba(43, 14, 7, 0.98)', 'rgba(94, 25, 13, 0.92)', 'rgba(9, 4, 3, 0.98)'] :
+          surfaceMode === 'ice' ? ['rgba(8, 47, 73, 0.98)', 'rgba(69, 146, 170, 0.84)', 'rgba(3, 13, 24, 0.98)'] :
+            surfaceMode === 'alien' ? ['rgba(19, 5, 45, 0.98)', 'rgba(60, 18, 105, 0.9)', 'rgba(5, 2, 15, 0.98)'] :
+              ['rgba(12, 18, 28, 0.96)', 'rgba(34, 42, 57, 0.86)', 'rgba(5, 8, 14, 0.98)']
+    const ground = this.getGradient(`surface-ground|${groundStops.join('|')}`, {
+      type: 'linear',
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 1 },
+      colorStops: [
+        { offset: 0, color: parsePixiCssColor(groundStops[0]).source },
+        { offset: 0.5, color: parsePixiCssColor(groundStops[1]).source },
+        { offset: 1, color: parsePixiCssColor(groundStops[2]).source },
+      ],
+    })
+    graphics.rect(0, 0, width, height).fill({ fill: ground, alpha: 0.92 })
+    this.fillRadial(graphics, width * 0.5, height * 0.46, Math.max(width, height) * 0.62, Math.max(width, height) * 0.62, surfaceA, 'rgba(0,0,0,0)', 0.28)
+
+    const scroll = (seconds * (quality === 'medium' ? 34 : 48)) % height
+    const featureCount = quality === 'medium' ? 7 : 11
+    const tileHeight = height / (quality === 'medium' ? 3.4 : 4.2)
+    for (let index = -1; index < featureCount; index += 1) {
+      const seed = index + Math.floor(seconds * 0.18) * 19
+      const y = ((index * tileHeight + scroll) % (height + tileHeight)) - tileHeight
+      const x = seededNoise(seed, 2) * width
+      const w = width * (0.12 + seededNoise(seed, 3) * 0.22)
+      const h = height * (0.055 + seededNoise(seed, 4) * 0.12)
+      if (surfaceMode === 'sea') {
+        const stroke = getPixiFill(seededNoise(seed, 6) > 0.45 ? 'rgba(125,211,252,0.72)' : 'rgba(255,255,255,0.34)', 0.12 + seededNoise(seed, 5) * 0.08)
+        graphics.ellipse(x, y, w, h * 0.32).stroke({
+          color: stroke.color,
+          alpha: stroke.alpha,
+          width: Math.max(1, width * 0.0014),
+        })
+      } else if (surfaceMode === 'lava') {
+        graphics.moveTo(x - w * 0.5, y - h * 0.15)
+        graphics.lineTo(x - w * 0.12, y - h * 0.48)
+        graphics.lineTo(x + w * 0.48, y - h * 0.18)
+        graphics.lineTo(x + w * 0.28, y + h * 0.44)
+        graphics.lineTo(x - w * 0.34, y + h * 0.36)
+        graphics.closePath()
+        graphics.fill(getPixiFill(seededNoise(seed, 8) > 0.42 ? 'rgba(249,115,22,0.86)' : 'rgba(24,10,8,0.72)', seededNoise(seed, 8) > 0.42 ? 0.38 : 0.26))
+      } else if (surfaceMode === 'ice') {
+        graphics.moveTo(x, y - h)
+        graphics.lineTo(x + w * 0.42, y - h * 0.08)
+        graphics.lineTo(x + w * 0.18, y + h * 0.62)
+        graphics.lineTo(x - w * 0.46, y + h * 0.12)
+        graphics.closePath()
+        graphics.fill(getPixiFill('rgba(224,242,254,0.62)', 0.16 + seededNoise(seed, 8) * 0.12))
+      } else {
+        graphics.moveTo(x - w * 0.56, y - h * 0.18)
+        graphics.lineTo(x - w * 0.2, y - h * 0.5)
+        graphics.lineTo(x + w * 0.52, y - h * 0.2)
+        graphics.lineTo(x + w * 0.22, y + h * 0.48)
+        graphics.lineTo(x - w * 0.44, y + h * 0.36)
+        graphics.closePath()
+        graphics.fill(getPixiFill(surfaceMode === 'alien' ? 'rgba(31,9,62,0.72)' : 'rgba(15,23,42,0.72)', surfaceMode === 'alien' ? 0.24 : 0.18))
+        if (surfaceMode === 'alien') {
+          graphics.moveTo(x - w * 0.28, y)
+          graphics.lineTo(x + w * 0.24, y - h * 0.1)
+          const stroke = getPixiFill(surfaceC, 0.16)
+          graphics.stroke({ color: stroke.color, alpha: stroke.alpha, width: Math.max(1, width * 0.001) })
+        }
+      }
+    }
+    graphics.rect(0, 0, width, height).fill(getPixiFill('rgba(0,0,0,0.42)', 0.18))
   }
 
   private updatePlanets(width: number, height: number, seconds: number, palette: RaidPalette, isLow: boolean, isMedium: boolean) {
@@ -4459,62 +4633,23 @@ class PixiRaidBackground {
     }
   }
 
-  private updateSpeedLines(width: number, height: number, seconds: number, streak: string, isLow: boolean, isMedium: boolean) {
-    const speedLineLimit = isLow ? 0 : isMedium ? 2 : BACKGROUND_SPEED_LINES.length
-    for (let index = 0; index < this.speedLineSprites.length; index += 1) {
-      const sprite = this.speedLineSprites[index]
-      sprite.visible = index < speedLineLimit
-      if (index >= speedLineLimit) continue
-      const line = BACKGROUND_SPEED_LINES[index]
-      const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
-      const lineColor = line.color === 'red' ? 'rgba(239,35,60,0.72)' : line.color === 'cyan' ? 'rgba(34,211,238,0.52)' : streak
-      const textureKey = `${Math.max(16, line.length)}|${line.width}|${lineColor}`
-      let texture = this.speedLineTextureCache.get(textureKey)
-      if (!texture) {
-        texture = makePixiGeneratedTexture(8, Math.max(16, line.length), (ctx) => {
-          const gradient = ctx.createLinearGradient(4, 0, 4, Math.max(16, line.length))
-          gradient.addColorStop(0, 'rgba(255,255,255,0)')
-          gradient.addColorStop(0.5, lineColor)
-          gradient.addColorStop(1, 'rgba(255,255,255,0)')
-          ctx.strokeStyle = gradient
-          ctx.lineWidth = Math.max(1, line.width)
-          ctx.beginPath()
-          ctx.moveTo(4, 0)
-          ctx.lineTo(4, Math.max(16, line.length))
-          ctx.stroke()
-        })
-        this.speedLineTextureCache.set(textureKey, texture)
-      }
-      sprite.texture = texture
-      setPixiSpriteContain(sprite, sprite.texture, line.x * width, y + line.length * 0.5, Math.max(8, line.width * 4), line.length, 0.58, 0)
-    }
-  }
-
   private updateAmbientExplosions(width: number, height: number, seconds: number, isLow: boolean, isMedium: boolean) {
-    const explosionTexture = this.explosionSprites[0].texture === Texture.WHITE
-      ? makePixiGeneratedTexture(192, 192, (ctx) => drawRadialEllipse(ctx, 96, 96, 96, 96, [
-        [0, 'rgba(255,255,255,0.45)'],
-        [0.32, 'rgba(251,191,36,0.48)'],
-        [0.64, 'rgba(239,35,60,0.32)'],
-        [1, 'rgba(0,0,0,0)'],
-      ]))
-      : this.explosionSprites[0].texture
-    for (const sprite of this.explosionSprites) sprite.texture = explosionTexture
-
+    const graphics = this.explosionGraphics
+    graphics.clear()
+    graphics.visible = !isLow && !isMedium
     const explosions = [
       { x: width * 0.08, y: height * 0.18, period: 7, offset: 4, radius: 32, alpha: 0.9 },
       { x: width * 0.9, y: height * 0.44, period: 11, offset: 2, radius: 24, alpha: 0.75 },
     ]
-    for (let index = 0; index < this.explosionSprites.length; index += 1) {
-      const sprite = this.explosionSprites[index]
-      const explosion = explosions[index]
+    for (const explosion of explosions) {
       const cycle = ((seconds + explosion.offset) % explosion.period) / explosion.period
       const pulse = cycle < 0.42 ? Math.sin((cycle / 0.42) * Math.PI) : 0
       const visible = !isLow && !isMedium && pulse > 0
-      sprite.visible = visible
       if (!visible) continue
-      const size = explosion.radius * (0.6 + pulse * 1.4) * 2
-      setPixiSpriteContain(sprite, explosionTexture, explosion.x, explosion.y, size, size, pulse * explosion.alpha, 0)
+      const radius = explosion.radius * (0.6 + pulse * 1.4)
+      this.fillRadial(graphics, explosion.x, explosion.y, radius, radius, 'rgba(255,255,255,0.45)', 'rgba(0,0,0,0)', pulse * explosion.alpha)
+      this.fillRadial(graphics, explosion.x, explosion.y, radius * 0.86, radius * 0.86, 'rgba(251,191,36,0.48)', 'rgba(0,0,0,0)', pulse * explosion.alpha)
+      this.fillRadial(graphics, explosion.x, explosion.y, radius * 0.7, radius * 0.7, 'rgba(239,35,60,0.32)', 'rgba(0,0,0,0)', pulse * explosion.alpha)
     }
   }
 }

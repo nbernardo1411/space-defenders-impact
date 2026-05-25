@@ -81,7 +81,7 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "index.html",
-    "revision": "0.3rjs7k6djak"
+    "revision": "0.0hvrc68g79g"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
@@ -94,8 +94,7 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
   }, new workbox.CacheFirst({
     "cacheName": "space-defender-raid-images-v1",
     plugins: [new workbox.ExpirationPlugin({
-      maxEntries: 128,
-      maxAgeSeconds: 2592000
+      maxEntries: 128
     }), new workbox.CacheableResponsePlugin({
       statuses: [0, 200]
     })]
@@ -107,8 +106,7 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
   }, new workbox.CacheFirst({
     "cacheName": "space-defender-audio-v1",
     plugins: [new workbox.ExpirationPlugin({
-      maxEntries: 32,
-      maxAgeSeconds: 2592000
+      maxEntries: 32
     }), new workbox.CacheableResponsePlugin({
       statuses: [0, 200]
     })]
