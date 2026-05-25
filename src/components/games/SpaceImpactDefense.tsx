@@ -1862,11 +1862,23 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
   useEffect(() => {
     const canvas = spaceCanvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
     if (!ctx) return
 
     canvas.width = boardW
     canvas.height = boardH
+    const backgroundCanvas = document.createElement('canvas')
+    backgroundCanvas.width = boardW
+    backgroundCanvas.height = boardH
+    const backgroundCtx = backgroundCanvas.getContext('2d', { alpha: false })
+    if (backgroundCtx) {
+      const bg = backgroundCtx.createLinearGradient(0, 0, 0, boardH)
+      bg.addColorStop(0, '#050912')
+      bg.addColorStop(0.45, '#070d1a')
+      bg.addColorStop(1, '#03060c')
+      backgroundCtx.fillStyle = bg
+      backgroundCtx.fillRect(0, 0, boardW, boardH)
+    }
     const isMobileViewportNow = typeof window !== 'undefined' ? (window.innerWidth <= 900 || window.innerHeight <= 550) : false
     const graphicsProfile = getDefenseGraphicsProfile(graphicsQualityRef.current, isMobileViewportNow)
 
@@ -1876,7 +1888,9 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       r: 0.5 + Math.random() * (graphicsQualityRef.current === 'low' ? 1 : 1.8),
       v: 6 + Math.random() * 20,
       a: 0.25 + Math.random() * 0.6,
+      fill: '',
     }))
+    for (const star of stars) star.fill = `rgba(225,238,255,${star.a})`
 
     const asteroids = Array.from({ length: graphicsProfile.asteroidCount }, () => ({
       x: Math.random() * boardW,
@@ -1893,13 +1907,11 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
       const dt = Math.min(0.05, (t - last) / 1000)
       last = t
 
-      ctx.clearRect(0, 0, boardW, boardH)
-      const bg = ctx.createLinearGradient(0, 0, 0, boardH)
-      bg.addColorStop(0, '#050912')
-      bg.addColorStop(0.45, '#070d1a')
-      bg.addColorStop(1, '#03060c')
-      ctx.fillStyle = bg
-      ctx.fillRect(0, 0, boardW, boardH)
+      if (backgroundCtx) ctx.drawImage(backgroundCanvas, 0, 0)
+      else {
+        ctx.fillStyle = '#050912'
+        ctx.fillRect(0, 0, boardW, boardH)
+      }
 
       for (const s of stars) {
         s.y += s.v * dt
@@ -1908,7 +1920,7 @@ export function SpaceImpactDefense({ availableCoins, onClose, initialMode = 'nor
           s.x = Math.random() * boardW
         }
         ctx.beginPath()
-        ctx.fillStyle = `rgba(225,238,255,${s.a})`
+        ctx.fillStyle = s.fill
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
         ctx.fill()
       }

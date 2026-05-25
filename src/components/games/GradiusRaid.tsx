@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
 import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM, type GameSoundKind } from './sound'
 import type { GraphicsQuality } from './sound'
 import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
@@ -4130,6 +4131,392 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     drawExplosion(width * 0.9, height * 0.44, 11, 2, 24, 0.75)
   }
   ctx.restore()
+}
+
+type PixiRaidAssetKey = RaidOtherAssetKey
+
+type PixiRaidBackgroundFrame = {
+  palette: RaidPalette
+  width: number
+  height: number
+  time: number
+  quality: GraphicsQuality
+  stageTheme: number
+  dpr: number
+}
+
+function makePixiGeneratedTexture(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void) {
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.ceil(width))
+  canvas.height = Math.max(1, Math.ceil(height))
+  const ctx = canvas.getContext('2d')
+  if (ctx) draw(ctx)
+  return Texture.from(canvas)
+}
+
+function setPixiSpriteContain(sprite: Sprite, texture: Texture, x: number, y: number, width: number, height: number, alpha: number, rotation = 0) {
+  const textureWidth = Math.max(1, texture.width)
+  const textureHeight = Math.max(1, texture.height)
+  const scale = Math.min(width / textureWidth, height / textureHeight)
+  sprite.texture = texture
+  sprite.anchor.set(0.5)
+  sprite.position.set(x, y)
+  sprite.scale.set(scale)
+  sprite.alpha = alpha
+  sprite.rotation = rotation
+  sprite.visible = alpha > 0
+}
+
+class PixiRaidBackground {
+  private app: Application | null = null
+  private readonly scene = new Container()
+  private readonly baseSprite = new Sprite(Texture.WHITE)
+  private readonly nebulaSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly ambientGlowSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly galaxySprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly planetSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly farStarSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly nearStarSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly speedLineSprites = BACKGROUND_SPEED_LINES.map(() => new Sprite(Texture.WHITE))
+  private readonly asteroidSprites = BACKGROUND_ASTEROIDS.map(() => new Sprite(Texture.WHITE))
+  private readonly debrisSprites = BACKGROUND_DEBRIS.map(() => new Sprite(Texture.WHITE))
+  private readonly explosionSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly assetTextures = new Map<PixiRaidAssetKey, Texture>()
+  private readonly speedLineTextureCache = new Map<string, Texture>()
+  private baseKey = ''
+  private glowKey = ''
+  private starfieldKey = ''
+  private width = 0
+  private height = 0
+  private dpr = 1
+
+  async init(host: HTMLDivElement) {
+    try {
+      const app = new Application()
+      await app.init({
+        width: 1,
+        height: 1,
+        resolution: 1,
+        backgroundAlpha: 0,
+        autoDensity: true,
+        autoStart: false,
+        antialias: false,
+        preference: 'webgl',
+        powerPreference: 'high-performance',
+      })
+      this.app = app
+      app.stage.addChild(this.scene)
+      this.scene.addChild(this.baseSprite)
+      this.nebulaSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.ambientGlowSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.galaxySprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.farStarSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.nearStarSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.planetSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.asteroidSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.debrisSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.speedLineSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.explosionSprites.forEach((sprite) => this.scene.addChild(sprite))
+
+      const canvas = app.canvas as HTMLCanvasElement
+      canvas.className = 'raid__pixi-background-canvas'
+      host.textContent = ''
+      host.appendChild(canvas)
+      await this.loadAssets()
+      return true
+    } catch {
+      this.destroy()
+      return false
+    }
+  }
+
+  destroy() {
+    this.app?.destroy({ removeView: true }, { children: true })
+    this.app = null
+  }
+
+  render(frame: PixiRaidBackgroundFrame) {
+    const app = this.app
+    if (!app) return false
+
+    const { width, height, dpr, palette, quality, stageTheme, time } = frame
+    const seconds = time / 1000
+    const isLow = quality === 'low'
+    const isMedium = quality === 'medium'
+
+    if (this.width !== width || this.height !== height || this.dpr !== dpr) {
+      this.width = width
+      this.height = height
+      this.dpr = dpr
+      app.renderer.resize(width, height, dpr)
+      const canvas = app.canvas as HTMLCanvasElement
+      canvas.style.width = `${width}px`
+      canvas.style.height = `${height}px`
+      this.baseKey = ''
+      this.glowKey = ''
+      this.starfieldKey = ''
+    }
+
+    this.updateBaseTexture(palette, width, height, quality, stageTheme, dpr)
+    this.updateGlowTextures(palette)
+    this.updateNebula(width, height, seconds, isLow)
+    this.updateAmbientGlows(width, height, isLow, isMedium)
+    this.updateGalaxies(width, height, seconds, stageTheme, isLow, isMedium)
+    this.updateStarfield(width, height, seconds, quality, dpr, palette.starTint, palette.streak)
+    this.updatePlanets(width, height, seconds, palette, isLow, isMedium)
+    this.updateBackgroundObjects(width, height, seconds, isLow, isMedium)
+    this.updateSpeedLines(width, height, seconds, palette.streak, isLow, isMedium)
+    this.updateAmbientExplosions(width, height, seconds, isLow, isMedium)
+    app.render()
+    return true
+  }
+
+  private async loadAssets() {
+    const entries = Object.entries(RAID_OTHER_ASSET_PATHS) as Array<[PixiRaidAssetKey, string]>
+    await Promise.all(entries.map(async ([key, path]) => {
+      try {
+        const texture = await Assets.load(getPublicAssetUrl(path))
+        this.assetTextures.set(key, texture as Texture)
+      } catch {
+        this.assetTextures.delete(key)
+      }
+    }))
+  }
+
+  private updateBaseTexture(palette: RaidPalette, width: number, height: number, quality: GraphicsQuality, stageTheme: number, dpr: number) {
+    const key = getRaidBackgroundBaseCacheKey(palette, width, height, quality, dpr) + `|pixi|${stageTheme % 2}`
+    if (this.baseKey !== key) {
+      this.baseKey = key
+      this.baseSprite.texture = makePixiGeneratedTexture(width * dpr, height * dpr, (ctx) => {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        drawRaidBackgroundBase(ctx, palette, width, height, quality)
+        if (quality !== 'low' && stageTheme % 2 === 0) drawPlanetSurface(ctx, palette, width, height, 0, quality)
+      })
+      this.baseSprite.anchor.set(0)
+    }
+    this.baseSprite.position.set(0, 0)
+    this.baseSprite.width = width
+    this.baseSprite.height = height
+    this.baseSprite.alpha = 1
+  }
+
+  private updateGlowTextures(palette: RaidPalette) {
+    const key = [
+      palette.nebulaA,
+      palette.nebulaB,
+      palette.bgA,
+      palette.bgB,
+    ].join('|')
+    if (this.glowKey === key) return
+    this.glowKey = key
+    this.nebulaSprites[0].texture = makePixiGeneratedTexture(512, 384, (ctx) => drawRadialEllipse2Stop(ctx, 256, 192, 256, 192, palette.nebulaA, 'rgba(0,0,0,0)'))
+    this.nebulaSprites[1].texture = makePixiGeneratedTexture(512, 384, (ctx) => drawRadialEllipse2Stop(ctx, 256, 192, 256, 192, palette.nebulaB, 'rgba(0,0,0,0)'))
+    this.ambientGlowSprites[0].texture = makePixiGeneratedTexture(640, 320, (ctx) => drawRadialEllipse2Stop(ctx, 320, 160, 320, 160, 'rgba(139,92,246,0.2)', 'rgba(0,0,0,0)'))
+    this.ambientGlowSprites[1].texture = makePixiGeneratedTexture(520, 520, (ctx) => drawRadialEllipse2Stop(ctx, 260, 260, 260, 260, 'rgba(59,130,246,0.16)', 'rgba(0,0,0,0)'))
+    this.ambientGlowSprites[2].texture = makePixiGeneratedTexture(360, 300, (ctx) => drawRadialEllipse2Stop(ctx, 180, 150, 180, 150, 'rgba(236,72,153,0.11)', 'rgba(0,0,0,0)'))
+  }
+
+  private updateNebula(width: number, height: number, seconds: number, isLow: boolean) {
+    for (const sprite of this.nebulaSprites) sprite.visible = !isLow
+    if (isLow) return
+
+    const drift = Math.sin(seconds / 10)
+    setPixiSpriteContain(
+      this.nebulaSprites[0],
+      this.nebulaSprites[0].texture,
+      width * 0.2 + width * 0.012 * drift,
+      height * 0.72 + height * 0.006 * Math.cos(seconds / 8),
+      width * 0.72 * (1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5)),
+      height * 0.48 * (1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5)),
+      1,
+    )
+    setPixiSpriteContain(
+      this.nebulaSprites[1],
+      this.nebulaSprites[1].texture,
+      width * 0.82 + width * 0.012 * drift,
+      height * 0.24 + height * 0.006 * Math.cos(seconds / 8),
+      width * 0.64 * (1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5)),
+      height * 0.44 * (1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5)),
+      1,
+    )
+  }
+
+  private updateAmbientGlows(width: number, height: number, isLow: boolean, isMedium: boolean) {
+    for (const sprite of this.ambientGlowSprites) sprite.visible = !isLow
+    if (isLow) return
+    setPixiSpriteContain(this.ambientGlowSprites[0], this.ambientGlowSprites[0].texture, width * 0.78, height * 0.18, width * 0.96, height * 0.5, 1)
+    setPixiSpriteContain(this.ambientGlowSprites[1], this.ambientGlowSprites[1].texture, width * 0.14, height * 0.68, width * 0.72, height * 0.84, 1)
+    setPixiSpriteContain(this.ambientGlowSprites[2], this.ambientGlowSprites[2].texture, width * 0.48, height * 0.42, width * 0.44, height * 0.36, isMedium ? 0 : 1)
+  }
+
+  private updateGalaxies(width: number, height: number, seconds: number, stageTheme: number, isLow: boolean, isMedium: boolean) {
+    const primary = this.assetTextures.get(stageTheme % 3 === 0 ? 'galaxy2' : 'galaxy')
+    const secondary = this.assetTextures.get(stageTheme % 3 === 0 ? 'galaxy' : 'galaxy2')
+    const drift = Math.sin(seconds / 18)
+    const primarySprite = this.galaxySprites[0]
+    const secondarySprite = this.galaxySprites[1]
+    primarySprite.visible = Boolean(primary && !isLow)
+    secondarySprite.visible = Boolean(secondary && !isLow && !isMedium)
+    if (primary && !isLow) {
+      setPixiSpriteContain(
+        primarySprite,
+        primary,
+        width * (stageTheme % 3 === 0 ? 0.72 : 0.28) + drift * width * 0.012,
+        height * (stageTheme % 3 === 0 ? 0.28 : 0.64) + Math.cos(seconds / 22) * height * 0.01,
+        width * (isMedium ? 0.46 : 0.62),
+        height * (isMedium ? 0.28 : 0.38),
+        isMedium ? 0.24 : 0.34,
+        (stageTheme % 3 === 0 ? 8 : -12) * DEG,
+      )
+    }
+    if (secondary && !isLow && !isMedium) {
+      setPixiSpriteContain(
+        secondarySprite,
+        secondary,
+        width * (stageTheme % 3 === 0 ? 0.22 : 0.8) - drift * width * 0.01,
+        height * (stageTheme % 3 === 0 ? 0.68 : 0.22),
+        width * 0.34,
+        height * 0.22,
+        0.16,
+        (stageTheme % 3 === 0 ? -16 : 10) * DEG,
+      )
+    }
+  }
+
+  private updateStarfield(width: number, height: number, seconds: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
+    const key = getRaidStarfieldCacheKey(width, height, quality, dpr, starTint, streak)
+    const cache = getRaidStarfieldCache(width, height, quality, dpr, starTint, streak)
+    if (!cache) return
+
+    if (this.starfieldKey !== key) {
+      this.starfieldKey = key
+      const farTexture = Texture.from(cache.farCanvas)
+      for (const sprite of this.farStarSprites) sprite.texture = farTexture
+      if (cache.nearTrailCanvas) {
+        const nearTexture = Texture.from(cache.nearTrailCanvas)
+        for (const sprite of this.nearStarSprites) sprite.texture = nearTexture
+      }
+    }
+
+    this.updateScrollingSprites(this.farStarSprites, width, cache.farLayerHeight, seconds * 15 - height * 0.13, true)
+    this.updateScrollingSprites(this.nearStarSprites, width, cache.nearLayerHeight, seconds * 72 - height * 0.19, Boolean(cache.nearTrailCanvas))
+  }
+
+  private updateScrollingSprites(sprites: Sprite[], width: number, layerHeight: number, offset: number, visible: boolean) {
+    if (layerHeight <= 0) return
+    const y = ((offset % layerHeight) + layerHeight) % layerHeight
+    for (let index = 0; index < sprites.length; index += 1) {
+      const sprite = sprites[index]
+      sprite.anchor.set(0)
+      sprite.position.set(0, y + (index - 1) * layerHeight)
+      sprite.width = width
+      sprite.height = layerHeight
+      sprite.alpha = visible ? 1 : 0
+      sprite.visible = visible
+    }
+  }
+
+  private updatePlanets(width: number, height: number, seconds: number, palette: RaidPalette, isLow: boolean, isMedium: boolean) {
+    const planetBase = height * 1.3
+    const planet1Y = ((seconds / 28 + 0.9) % 1) * planetBase - height * 0.1
+    const planet2Y = ((seconds / 42 + 0.64) % 1) * planetBase - height * 0.08
+    const planet3Y = ((seconds / 58 + 0.42) % 1) * planetBase - height * 0.06
+    const planet1R = Math.min(width * 0.105, 96)
+    const planet2R = Math.min(width * 0.045, 36)
+    const planet3R = Math.min(width * 0.03, 26)
+    const planet1 = this.assetTextures.get('planet1')
+    const planet2 = this.assetTextures.get('planet2')
+    const planet3 = this.assetTextures.get('planet3')
+    const fallbackAlpha = palette.planetA ? 1 : 1
+
+    this.planetSprites[0].visible = Boolean(planet1 && !isLow)
+    this.planetSprites[1].visible = Boolean(planet2 && !isLow)
+    this.planetSprites[2].visible = Boolean(planet3 && !isLow && !isMedium)
+    if (planet1 && !isLow) setPixiSpriteContain(this.planetSprites[0], planet1, width * 0.92, planet1Y, planet1R * 2.45, planet1R * 2.45, 0.86 * fallbackAlpha, seconds * 0.01)
+    if (planet2 && !isLow) setPixiSpriteContain(this.planetSprites[1], planet2, width * 0.05, planet2Y, planet2R * 2.8, planet2R * 2.8, 0.7, -18 * DEG)
+    if (planet3 && !isLow && !isMedium) setPixiSpriteContain(this.planetSprites[2], planet3, width * 0.24, planet3Y, planet3R * 2.25, planet3R * 2.25, 0.56, -seconds * 0.012)
+  }
+
+  private updateBackgroundObjects(width: number, height: number, seconds: number, isLow: boolean, isMedium: boolean) {
+    const asteroidTexture = this.assetTextures.get('asteroid')
+    const asteroidLimit = !asteroidTexture || isLow ? 0 : isMedium ? 3 : BACKGROUND_ASTEROIDS.length
+    const debrisLimit = !asteroidTexture || isLow ? 0 : isMedium ? 3 : BACKGROUND_DEBRIS.length
+    for (let index = 0; index < this.asteroidSprites.length; index += 1) {
+      const sprite = this.asteroidSprites[index]
+      sprite.visible = index < asteroidLimit
+      if (!asteroidTexture || index >= asteroidLimit) continue
+      const asteroid = BACKGROUND_ASTEROIDS[index]
+      const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
+      setPixiSpriteContain(sprite, asteroidTexture, width * asteroid.x, y, asteroid.width * 1.5, asteroid.height * 1.5, asteroid.alpha, seconds * asteroid.spin * DEG / 10)
+    }
+    for (let index = 0; index < this.debrisSprites.length; index += 1) {
+      const sprite = this.debrisSprites[index]
+      sprite.visible = index < debrisLimit
+      if (!asteroidTexture || index >= debrisLimit) continue
+      const debris = BACKGROUND_DEBRIS[index]
+      const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
+      setPixiSpriteContain(sprite, asteroidTexture, width * debris.x, y, debris.width * 1.35, debris.height * 1.35, debris.alpha, seconds * debris.spin * DEG / 12)
+    }
+  }
+
+  private updateSpeedLines(width: number, height: number, seconds: number, streak: string, isLow: boolean, isMedium: boolean) {
+    const speedLineLimit = isLow ? 0 : isMedium ? 2 : BACKGROUND_SPEED_LINES.length
+    for (let index = 0; index < this.speedLineSprites.length; index += 1) {
+      const sprite = this.speedLineSprites[index]
+      sprite.visible = index < speedLineLimit
+      if (index >= speedLineLimit) continue
+      const line = BACKGROUND_SPEED_LINES[index]
+      const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
+      const lineColor = line.color === 'red' ? 'rgba(239,35,60,0.72)' : line.color === 'cyan' ? 'rgba(34,211,238,0.52)' : streak
+      const textureKey = `${Math.max(16, line.length)}|${line.width}|${lineColor}`
+      let texture = this.speedLineTextureCache.get(textureKey)
+      if (!texture) {
+        texture = makePixiGeneratedTexture(8, Math.max(16, line.length), (ctx) => {
+          const gradient = ctx.createLinearGradient(4, 0, 4, Math.max(16, line.length))
+          gradient.addColorStop(0, 'rgba(255,255,255,0)')
+          gradient.addColorStop(0.5, lineColor)
+          gradient.addColorStop(1, 'rgba(255,255,255,0)')
+          ctx.strokeStyle = gradient
+          ctx.lineWidth = Math.max(1, line.width)
+          ctx.beginPath()
+          ctx.moveTo(4, 0)
+          ctx.lineTo(4, Math.max(16, line.length))
+          ctx.stroke()
+        })
+        this.speedLineTextureCache.set(textureKey, texture)
+      }
+      sprite.texture = texture
+      setPixiSpriteContain(sprite, sprite.texture, line.x * width, y + line.length * 0.5, Math.max(8, line.width * 4), line.length, 0.58, 0)
+    }
+  }
+
+  private updateAmbientExplosions(width: number, height: number, seconds: number, isLow: boolean, isMedium: boolean) {
+    const explosionTexture = this.explosionSprites[0].texture === Texture.WHITE
+      ? makePixiGeneratedTexture(192, 192, (ctx) => drawRadialEllipse(ctx, 96, 96, 96, 96, [
+        [0, 'rgba(255,255,255,0.45)'],
+        [0.32, 'rgba(251,191,36,0.48)'],
+        [0.64, 'rgba(239,35,60,0.32)'],
+        [1, 'rgba(0,0,0,0)'],
+      ]))
+      : this.explosionSprites[0].texture
+    for (const sprite of this.explosionSprites) sprite.texture = explosionTexture
+
+    const explosions = [
+      { x: width * 0.08, y: height * 0.18, period: 7, offset: 4, radius: 32, alpha: 0.9 },
+      { x: width * 0.9, y: height * 0.44, period: 11, offset: 2, radius: 24, alpha: 0.75 },
+    ]
+    for (let index = 0; index < this.explosionSprites.length; index += 1) {
+      const sprite = this.explosionSprites[index]
+      const explosion = explosions[index]
+      const cycle = ((seconds + explosion.offset) % explosion.period) / explosion.period
+      const pulse = cycle < 0.42 ? Math.sin((cycle / 0.42) * Math.PI) : 0
+      const visible = !isLow && !isMedium && pulse > 0
+      sprite.visible = visible
+      if (!visible) continue
+      const size = explosion.radius * (0.6 + pulse * 1.4) * 2
+      setPixiSpriteContain(sprite, explosionTexture, explosion.x, explosion.y, size, size, pulse * explosion.alpha, 0)
+    }
+  }
 }
 
 function drawBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: number, size: number, time: number) {
@@ -9307,6 +9694,8 @@ export function GradiusRaid({
   onRunComplete?: (result: RunResult) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const pixiBackgroundHostRef = useRef<HTMLDivElement | null>(null)
+  const pixiBackgroundRef = useRef<PixiRaidBackground | null>(null)
   const fxCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const fxCanvasContextRef = useRef<CanvasRenderingContext2D | null>(null)
   const rafRef = useRef(0)
@@ -10438,6 +10827,29 @@ export function GradiusRaid({
     }
   }, [])
 
+  useEffect(() => {
+    const host = pixiBackgroundHostRef.current
+    if (!host) return
+
+    let cancelled = false
+    const background = new PixiRaidBackground()
+    pixiBackgroundRef.current = background
+
+    void background.init(host).then((ready) => {
+      if (cancelled) {
+        background.destroy()
+        return
+      }
+      if (!ready && pixiBackgroundRef.current === background) pixiBackgroundRef.current = null
+    })
+
+    return () => {
+      cancelled = true
+      if (pixiBackgroundRef.current === background) pixiBackgroundRef.current = null
+      background.destroy()
+    }
+  }, [])
+
   const drawFxCanvas = useCallback((time = performance.now()) => {
     const canvas = fxCanvasRef.current
     const root = rootRef.current
@@ -10481,7 +10893,18 @@ export function GradiusRaid({
       paletteRef.current = readRaidPalette(root)
     }
 
-    drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality, stageRef.current, dpr)
+    const pixiDrewBackground = pixiBackgroundRef.current?.render({
+      palette: paletteRef.current,
+      width: cssWidth,
+      height: cssHeight,
+      time,
+      quality: gfxQuality,
+      stageTheme: stageRef.current,
+      dpr,
+    }) ?? false
+    if (!pixiDrewBackground) {
+      drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality, stageRef.current, dpr)
+    }
 
     const drawTrail = (shot: Shot, color: string, length: number, widthPx: number) => {
       const x = toX(shot.x)
@@ -15253,6 +15676,7 @@ export function GradiusRaid({
       )}
 
       <div className="raid__playfield">
+        <div ref={pixiBackgroundHostRef} className="raid__pixi-background" aria-hidden="true" />
         <canvas ref={fxCanvasRef} className="raid__fx-canvas" />
       </div>
 

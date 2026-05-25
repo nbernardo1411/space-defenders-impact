@@ -875,6 +875,22 @@
   contain: layout paint style;
 }
 
+.raid__pixi-background {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  transform: translateZ(0);
+}
+
+.raid__pixi-background-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .raid__fx-canvas {
   position: absolute;
   inset: 0;
