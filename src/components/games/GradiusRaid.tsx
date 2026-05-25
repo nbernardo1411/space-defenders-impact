@@ -2342,6 +2342,7 @@ function powerGlyph(type: PowerKind) {
 
 let cachedPickupVoices: SpeechSynthesisVoice[] = []
 let pickupSampleAudio: HTMLAudioElement | null = null
+const pickupSampleAudioCache = new Map<PowerKind, HTMLAudioElement>()
 
 const PICKUP_VOICE_SAMPLE_URLS: Record<PowerKind, string> = {
   rocket: getPublicAssetUrl('audio/pickups/pickup_rocket.wav'),
@@ -3443,6 +3444,29 @@ function getPickupVoiceSampleUrl(type: PowerKind) {
   return PICKUP_VOICE_SAMPLE_URLS[type] ?? DEFAULT_PICKUP_VOICE_SAMPLE_URL
 }
 
+function getPickupVoiceSampleAudio(type: PowerKind) {
+  if (typeof window === 'undefined') return null
+  let audio = pickupSampleAudioCache.get(type)
+  if (!audio) {
+    audio = new Audio(getPickupVoiceSampleUrl(type))
+    audio.preload = 'auto'
+    pickupSampleAudioCache.set(type, audio)
+  }
+  return audio
+}
+
+function warmPickupVoiceSamples() {
+  if (typeof window === 'undefined') return
+  ;(Object.keys(PICKUP_VOICE_SAMPLE_URLS) as PowerKind[]).forEach((type) => {
+    try {
+      const audio = getPickupVoiceSampleAudio(type)
+      audio?.load()
+    } catch {
+      // Audio preload is opportunistic; WebView may defer it until first gesture.
+    }
+  })
+}
+
 function tryPlayPickupVoiceSample(type: PowerKind, volume: number) {
   if (typeof window === 'undefined') return false
   try {
@@ -3451,8 +3475,9 @@ function tryPlayPickupVoiceSample(type: PowerKind, volume: number) {
       pickupSampleAudio.currentTime = 0
     }
 
-    const audio = new Audio(getPickupVoiceSampleUrl(type))
-    audio.preload = 'auto'
+    const audio = getPickupVoiceSampleAudio(type)
+    if (!audio) return false
+    audio.currentTime = 0
     audio.volume = volume
     pickupSampleAudio = audio
 
@@ -9326,6 +9351,136 @@ function drawRandomEventOverlay(ctx: CanvasRenderingContext2D, width: number, he
   ctx.restore()
 }
 
+const POWER_PICKUP_SPRITE_FRAMES = 16
+const POWER_PICKUP_SPIN_BUCKETS = 8
+const powerPickupSpriteCache = new Map<string, HTMLCanvasElement>()
+
+function getPowerPickupSprite(type: PowerKind, size: number, phaseBucket: number, spinBucket: number) {
+  const normalizedSize = Math.round(size)
+  const normalizedPhase = ((phaseBucket % POWER_PICKUP_SPRITE_FRAMES) + POWER_PICKUP_SPRITE_FRAMES) % POWER_PICKUP_SPRITE_FRAMES
+  const normalizedSpin = ((spinBucket % POWER_PICKUP_SPIN_BUCKETS) + POWER_PICKUP_SPIN_BUCKETS) % POWER_PICKUP_SPIN_BUCKETS
+  const cacheKey = `${type}|${normalizedSize}|${normalizedPhase}|${normalizedSpin}`
+  const cached = powerPickupSpriteCache.get(cacheKey)
+  if (cached) return cached
+
+  const color = powerColor(type)
+  const phase = (normalizedPhase / POWER_PICKUP_SPRITE_FRAMES) * Math.PI * 2
+  const spinRotation = (normalizedSpin / POWER_PICKUP_SPIN_BUCKETS) * Math.PI * 2 * 0.42
+  const pulse = 0.92 + Math.sin(phase * 2.62) * 0.08
+  const ringRadius = normalizedSize * 0.54 * pulse
+  const canvasSize = Math.ceil(normalizedSize * 2.45)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasSize
+  canvas.height = canvasSize
+  const spriteCtx = canvas.getContext('2d')
+  if (!spriteCtx) return canvas
+
+  spriteCtx.translate(canvas.width / 2, canvas.height / 2)
+  spriteCtx.globalCompositeOperation = 'lighter'
+  drawRadialEllipse(spriteCtx, 0, 0, normalizedSize * 0.9, normalizedSize * 0.74, [
+    [0, 'rgba(255,255,255,0.2)'],
+    [0.28, color],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+
+  for (let index = 0; index < 3; index += 1) {
+    const angle = phase * 1.8 + index * Math.PI * 2 / 3
+    const dotRadius = normalizedSize * (0.035 + index * 0.004)
+    spriteCtx.fillStyle = index === 0 ? '#ffffff' : color
+    spriteCtx.globalAlpha = 0.78
+    spriteCtx.shadowBlur = 12
+    spriteCtx.shadowColor = color
+    spriteCtx.beginPath()
+    spriteCtx.arc(Math.cos(angle) * normalizedSize * 0.58, Math.sin(angle) * normalizedSize * 0.58, dotRadius, 0, Math.PI * 2)
+    spriteCtx.fill()
+  }
+
+  spriteCtx.save()
+  spriteCtx.rotate(spinRotation)
+  spriteCtx.globalCompositeOperation = 'lighter'
+  spriteCtx.globalAlpha = 1
+  spriteCtx.shadowBlur = 20
+  spriteCtx.shadowColor = color
+
+  const shell = spriteCtx.createRadialGradient(-normalizedSize * 0.15, -normalizedSize * 0.22, normalizedSize * 0.04, 0, 0, normalizedSize * 0.55)
+  shell.addColorStop(0, 'rgba(255,255,255,0.98)')
+  shell.addColorStop(0.16, color)
+  shell.addColorStop(0.34, 'rgba(255,255,255,0.16)')
+  shell.addColorStop(0.42, 'rgba(5,8,14,0.94)')
+  shell.addColorStop(0.74, 'rgba(5,8,14,0.9)')
+  shell.addColorStop(0.82, color)
+  shell.addColorStop(1, 'rgba(0,0,0,0)')
+  spriteCtx.fillStyle = shell
+  traceRegularPolygon(spriteCtx, 6, normalizedSize * 0.5, -Math.PI / 2 + Math.sin(phase) * 0.08)
+  spriteCtx.fill()
+
+  spriteCtx.strokeStyle = color
+  spriteCtx.lineWidth = 1.4
+  spriteCtx.globalAlpha = 0.9
+  traceRegularPolygon(spriteCtx, 6, normalizedSize * 0.5, -Math.PI / 2 + Math.sin(phase) * 0.08)
+  spriteCtx.stroke()
+  spriteCtx.restore()
+
+  spriteCtx.lineWidth = Math.max(2, normalizedSize * 0.055)
+  spriteCtx.lineCap = 'round'
+  for (let index = 0; index < 4; index += 1) {
+    const start = phase * 1.25 + index * Math.PI * 0.5
+    spriteCtx.strokeStyle = index % 2 === 0 ? color : 'rgba(255,255,255,0.74)'
+    spriteCtx.globalAlpha = index % 2 === 0 ? 0.86 : 0.56
+    spriteCtx.beginPath()
+    spriteCtx.arc(0, 0, ringRadius, start, start + Math.PI * 0.22)
+    spriteCtx.stroke()
+  }
+
+  spriteCtx.globalCompositeOperation = 'source-over'
+  spriteCtx.globalAlpha = 1
+  const core = spriteCtx.createRadialGradient(-normalizedSize * 0.1, -normalizedSize * 0.12, 1, 0, 0, normalizedSize * 0.28)
+  core.addColorStop(0, 'rgba(255,255,255,0.92)')
+  core.addColorStop(0.2, color)
+  core.addColorStop(0.52, '#111827')
+  core.addColorStop(1, '#03050a')
+  spriteCtx.fillStyle = core
+  spriteCtx.strokeStyle = color
+  spriteCtx.shadowBlur = 10
+  spriteCtx.shadowColor = color
+  spriteCtx.beginPath()
+  spriteCtx.arc(0, 0, normalizedSize * 0.29, 0, Math.PI * 2)
+  spriteCtx.fill()
+  spriteCtx.stroke()
+
+  spriteCtx.save()
+  spriteCtx.globalCompositeOperation = 'lighter'
+  drawPowerPickupIcon(spriteCtx, type, normalizedSize, color, phase)
+  spriteCtx.restore()
+
+  spriteCtx.fillStyle = '#ffffff'
+  spriteCtx.shadowBlur = 8
+  spriteCtx.shadowColor = color
+  spriteCtx.font = `1000 ${Math.max(13, normalizedSize * 0.32)}px system-ui, sans-serif`
+  spriteCtx.textAlign = 'center'
+  spriteCtx.textBaseline = 'middle'
+  spriteCtx.fillText(powerGlyph(type), 0, normalizedSize * 0.01)
+
+  if (powerPickupSpriteCache.size >= 480) {
+    const oldestKey = powerPickupSpriteCache.keys().next().value
+    if (oldestKey) powerPickupSpriteCache.delete(oldestKey)
+  }
+  powerPickupSpriteCache.set(cacheKey, canvas)
+  return canvas
+}
+
+function warmPowerPickupSpriteCache() {
+  if (typeof document === 'undefined') return
+  const types = Object.keys(PICKUP_VOICE_SAMPLE_URLS) as PowerKind[]
+  for (const size of [42, 50]) {
+    for (const type of types) {
+      for (let frame = 0; frame < POWER_PICKUP_SPRITE_FRAMES; frame += 1) {
+        getPowerPickupSprite(type, size, frame, 0)
+      }
+    }
+  }
+}
+
 function drawPowerUpCanvas(
   ctx: CanvasRenderingContext2D,
   powerUp: PowerUp,
@@ -9337,98 +9492,11 @@ function drawPowerUpCanvas(
   const x = toX(powerUp.x)
   const y = toY(powerUp.y) + Math.sin(time / 620 + powerUp.id) * 3
   const size = viewportWidth < 860 ? 42 : 50
-  const color = powerColor(powerUp.type)
   const phase = time / 1000 + powerUp.id * 0.37
-  const pulse = 0.92 + Math.sin(time / 240 + powerUp.id) * 0.08
-  const ringRadius = size * 0.54 * pulse
-
-  ctx.save()
-  ctx.translate(x, y)
-
-  ctx.globalCompositeOperation = 'lighter'
-  drawRadialEllipse(ctx, 0, 0, size * 0.9, size * 0.74, [
-    [0, 'rgba(255,255,255,0.2)'],
-    [0.28, color],
-    [1, 'rgba(0,0,0,0)'],
-  ])
-
-  for (let index = 0; index < 3; index += 1) {
-    const angle = phase * 1.8 + index * Math.PI * 2 / 3
-    const dotRadius = size * (0.035 + index * 0.004)
-    ctx.fillStyle = index === 0 ? '#ffffff' : color
-    ctx.globalAlpha = 0.78
-    ctx.shadowBlur = 12
-    ctx.shadowColor = color
-    ctx.beginPath()
-    ctx.arc(Math.cos(angle) * size * 0.58, Math.sin(angle) * size * 0.58, dotRadius, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  ctx.rotate(powerUp.spin * DEG * 0.42)
-  ctx.globalCompositeOperation = 'lighter'
-  ctx.globalAlpha = 1
-  ctx.shadowBlur = 20
-  ctx.shadowColor = color
-
-  const shell = ctx.createRadialGradient(-size * 0.15, -size * 0.22, size * 0.04, 0, 0, size * 0.55)
-  shell.addColorStop(0, 'rgba(255,255,255,0.98)')
-  shell.addColorStop(0.16, color)
-  shell.addColorStop(0.34, 'rgba(255,255,255,0.16)')
-  shell.addColorStop(0.42, 'rgba(5,8,14,0.94)')
-  shell.addColorStop(0.74, 'rgba(5,8,14,0.9)')
-  shell.addColorStop(0.82, color)
-  shell.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = shell
-  traceRegularPolygon(ctx, 6, size * 0.5, -Math.PI / 2 + Math.sin(phase) * 0.08)
-  ctx.fill()
-
-  ctx.strokeStyle = color
-  ctx.lineWidth = 1.4
-  ctx.globalAlpha = 0.9
-  traceRegularPolygon(ctx, 6, size * 0.5, -Math.PI / 2 + Math.sin(phase) * 0.08)
-  ctx.stroke()
-
-  ctx.lineWidth = Math.max(2, size * 0.055)
-  ctx.lineCap = 'round'
-  for (let index = 0; index < 4; index += 1) {
-    const start = phase * 1.25 + index * Math.PI * 0.5
-    ctx.strokeStyle = index % 2 === 0 ? color : 'rgba(255,255,255,0.74)'
-    ctx.globalAlpha = index % 2 === 0 ? 0.86 : 0.56
-    ctx.beginPath()
-    ctx.arc(0, 0, ringRadius, start, start + Math.PI * 0.22)
-    ctx.stroke()
-  }
-
-  ctx.rotate(-powerUp.spin * DEG * 0.42)
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.globalAlpha = 1
-  const core = ctx.createRadialGradient(-size * 0.1, -size * 0.12, 1, 0, 0, size * 0.28)
-  core.addColorStop(0, 'rgba(255,255,255,0.92)')
-  core.addColorStop(0.2, color)
-  core.addColorStop(0.52, '#111827')
-  core.addColorStop(1, '#03050a')
-  ctx.fillStyle = core
-  ctx.strokeStyle = color
-  ctx.shadowBlur = 10
-  ctx.shadowColor = color
-  ctx.beginPath()
-  ctx.arc(0, 0, size * 0.29, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-
-  ctx.save()
-  ctx.globalCompositeOperation = 'lighter'
-  drawPowerPickupIcon(ctx, powerUp.type, size, color, phase)
-  ctx.restore()
-
-  ctx.fillStyle = '#ffffff'
-  ctx.shadowBlur = 8
-  ctx.shadowColor = color
-  ctx.font = `1000 ${Math.max(13, size * 0.32)}px system-ui, sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(powerGlyph(powerUp.type), 0, size * 0.01)
-  ctx.restore()
+  const phaseBucket = Math.round((((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * POWER_PICKUP_SPRITE_FRAMES)
+  const spinBucket = Math.round((((powerUp.spin % 360) + 360) % 360) / 360 * POWER_PICKUP_SPIN_BUCKETS)
+  const sprite = getPowerPickupSprite(powerUp.type, size, phaseBucket, spinBucket)
+  ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2)
 }
 
 function drawFinalChargeLines(
@@ -10983,6 +11051,15 @@ export function GradiusRaid({
       if (pixiBackgroundRef.current === background) pixiBackgroundRef.current = null
       background.destroy()
     }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const warmupTimer = window.setTimeout(() => {
+      warmPowerPickupSpriteCache()
+      warmPickupVoiceSamples()
+    }, 250)
+    return () => window.clearTimeout(warmupTimer)
   }, [])
 
   const drawFxCanvas = useCallback((time = performance.now()) => {
