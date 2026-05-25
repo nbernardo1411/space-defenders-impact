@@ -26,6 +26,7 @@ type RaidRandomEventKind = 'meteor' | 'solar' | 'rift' | 'wreck' | 'ambush' | 'i
 type CoreLanderCombatModel = Extract<CoreLanderModel, 'godGundam' | 'spiegel'>
 
 type Vec = { x: number; y: number }
+type CameraShakeState = { until: number; duration: number; strength: number; seed: number }
 
 type ShipOption = {
   key: string
@@ -145,6 +146,7 @@ type Enemy = Vec & {
   devilDefeatedTimer?: number
   devilSnakeBurstLeft?: number
   defeatTimer?: number
+  bossHpStingerPlayed?: boolean
   chargePattern: 'single' | 'pincer' | 'trident' | 'scatter' | 'diagonal' | 'horizontal' | 'cross' | 'rotate'
 }
 
@@ -162,6 +164,7 @@ type PowerUp = Vec & {
   vy: number
   radius: number
   spin: number
+  magnet?: number
 }
 
 type Spark = Vec & {
@@ -287,6 +290,7 @@ type Snapshot = {
   stageTheme: number
   bossAlert: number
   bossMessage: BossMessage
+  bossEntranceSlam: number
   highScore: number
   selectedShipKey: string
   pointer: Vec | null
@@ -323,6 +327,7 @@ type MultiplayerHostState = {
   stageTheme: number
   bossAlert: number
   bossMessage: BossMessage
+  bossEntranceSlam: number
   highScore: number
   selectedShipKey: string
   hostPointer: Vec | null
@@ -627,6 +632,8 @@ const MULTIPLAYER_BOSS_HP_MULTIPLIER = 2.5
 const BOSS_RESPAWN_SECONDS = 90
 const STAGE_CLEAR_SECONDS = 3.15
 const STAGE_ENTRY_SECONDS = 1.18
+const BOSS_ENTRANCE_SLAM_SECONDS = 0.4
+const BOSS_ENTRANCE_SLOWMO_SCALE = 0.45
 const VICTORY_BLACKOUT_SECONDS = 0.55
 const FINAL_BOSS_BEAM_CHARGE_SECONDS = 1.65
 const FINAL_BOSS_BEAM_LIFE_SECONDS = 0.78
@@ -1042,13 +1049,13 @@ const RAID_SPIEGEL_BARRAGE_FILTER = 'brightness(1.08) contrast(1.18) saturate(1.
 const RAID_SPIEGEL_SHADOW_CLONE_FILTER = 'brightness(0.36) contrast(1.35) saturate(0.36)'
 const RAID_GOD_GUNDAM_BURNING_BARRAGE_FILTER = 'brightness(1.32) contrast(1.32) saturate(2.3) sepia(0.55) hue-rotate(342deg)'
 const RAID_GOD_GUNDAM_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
-  [0, 'rgba(255,255,255,0.72)'],
-  [0.36, 'rgba(250,204,21,0.48)'],
+  [0, 'rgba(255,255,255,0.46)'],
+  [0.36, 'rgba(250,204,21,0.28)'],
   [1, 'rgba(251,146,60,0)'],
 ]
 const RAID_SPIEGEL_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
-  [0, 'rgba(248,250,252,0.72)'],
-  [0.38, 'rgba(248,113,113,0.42)'],
+  [0, 'rgba(248,250,252,0.42)'],
+  [0.38, 'rgba(248,113,113,0.24)'],
   [1, 'rgba(15,23,42,0)'],
 ]
 const RAID_SPIEGEL_SHADOW_CLONE_IMPACT_STOPS: Array<[number, string]> = [
@@ -1057,9 +1064,9 @@ const RAID_SPIEGEL_SHADOW_CLONE_IMPACT_STOPS: Array<[number, string]> = [
   [1, 'rgba(0,0,0,0)'],
 ]
 const RAID_GOD_GUNDAM_BURNING_BARRAGE_IMPACT_STOPS: Array<[number, string]> = [
-  [0, 'rgba(255,255,255,0.82)'],
-  [0.28, 'rgba(254,240,138,0.66)'],
-  [0.62, 'rgba(251,146,60,0.38)'],
+  [0, 'rgba(255,255,255,0.56)'],
+  [0.28, 'rgba(254,240,138,0.42)'],
+  [0.62, 'rgba(251,146,60,0.24)'],
   [1, 'rgba(220,38,38,0)'],
 ]
 const RAID_PLAYER_LASER_HEAD_STOPS: Array<[number, string]> = [
@@ -1997,11 +2004,32 @@ function getRaidPersistentAudioUrls() {
     getPublicAssetUrl('audio/sfx_ui_swap.wav'),
     getPublicAssetUrl('audio/sfx_ui_clear.wav'),
     getPublicAssetUrl('audio/sfx_countdown.wav'),
+    getPublicAssetUrl('audio/sfx_stinger.mp3'),
+    getPublicAssetUrl('audio/sfx_stinger_2.mp3'),
     getPublicAssetUrl('audio/sfx_score.wav'),
     getPublicAssetUrl('audio/G-Atk/punch-1.mp3'),
     getPublicAssetUrl('audio/G-Atk/punch-2.mp3'),
     getPublicAssetUrl('audio/G-Atk/kick.mp3'),
   ]
+}
+
+function warmRaidGeneratedEffectSprites() {
+  if (typeof document === 'undefined') return
+
+  for (const size of [58, 76, 96, 124, 156]) {
+    getHoneycombShieldSprite(size)
+  }
+  for (const radius of [8, 10.5, 13.5, 17.5, 22]) {
+    for (const burning of [false, true]) {
+      for (const frameBucket of [0, 0.25, 0.5, 0.75]) {
+        getCoreBlastSprite(radius, burning, frameBucket)
+      }
+    }
+  }
+  for (const visualScale of [0.85, 1, 1.18, 1.36]) {
+    getHomingMissileSprite(visualScale)
+  }
+  warmPowerPickupSpriteCache()
 }
 
 async function cacheRaidPersistentUrl(cache: Cache | null, url: string) {
@@ -2094,6 +2122,7 @@ function preloadRaidCanvasAssets(onProgress?: (loaded: number, total: number) =>
   }))).then(() => {
     if (!raidCanvasAssetWarmComplete) {
       warmRaidCanvasFilterVariants()
+      warmRaidGeneratedEffectSprites()
       raidCanvasAssetWarmComplete = true
     }
   })
@@ -4340,6 +4369,9 @@ type PixiRaidBackgroundFrame = {
   quality: GraphicsQuality
   stageTheme: number
   dpr: number
+  stageRush: number
+  bossIntensity: number
+  devilCorruption: number
 }
 
 function setPixiSpriteContain(sprite: Sprite, texture: Texture, x: number, y: number, width: number, height: number, alpha: number, rotation = 0) {
@@ -4379,11 +4411,23 @@ function getPixiFill(color: string, alpha = 1) {
   return { color: parsed.color, alpha: parsed.alpha * alpha }
 }
 
+function getRaidCameraShakeOffset(shake: CameraShakeState, time: number, viewportWidth: number, viewportHeight: number) {
+  if (shake.duration <= 0 || time >= shake.until) return { x: 0, y: 0 }
+  const remaining = clamp((shake.until - time) / shake.duration, 0, 1)
+  const viewportBoost = clamp(Math.min(viewportWidth, viewportHeight) / 520, 1, 1.85)
+  const amplitude = shake.strength * viewportBoost * remaining * remaining
+  return {
+    x: Math.sin(time * 0.047 + shake.seed) * amplitude + Math.sin(time * 0.093 + shake.seed * 1.7) * amplitude * 0.32,
+    y: Math.cos(time * 0.055 + shake.seed * 0.8) * amplitude * 0.72,
+  }
+}
+
 class PixiRaidBackground {
   private app: Application | null = null
   private readonly scene = new Container()
   private readonly baseGraphics = new Graphics()
   private readonly nebulaGraphics = new Graphics()
+  private readonly bossTintGraphics = new Graphics()
   private readonly ambientGlowGraphics = new Graphics()
   private readonly galaxySprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
   private readonly planetSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
@@ -4391,6 +4435,7 @@ class PixiRaidBackground {
   private readonly nearStarLayers = [new Graphics(), new Graphics(), new Graphics()]
   private readonly speedLineGraphics = new Graphics()
   private readonly surfaceGraphics = new Graphics()
+  private readonly cometFlybySprite = new Sprite(Texture.WHITE)
   private readonly asteroidSprites = BACKGROUND_ASTEROIDS.map(() => new Sprite(Texture.WHITE))
   private readonly debrisSprites = BACKGROUND_DEBRIS.map(() => new Sprite(Texture.WHITE))
   private readonly explosionGraphics = new Graphics()
@@ -4420,6 +4465,7 @@ class PixiRaidBackground {
       app.stage.addChild(this.scene)
       this.scene.addChild(this.baseGraphics)
       this.scene.addChild(this.nebulaGraphics)
+      this.scene.addChild(this.bossTintGraphics)
       this.scene.addChild(this.ambientGlowGraphics)
       this.galaxySprites.forEach((sprite) => this.scene.addChild(sprite))
       this.farStarLayers.forEach((layer) => this.scene.addChild(layer))
@@ -4427,6 +4473,7 @@ class PixiRaidBackground {
       this.scene.addChild(this.speedLineGraphics)
       this.scene.addChild(this.surfaceGraphics)
       this.planetSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.scene.addChild(this.cometFlybySprite)
       this.asteroidSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.debrisSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.scene.addChild(this.explosionGraphics)
@@ -4455,7 +4502,7 @@ class PixiRaidBackground {
     if (!app) return false
 
     try {
-      const { width, height, dpr, palette, quality, stageTheme, time } = frame
+      const { width, height, dpr, palette, quality, stageTheme, time, stageRush, bossIntensity, devilCorruption } = frame
       const seconds = time / 1000
       const isLow = quality === 'low'
       const isMedium = quality === 'medium'
@@ -4474,12 +4521,14 @@ class PixiRaidBackground {
 
       this.updateBaseGraphics(palette, width, height, quality, dpr)
       this.updateNebula(width, height, seconds, palette, isLow)
+      this.updateBossTint(width, height, seconds, palette, bossIntensity, devilCorruption, isLow)
       this.updateAmbientGlows(width, height, isLow, isMedium, palette)
       this.updateGalaxies(width, height, seconds, stageTheme, isLow, isMedium)
-      this.updateStarfield(width, height, seconds, quality, dpr, palette.starTint, palette.streak)
+      this.updateStarfield(width, height, seconds, quality, dpr, palette.starTint, palette.streak, stageRush)
       this.updateSpeedLines(width, height, seconds, palette.streak, isLow, isMedium)
       this.updateSurface(width, height, seconds, palette, quality, stageTheme)
       this.updatePlanets(width, height, seconds, palette, stageTheme, isLow, isMedium)
+      this.updateRareCometFlyby(width, height, seconds, isLow, isMedium)
       this.updateBackgroundObjects(width, height, seconds, isLow, isMedium)
       this.updateAmbientExplosions(width, height, seconds, isLow, isMedium)
       app.render()
@@ -4579,6 +4628,24 @@ class PixiRaidBackground {
     )
   }
 
+  private updateBossTint(width: number, height: number, seconds: number, palette: RaidPalette, bossIntensity: number, devilCorruption: number, isLow: boolean) {
+    const graphics = this.bossTintGraphics
+    graphics.clear()
+    const intensity = clamp(Math.max(bossIntensity * 0.5, devilCorruption), 0, 1)
+    graphics.visible = !isLow && intensity > 0.01
+    if (!graphics.visible) return
+
+    const pulse = 0.78 + Math.sin(seconds * 2.2) * 0.22
+    const color = devilCorruption > 0 ? 'rgba(239,35,60,0.18)' : palette.nebulaB
+    this.fillRadial(graphics, width * 0.5, height * 0.18, width * 0.64, height * 0.28, color, 'rgba(0,0,0,0)', intensity * (0.32 + pulse * 0.08))
+    const stroke = getPixiFill(devilCorruption > 0 ? 'rgba(248,113,113,0.36)' : 'rgba(251,113,133,0.28)', intensity * 0.11)
+    graphics.rect(0, 0, width, height).stroke({
+      color: stroke.color,
+      alpha: stroke.alpha,
+      width: Math.max(1, Math.min(4, width * 0.0016)),
+    })
+  }
+
   private updateAmbientGlows(width: number, height: number, isLow: boolean, isMedium: boolean, palette: RaidPalette) {
     const graphics = this.ambientGlowGraphics
     graphics.clear()
@@ -4629,7 +4696,7 @@ class PixiRaidBackground {
     }
   }
 
-  private updateStarfield(width: number, height: number, seconds: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
+  private updateStarfield(width: number, height: number, seconds: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string, stageRush: number) {
     const key = getRaidStarfieldCacheKey(width, height, quality, dpr, starTint, streak)
     const isLow = quality === 'low'
     const isMedium = quality === 'medium'
@@ -4672,8 +4739,9 @@ class PixiRaidBackground {
       }
     }
 
-    this.updateScrollingGraphics(this.farStarLayers, farLayerHeight, seconds * 15 - height * 0.13, true)
-    this.updateScrollingGraphics(this.nearStarLayers, nearLayerHeight, seconds * 72 - height * 0.19, !isLow && !isMedium)
+    const rush = clamp(stageRush, 0, 1)
+    this.updateScrollingGraphics(this.farStarLayers, farLayerHeight, seconds * (15 + rush * 42) - height * 0.13, true)
+    this.updateScrollingGraphics(this.nearStarLayers, nearLayerHeight, seconds * (72 + rush * 170) - height * 0.19, !isLow && !isMedium)
   }
 
   private updateScrollingGraphics(layers: Graphics[], layerHeight: number, offset: number, visible: boolean) {
@@ -4806,6 +4874,22 @@ class PixiRaidBackground {
     if (planet1 && !isLow) setPixiSpriteContain(this.planetSprites[0], planet1, width * 0.92, planet1Y, planet1R * 2.45, planet1R * 2.45, 0.86 * fallbackAlpha, seconds * 0.01)
     if (planet2 && !isLow) setPixiSpriteContain(this.planetSprites[1], planet2, width * 0.05, planet2Y, planet2R * 2.8, planet2R * 2.8, 0.7, -18 * DEG)
     if (planet3 && !isLow && !isMedium) setPixiSpriteContain(this.planetSprites[2], planet3, width * 0.24, planet3Y, planet3R * 2.25, planet3R * 2.25, 0.56, -seconds * 0.012)
+  }
+
+  private updateRareCometFlyby(width: number, height: number, seconds: number, isLow: boolean, isMedium: boolean) {
+    const sprite = this.cometFlybySprite
+    const texture = this.assetTextures.get('comet')
+    const cycle = ((seconds + 11.5) % 41) / 41
+    const visible = Boolean(texture && !isLow && !isMedium && cycle < 0.19)
+    sprite.visible = visible
+    if (!texture || !visible) return
+
+    const progress = cycle / 0.19
+    const x = width * (1.12 - progress * 1.28)
+    const y = height * (0.14 + progress * 0.18 + Math.sin(seconds * 0.7) * 0.015)
+    const size = Math.max(44, Math.min(width, height) * 0.085)
+    const alpha = Math.sin(progress * Math.PI) * 0.34
+    setPixiSpriteContain(sprite, texture, x, y, size * 2.2, size, alpha, 90 * DEG)
   }
 
   private updateBackgroundObjects(width: number, height: number, seconds: number, isLow: boolean, isMedium: boolean) {
@@ -9111,12 +9195,12 @@ function drawGodGundamPassiveStrikes(
 
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = fade * (clone ? 0.2 : 0.76)
+    ctx.globalAlpha = fade * (clone ? 0.14 : 0.48)
     if (model !== 'spiegel') {
       const trail = ctx.createLinearGradient(startX, startY, hitX, hitY)
       trail.addColorStop(0, 'rgba(250,204,21,0)')
-      trail.addColorStop(0.38, burning ? 'rgba(251,146,60,0.34)' : 'rgba(250,204,21,0.28)')
-      trail.addColorStop(1, 'rgba(255,255,255,0.78)')
+      trail.addColorStop(0.38, burning ? 'rgba(251,146,60,0.22)' : 'rgba(250,204,21,0.18)')
+      trail.addColorStop(1, 'rgba(255,255,255,0.44)')
       ctx.strokeStyle = trail
       ctx.lineWidth = Math.max(2.4, spriteSize * 0.038)
       ctx.lineCap = 'round'
@@ -9127,7 +9211,7 @@ function drawGodGundamPassiveStrikes(
     }
     if (progress > 0.18 && progress < 0.9) {
       ctx.save()
-      ctx.globalAlpha *= clone ? 0.42 : 1
+      ctx.globalAlpha *= clone ? 0.32 : 0.62
       drawRadialEllipse(ctx, hitX, hitY, targetRadius * (0.88 + progress * 0.18), targetRadius * 0.48, impactStops)
       ctx.restore()
     }
@@ -9155,9 +9239,9 @@ function drawGodGundamPassiveStrikes(
       if (localProgress > 0.38 && localProgress < 0.78) {
         ctx.save()
         ctx.globalCompositeOperation = 'lighter'
-        ctx.globalAlpha = alpha * (clone ? 0.24 : 0.58)
+        ctx.globalAlpha = alpha * (clone ? 0.16 : 0.32)
         drawRadialEllipse(ctx, impactX, impactY, spriteSize * 0.24, spriteSize * 0.14, impactStops)
-        ctx.strokeStyle = 'rgba(255,255,255,0.68)'
+        ctx.strokeStyle = 'rgba(255,255,255,0.36)'
         ctx.lineWidth = Math.max(1, spriteSize * 0.018)
         ctx.beginPath()
         ctx.moveTo(x + attackSide * spriteSize * 0.22, y - spriteSize * 0.04)
@@ -9677,6 +9761,22 @@ function drawPowerUpCanvas(
   const spinBucket = Math.round((((powerUp.spin % 360) + 360) % 360) / 360 * POWER_PICKUP_SPIN_BUCKETS)
   const sprite = getPowerPickupSprite(powerUp.type, size, phaseBucket, spinBucket)
   const drawSize = Math.ceil(size * 2.45)
+  const magnetPulse = clamp(powerUp.magnet ?? 0, 0, 1)
+  if (magnetPulse > 0.01) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.globalAlpha = (0.18 + Math.sin(time / 130 + powerUp.id) * 0.045) * magnetPulse
+    const color = powerColor(powerUp.type)
+    const glow = ctx.createRadialGradient(x, y, drawSize * 0.1, x, y, drawSize * 0.72)
+    glow.addColorStop(0, 'rgba(255,255,255,0.72)')
+    glow.addColorStop(0.34, color)
+    glow.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = glow
+    ctx.beginPath()
+    ctx.arc(x, y, drawSize * 0.72, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
   ctx.drawImage(sprite, x - drawSize / 2, y - drawSize / 2, drawSize, drawSize)
 }
 
@@ -10091,6 +10191,7 @@ export function GradiusRaid({
   const snapshotKeyRef = useRef('')
   const paletteRef = useRef<RaidPalette>(DEFAULT_RAID_PALETTE)
   const paletteClassRef = useRef('')
+  const cameraShakeRef = useRef<CameraShakeState>({ until: 0, duration: 0, strength: 0, seed: 0 })
   const keysRef = useRef(new Set<string>())
   const pointerTargetRef = useRef<Vec | null>(null)
   const pointerVisualRef = useRef<Vec | null>(null)
@@ -10177,6 +10278,7 @@ export function GradiusRaid({
   const killsSincePowerRef = useRef(0)
   const bossAlertRef = useRef(0)
   const bossMessageRef = useRef<BossMessage>(null)
+  const bossEntranceSlamRef = useRef(0)
   const stageClearRef = useRef(0)
   const stageEntryRef = useRef(0)
   const pendingNextStageRef = useRef<number | null>(null)
@@ -10221,6 +10323,7 @@ export function GradiusRaid({
     stageTheme: 1,
     bossAlert: 0,
     bossMessage: null,
+    bossEntranceSlam: 0,
     highScore: highScoreRef.current,
     selectedShipKey: SHIP_OPTIONS[0].key,
     pointer: null,
@@ -10270,6 +10373,7 @@ export function GradiusRaid({
     const player = playerRef.current
     const remotePlayer = remotePlayerRef.current
     const bossAlertBucket = bossAlertRef.current > 0 ? Math.ceil(bossAlertRef.current * 4) : 0
+    const bossEntranceSlamBucket = bossEntranceSlamRef.current > 0 ? Math.ceil(bossEntranceSlamRef.current * 20) : 0
     const stageClearBucket = stageClearRef.current > 0 ? Math.ceil(stageClearRef.current * 30) : 0
     const nukeCooldownBucket = nukeCooldownRef.current > 0 ? Math.ceil(nukeCooldownRef.current) : 0
     const nukeFlashBucket = nukeFlashRef.current > 0 ? Math.ceil(nukeFlashRef.current * 10) : 0
@@ -10283,6 +10387,7 @@ export function GradiusRaid({
       waveRef.current,
       bossAlertBucket,
       bossMessageRef.current ?? '',
+      bossEntranceSlamBucket,
       highScoreRef.current,
       selectedShipRef.current.key,
       stageClearBucket,
@@ -10325,6 +10430,7 @@ export function GradiusRaid({
       stageTheme: stageRef.current,
       bossAlert: bossAlertRef.current,
       bossMessage: bossMessageRef.current,
+      bossEntranceSlam: bossEntranceSlamRef.current,
       highScore: highScoreRef.current,
       selectedShipKey: selectedShipRef.current.key,
       pointer: null,
@@ -10421,6 +10527,7 @@ export function GradiusRaid({
     stageTheme: stageRef.current,
     bossAlert: bossAlertRef.current,
     bossMessage: bossMessageRef.current,
+    bossEntranceSlam: bossEntranceSlamRef.current,
     highScore: highScoreRef.current,
     selectedShipKey: selectedShipRef.current.key,
     hostPointer: cloneVec(pointerVisualRef.current),
@@ -10569,6 +10676,7 @@ export function GradiusRaid({
     stageRef.current = state.stageTheme
     bossAlertRef.current = state.bossAlert
     bossMessageRef.current = state.bossMessage
+    bossEntranceSlamRef.current = state.bossEntranceSlam ?? 0
     highScoreRef.current = state.highScore
     const nextShip = SHIP_OPTIONS.find((ship) => ship.key === state.selectedShipKey) ?? selectedShipRef.current
     if (selectedShipRef.current.key !== nextShip.key) {
@@ -10669,6 +10777,7 @@ export function GradiusRaid({
       stageTheme: state.stageTheme,
       bossAlert: state.bossAlert,
       bossMessage: state.bossMessage,
+      bossEntranceSlam: state.bossEntranceSlam ?? 0,
       highScore: state.highScore,
       selectedShipKey: ownPlayer.ship.key,
       pointer: null,
@@ -11242,7 +11351,7 @@ export function GradiusRaid({
   useEffect(() => {
     if (typeof window === 'undefined') return
     const warmupTimer = window.setTimeout(() => {
-      warmPowerPickupSpriteCache()
+      warmRaidGeneratedEffectSprites()
       warmPickupVoiceSamples()
     }, 250)
     return () => window.clearTimeout(warmupTimer)
@@ -11291,6 +11400,14 @@ export function GradiusRaid({
       paletteRef.current = readRaidPalette(root)
     }
 
+    const shake = getRaidCameraShakeOffset(cameraShakeRef.current, time, cssWidth, cssHeight)
+    root.style.setProperty('--raid-camera-x', `${shake.x.toFixed(2)}px`)
+    root.style.setProperty('--raid-camera-y', `${shake.y.toFixed(2)}px`)
+    const stageRush = stageClearRef.current > 0 ? clamp(stageClearRef.current / STAGE_CLEAR_SECONDS, 0, 1) : 0
+    const activeBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp > 0)
+    const bossIntensity = activeBoss ? 1 : bossAlertRef.current > 0 ? clamp(bossAlertRef.current / 2.4, 0, 1) : 0
+    const devilCorruption = activeBoss?.bossKind === 'devil' ? clamp(0.45 + (1 - activeBoss.hp / Math.max(1, activeBoss.maxHp)) * 0.75, 0, 1) : 0
+
     const pixiDrewBackground = pixiBackgroundRef.current?.render({
       palette: paletteRef.current,
       width: cssWidth,
@@ -11299,6 +11416,9 @@ export function GradiusRaid({
       quality: gfxQuality,
       stageTheme: stageRef.current,
       dpr,
+      stageRush,
+      bossIntensity,
+      devilCorruption,
     }) ?? false
     if (!pixiDrewBackground) {
       drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality, stageRef.current, dpr)
@@ -12107,6 +12227,17 @@ export function GradiusRaid({
     addRipple(x, kind === 'wreck' ? 24 : 38, color, kind === 'wreck' ? 18 : 14)
   }, [addRipple])
 
+  const triggerScreenShake = useCallback((strength: number, durationMs: number) => {
+    const now = performance.now()
+    const current = cameraShakeRef.current
+    cameraShakeRef.current = {
+      until: now + durationMs,
+      duration: durationMs,
+      strength: Math.max(strength, current.until > now ? current.strength * 0.72 : 0),
+      seed: Math.random() * Math.PI * 2,
+    }
+  }, [])
+
   const detonateNuke = useCallback((targetX = 50, targetY = 46) => {
     if (phaseRef.current !== 'playing') return
     const player = playerRef.current
@@ -12200,11 +12331,12 @@ export function GradiusRaid({
     addRipple(targetX, targetY, '#fbbf24', 30)
     addRipple(player.x, player.y, '#fef3c7', 14)
     spawnSparks(targetX, targetY, '#fbbf24', 80, 9)
+    triggerScreenShake(3.4, 430)
     playGameSound('explosion_big')
     if (destroyed >= 5) window.setTimeout(() => playGameSound('combo'), 120)
     if (vaporizedAsteroids >= 2 || vaporizedMeteors >= 4) window.setTimeout(() => playGameSound('score'), 180)
     syncSnapshot()
-  }, [addRipple, spawnSparks, syncSnapshot])
+  }, [addRipple, spawnSparks, syncSnapshot, triggerScreenShake])
 
   const activateNuke = useCallback((sourcePlayer = playerRef.current) => {
     const session = multiplayerSessionRef.current
@@ -12380,6 +12512,7 @@ export function GradiusRaid({
     killsSincePowerRef.current = 0
     bossAlertRef.current = 0
     bossMessageRef.current = null
+    bossEntranceSlamRef.current = 0
     stageClearRef.current = 0
     stageEntryRef.current = 0
     pendingNextStageRef.current = null
@@ -13302,9 +13435,11 @@ export function GradiusRaid({
     }
     bossAlertRef.current = 1
     bossMessageRef.current = 'incoming'
+    bossEntranceSlamRef.current = BOSS_ENTRANCE_SLAM_SECONDS
+    triggerScreenShake(bossKind === 'devil' || bossKind === 'final' ? 4.8 : 3.6, 260)
     startRaidBgm(stage, 'boss')
-    playGameSound('countdown')
-  }, [playerName, startRaidBgm])
+    playGameSound('stinger')
+  }, [playerName, startRaidBgm, triggerScreenShake])
 
   const spawnPowerUp = useCallback((x: number, y: number, guaranteed = false) => {
     const player = playerRef.current
@@ -13727,10 +13862,12 @@ export function GradiusRaid({
       randomEventSpawnTimerRef.current = 0
       player.x += (50 - player.x) * Math.min(1, dt * 4.8)
       player.y = Math.max(-26, player.y - dt * 38)
+      player.engineBoost = Math.max(player.engineBoost ?? 0, 1.18)
       player.invuln = Math.max(player.invuln, 0.45)
       if (remotePlayer) {
         remotePlayer.x += (58 - remotePlayer.x) * Math.min(1, dt * 4.8)
         remotePlayer.y = Math.max(-26, remotePlayer.y - dt * 38)
+        remotePlayer.engineBoost = Math.max(remotePlayer.engineBoost ?? 0, 1.18)
         remotePlayer.invuln = Math.max(remotePlayer.invuln, 0.45)
       }
       updateSparksInPlace(sparksRef.current, dt)
@@ -14232,6 +14369,10 @@ export function GradiusRaid({
       }
       const t = nowSeconds + enemy.phase
       const bossKind = enemy.bossKind ?? 'carrier'
+      if (enemy.isBoss && enemy.hp > 0 && !enemy.bossHpStingerPlayed && enemy.hp / Math.max(1, enemy.maxHp) <= 0.25) {
+        enemy.bossHpStingerPlayed = true
+        playGameSound('stinger_2')
+      }
       const finalRage = bossKind === 'final' ? clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1) : 0
       const bossX =
         bossKind === 'devil' ? 50 :
@@ -14405,6 +14546,7 @@ export function GradiusRaid({
             }
             spawnSparks(enemy.x, enemy.y + 12, '#ef4444', 68, 9)
             playGameSound('laser')
+            triggerScreenShake(chargePattern === 'diagonal' ? 1.5 : 2.25, chargePattern === 'rotate' ? 300 : 220)
             if (chargePattern === 'diagonal') {
               devilSnakeBurstLeft = Math.max(0, devilSnakeBurstLeft - 1)
               if (devilSnakeBurstLeft <= 0 && beamVolleyLeft > 0) beamVolleyLeft = Math.max(0, beamVolleyLeft - 1)
@@ -14840,13 +14982,27 @@ export function GradiusRaid({
     const powerUps = powerUpsRef.current
     let livePowerUpCount = 0
     for (const powerUp of powerUps) {
+      const targetPlayer = getNearestLivingPlayerThisTick(powerUp)
+      const targetDx = targetPlayer.x - powerUp.x
+      const targetDy = targetPlayer.y - powerUp.y
+      const targetDistanceSq = targetDx * targetDx + targetDy * targetDy
+      const magnetRange = powerUp.type === 'levelup' ? 31 : 18
+      const magnetStrength = targetPlayer.hp > 0 && targetDistanceSq < magnetRange * magnetRange
+        ? 1 - Math.sqrt(targetDistanceSq) / magnetRange
+        : 0
       if (powerUp.type === 'levelup') {
-        const targetPlayer = getNearestLivingPlayerThisTick(powerUp)
         powerUp.x += (targetPlayer.x - powerUp.x) * Math.min(1, dt * 3.2)
-        powerUp.y += powerUp.vy * dt + (targetPlayer.y - powerUp.y) * Math.min(1, dt * 0.8)
+        powerUp.y += powerUp.vy * dt + (targetPlayer.y - powerUp.y) * Math.min(1, dt * (0.8 + magnetStrength * 1.1))
       } else {
         powerUp.y += powerUp.vy * dt
+        if (magnetStrength > 0) {
+          const pull = Math.min(1, dt * (1.4 + magnetStrength * 5.4))
+          powerUp.x += targetDx * pull * 0.82
+          powerUp.y += targetDy * pull * 0.42
+        }
       }
+      const targetMagnet = clamp(magnetStrength * 1.25, 0, 1)
+      powerUp.magnet = (powerUp.magnet ?? 0) + (targetMagnet - (powerUp.magnet ?? 0)) * Math.min(1, dt * 8)
       powerUp.spin += dt * 180
       if (powerUp.y < HEIGHT + 8) {
         powerUps[livePowerUpCount] = powerUp
@@ -15241,10 +15397,10 @@ export function GradiusRaid({
         const hitTarget = meleeCandidate.target
         spawnGodGundamPassiveStrike(owner, hitTarget, visualIndex, sourceOverride, clone, attackSideOverride)
         const strikeEnemy = meleeCandidate.kind === 'enemy' ? meleeCandidate.target as Enemy : null
-        spawnSparks(hitTarget.x, hitTarget.y, clone ? '#e2e8f0' : meleeColor, strikeEnemy?.isBoss ? 12 : strikeEnemy?.isMiniBoss ? 9 : 6, clone ? 4 : 5)
+        spawnSparks(hitTarget.x, hitTarget.y, clone ? '#e2e8f0' : meleeColor, strikeEnemy?.isBoss ? 7 : strikeEnemy?.isMiniBoss ? 6 : 4, clone ? 3 : 4)
         if (!clone) playCoreLanderPhysicalAttackSound(godMeleeStrikeId + hitTarget.id)
-        if (!clone && godMeleeStrikeId % 4 === 0) addRipple(hitTarget.x, hitTarget.y, meleeRippleColor, strikeEnemy?.isBoss ? 9 : 6)
-        if (clone && visualIndex % 3 === 0) addRipple(hitTarget.x, hitTarget.y, '#e2e8f0', strikeEnemy?.isBoss ? 7 : 5)
+        if (!clone && godMeleeStrikeId % 4 === 0) addRipple(hitTarget.x, hitTarget.y, meleeRippleColor, strikeEnemy?.isBoss ? 6 : 4)
+        if (clone && visualIndex % 3 === 0) addRipple(hitTarget.x, hitTarget.y, '#e2e8f0', strikeEnemy?.isBoss ? 5 : 3)
       }
       const damageMeleeCandidate = (meleeCandidate: GodMeleeCandidate & { distance: number }, damageScale = 1) => {
         if (meleeCandidate.kind === 'enemy') {
@@ -15560,6 +15716,7 @@ export function GradiusRaid({
     compactInPlace(shotsRef.current, (shot) => shot.y > -50)
     if (bossDefeatedThisFrame) {
       const defeatedBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp <= 0)
+      triggerScreenShake(defeatedBoss?.bossKind === 'devil' || defeatedBoss?.bossKind === 'final' ? 4 : 3, 520)
       const scheduleBossDefeatExplosions = (boss: Enemy, dropLevelUp: boolean) => {
         const explosionDelays = [80, 220, 380, 560, 760, 980, 1220, 1500, 1840, 2220, 2620]
         explosionDelays.forEach((delay, index) => {
@@ -15569,6 +15726,7 @@ export function GradiusRaid({
             const color = index % 2 === 0 ? '#fda4af' : '#fbbf24'
             spawnSparks(boss.x + (Math.random() - 0.5) * spreadX, boss.y + 10 + (Math.random() - 0.5) * spreadY, color, 52, 9)
             addRipple(boss.x + (Math.random() - 0.5) * spreadX * 0.5, boss.y + 10 + (Math.random() - 0.5) * spreadY * 0.5, index % 2 === 0 ? '#fb7185' : '#fbbf24', 15 + index * 1.2)
+            if (index === 0 || index === 4 || index === 9) triggerScreenShake(1.6, 180)
           }, delay)
         })
         if (dropLevelUp) spawnLevelUpPowerUp(boss.x, boss.y)
@@ -15843,22 +16001,27 @@ export function GradiusRaid({
     if (remotePlayerRef.current && remotePlayerRef.current.score > highScoreRef.current) {
       highScoreRef.current = remotePlayerRef.current.score
     }
-  }, [activateNuke, addRipple, damagePlayer, destroyPlayerByBossCollision, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, reportRaidRunComplete, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore])
+  }, [activateNuke, addRipple, damagePlayer, destroyPlayerByBossCollision, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, reportRaidRunComplete, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore, triggerScreenShake])
 
   useEffect(() => {
     const tick = (time: number) => {
       const dt = Math.min(0.033, (time - lastTimeRef.current) / 1000 || 0)
       lastTimeRef.current = time
+      const entranceSlamActive = phaseRef.current === 'playing' && bossEntranceSlamRef.current > 0
+      if (bossEntranceSlamRef.current > 0) {
+        bossEntranceSlamRef.current = Math.max(0, bossEntranceSlamRef.current - dt)
+      }
+      const gameplayDt = entranceSlamActive ? dt * BOSS_ENTRANCE_SLOWMO_SCALE : dt
       const session = multiplayerSessionRef.current
-      if (!session || session.isHost) updateGame(dt)
+      if (!session || session.isHost) updateGame(gameplayDt)
       // Tick the victory blackout on every client (host sets it in updateGame, guest in applyMultiplayerState)
       if (victoryBlackoutRef.current > 0) {
         victoryBlackoutRef.current = Math.max(0, victoryBlackoutRef.current - dt)
       }
       if (session?.isHost) sendMultiplayerState(time)
       else if (session) {
-        predictGuestPlayer(dt)
-        advanceGuestVisuals(dt)
+        predictGuestPlayer(gameplayDt)
+        advanceGuestVisuals(gameplayDt)
         sendMultiplayerInput(time)
       }
       if (session) updateMultiplayerConnection(time)
@@ -15978,6 +16141,10 @@ export function GradiusRaid({
   const nukeHint = snapshot.phase === 'playing' && snapshot.nukeCooldown > 0 ? hudText.cooldown : hudText.space
   const bossIncoming = snapshot.bossAlert > 0 && snapshot.bossMessage === 'incoming'
   const bossClear = snapshot.bossAlert > 0 && snapshot.bossMessage === 'clear'
+  const bossEntranceSlam = snapshot.phase === 'playing'
+    ? clamp(snapshot.bossEntranceSlam / BOSS_ENTRANCE_SLAM_SECONDS, 0, 1)
+    : 0
+  const bossEntranceSlamActive = bossEntranceSlam > 0
   const isMultiplayer = Boolean(multiplayerSession)
   const isEndlessRun = snapshot.raidMode === 'endless'
   const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
@@ -16083,6 +16250,14 @@ export function GradiusRaid({
         <canvas ref={fxCanvasRef} className="raid__fx-canvas" />
       </div>
 
+      {bossEntranceSlamActive && (
+        <div
+          className="raid__boss-slam"
+          style={{ opacity: 0.18 + bossEntranceSlam * 0.42 }}
+          aria-hidden="true"
+        />
+      )}
+
       {nukeReady && (
         <button
           className="raid__nuke-quick"
@@ -16113,7 +16288,7 @@ export function GradiusRaid({
       )}
 
       {bossIncoming && (
-        <div className="raid__boss-warning" role="alert" aria-live="assertive">
+        <div className={bossEntranceSlamActive ? 'raid__boss-warning raid__boss-warning--slam' : 'raid__boss-warning'} role="alert" aria-live="assertive">
           <div className="raid__boss-warning-panel raid__boss-warning-panel--top">
             <span>{hudText.attention}</span>
           </div>

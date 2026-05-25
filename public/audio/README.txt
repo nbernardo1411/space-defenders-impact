@@ -18,7 +18,6 @@ The game loads these automatically at runtime:
 - sfx_ui_swap.wav
 - sfx_ui_clear.wav
 - sfx_countdown.wav
-- sfx_whoosh.wav
 - sfx_score.wav
 - pickups/pickup_levelup.wav
 

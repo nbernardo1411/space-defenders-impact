@@ -36,7 +36,8 @@ export type GameSoundKind =
   | 'combo'
   | 'levelup'
   | 'countdown'
-  | 'whoosh'
+  | 'stinger'
+  | 'stinger_2'
   | 'laser'
   | 'rocket'
   | 'artillery'
@@ -103,7 +104,8 @@ const DEFAULT_AUDIO_PACK: SoundPackConfig = {
     swap: getPublicAssetUrl('audio/sfx_ui_swap.wav'),
     clear: getPublicAssetUrl('audio/sfx_ui_clear.wav'),
     countdown: getPublicAssetUrl('audio/sfx_countdown.wav'),
-    whoosh: getPublicAssetUrl('audio/sfx_whoosh.wav'),
+    stinger: getPublicAssetUrl('audio/sfx_stinger.mp3'),
+    stinger_2: getPublicAssetUrl('audio/sfx_stinger_2.mp3'),
     score: getPublicAssetUrl('audio/sfx_score.wav'),
   },
 }
@@ -133,6 +135,8 @@ const KIND_OUTPUT_GAIN: Partial<Record<GameSoundKind, number>> = {
   g_atk_punch_2: 0.52,
   g_atk_kick: 0.5,
   shoot: 0.78,
+  stinger: 0.58,
+  stinger_2: 0.58,
 }
 const RECENT_SFX_WINDOW_MS = 240
 const RAPID_FIRE_MIN_INTERVAL_MS: Partial<Record<GameSoundKind, number>> = {
@@ -145,6 +149,8 @@ const RAPID_FIRE_MIN_INTERVAL_MS: Partial<Record<GameSoundKind, number>> = {
   g_atk_punch_1: 72,
   g_atk_punch_2: 72,
   g_atk_kick: 82,
+  stinger: 1200,
+  stinger_2: 1200,
 }
 
 function mergeAudioMix(base: AudioMixSettings, override?: Partial<AudioMixSettings>): AudioMixSettings {
@@ -270,6 +276,8 @@ function getKindBusGain(kind: GameSoundKind) {
     kind === 'swap' ||
     kind === 'clear' ||
     kind === 'countdown' ||
+    kind === 'stinger' ||
+    kind === 'stinger_2' ||
     kind === 'score' ||
     kind === 'levelup' ||
     kind === 'gameover'
@@ -584,7 +592,7 @@ export function playGameSound(
       return
     }
     if (kind === 'rocket') {
-      // Deep whoosh with resonance
+      // Deep rocket resonance
       tone(280, 120, 'sawtooth', 0.08, 0, kindGain)
       tone(150, 150, 'sine', 0.07, 20, kindGain)
       return
@@ -617,11 +625,6 @@ export function playGameSound(
     }
     if (kind === 'countdown') {
       tone(660, 100, 'square', 0.035, 0, kindGain)
-      return
-    }
-    if (kind === 'whoosh') {
-      tone(300, 120, 'sawtooth', 0.03, 0, kindGain)
-      tone(600, 80, 'sawtooth', 0.025, 30, kindGain)
       return
     }
     if (kind === 'gameover') {
