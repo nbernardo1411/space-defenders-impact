@@ -915,7 +915,7 @@ const powerPickupMagnetGlowSpriteCache = new Map<string, CachedCanvasDrawSource>
 const stageBossRenderCache = new Map<string, StageBossRenderCacheEntry>()
 const STAGE_BOSS_RENDER_CACHE_LIMIT = 10
 const STAGE_BOSS_RENDER_FRAME_MS = 50
-const STAGE_BOSS_RENDER_SIZE_CAP = 520
+const STAGE_BOSS_RENDER_SIZE_CAP = 680
 const bossAuraSpriteCache = new Map<string, StageBossRenderCacheEntry>()
 const BOSS_AURA_CACHE_LIMIT = 12
 const BOSS_AURA_FRAME_MS = 33
@@ -924,6 +924,12 @@ const BOSS_RETICLE_CACHE_LIMIT = 8
 const BOSS_RETICLE_FRAME_MS = 66
 const bossBarSpriteCache = new Map<string, HTMLCanvasElement>()
 const BOSS_BAR_CACHE_LIMIT = 40
+function getOffscreenRenderScale(ctx: CanvasRenderingContext2D, size: number) {
+  const transformScale = Math.max(1, Math.abs(ctx.getTransform?.().a || 1))
+  const dpr = typeof window === 'undefined' ? transformScale : Math.max(transformScale, window.devicePixelRatio || 1)
+  const cap = size >= 520 ? 1.35 : size >= 360 ? 1.5 : 1.75
+  return Math.max(1, Math.min(cap, dpr))
+}
 const godBarrageDrawTargetsScratch: Enemy[] = []
 const godBarrageDamageTargetsScratch: Enemy[] = []
 const mesiahLiveTargetsScratch: Enemy[] = []
@@ -5311,15 +5317,17 @@ function drawCachedBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, x: numb
     drawBossAura(ctx, enemy, x, y, size, time)
     return
   }
+  const renderScale = getOffscreenRenderScale(ctx, size)
   const sizeBucket = Math.max(60, Math.min(560, Math.round(size / 8) * 8))
   const frameBucket = Math.floor(time / BOSS_AURA_FRAME_MS)
-  const key = `aura:${kind}:${sizeBucket}:${frameBucket}`
+  const scaleBucket = Math.round(renderScale * 100)
+  const key = `aura:${kind}:${sizeBucket}:${scaleBucket}:${frameBucket}`
   let entry = bossAuraSpriteCache.get(key)
   if (!entry) {
     const canvasSize = Math.ceil(sizeBucket * 2.8)
     const canvas = document.createElement('canvas')
-    canvas.width = canvasSize
-    canvas.height = canvasSize
+    canvas.width = Math.max(1, Math.ceil(canvasSize * renderScale))
+    canvas.height = Math.max(1, Math.ceil(canvasSize * renderScale))
     entry = { canvas, frameBucket: Number.NaN }
     trimOldestMapEntry(bossAuraSpriteCache, BOSS_AURA_CACHE_LIMIT)
     bossAuraSpriteCache.set(key, entry)
@@ -5332,7 +5340,7 @@ function drawCachedBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, x: numb
     const seconds = bucketTime / 1000
     cCtx.setTransform(1, 0, 0, 1, 0, 0)
     cCtx.clearRect(0, 0, canvas.width, canvas.height)
-    cCtx.translate(canvas.width / 2, canvas.height / 2)
+    cCtx.setTransform(renderScale, 0, 0, renderScale, canvas.width / 2, canvas.height / 2)
     cCtx.globalCompositeOperation = 'lighter'
     cCtx.globalAlpha = 0.9
     drawRadialEllipse(cCtx, 0, 0, sizeBucket * 0.72, sizeBucket * 0.72, [
@@ -5360,7 +5368,7 @@ function drawCachedBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, x: numb
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   ctx.globalAlpha = 0.9
-  ctx.drawImage(canvas, x - canvas.width / 2, y - canvas.height / 2)
+  ctx.drawImage(canvas, x - canvas.width / renderScale / 2, y - canvas.height / renderScale / 2, canvas.width / renderScale, canvas.height / renderScale)
   ctx.restore()
 }
 
@@ -5392,16 +5400,18 @@ function drawCachedBossReticle(ctx: CanvasRenderingContext2D, x: number, y: numb
     drawBossReticle(ctx, x, y, size, time, isFinal)
     return
   }
+  const renderScale = getOffscreenRenderScale(ctx, size)
   const sizeBucket = Math.max(40, Math.min(560, Math.round(size / 8) * 8))
   const rotBucket = Math.floor(time / BOSS_RETICLE_FRAME_MS)
-  const key = `reticle:${isFinal ? 1 : 0}:${sizeBucket}:${rotBucket}`
+  const scaleBucket = Math.round(renderScale * 100)
+  const key = `reticle:${isFinal ? 1 : 0}:${sizeBucket}:${scaleBucket}:${rotBucket}`
   let entry = bossReticleSpriteCache.get(key)
   if (!entry) {
     const extent = sizeBucket * (isFinal ? 0.74 : 0.64)
     const canvasSize = Math.ceil(extent * 2 + 40)
     const canvas = document.createElement('canvas')
-    canvas.width = canvasSize
-    canvas.height = canvasSize
+    canvas.width = Math.max(1, Math.ceil(canvasSize * renderScale))
+    canvas.height = Math.max(1, Math.ceil(canvasSize * renderScale))
     entry = { canvas, frameBucket: Number.NaN }
     trimOldestMapEntry(bossReticleSpriteCache, BOSS_RETICLE_CACHE_LIMIT)
     bossReticleSpriteCache.set(key, entry)
@@ -5410,10 +5420,9 @@ function drawCachedBossReticle(ctx: CanvasRenderingContext2D, x: number, y: numb
     const { canvas } = entry
     const cCtx = canvas.getContext('2d')
     if (!cCtx) { drawBossReticle(ctx, x, y, size, time, isFinal); return }
-    const cx = canvas.width / 2
     cCtx.setTransform(1, 0, 0, 1, 0, 0)
     cCtx.clearRect(0, 0, canvas.width, canvas.height)
-    cCtx.translate(cx, cx)
+    cCtx.setTransform(renderScale, 0, 0, renderScale, canvas.width / 2, canvas.height / 2)
     cCtx.rotate((rotBucket * BOSS_RETICLE_FRAME_MS) / 2400)
     cCtx.globalAlpha = isFinal ? 0.56 : 0.44
     cCtx.strokeStyle = 'rgba(251,191,36,0.72)'
@@ -5435,7 +5444,7 @@ function drawCachedBossReticle(ctx: CanvasRenderingContext2D, x: number, y: numb
     entry.frameBucket = rotBucket
   }
   const { canvas } = entry
-  ctx.drawImage(canvas, x - canvas.width / 2, y - canvas.height / 2)
+  ctx.drawImage(canvas, x - canvas.width / renderScale / 2, y - canvas.height / renderScale / 2, canvas.width / renderScale, canvas.height / renderScale)
 }
 
 function drawBossShield(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color = '#38bdf8') {
@@ -5692,8 +5701,10 @@ function drawCachedBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: numbe
   const framePadY = isFinal ? 7 : 5
   const fill = clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1)
   const fillBucket = Math.round(fill * 200)
+  const renderScale = getOffscreenRenderScale(ctx, size)
   const sizeBucket = Math.round(size / 4) * 4
-  const key = `bbar:${enemy.bossKind}:${sizeBucket}:${fillBucket}`
+  const scaleBucket = Math.round(renderScale * 100)
+  const key = `bbar:${enemy.bossKind}:${sizeBucket}:${scaleBucket}:${fillBucket}`
   const leftPad = Math.ceil(framePadX + skullRadius * 2 + 6)
   const topPad = Math.ceil(Math.max(10, size * 0.032) + framePadY + 10)
   const bottomPad = isFinal ? 36 : 22
@@ -5702,10 +5713,13 @@ function drawCachedBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: numbe
   let canvas = bossBarSpriteCache.get(key)
   if (!canvas) {
     canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, canvasW)
-    canvas.height = Math.max(1, canvasH)
+    canvas.width = Math.max(1, Math.ceil(canvasW * renderScale))
+    canvas.height = Math.max(1, Math.ceil(canvasH * renderScale))
     const bCtx = canvas.getContext('2d')
     if (!bCtx) { drawBossBar(ctx, enemy, x, y, size); return }
+    bCtx.setTransform(renderScale, 0, 0, renderScale, 0, 0)
+    bCtx.imageSmoothingEnabled = true
+    bCtx.imageSmoothingQuality = 'high'
     const barX = leftPad
     const barY = topPad
     const textX = leftPad + barWidth / 2
@@ -5805,7 +5819,7 @@ function drawCachedBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: numbe
   }
   const screenBarX = x - barWidth / 2
   const screenBarY = y + size * 0.5 + (isFinal ? 20 : 16)
-  ctx.drawImage(canvas, screenBarX - leftPad, screenBarY - topPad)
+  ctx.drawImage(canvas, screenBarX - leftPad, screenBarY - topPad, canvas.width / renderScale, canvas.height / renderScale)
 }
 
 function getNormalEnemyFilter(time: number) {
@@ -7502,16 +7516,18 @@ function drawCachedStageBossBody(
     return
   }
 
-  const renderSize = Math.max(180, Math.min(STAGE_BOSS_RENDER_SIZE_CAP, Math.round(size / 8) * 8))
+  const renderScale = getOffscreenRenderScale(ctx, size)
+  const renderSize = Math.max(180, Math.min(STAGE_BOSS_RENDER_SIZE_CAP, Math.ceil(size / 8) * 8))
   const frameBucket = Math.floor(time / STAGE_BOSS_RENDER_FRAME_MS)
   const rageBucket = kind === 'final' ? Math.round(clamp(rage, 0, 1) * 14) : 0
-  const cacheKey = `${kind}:${renderSize}:${redEyeWarning ? 1 : 0}:${hideHead ? 1 : 0}:${rageBucket}`
+  const scaleBucket = Math.round(renderScale * 100)
+  const cacheKey = `${kind}:${renderSize}:${scaleBucket}:${redEyeWarning ? 1 : 0}:${hideHead ? 1 : 0}:${rageBucket}`
   let entry = stageBossRenderCache.get(cacheKey)
   if (!entry) {
     const canvasSize = Math.ceil(renderSize * 2.55)
     const canvas = document.createElement('canvas')
-    canvas.width = canvasSize
-    canvas.height = canvasSize
+    canvas.width = Math.max(1, Math.ceil(canvasSize * renderScale))
+    canvas.height = Math.max(1, Math.ceil(canvasSize * renderScale))
     entry = { canvas, frameBucket: Number.NaN }
     trimOldestMapEntry(stageBossRenderCache, STAGE_BOSS_RENDER_CACHE_LIMIT)
     stageBossRenderCache.set(cacheKey, entry)
@@ -7528,15 +7544,15 @@ function drawCachedStageBossBody(
     cachedCtx.clearRect(0, 0, canvas.width, canvas.height)
     cachedCtx.imageSmoothingEnabled = true
     cachedCtx.imageSmoothingQuality = 'high'
-    cachedCtx.translate(canvas.width * 0.5, canvas.height * 0.5)
+    cachedCtx.setTransform(renderScale, 0, 0, renderScale, canvas.width * 0.5, canvas.height * 0.5)
     drawStageBossBodyDirect(cachedCtx, kind, renderSize, frameBucket * STAGE_BOSS_RENDER_FRAME_MS, redEyeWarning, hideHead, rageBucket / 14)
     entry.frameBucket = frameBucket
   }
 
   const { canvas } = entry
   const drawScale = size / renderSize
-  const drawWidth = canvas.width * drawScale
-  const drawHeight = canvas.height * drawScale
+  const drawWidth = (canvas.width / renderScale) * drawScale
+  const drawHeight = (canvas.height / renderScale) * drawScale
   ctx.drawImage(canvas, -drawWidth * 0.5, -drawHeight * 0.5, drawWidth, drawHeight)
 }
 
