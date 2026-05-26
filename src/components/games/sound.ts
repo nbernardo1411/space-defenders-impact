@@ -65,6 +65,13 @@ export type AudioMixSettings = {
   ui: number
 }
 
+export type GameBgmDuckProfile = {
+  volumeScale: number
+  attackMs: number
+  holdMs: number
+  releaseMs: number
+}
+
 const DEFAULT_AUDIO_MIX: AudioMixSettings = {
   master: 1,
   bgm: 0.8,
@@ -121,6 +128,8 @@ declare global {
   }
 }
 
+type GameSoundDucker = (kind: GameSoundKind) => void
+
 let soundPackCache: SoundPackConfig | null = null
 let audioMixCache: AudioMixSettings | null = null
 let bgmElement: HTMLAudioElement | null = null
@@ -128,8 +137,10 @@ let noiseBuffer: AudioBuffer | null = null
 let bgmTargetVolume = 0
 let bgmDuckAnimation = 0
 let bgmDuckRestoreTimer = 0
+let bgmDuckRestoreAt = 0
 const recentSfxTimesMs: number[] = []
 const lastKindPlayMs: Partial<Record<GameSoundKind, number>> = {}
+const gameSoundDuckers = new Set<GameSoundDucker>()
 
 const MAX_SFX_OUTPUT = 0.78
 const KIND_OUTPUT_GAIN: Partial<Record<GameSoundKind, number>> = {
@@ -276,6 +287,13 @@ export function setGameAudioMixSettings(settings: Partial<AudioMixSettings>) {
   }
 }
 
+export function registerGameSoundDucker(ducker: GameSoundDucker) {
+  gameSoundDuckers.add(ducker)
+  return () => {
+    gameSoundDuckers.delete(ducker)
+  }
+}
+
 function getKindBusGain(kind: GameSoundKind) {
   const mix = getGameAudioMixSettings()
   const kindGain = KIND_OUTPUT_GAIN[kind] ?? 1
@@ -314,6 +332,27 @@ function getBgmTargetVolume(pack = getSoundPackConfig()) {
   return clamp01((pack.bgmVolume ?? 0.32) * mix.master * mix.bgm)
 }
 
+export function getGameSoundBgmDuckProfile(kind: GameSoundKind): GameBgmDuckProfile | null {
+  if (kind === 'stinger' || kind === 'stinger_2') {
+    return {
+      volumeScale: BGM_STINGER_DUCK_VOLUME,
+      attackMs: BGM_STINGER_DUCK_ATTACK_MS,
+      holdMs: BGM_STINGER_DUCK_HOLD_MS,
+      releaseMs: BGM_STINGER_DUCK_RELEASE_MS,
+    }
+  }
+  if (kind === 'nuke_explosion') {
+    return { volumeScale: 0.18, attackMs: 45, holdMs: 940, releaseMs: 620 }
+  }
+  if (kind === 'destroyed_explosion') {
+    return { volumeScale: 0.2, attackMs: 45, holdMs: 820, releaseMs: 560 }
+  }
+  if (kind === 'explosion_big') {
+    return { volumeScale: 0.34, attackMs: 40, holdMs: 420, releaseMs: 380 }
+  }
+  return null
+}
+
 function setBgmVolumeSmooth(target: number, durationMs: number) {
   if (typeof window === 'undefined' || !bgmElement) return
   const audio = bgmElement
@@ -335,15 +374,31 @@ function setBgmVolumeSmooth(target: number, durationMs: number) {
   step()
 }
 
-function duckBgmForStinger() {
+function duckBgmForSound(kind: GameSoundKind) {
   if (typeof window === 'undefined' || !bgmElement) return
+  const profile = getGameSoundBgmDuckProfile(kind)
+  if (!profile) return
   if (bgmDuckRestoreTimer) window.clearTimeout(bgmDuckRestoreTimer)
-  const duckedVolume = bgmTargetVolume * BGM_STINGER_DUCK_VOLUME
-  setBgmVolumeSmooth(duckedVolume, BGM_STINGER_DUCK_ATTACK_MS)
+  const now = nowMs()
+  const duckedVolume = Math.min(bgmElement.volume, bgmTargetVolume * profile.volumeScale)
+  bgmDuckRestoreAt = Math.max(bgmDuckRestoreAt, now + profile.holdMs)
+  setBgmVolumeSmooth(duckedVolume, profile.attackMs)
   bgmDuckRestoreTimer = window.setTimeout(() => {
     bgmDuckRestoreTimer = 0
-    setBgmVolumeSmooth(bgmTargetVolume, BGM_STINGER_DUCK_RELEASE_MS)
-  }, BGM_STINGER_DUCK_HOLD_MS)
+    bgmDuckRestoreAt = 0
+    setBgmVolumeSmooth(bgmTargetVolume, profile.releaseMs)
+  }, Math.max(0, bgmDuckRestoreAt - now))
+}
+
+function notifyGameSoundDuckers(kind: GameSoundKind) {
+  if (gameSoundDuckers.size <= 0) return
+  gameSoundDuckers.forEach((ducker) => {
+    try {
+      ducker(kind)
+    } catch {
+      // External duckers should never block sound playback.
+    }
+  })
 }
 
 function loadSoundPackConfig(): SoundPackConfig {
@@ -580,6 +635,7 @@ export function stopBGM() {
     }
     bgmDuckAnimation = 0
     bgmDuckRestoreTimer = 0
+    bgmDuckRestoreAt = 0
     bgmTargetVolume = 0
     if (bgmElement) {
       bgmElement.pause()
@@ -600,8 +656,9 @@ export function playGameSound(
     const eventGain = getSfxEventGain(kind)
     if (eventGain <= 0) return
     const kindGain = eventGain * getKindBusGain(kind)
-    if (kind === 'stinger' || kind === 'stinger_2') {
-      duckBgmForStinger()
+    if (getGameSoundBgmDuckProfile(kind)) {
+      duckBgmForSound(kind)
+      notifyGameSoundDuckers(kind)
     }
 
     if (kind === 'explosion') {

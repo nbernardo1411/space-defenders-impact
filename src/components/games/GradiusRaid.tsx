@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Application, Assets, Container, FillGradient, Graphics, Sprite, Texture } from 'pixi.js'
-import { getGameAudioMixSettings, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, setGraphicsQuality, stopBGM, type GameSoundKind } from './sound'
+import { getGameAudioMixSettings, getGameSoundBgmDuckProfile, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, registerGameSoundDucker, setGraphicsQuality, stopBGM, type GameSoundKind } from './sound'
 import type { GraphicsQuality } from './sound'
 import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
 import { isCreatorPlayerName, submitLeaderboardScore } from '../../leaderboards'
@@ -10629,6 +10629,10 @@ export function GradiusRaid({
   const highScoreRef = useRef(getHighScore())
   const unlockedStageRef = useRef(getUnlockedStage())
   const raidBgmElementRef = useRef<HTMLAudioElement | null>(null)
+  const raidBgmTargetVolumeRef = useRef(0)
+  const raidBgmDuckAnimationRef = useRef(0)
+  const raidBgmDuckRestoreTimerRef = useRef(0)
+  const raidBgmDuckRestoreAtRef = useRef(0)
   const raidBgmModeRef = useRef<RaidBgmMode | null>(null)
   const raidBgmStageRef = useRef(0)
   const raidBgmTrackRef = useRef<string | null>(null)
@@ -11533,7 +11537,70 @@ export function GradiusRaid({
     ripplesRef.current.push(acquireRipple(x, y, color, size * 0.72, rippleLife))
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const getNow = () => (
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now()
+    )
+    const setRaidBgmVolumeSmooth = (audio: HTMLAudioElement, target: number, durationMs: number) => {
+      const startVolume = audio.volume
+      const startedAt = getNow()
+      if (raidBgmDuckAnimationRef.current) window.cancelAnimationFrame(raidBgmDuckAnimationRef.current)
+
+      const step = () => {
+        if (raidBgmElementRef.current !== audio) return
+        const progress = durationMs <= 0 ? 1 : Math.max(0, Math.min(1, (getNow() - startedAt) / durationMs))
+        const eased = 1 - Math.pow(1 - progress, 3)
+        audio.volume = Math.max(0, Math.min(1, startVolume + (target - startVolume) * eased))
+        if (progress < 1) {
+          raidBgmDuckAnimationRef.current = window.requestAnimationFrame(step)
+        } else {
+          raidBgmDuckAnimationRef.current = 0
+        }
+      }
+      step()
+    }
+    const releaseDucker = registerGameSoundDucker((kind) => {
+      const profile = getGameSoundBgmDuckProfile(kind)
+      const audio = raidBgmElementRef.current
+      const targetVolume = raidBgmTargetVolumeRef.current
+      if (!profile || !audio || targetVolume <= 0) return
+      if (raidBgmDuckRestoreTimerRef.current) window.clearTimeout(raidBgmDuckRestoreTimerRef.current)
+      const now = getNow()
+      const duckedVolume = Math.min(audio.volume, targetVolume * profile.volumeScale)
+      raidBgmDuckRestoreAtRef.current = Math.max(raidBgmDuckRestoreAtRef.current, now + profile.holdMs)
+      setRaidBgmVolumeSmooth(audio, duckedVolume, profile.attackMs)
+      raidBgmDuckRestoreTimerRef.current = window.setTimeout(() => {
+        raidBgmDuckRestoreTimerRef.current = 0
+        raidBgmDuckRestoreAtRef.current = 0
+        if (raidBgmElementRef.current === audio) {
+          setRaidBgmVolumeSmooth(audio, raidBgmTargetVolumeRef.current, profile.releaseMs)
+        }
+      }, Math.max(0, raidBgmDuckRestoreAtRef.current - now))
+    })
+
+    return () => {
+      releaseDucker()
+      if (raidBgmDuckAnimationRef.current) window.cancelAnimationFrame(raidBgmDuckAnimationRef.current)
+      if (raidBgmDuckRestoreTimerRef.current) window.clearTimeout(raidBgmDuckRestoreTimerRef.current)
+      raidBgmDuckAnimationRef.current = 0
+      raidBgmDuckRestoreTimerRef.current = 0
+      raidBgmDuckRestoreAtRef.current = 0
+    }
+  }, [])
+
   const stopRaidBgm = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      if (raidBgmDuckAnimationRef.current) window.cancelAnimationFrame(raidBgmDuckAnimationRef.current)
+      if (raidBgmDuckRestoreTimerRef.current) window.clearTimeout(raidBgmDuckRestoreTimerRef.current)
+    }
+    raidBgmDuckAnimationRef.current = 0
+    raidBgmDuckRestoreTimerRef.current = 0
+    raidBgmDuckRestoreAtRef.current = 0
+    raidBgmTargetVolumeRef.current = 0
     if (raidBgmElementRef.current) {
       raidBgmElementRef.current.pause()
       raidBgmElementRef.current.currentTime = 0
@@ -11581,7 +11648,9 @@ export function GradiusRaid({
     const mix = getGameAudioMixSettings()
     const modeVolume = mode === 'ending' ? 0.42 : mode === 'boss' ? 0.58 : mode === 'combat' ? 0.34 : 0.22
     const stageRate = RAID_BGM_STAGE_RATES[(stage - 1) % RAID_BGM_STAGE_RATES.length]
-    audio.volume = Math.max(0, Math.min(1, modeVolume * mix.master * mix.bgm))
+    const targetVolume = Math.max(0, Math.min(1, modeVolume * mix.master * mix.bgm))
+    raidBgmTargetVolumeRef.current = targetVolume
+    audio.volume = targetVolume
     audio.playbackRate = mode === 'ending'
       ? 1
       : mode === 'boss'
