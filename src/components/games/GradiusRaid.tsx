@@ -632,8 +632,14 @@ const GOD_GUNDAM_MELEE_BOSS_DAMAGE_MULTIPLIER = 0.92
 const GOD_GUNDAM_MELEE_MINIBOSS_DAMAGE_MULTIPLIER = 1.08
 const GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER = 1.62
 const GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER = 1.15
-const SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER = 0.32
+const SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER = 0.38
 const SPIEGEL_PASSIVE_DAMAGE_MULTIPLIER = 1.16
+const SPIEGEL_LOW_HP_PASSIVE_DAMAGE_MULTIPLIER = 1.1
+const SPIEGEL_LOW_HP_PASSIVE_RAGE_DAMAGE_MULTIPLIER = 0.22
+const SPIEGEL_LOW_HP_BARRAGE_DAMAGE_MULTIPLIER = 1.12
+const SPIEGEL_LOW_HP_BARRAGE_RAGE_DAMAGE_MULTIPLIER = 0.18
+const SPIEGEL_LOW_HP_SHADOW_CLONE_DAMAGE_MULTIPLIER = 0.52
+const SPIEGEL_LOW_HP_SHADOW_CLONE_RAGE_DAMAGE_MULTIPLIER = 0.18
 const SPIEGEL_SHADOW_CLONE_VISUAL_ALPHA_MULTIPLIER = 1.28
 const SPIEGEL_AFTERIMAGE_LIFE_MULTIPLIER = 1.18
 const SPIEGEL_AFTERIMAGE_CAP = 10
@@ -3301,7 +3307,38 @@ function canUseGodGundamBurningDamage(player: Player, model?: CoreLanderCombatMo
   return isCoreLanderBurning(player) && !isSpiegelCombatModel(model ?? getCoreLanderCombatModel(loadProgress()))
 }
 
+function getSpiegelLowHpDamageScale(player: Player, model?: CoreLanderCombatModel | null) {
+  if (!hasSpiegelShadowClones(player, model)) return 0
+  return getCoreLanderBurningRage(player)
+}
+
+function getSpiegelPassiveDamageMultiplier(player: Player, model?: CoreLanderCombatModel | null) {
+  if (!isSpiegelCombatModel(model)) return 1
+  const rage = getSpiegelLowHpDamageScale(player, model)
+  const lowHpMultiplier = hasSpiegelShadowClones(player, model)
+    ? SPIEGEL_LOW_HP_PASSIVE_DAMAGE_MULTIPLIER + SPIEGEL_LOW_HP_PASSIVE_RAGE_DAMAGE_MULTIPLIER * rage
+    : 1
+  return SPIEGEL_PASSIVE_DAMAGE_MULTIPLIER * lowHpMultiplier
+}
+
+function getSpiegelBarrageDamageMultiplier(player: Player, model?: CoreLanderCombatModel | null) {
+  if (!isSpiegelCombatModel(model)) return 1
+  const rage = getSpiegelLowHpDamageScale(player, model)
+  return hasSpiegelShadowClones(player, model)
+    ? SPIEGEL_LOW_HP_BARRAGE_DAMAGE_MULTIPLIER + SPIEGEL_LOW_HP_BARRAGE_RAGE_DAMAGE_MULTIPLIER * rage
+    : 1
+}
+
+function getSpiegelShadowCloneDamageMultiplier(player: Player, model?: CoreLanderCombatModel | null) {
+  if (!isSpiegelCombatModel(model)) return SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER
+  const rage = getSpiegelLowHpDamageScale(player, model)
+  return hasSpiegelShadowClones(player, model)
+    ? SPIEGEL_LOW_HP_SHADOW_CLONE_DAMAGE_MULTIPLIER + SPIEGEL_LOW_HP_SHADOW_CLONE_RAGE_DAMAGE_MULTIPLIER * rage
+    : SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER
+}
+
 function getGodGundamBarrageDamageMultiplier(player: Player, model?: CoreLanderCombatModel | null) {
+  if (isSpiegelCombatModel(model)) return GOD_GUNDAM_BARRAGE_BASE_DAMAGE_MULTIPLIER * getSpiegelBarrageDamageMultiplier(player, model)
   if (!canUseGodGundamBurningDamage(player, model)) return GOD_GUNDAM_BARRAGE_BASE_DAMAGE_MULTIPLIER
   return GOD_GUNDAM_BARRAGE_BASE_DAMAGE_MULTIPLIER * (
     GOD_GUNDAM_BARRAGE_BURNING_DAMAGE_MULTIPLIER +
@@ -3321,7 +3358,7 @@ function getGodGundamMeleeDamagePerSecond(player: Player, target: Enemy, stage =
   const burningMultiplier = canUseGodGundamBurningDamage(player, model)
     ? GOD_GUNDAM_MELEE_BURNING_DAMAGE_MULTIPLIER + GOD_GUNDAM_MELEE_BURNING_RAGE_DAMAGE_MULTIPLIER * getCoreLanderBurningRage(player)
     : 1
-  const modelMultiplier = isSpiegelCombatModel(model) ? SPIEGEL_PASSIVE_DAMAGE_MULTIPLIER : 1
+  const modelMultiplier = getSpiegelPassiveDamageMultiplier(player, model)
   const targetMultiplier = target.isBoss
     ? GOD_GUNDAM_MELEE_BOSS_DAMAGE_MULTIPLIER
     : target.isMiniBoss
@@ -15804,11 +15841,12 @@ export function GradiusRaid({
 
       damageMeleeCandidate(candidate)
       if (spiegelClonesActive) {
+        const cloneDamageMultiplier = getSpiegelShadowCloneDamageMultiplier(owner, ownerModel)
         const usedCloneKeys = [candidate.key]
         for (const side of [-1, 1] as const) {
           const cloneCandidate = pickSpiegelCloneCandidate(side, usedCloneKeys)
           if (!cloneCandidate) continue
-          damageMeleeCandidate(cloneCandidate, SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER)
+          damageMeleeCandidate(cloneCandidate, cloneDamageMultiplier)
           usedCloneKeys.push(cloneCandidate.key)
         }
       }
@@ -15908,7 +15946,7 @@ export function GradiusRaid({
               const clonePower = cloneTarget.isBoss || cloneTarget.isMiniBoss
                 ? getGodGundamBarrageBossDamage(cloneTarget, stageRef.current, powerScore)
                 : Math.max(46 + stageRef.current * 5 + powerScore * 3, Math.round(cloneTarget.maxHp * 0.34))
-              const cloneDamage = Math.max(1, Math.round(clonePower * damageMultiplier * SPIEGEL_SHADOW_CLONE_DAMAGE_MULTIPLIER))
+              const cloneDamage = Math.max(1, Math.round(clonePower * damageMultiplier * getSpiegelShadowCloneDamageMultiplier(player, barrageModel)))
               spawnGodGundamPassiveStrike(player, cloneTarget, godBarrage.hitIndex + cloneTarget.id + side * 23, { x: player.x + side * SPIEGEL_SHADOW_CLONE_OFFSET, y: player.y + (side < 0 ? -7 : 7) }, true, side)
               cloneTarget.shieldTime = 0
               cloneTarget.hp -= cloneDamage
