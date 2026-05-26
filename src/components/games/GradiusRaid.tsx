@@ -916,6 +916,14 @@ const stageBossRenderCache = new Map<string, StageBossRenderCacheEntry>()
 const STAGE_BOSS_RENDER_CACHE_LIMIT = 10
 const STAGE_BOSS_RENDER_FRAME_MS = 50
 const STAGE_BOSS_RENDER_SIZE_CAP = 520
+const bossAuraSpriteCache = new Map<string, StageBossRenderCacheEntry>()
+const BOSS_AURA_CACHE_LIMIT = 12
+const BOSS_AURA_FRAME_MS = 33
+const bossReticleSpriteCache = new Map<string, StageBossRenderCacheEntry>()
+const BOSS_RETICLE_CACHE_LIMIT = 8
+const BOSS_RETICLE_FRAME_MS = 66
+const bossBarSpriteCache = new Map<string, HTMLCanvasElement>()
+const BOSS_BAR_CACHE_LIMIT = 40
 const godBarrageDrawTargetsScratch: Enemy[] = []
 const godBarrageDamageTargetsScratch: Enemy[] = []
 const mesiahLiveTargetsScratch: Enemy[] = []
@@ -5298,6 +5306,65 @@ function drawBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y:
   ctx.restore()
 }
 
+function drawCachedBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: number, size: number, time: number) {
+  const kind = enemy.bossKind ?? 'carrier'
+  if (typeof document === 'undefined' || size <= 0 || (kind !== 'squid' && kind !== 'snake' && kind !== 'final')) {
+    drawBossAura(ctx, enemy, x, y, size, time)
+    return
+  }
+  const sizeBucket = Math.max(60, Math.min(560, Math.round(size / 8) * 8))
+  const frameBucket = Math.floor(time / BOSS_AURA_FRAME_MS)
+  const key = `aura:${kind}:${sizeBucket}:${frameBucket}`
+  let entry = bossAuraSpriteCache.get(key)
+  if (!entry) {
+    const canvasSize = Math.ceil(sizeBucket * 2.8)
+    const canvas = document.createElement('canvas')
+    canvas.width = canvasSize
+    canvas.height = canvasSize
+    entry = { canvas, frameBucket: Number.NaN }
+    trimOldestMapEntry(bossAuraSpriteCache, BOSS_AURA_CACHE_LIMIT)
+    bossAuraSpriteCache.set(key, entry)
+  }
+  if (entry.frameBucket !== frameBucket) {
+    const { canvas } = entry
+    const cCtx = canvas.getContext('2d')
+    if (!cCtx) { drawBossAura(ctx, enemy, x, y, size, time); return }
+    const bucketTime = frameBucket * BOSS_AURA_FRAME_MS
+    const seconds = bucketTime / 1000
+    cCtx.setTransform(1, 0, 0, 1, 0, 0)
+    cCtx.clearRect(0, 0, canvas.width, canvas.height)
+    cCtx.translate(canvas.width / 2, canvas.height / 2)
+    cCtx.globalCompositeOperation = 'lighter'
+    cCtx.globalAlpha = 0.9
+    drawRadialEllipse(cCtx, 0, 0, sizeBucket * 0.72, sizeBucket * 0.72, [
+      [0, 'rgba(239,35,60,0.22)'],
+      [0.52, 'rgba(239,35,60,0.08)'],
+      [1, 'rgba(0,0,0,0)'],
+    ])
+    cCtx.strokeStyle = 'rgba(239,35,60,0.3)'
+    cCtx.lineWidth = Math.max(1, sizeBucket * 0.01)
+    cCtx.shadowBlur = sizeBucket * 0.08
+    cCtx.shadowColor = 'rgba(239,35,60,0.42)'
+    const ringCount = kind === 'final' ? 3 : 2
+    for (let i = 0; i < ringCount; i += 1) {
+      cCtx.save()
+      cCtx.rotate(seconds * (i % 2 ? -0.8 : 0.55) + i * 0.65)
+      cCtx.strokeStyle = i === 0 ? 'rgba(251,191,36,0.44)' : 'rgba(168,85,247,0.36)'
+      traceRoundedRect(cCtx, -sizeBucket * (0.45 + i * 0.06), -sizeBucket * (0.45 + i * 0.06), sizeBucket * (0.9 + i * 0.12), sizeBucket * (0.9 + i * 0.12), kind === 'final' ? sizeBucket * 0.12 : sizeBucket * 0.04)
+      cCtx.stroke()
+      cCtx.restore()
+    }
+    cCtx.shadowBlur = 0
+    entry.frameBucket = frameBucket
+  }
+  const { canvas } = entry
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = 0.9
+  ctx.drawImage(canvas, x - canvas.width / 2, y - canvas.height / 2)
+  ctx.restore()
+}
+
 function drawBossReticle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, isFinal: boolean) {
   ctx.save()
   ctx.translate(x, y)
@@ -5319,6 +5386,57 @@ function drawBossReticle(ctx: CanvasRenderingContext2D, x: number, y: number, si
     }
   }
   ctx.restore()
+}
+
+function drawCachedBossReticle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, isFinal: boolean) {
+  if (typeof document === 'undefined' || size <= 0) {
+    drawBossReticle(ctx, x, y, size, time, isFinal)
+    return
+  }
+  const sizeBucket = Math.max(40, Math.min(560, Math.round(size / 8) * 8))
+  const rotBucket = Math.floor(time / BOSS_RETICLE_FRAME_MS)
+  const key = `reticle:${isFinal ? 1 : 0}:${sizeBucket}:${rotBucket}`
+  let entry = bossReticleSpriteCache.get(key)
+  if (!entry) {
+    const extent = sizeBucket * (isFinal ? 0.74 : 0.64)
+    const canvasSize = Math.ceil(extent * 2 + 40)
+    const canvas = document.createElement('canvas')
+    canvas.width = canvasSize
+    canvas.height = canvasSize
+    entry = { canvas, frameBucket: Number.NaN }
+    trimOldestMapEntry(bossReticleSpriteCache, BOSS_RETICLE_CACHE_LIMIT)
+    bossReticleSpriteCache.set(key, entry)
+  }
+  if (entry.frameBucket !== rotBucket) {
+    const { canvas } = entry
+    const cCtx = canvas.getContext('2d')
+    if (!cCtx) { drawBossReticle(ctx, x, y, size, time, isFinal); return }
+    const cx = canvas.width / 2
+    cCtx.setTransform(1, 0, 0, 1, 0, 0)
+    cCtx.clearRect(0, 0, canvas.width, canvas.height)
+    cCtx.translate(cx, cx)
+    cCtx.rotate((rotBucket * BOSS_RETICLE_FRAME_MS) / 2400)
+    cCtx.globalAlpha = isFinal ? 0.56 : 0.44
+    cCtx.strokeStyle = 'rgba(251,191,36,0.72)'
+    cCtx.shadowBlur = 10
+    cCtx.shadowColor = 'rgba(251,191,36,0.5)'
+    cCtx.lineWidth = Math.max(1.5, sizeBucket * 0.012)
+    const extent = sizeBucket * (isFinal ? 0.74 : 0.64)
+    const corner = Math.min(22, sizeBucket * 0.12)
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        cCtx.beginPath()
+        cCtx.moveTo(sx * extent, sy * (extent - corner))
+        cCtx.lineTo(sx * extent, sy * extent)
+        cCtx.lineTo(sx * (extent - corner), sy * extent)
+        cCtx.stroke()
+      }
+    }
+    cCtx.shadowBlur = 0
+    entry.frameBucket = rotBucket
+  }
+  const { canvas } = entry
+  ctx.drawImage(canvas, x - canvas.width / 2, y - canvas.height / 2)
 }
 
 function drawBossShield(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, time: number, color = '#38bdf8') {
@@ -5558,6 +5676,137 @@ function drawBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: 
   }
 
   ctx.restore()
+}
+
+function drawCachedBossBar(ctx: CanvasRenderingContext2D, enemy: Enemy, x: number, y: number, size: number) {
+  if (enemy.hp <= 0) return
+  const isStageBoss = enemy.bossKind === 'squid' || enemy.bossKind === 'snake' || enemy.bossKind === 'final'
+  if (!isStageBoss || typeof document === 'undefined' || size <= 0) {
+    drawBossBar(ctx, enemy, x, y, size)
+    return
+  }
+  const isFinal = enemy.bossKind === 'final'
+  const height = isFinal ? 18 : 15
+  const barWidth = size * (isFinal ? 1.28 : 1.12)
+  const skullRadius = size * (isFinal ? 0.09 : 0.075)
+  const framePadX = skullRadius * (isFinal ? 2.15 : 1.65)
+  const framePadY = isFinal ? 7 : 5
+  const fill = clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1)
+  const fillBucket = Math.round(fill * 200)
+  const sizeBucket = Math.round(size / 4) * 4
+  const key = `bbar:${enemy.bossKind}:${sizeBucket}:${fillBucket}`
+  const leftPad = Math.ceil(framePadX + skullRadius * 2 + 6)
+  const topPad = Math.ceil(Math.max(10, size * 0.032) + framePadY + 10)
+  const bottomPad = isFinal ? 36 : 22
+  const canvasW = Math.ceil(barWidth + leftPad * 2)
+  const canvasH = Math.ceil(height + topPad + bottomPad)
+  let canvas = bossBarSpriteCache.get(key)
+  if (!canvas) {
+    canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, canvasW)
+    canvas.height = Math.max(1, canvasH)
+    const bCtx = canvas.getContext('2d')
+    if (!bCtx) { drawBossBar(ctx, enemy, x, y, size); return }
+    const barX = leftPad
+    const barY = topPad
+    const textX = leftPad + barWidth / 2
+    const accent = isFinal ? '#38bdf8' : enemy.bossKind === 'snake' ? '#fbbf24' : '#f472b6'
+    const frameX = barX - framePadX
+    const frameY = barY - framePadY
+    const frameW = barWidth + framePadX * 2
+    const frameH = height + framePadY * 2
+    const frame = bCtx.createLinearGradient(frameX, frameY, frameX + frameW, frameY + frameH)
+    frame.addColorStop(0, 'rgba(2,6,23,0.98)')
+    frame.addColorStop(0.26, isFinal ? 'rgba(69,26,3,0.94)' : 'rgba(42,12,42,0.94)')
+    frame.addColorStop(0.62, 'rgba(15,23,42,0.96)')
+    frame.addColorStop(1, 'rgba(2,6,23,0.98)')
+    bCtx.fillStyle = frame
+    bCtx.strokeStyle = isFinal ? 'rgba(254,243,199,0.82)' : 'rgba(248,113,113,0.62)'
+    bCtx.lineWidth = isFinal ? 2 : 1.4
+    bCtx.shadowBlur = isFinal ? 20 : 12
+    bCtx.shadowColor = isFinal ? 'rgba(56,189,248,0.34)' : 'rgba(248,113,113,0.28)'
+    traceRoundedRect(bCtx, frameX, frameY, frameW, frameH, isFinal ? 9 : 7)
+    bCtx.fill()
+    bCtx.stroke()
+    bCtx.shadowBlur = 0
+    bCtx.globalCompositeOperation = 'lighter'
+    bCtx.strokeStyle = isFinal ? 'rgba(56,189,248,0.42)' : 'rgba(251,191,36,0.26)'
+    bCtx.lineWidth = Math.max(1, size * 0.003)
+    const markCount = isFinal ? 12 : 8
+    for (let mark = 0; mark < markCount; mark += 1) {
+      const px = barX + (mark / (markCount - 1)) * barWidth
+      bCtx.beginPath()
+      bCtx.moveTo(px, frameY + 3)
+      bCtx.lineTo(px + (mark % 2 === 0 ? size * 0.018 : -size * 0.018), frameY + frameH - 3)
+      bCtx.stroke()
+    }
+    bCtx.globalCompositeOperation = 'source-over'
+    traceRoundedRect(bCtx, barX, barY, barWidth, height, 999)
+    bCtx.fillStyle = isFinal ? 'rgba(3,7,18,0.98)' : 'rgba(18,8,16,0.95)'
+    bCtx.strokeStyle = isFinal ? 'rgba(125,249,255,0.72)' : 'rgba(251,191,36,0.65)'
+    bCtx.lineWidth = isFinal ? 1.5 : 1
+    bCtx.fill()
+    bCtx.stroke()
+    bCtx.save()
+    traceRoundedRect(bCtx, barX, barY, barWidth, height, 999)
+    bCtx.clip()
+    const gradient = bCtx.createLinearGradient(barX, 0, barX + barWidth, 0)
+    if (isFinal) {
+      gradient.addColorStop(0, '#22d3ee')
+      gradient.addColorStop(0.28, '#2563eb')
+      gradient.addColorStop(0.56, '#ef233c')
+      gradient.addColorStop(0.82, '#fbbf24')
+      gradient.addColorStop(1, '#fef3c7')
+    } else if (enemy.bossKind === 'snake') {
+      gradient.addColorStop(0, '#0f172a')
+      gradient.addColorStop(0.42, '#06b6d4')
+      gradient.addColorStop(0.74, '#fbbf24')
+      gradient.addColorStop(1, '#fef3c7')
+    } else {
+      gradient.addColorStop(0, '#581c87')
+      gradient.addColorStop(0.42, '#ef233c')
+      gradient.addColorStop(0.74, '#f472b6')
+      gradient.addColorStop(1, '#fef3c7')
+    }
+    bCtx.fillStyle = gradient
+    bCtx.shadowBlur = isFinal ? 24 : 18
+    bCtx.shadowColor = isFinal ? 'rgba(56,189,248,0.9)' : 'rgba(251,191,36,0.82)'
+    bCtx.fillRect(barX, barY, barWidth * fillBucket / 200, height)
+    bCtx.globalCompositeOperation = 'screen'
+    bCtx.fillStyle = isFinal ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.14)'
+    bCtx.fillRect(barX, barY, barWidth * fillBucket / 200, Math.max(2, height * 0.32))
+    bCtx.restore()
+    bCtx.save()
+    bCtx.globalCompositeOperation = 'source-over'
+    drawBossBarSkull(bCtx, barX - skullRadius * 0.9, barY + height * 0.5, skullRadius, accent, isFinal)
+    drawBossBarSkull(bCtx, barX + barWidth + skullRadius * 0.9, barY + height * 0.5, skullRadius, accent, isFinal)
+    bCtx.restore()
+    bCtx.save()
+    bCtx.textAlign = 'center'
+    bCtx.textBaseline = 'bottom'
+    if (isFinal) {
+      bCtx.font = `900 ${Math.max(10, size * 0.03)}px Orbitron, system-ui, sans-serif`
+      bCtx.fillStyle = 'rgba(254,243,199,0.94)'
+      bCtx.shadowBlur = 12
+      bCtx.shadowColor = 'rgba(56,189,248,0.72)'
+      bCtx.fillText('MIRAGE MOTHERSHIP', textX, barY - 9)
+      bCtx.font = `800 ${Math.max(7, size * 0.018)}px Orbitron, system-ui, sans-serif`
+      bCtx.fillStyle = 'rgba(125,249,255,0.72)'
+      bCtx.fillText('FINAL CORE INTEGRITY', textX, barY + height + 15)
+    } else {
+      bCtx.font = `850 ${Math.max(8, size * 0.023)}px Orbitron, system-ui, sans-serif`
+      bCtx.fillStyle = 'rgba(226,232,240,0.86)'
+      bCtx.shadowBlur = 8
+      bCtx.shadowColor = accent
+      bCtx.fillText(enemy.bossKind === 'snake' ? 'SERPENT GUARDIAN' : 'ABYSS SQUID', textX, barY - 5)
+    }
+    bCtx.restore()
+    trimOldestMapEntry(bossBarSpriteCache, BOSS_BAR_CACHE_LIMIT)
+    bossBarSpriteCache.set(key, canvas)
+  }
+  const screenBarX = x - barWidth / 2
+  const screenBarY = y + size * 0.5 + (isFinal ? 20 : 16)
+  ctx.drawImage(canvas, screenBarX - leftPad, screenBarY - topPad)
 }
 
 function getNormalEnemyFilter(time: number) {
@@ -7524,10 +7773,7 @@ function drawRaidEnemy(
       ? enemy.mirageKind
       : enemy.bossKind
     if (displayBossKind !== 'devil') {
-      ctx.save()
-      ctx.globalAlpha *= defeatFade
-      drawBossAura(ctx, enemy, x, y, size, time)
-      ctx.restore()
+      drawCachedBossAura(ctx, enemy, x, y, size, time)
     }
     if (displayBossKind === 'devil') {
       ctx.save()
@@ -7537,8 +7783,8 @@ function drawRaidEnemy(
       ctx.restore()
       if (enemy.hp > 0) {
         if (enemy.shieldTime > 0 || enemy.y < 18) drawBossShield(ctx, x, y + size * 0.18, size * 0.86, time, enemy.color)
-        drawBossReticle(ctx, x, y, size, time, true)
-        drawBossBar(ctx, enemy, x, y + size * 0.16, size)
+        drawCachedBossReticle(ctx, x, y, size, time, true)
+        drawCachedBossBar(ctx, enemy, x, y + size * 0.16, size)
       }
       return
     }
@@ -7571,8 +7817,8 @@ function drawRaidEnemy(
           drawSnakeVenomTelegraph(ctx, x, y, toX(enemy.chargeLane), toY(enemy.chargeTargetY ?? enemy.y + 34), size, viewportWidth, time, enemy.chargeTimer, enemy.chargePattern, enemy.beamVolleyRecovery ?? 0)
         }
         if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
-        drawBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
-        drawBossBar(ctx, enemy, x, y, size)
+        drawCachedBossReticle(ctx, x, y, size, time, enemy.bossKind === 'final')
+        drawCachedBossBar(ctx, enemy, x, y, size)
       }
       return
     }
@@ -7592,8 +7838,8 @@ function drawRaidEnemy(
     ctx.restore()
     if (enemy.hp > 0) {
       if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
-      drawBossReticle(ctx, x, y, size, time, false)
-      drawBossBar(ctx, enemy, x, y, size)
+      drawCachedBossReticle(ctx, x, y, size, time, false)
+      drawCachedBossBar(ctx, enemy, x, y, size)
     }
     return
   }
@@ -7609,7 +7855,7 @@ function drawRaidEnemy(
     drawEnemyHitFlash(ctx, size, enemy.hitFlash, enemy.color)
     ctx.restore()
     if (enemy.shieldTime > 0 || enemy.y < 8) drawBossShield(ctx, x, y, size * 0.78, time, enemy.color)
-    drawBossBar(ctx, enemy, x, y, size * 0.82)
+    drawCachedBossBar(ctx, enemy, x, y, size * 0.82)
     return
   }
 
