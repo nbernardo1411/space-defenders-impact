@@ -1,7 +1,7 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Application, Assets, Container, FillGradient, Graphics, Sprite, Texture } from 'pixi.js'
-import { getGameAudioMixSettings, getGameSoundBgmDuckProfile, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, registerGameSoundDucker, setGraphicsQuality, stopBGM, type GameSoundKind } from './sound'
+import { getGameAudioMixSettings, getGameSoundBgmDuckProfile, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, registerGameSoundDucker, setGameAudioMixSettings, setGraphicsQuality, stopBGM, type AudioMixSettings, type GameSoundKind } from './sound'
 import type { GraphicsQuality } from './sound'
 import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from './RaidShipSprite'
 import { isCreatorPlayerName, submitLeaderboardScore } from '../../leaderboards'
@@ -10894,7 +10894,7 @@ export function GradiusRaid({
   const remotePointerTargetRef = useRef<Vec | null>(null)
   const remotePointerVisualRef = useRef<Vec | null>(null)
   const remotePlayerRef = useRef<Player | null>(null)
-  // Accumulated position error between local prediction and host state — drained gradually each frame
+  // Accumulated position error between local prediction and host state � drained gradually each frame
   const guestPositionCorrectionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   // Locally predicted shots for the guest (shown immediately, cleared when host confirms them)
   const guestLocalShotsRef = useRef<Array<Shot & { spawnedAt: number }>>([])
@@ -10902,7 +10902,7 @@ export function GradiusRaid({
   const fireCaptureRef = useRef<Shot[] | null>(null)
   const victoryPendingRef = useRef(false)
   const victoryBlackoutRef = useRef(0)
-  // Local fire cooldowns for guest prediction — independent from network-synced player cooldowns
+  // Local fire cooldowns for guest prediction � independent from network-synced player cooldowns
   const guestLocalFireCooldownRef = useRef(0)
   const guestLocalWeaponCooldownsRef = useRef<Record<WeaponKey, number>>({ ...EMPTY_WEAPON_TIMERS })
   // Stable ref to firePlayer so predictGuestPlayer can call it without a forward-declaration issue
@@ -10983,6 +10983,8 @@ export function GradiusRaid({
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [briefingStep, setBriefingStep] = useState(0)
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [audioMix, setAudioMix] = useState<AudioMixSettings>(() => getGameAudioMixSettings())
   const [assetPreload, setAssetPreload] = useState<RaidAssetPreloadState>(getRaidAssetPreloadInitialState)
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
     phase: 'select',
@@ -11277,7 +11279,7 @@ export function GradiusRaid({
         resetGuestPredictionState()
       } else {
         // -- Client-side prediction reconciliation ----------------------------------
-        // Do NOT pull position toward the host's stale value every packet —
+        // Do NOT pull position toward the host's stale value every packet �
         // that would create a constant backward drag proportional to ping.
         // Instead, measure the error and drain it invisibly over ~125 ms.
         const errX = nextGuestPlayer.x - current.x
@@ -11318,7 +11320,7 @@ export function GradiusRaid({
         current.weaponTimers = { ...nextGuestPlayer.weaponTimers }
         // fireCooldown and weaponCooldowns are kept local so prediction timing is unaffected
       }
-      // Expire locally predicted shots — confirmed shots from host have arrived
+      // Expire locally predicted shots � confirmed shots from host have arrived
       if (guestLocalShotsRef.current.length > 0) {
         const expiry = now - getGuestShotTtlMs(multiplayerRttRef.current)
     compactInPlace(guestLocalShotsRef.current, (shot) => shot.spawnedAt > expiry)
@@ -11506,7 +11508,7 @@ export function GradiusRaid({
     const guestPlayer = remotePlayerRef.current
     if (!guestPlayer || guestPlayer.hp <= 0) return
 
-    // Move own ship locally — never wait for the network
+    // Move own ship locally � never wait for the network
     movePlayerWithInput(guestPlayer, dt, pointerTargetRef.current, keysRef.current, getCoreLanderCombatModel(progressRef.current))
 
     // Drain accumulated position correction gradually so the fix is invisible
@@ -13322,7 +13324,7 @@ export function GradiusRaid({
     resetGuestPredictionState()
     victoryPendingRef.current = false
     victoryBlackoutRef.current = 0
-    // Do NOT reset multiplayerStateSeqRef here — the guest rejects packets with seq <= its last seen.
+    // Do NOT reset multiplayerStateSeqRef here � the guest rejects packets with seq <= its last seen.
     // Keeping seq monotonically increasing ensures the guest accepts the first post-restart packet.
     multiplayerLastAppliedSeqRef.current = 0
     multiplayerLastSnapshotApplyRef.current = 0
@@ -13795,15 +13797,15 @@ export function GradiusRaid({
           radius: 7.5,
           pierce: 6, // was 4
         })
-        // always fires homing salvo — signature ability
-        // default 2 salvo — all emitters including scouts
+        // always fires homing salvo � signature ability
+        // default 2 salvo � all emitters including scouts
         const defaultSalvo = [-5.4, 5.4]
         defaultSalvo.forEach((offset, index) => {
           const side = offset < 0 ? -1 : 1
           pushShot({ x: emitter.x + offset, y: emitter.y + (index < 2 ? -1.8 : 0.8), vx: side * (28 + index * 4), vy: -46 - index * 4, damage: Math.ceil((baseDamage + 3) * emitter.scale), kind: 'homing', radius: 2.1, turn: 5.2 })
         })
 
-        // pickup bonus — 4 extra salvos, main ship only, fires every shot like the default
+        // pickup bonus � 4 extra salvos, main ship only, fires every shot like the default
         if (emitter.main && stacks.homing > 0) {
           const bonusSalvo = [-5.4, 5.4, -7.2, 7.2]
           bonusSalvo.forEach((offset, index) => {
@@ -14034,15 +14036,15 @@ export function GradiusRaid({
       })
 
     const baseInterval =
-      shipKey === 'fast' ? 0.072 :       // Red Wraith — very rapid
-        shipKey === 'gatling' ? 0.088 :    // Crimson Saw — dual gatling rhythm
+      shipKey === 'fast' ? 0.072 :       // Red Wraith � very rapid
+        shipKey === 'gatling' ? 0.088 :    // Crimson Saw � dual gatling rhythm
           shipKey === 'mesiah' ? 0.082 :
             shipKey === 'coreLander' ? coreLanderFireInterval :
-          shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark — slow heavy
-            shipKey === 'laser' ? 1.0 :        // Night Lance — slow thick ray
-              shipKey === 'spaceEt' ? 0.001 :    // Space Jet — fastest
-                shipKey === 'xwing' ? 0.5 :       // Crosswing — shotgun pump rhythm
-                  0.10                              // Black Comet — default
+          shipKey === 'dreadnought' ? 0.32 : // Obsidian Ark � slow heavy
+            shipKey === 'laser' ? 1.0 :        // Night Lance � slow thick ray
+              shipKey === 'spaceEt' ? 0.001 :    // Space Jet � fastest
+                shipKey === 'xwing' ? 0.5 :       // Crosswing � shotgun pump rhythm
+                  0.10                              // Black Comet � default
 
     const tunedBaseInterval = shipKey === 'coreLander' ? coreLanderFireInterval : shipKey === 'spaceEt' ? 0.002 : shipKey === 'xwing' ? 0.34 : baseInterval
     const minFireCooldown = shipKey === 'spaceEt' ? 0.032 : 0.042
@@ -14685,7 +14687,7 @@ export function GradiusRaid({
       }
       if (before > 0 && stageClearRef.current <= 0) {
         if (victoryPendingRef.current) {
-          // Victory transition: fly-forward done — fade to black then show cutscene
+          // Victory transition: fly-forward done � fade to black then show cutscene
           victoryPendingRef.current = false
           phaseRef.current = 'victory'
           victoryBlackoutRef.current = VICTORY_BLACKOUT_SECONDS
@@ -16994,6 +16996,28 @@ export function GradiusRaid({
     setGraphicsQuality(q)
     setGraphicsQualityState(q)
   }
+  const updateAudioMix = (key: keyof AudioMixSettings, value: number) => {
+    const nextMix = { ...audioMix, [key]: Math.max(0, Math.min(1, value)) }
+    setAudioMix(nextMix)
+    setGameAudioMixSettings(nextMix)
+    const audio = raidBgmElementRef.current
+    const mode = raidBgmModeRef.current
+    if (audio && mode) {
+      const modeVolume = mode === 'ending' ? 0.42 : mode === 'boss' ? 0.58 : mode === 'combat' ? 0.34 : 0.22
+      const targetVolume = Math.max(0, Math.min(1, modeVolume * nextMix.master * nextMix.bgm))
+      raidBgmTargetVolumeRef.current = targetVolume
+      if (raidBgmDuckRestoreTimerRef.current <= 0) audio.volume = targetVolume
+    }
+  }
+  const audioMixControls: Array<{ key: keyof AudioMixSettings; label: string }> = [
+    { key: 'master', label: menuText.masterVolume },
+    { key: 'bgm', label: menuText.bgmVolume },
+    { key: 'player', label: menuText.playerShotsVolume },
+    { key: 'beam', label: menuText.beamVolume },
+    { key: 'explosion', label: menuText.explosionVolume },
+    { key: 'impact', label: menuText.impactVolume },
+    { key: 'ui', label: menuText.uiVolume },
+  ]
   const connectionClass = `raid__connection raid__connection--${multiplayerConnection.quality}`
   const finalScore = Math.max(player.score, snapshot.allyPlayer?.score ?? 0)
   const finaleShipSize = getShipSpriteSize(player.ship.key, 'picker') + 22
@@ -17149,7 +17173,7 @@ export function GradiusRaid({
 
       {snapshot.stageClear > 0 && (
         snapshot.raidMode !== 'endless' && snapshot.stageTheme >= MAX_RAID_STAGE
-          // Final-stage fly-through: black fade instead of white flash — leads into ending cutscene
+          // Final-stage fly-through: black fade instead of white flash � leads into ending cutscene
           ? <div className="raid__stage-flash" style={{
               opacity: stageClearProgress > 0.58 ? Math.min(1, (stageClearProgress - 0.58) / 0.32) : 0,
               background: '#000',
@@ -17166,23 +17190,57 @@ export function GradiusRaid({
               <span>{hudText.stage} {snapshot.stageTheme}</span>
               <span>{hudText.score} {player.score.toLocaleString()}</span>
             </div>
-            <div className="raid__gfx-row">
-              <span className="raid__gfx-label">{menuText.graphics}</span>
-              {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  className={graphicsQuality === q ? 'raid__gfx-btn raid__gfx-btn--active' : 'raid__gfx-btn'}
-                  onClick={() => applyGraphicsQuality(q)}
-                >
-                  {menuText[q]}
-                </button>
-              ))}
-            </div>
             <div className="raid__pause-actions">
               {canControlOverlay ? <button type="button" className="raid__start" onClick={resumeGame}>{menuText.continue}</button> : null}
+              <button type="button" className="raid__menu-button" onClick={() => setSettingsOpen(true)}>{menuText.settings}</button>
               {canControlOverlay ? <button type="button" className="raid__menu-button" onClick={() => resetGame()}>{menuText.restart}</button> : null}
               <button type="button" className="raid__menu-button" onClick={exitRaid}>{hudText.exit}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settingsOpen && snapshot.phase === 'paused' && (
+        <div className="raid__settings-overlay" role="dialog" aria-modal="true" aria-label={menuText.settings}>
+          <div className="raid__panel raid__panel--settings">
+            <div className="raid__kicker">{menuText.settings}</div>
+            <h2>{menuText.audioSettings}</h2>
+            <div className="raid__settings-section">
+              <span className="raid__settings-heading">{menuText.graphics}</span>
+              <div className="raid__gfx-row raid__gfx-row--settings">
+                {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    className={graphicsQuality === q ? 'raid__gfx-btn raid__gfx-btn--active' : 'raid__gfx-btn'}
+                    onClick={() => applyGraphicsQuality(q)}
+                  >
+                    {menuText[q]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="raid__settings-section">
+              <span className="raid__settings-heading">{menuText.audioSettings}</span>
+              <div className="raid__volume-list">
+                {audioMixControls.map((control) => (
+                  <label key={control.key} className="raid__volume-control">
+                    <span>{control.label}</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={Math.round(audioMix[control.key] * 100)}
+                      onChange={(event) => updateAudioMix(control.key, Number(event.target.value) / 100)}
+                    />
+                    <b>{Math.round(audioMix[control.key] * 100)}%</b>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="raid__pause-actions">
+              <button type="button" className="raid__start" onClick={() => setSettingsOpen(false)}>{menuText.close}</button>
             </div>
           </div>
         </div>
@@ -17474,24 +17532,3 @@ export function GradiusRaid({
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

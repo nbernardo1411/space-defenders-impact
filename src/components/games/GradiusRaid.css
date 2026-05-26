@@ -2380,6 +2380,82 @@
   width: min(520px, 100%);
 }
 
+
+.raid__settings-overlay {
+  position: absolute;
+  z-index: 72;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 6, 12, 0.68);
+  backdrop-filter: blur(8px);
+}
+
+.raid__panel--settings {
+  width: min(560px, 100%);
+}
+
+.raid__settings-section {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.26);
+  border-radius: 8px;
+  background: rgba(5, 8, 14, 0.54);
+}
+
+.raid__settings-heading {
+  display: block;
+  color: #fca5a5;
+  font-size: 0.72rem;
+  font-weight: 1000;
+  letter-spacing: 0.12rem;
+  text-transform: uppercase;
+}
+
+.raid__gfx-row--settings {
+  margin-top: 10px;
+}
+
+.raid__volume-list {
+  display: grid;
+  gap: 11px;
+  margin-top: 12px;
+}
+
+.raid__volume-control {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) minmax(150px, 1.4fr) 48px;
+  align-items: center;
+  gap: 10px;
+  color: #e5edf8;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.raid__volume-control input {
+  width: 100%;
+  accent-color: #ef233c;
+}
+
+.raid__volume-control b {
+  color: #fca5a5;
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .raid__volume-control {
+    grid-template-columns: 1fr 46px;
+  }
+
+  .raid__volume-control input {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
 .raid__panel--briefing {
   width: min(760px, 100%);
   text-align: left;
@@ -3156,7 +3232,8 @@
     padding: 12px;
   }
 
-  .raid__panel--briefing {
+
+.raid__panel--briefing {
     text-align: center;
   }
 

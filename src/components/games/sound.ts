@@ -60,8 +60,10 @@ type SoundPackConfig = {
 export type AudioMixSettings = {
   master: number
   bgm: number
+  player: number
   explosion: number
   beam: number
+  impact: number
   ui: number
 }
 
@@ -75,8 +77,10 @@ export type GameBgmDuckProfile = {
 const DEFAULT_AUDIO_MIX: AudioMixSettings = {
   master: 1,
   bgm: 0.8,
+  player: 0.78,
   explosion: 0.62,
   beam: 0.48,
+  impact: 0.72,
   ui: 0.8,
 }
 
@@ -185,8 +189,10 @@ function mergeAudioMix(base: AudioMixSettings, override?: Partial<AudioMixSettin
     ...(override ?? {}),
     master: clamp01(override?.master ?? base.master),
     bgm: clamp01(override?.bgm ?? base.bgm),
+    player: clamp01(override?.player ?? base.player),
     explosion: clamp01(override?.explosion ?? base.explosion),
     beam: clamp01(override?.beam ?? base.beam),
+    impact: clamp01(override?.impact ?? base.impact),
     ui: clamp01(override?.ui ?? base.ui),
   }
 }
@@ -301,14 +307,25 @@ function getKindBusGain(kind: GameSoundKind) {
     kind === 'explosion' ||
     kind === 'explosion_big' ||
     kind === 'nuke_explosion' ||
-    kind === 'destroyed_explosion' ||
-    kind === 'rocket' ||
-    kind === 'artillery'
+    kind === 'destroyed_explosion'
   ) {
     return mix.master * mix.explosion * kindGain
   }
+  if (kind === 'shoot' || kind === 'rocket' || kind === 'artillery') {
+    return mix.master * mix.player * kindGain
+  }
   if (kind === 'laser') {
     return mix.master * mix.beam * kindGain
+  }
+  if (
+    kind === 'hit' ||
+    kind === 'pop' ||
+    kind === 'combo' ||
+    kind === 'g_atk_punch_1' ||
+    kind === 'g_atk_punch_2' ||
+    kind === 'g_atk_kick'
+  ) {
+    return mix.master * mix.impact * kindGain
   }
   if (
     kind === 'select' ||
