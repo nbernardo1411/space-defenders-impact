@@ -3551,7 +3551,6 @@ function getPlayerBaseAttack(player: Player) {
   return 1 + Math.max(0, player.rank - 1) * PLAYER_BASE_ATTACK_PER_LEVEL + coreLanderBonus + burningBonus
 }
 function fullyBuffRaidPlayer(player: Player) {
-  player.rank = PLAYER_MAX_RANK
   player.hp = player.maxHp
   player.shield = 8
   player.forceField = FORCE_FIELD_ARMOR
@@ -10916,6 +10915,7 @@ export function GradiusRaid({
   const bossesDefeatedRef = useRef(0)
   const devilBossEncounteredRef = useRef(false)
   const devilBossNextEligibleStageRef = useRef(1)
+  const devilPreBuffRankRef = useRef(1)
   const pickupsCollectedRef = useRef(0)
   const nukesUsedRef = useRef(0)
   const shotsRef = useRef<Shot[]>([])
@@ -14139,8 +14139,13 @@ export function GradiusRaid({
       ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current, isCreatorPlayerName(playerName))
       : stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     if (bossKind === 'devil') {
+      devilPreBuffRankRef.current = player.rank
       fullyBuffRaidPlayer(player)
-      if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
+      player.rank = PLAYER_MAX_RANK
+      if (remotePlayerRef.current) {
+        fullyBuffRaidPlayer(remotePlayerRef.current)
+        remotePlayerRef.current.rank = PLAYER_MAX_RANK
+      }
       nukeCooldownRef.current = 0
     }
     const hpMultiplier =
@@ -16569,6 +16574,10 @@ export function GradiusRaid({
       } else {
         resetStageLoadout(player)
         if (remotePlayerRef.current) resetStageLoadout(remotePlayerRef.current)
+      }
+      if (defeatedBoss?.bossKind === 'devil') {
+        player.rank = devilPreBuffRankRef.current
+        if (remotePlayerRef.current) remotePlayerRef.current.rank = devilPreBuffRankRef.current
       }
       const revivedHost = revivePlayerForBossClear(player, 42)
       const revivedGuest = remotePlayerRef.current ? revivePlayerForBossClear(remotePlayerRef.current, 58) : false
