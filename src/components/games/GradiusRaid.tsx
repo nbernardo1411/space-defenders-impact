@@ -7771,7 +7771,8 @@ function drawRaidEnemy(
     const displayBossKind: BossKind | MirageBossKind | null = enemy.bossKind === 'final' && (enemy.mirageTimer ?? 0) > 0 && enemy.mirageKind
       ? enemy.mirageKind
       : enemy.bossKind
-    if (displayBossKind !== 'devil') {
+    const hasSpecialBossPresentation = displayBossKind === 'squid' || displayBossKind === 'snake' || displayBossKind === 'final' || displayBossKind === 'devil'
+    if (hasSpecialBossPresentation && displayBossKind !== 'devil') {
       drawCachedBossAura(ctx, enemy, x, y, size, time)
     }
     if (displayBossKind === 'devil') {
@@ -7828,7 +7829,6 @@ function drawRaidEnemy(
     const bossFilter = enemy.bossKind === 'super'
         ? 'brightness(1.14) contrast(1.18) saturate(1.38)'
         : 'brightness(1.16) contrast(1.18) saturate(1.34)'
-    drawSpriteGlow(ctx, x, y, size, hexToRgba(enemy.color, 0.34), defeatFade)
     drawCanvasSpriteContain(ctx, sprite, x, y, size * 1.04, bossFilter, defeatFade, rotation, floatScale, enemy.color)
     ctx.save()
     ctx.translate(x, y)
@@ -7837,7 +7837,6 @@ function drawRaidEnemy(
     ctx.restore()
     if (enemy.hp > 0) {
       if (enemy.shieldTime > 0 || enemy.y < 15) drawBossShield(ctx, x, y, size, time, enemy.color)
-      drawCachedBossReticle(ctx, x, y, size, time, false)
       drawCachedBossBar(ctx, enemy, x, y, size)
     }
     return
