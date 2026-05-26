@@ -1316,6 +1316,84 @@ function getCachedProjectileOrbSprite(color: string, radius: number): CachedCanv
   return entry
 }
 
+const speedLineSpriteCache = new Map<string, CachedCanvasDrawSource>()
+
+function getCachedSpeedLineSprite(color: string, length: number, strokeWidth: number): CachedCanvasDrawSource | null {  if (typeof document === 'undefined') return null
+  const spriteScale = getCanvasCacheScale()
+  const scaledBucket = Math.round(spriteScale * 10) / 10
+  const cacheKey = `speedline|${color}|${Math.round(length)}|${Math.round(strokeWidth * 2) / 2}|${scaledBucket}`
+  const cached = speedLineSpriteCache.get(cacheKey)
+  if (cached) return cached
+
+  const pad = Math.ceil(strokeWidth * 2)
+  const width = Math.ceil(strokeWidth + pad * 2)
+  const height = Math.ceil(length + pad * 2)
+  const originX = width / 2
+  const originY = pad
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.ceil(width * spriteScale))
+  canvas.height = Math.max(1, Math.ceil(height * spriteScale))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.scale(spriteScale, spriteScale)
+  const gradient = ctx.createLinearGradient(originX, originY, originX, originY + length)
+  gradient.addColorStop(0, 'rgba(255,255,255,0)')
+  gradient.addColorStop(0.46, color)
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.strokeStyle = gradient
+  ctx.lineWidth = strokeWidth
+  ctx.lineCap = 'butt'
+  ctx.beginPath()
+  ctx.moveTo(originX, originY)
+  ctx.lineTo(originX, originY + length)
+  ctx.stroke()
+
+  const entry: CachedCanvasDrawSource = { canvas, width, height, originX, originY }
+  trimOldestMapEntry(speedLineSpriteCache, 32)
+  speedLineSpriteCache.set(cacheKey, entry)
+  return entry
+}
+
+const spriteGlowCache = new Map<string, CachedCanvasDrawSource>()
+
+function getCachedSpriteGlow(color: string, size: number): CachedCanvasDrawSource | null {
+  if (typeof document === 'undefined') return null
+  const quantizedSize = Math.round(size)
+  const cacheKey = `sglow|${color}|${quantizedSize}`
+  const cached = spriteGlowCache.get(cacheKey)
+  if (cached) return cached
+
+  const radiusX = quantizedSize * 0.58
+  const radiusY = quantizedSize * 0.5
+  const pad = 2
+  const spriteW = Math.ceil(radiusX * 2 + pad * 2)
+  const spriteH = Math.ceil(radiusY * 2 + pad * 2)
+  const cx = spriteW / 2
+  const cy = spriteH / 2
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, spriteW)
+  canvas.height = Math.max(1, spriteH)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.scale(radiusX / radiusY, 1)
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusY)
+  gradient.addColorStop(0, 'rgba(255,255,255,0.08)')
+  gradient.addColorStop(0.34, color)
+  gradient.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = gradient
+  ctx.beginPath()
+  ctx.arc(0, 0, radiusY, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+
+  const entry: CachedCanvasDrawSource = { canvas, width: spriteW, height: spriteH, originX: cx, originY: cy }
+  trimOldestMapEntry(spriteGlowCache, 48)
+  spriteGlowCache.set(cacheKey, entry)
+  return entry
+}
+
 function compactInPlace<T>(items: T[], keep: (item: T) => boolean) {
   let liveCount = 0
   for (let index = 0; index < items.length; index += 1) {
@@ -2493,13 +2571,19 @@ function drawCanvasImageContain(
 }
 
 function drawSpriteGlow(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string, alpha: number) {
+  const sprite = getCachedSpriteGlow(color, size)
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  drawRadialEllipse(ctx, x, y, size * 0.58, size * 0.5, [
-    [0, `rgba(255,255,255,${0.08 * alpha})`],
-    [0.34, color],
-    [1, 'rgba(0,0,0,0)'],
-  ])
+  if (sprite) {
+    if (alpha < 1) ctx.globalAlpha *= alpha
+    ctx.drawImage(sprite.canvas, x - sprite.originX, y - sprite.originY, sprite.width, sprite.height)
+  } else {
+    drawRadialEllipse(ctx, x, y, size * 0.58, size * 0.5, [
+      [0, `rgba(255,255,255,${0.08 * alpha})`],
+      [0.34, color],
+      [1, 'rgba(0,0,0,0)'],
+    ])
+  }
   ctx.restore()
 }
 
@@ -4398,17 +4482,22 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
               'rgba(255,255,255,0.26)'
       const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
       const x = line.x * width
-      const gradient = ctx.createLinearGradient(x, y, x, y + line.length)
-      gradient.addColorStop(0, 'rgba(255,255,255,0)')
-      gradient.addColorStop(0.46, lineColor)
-      gradient.addColorStop(1, 'rgba(255,255,255,0)')
+      const sprite = getCachedSpeedLineSprite(lineColor, line.length, line.width)
       ctx.globalAlpha = 0.36
-      ctx.strokeStyle = gradient
-      ctx.lineWidth = line.width
-      ctx.beginPath()
-      ctx.moveTo(x, y)
-      ctx.lineTo(x, y + line.length)
-      ctx.stroke()
+      if (sprite) {
+        ctx.drawImage(sprite.canvas, x - sprite.originX, y - sprite.originY, sprite.width, sprite.height)
+      } else {
+        const gradient = ctx.createLinearGradient(x, y, x, y + line.length)
+        gradient.addColorStop(0, 'rgba(255,255,255,0)')
+        gradient.addColorStop(0.46, lineColor)
+        gradient.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.strokeStyle = gradient
+        ctx.lineWidth = line.width
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x, y + line.length)
+        ctx.stroke()
+      }
     }
     ctx.restore()
   }
@@ -4628,6 +4717,7 @@ class PixiRaidBackground {
   private readonly gradientCache = new Map<string, FillGradient>()
   private baseKey = ''
   private starfieldKey = ''
+  private ambientGlowKey = ''
   private width = 0
   private height = 0
   private dpr = 1
@@ -4644,7 +4734,6 @@ class PixiRaidBackground {
         autoStart: false,
         antialias: false,
         preference: 'webgl',
-        powerPreference: 'high-performance',
       })
       this.app = app
       app.stage.addChild(this.scene)
@@ -4832,6 +4921,9 @@ class PixiRaidBackground {
   }
 
   private updateAmbientGlows(width: number, height: number, isLow: boolean, isMedium: boolean, palette: RaidPalette) {
+    const key = `${width}x${height}|${isLow}|${isMedium}|${palette.bgA}`
+    if (this.ambientGlowKey === key) return
+    this.ambientGlowKey = key
     const graphics = this.ambientGlowGraphics
     graphics.clear()
     graphics.alpha = 1
@@ -10515,6 +10607,7 @@ export function GradiusRaid({
   const rafRef = useRef(0)
   const lastTimeRef = useRef(0)
   const lastRenderTimeRef = useRef(0)
+  const lastIdleDrawTimeRef = useRef(0)
   const graphicsQualityRef = useRef<GraphicsQuality>(getGraphicsQuality())
   const viewportMetricsRef = useRef<RaidViewportMetrics | null>(null)
   const fxCanvasSmoothingQualityRef = useRef<ImageSmoothingQuality | null>(null)
@@ -10522,6 +10615,7 @@ export function GradiusRaid({
   const paletteRef = useRef<RaidPalette>(DEFAULT_RAID_PALETTE)
   const paletteClassRef = useRef('')
   const cameraShakeRef = useRef<CameraShakeState>({ until: 0, duration: 0, strength: 0, seed: 0 })
+  const cameraShakeAppliedRef = useRef(false)
   const keysRef = useRef(new Set<string>())
   const pointerTargetRef = useRef<Vec | null>(null)
   const pointerVisualRef = useRef<Vec | null>(null)
@@ -11807,8 +11901,16 @@ export function GradiusRaid({
     }
 
     const shake = getRaidCameraShakeOffset(cameraShakeRef.current, time, cssWidth, cssHeight)
-    root.style.setProperty('--raid-camera-x', `${shake.x.toFixed(2)}px`)
-    root.style.setProperty('--raid-camera-y', `${shake.y.toFixed(2)}px`)
+    const isShaking = shake.x !== 0 || shake.y !== 0
+    if (isShaking) {
+      root.style.setProperty('--raid-camera-x', `${shake.x.toFixed(2)}px`)
+      root.style.setProperty('--raid-camera-y', `${shake.y.toFixed(2)}px`)
+      cameraShakeAppliedRef.current = true
+    } else if (cameraShakeAppliedRef.current) {
+      root.style.setProperty('--raid-camera-x', '0px')
+      root.style.setProperty('--raid-camera-y', '0px')
+      cameraShakeAppliedRef.current = false
+    }
     const stageRush = stageClearRef.current > 0 ? clamp(stageClearRef.current / STAGE_CLEAR_SECONDS, 0, 1) : 0
     const activeBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp > 0)
     const bossIntensity = activeBoss ? 1 : bossAlertRef.current > 0 ? clamp(bossAlertRef.current / 2.4, 0, 1) : 0
@@ -12413,13 +12515,14 @@ export function GradiusRaid({
     if (gfxProfile.drawRipples) {
       const ripples = ripplesRef.current
       const rippleStart = Math.max(0, ripples.length - gfxProfile.maxRipples)
+      let lastRippleColor = ''
+      ctx.lineWidth = 1.25
       for (let i = rippleStart; i < ripples.length; i += 1) {
         const ripple = ripples[i]
         const progress = 1 - ripple.life / ripple.maxLife
         const radius = (ripple.size * 2.7) * (0.35 + progress * 1.05)
         ctx.globalAlpha = Math.max(0, ripple.life / ripple.maxLife) * 0.42
-        ctx.strokeStyle = ripple.color
-        ctx.lineWidth = 1.25
+        if (ripple.color !== lastRippleColor) { ctx.strokeStyle = ripple.color; lastRippleColor = ripple.color }
         ctx.beginPath()
         ctx.arc(toX(ripple.x), toY(ripple.y), radius, 0, Math.PI * 2)
         ctx.stroke()
@@ -12452,10 +12555,11 @@ export function GradiusRaid({
     }
     const sparks = sparksRef.current
     const sparkStart = Math.max(0, sparks.length - gfxProfile.maxSparks)
+    let lastSparkColor = ''
     for (let i = sparkStart; i < sparks.length; i += 1) {
       const spark = sparks[i]
       ctx.globalAlpha = Math.max(0, spark.life / spark.maxLife)
-      ctx.fillStyle = spark.color
+      if (spark.color !== lastSparkColor) { ctx.fillStyle = spark.color; lastSparkColor = spark.color }
       ctx.beginPath()
       ctx.arc(toX(spark.x), toY(spark.y), Math.max(1, spark.size * 0.42), 0, Math.PI * 2)
       ctx.fill()
@@ -16482,8 +16586,14 @@ export function GradiusRaid({
         sendMultiplayerInput(time)
       }
       if (session) updateMultiplayerConnection(time)
-      drawFxCanvas(time)
-      const renderInterval = phaseRef.current === 'playing'
+      // Throttle canvas redraws to ~30 fps during idle (non-playing) phases to reduce GPU load and heat.
+      const phase = phaseRef.current
+      const isIdlePhase = phase === 'select' || phase === 'briefing' || phase === 'paused'
+      if (!isIdlePhase || time - lastIdleDrawTimeRef.current >= 33) {
+        if (isIdlePhase) lastIdleDrawTimeRef.current = time
+        drawFxCanvas(time)
+      }
+      const renderInterval = phase === 'playing'
         ? (stageClearRef.current > 0 || bossAlertRef.current > 0 ? GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS : GAMEPLAY_SNAPSHOT_INTERVAL_MS)
         : IDLE_SNAPSHOT_INTERVAL_MS
       if (time - lastRenderTimeRef.current >= renderInterval) {
@@ -16492,8 +16602,25 @@ export function GradiusRaid({
       }
       rafRef.current = requestAnimationFrame(tick)
     }
+
+    // Pause the animation loop when the browser tab / app is hidden to conserve CPU, GPU, and battery.
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = 0
+      } else if (rafRef.current === 0) {
+        // Reset last-time so the first tick after resuming doesn't produce a huge dt spike.
+        lastTimeRef.current = performance.now()
+        rafRef.current = requestAnimationFrame(tick)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     rafRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafRef.current)
+    return () => {
+      cancelAnimationFrame(rafRef.current)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [advanceGuestVisuals, drawFxCanvas, predictGuestPlayer, sendMultiplayerInput, sendMultiplayerState, syncSnapshot, updateGame, updateMultiplayerConnection])
 
   useEffect(() => {
