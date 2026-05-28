@@ -1211,6 +1211,7 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 8px;
   padding: clamp(22px, 5vw, 42px);
+  padding-top: clamp(72px, 7vw, 84px);
   background: rgba(8, 13, 24, 0.9);
   box-shadow: 0 26px 70px rgba(0, 0, 0, 0.46);
 }
@@ -1222,7 +1223,7 @@ body {
 .mode-screen__back {
   position: absolute;
   top: 16px;
-  left: 16px;
+  right: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1235,6 +1236,7 @@ body {
   background: rgba(15, 23, 42, 0.82);
   cursor: pointer;
   white-space: nowrap;
+  z-index: 2;
 }
 
 .mode-screen__eyebrow {
@@ -1986,7 +1988,7 @@ body {
   }
 
   .mode-screen__panel {
-    padding: 18px;
+    padding: 68px 18px 18px;
   }
 
   .raid-lobby {
@@ -2014,8 +2016,11 @@ body {
   }
 
   .mode-screen__back {
-    position: static;
-    margin-bottom: 14px;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    margin-bottom: 0;
+    min-width: 76px;
     padding: 9px 12px;
   }
 

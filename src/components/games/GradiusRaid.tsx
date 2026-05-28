@@ -288,6 +288,8 @@ type DerelictWreck = Vec & {
   hp: number
   maxHp: number
   phase: number
+  variant?: number
+  rotation?: number
 }
 
 type Snapshot = {
@@ -437,6 +439,10 @@ function pickEndlessBossKind(stage: number, wave: number, devilNextEligibleStage
 
 function shouldForceLocalDevilBossTest(stage: number, mode: RaidMode, playerName: string) {
   return mode === 'endless' && stage === 1 && isLocalProgressionTestHost() && !isCreatorPlayerName(playerName)
+}
+
+function shouldForceLocalDerelictWreckTest(stage: number, mode: RaidMode) {
+  return mode === 'campaign' && stage === 1 && isLocalProgressionTestHost()
 }
 
 const RAID_DEFAULT_BGM_TRACK = getPublicAssetUrl('audio/bgm_scifi_loop.ogg')
@@ -733,7 +739,7 @@ type RaidGraphicsProfile = {
 const raidGraphicsProfileCache = new Map<string, RaidGraphicsProfile>()
 const RAID_IMAGE_CACHE_NAME = 'space-defender-raid-images-v1'
 const RAID_AUDIO_CACHE_NAME = 'space-defender-audio-v1'
-const RAID_PERSISTENT_CACHE_VERSION = 'gradius-raid-assets-v2'
+const RAID_PERSISTENT_CACHE_VERSION = 'gradius-raid-assets-v3'
 const RAID_PERSISTENT_CACHE_STORAGE_KEY = 'gradiusRaidPersistentAssetCache'
 let raidPersistentAssetCachePromise: Promise<void> | null = null
 let raidPersistentAssetCacheComplete = false
@@ -954,6 +960,20 @@ const RAID_OTHER_ASSET_PATHS = {
   planet2: 'assets/others/planet_2.webp',
   planet3: 'assets/others/planet_3.webp',
 } as const
+
+const RAID_DERELICT_WRECK_ASSET_PATH = 'assets/others/derelict.png'
+const RAID_DERELICT_WRECK_FILTER = 'brightness(0.9) contrast(1.14) saturate(0.94)'
+const RAID_DERELICT_WRECK_VARIANTS = [
+  { crop: { x: 0.02, y: 0.03, width: 0.39, height: 0.28 }, width: 42, height: 15, rotation: -6 * DEG },
+  { crop: { x: 0.36, y: 0.04, width: 0.29, height: 0.24 }, width: 31, height: 13, rotation: 2 * DEG },
+  { crop: { x: 0.65, y: 0.05, width: 0.31, height: 0.29 }, width: 35, height: 15, rotation: -4 * DEG },
+  { crop: { x: 0.05, y: 0.31, width: 0.30, height: 0.38 }, width: 35, height: 16, rotation: 7 * DEG },
+  { crop: { x: 0.32, y: 0.32, width: 0.37, height: 0.29 }, width: 40, height: 15, rotation: -2 * DEG },
+  { crop: { x: 0.69, y: 0.34, width: 0.27, height: 0.22 }, width: 29, height: 12, rotation: 3 * DEG },
+  { crop: { x: 0.03, y: 0.66, width: 0.26, height: 0.28 }, width: 31, height: 14, rotation: -3 * DEG },
+  { crop: { x: 0.32, y: 0.72, width: 0.20, height: 0.18 }, width: 24, height: 11, rotation: 0 },
+  { crop: { x: 0.57, y: 0.64, width: 0.39, height: 0.28 }, width: 42, height: 14, rotation: 4 * DEG },
+] as const
 
 const RAID_FINAL_BOSS_ASSET_PATH = 'assets/aliens/final_boss.png'
 const RAID_FINAL_BOSS_CORE_OFFSET_X = -0.007
@@ -1681,6 +1701,50 @@ function makeSpriteProcessingCanvas(image: HTMLImageElement, maxSize: number, cr
   return canvas
 }
 
+function trimTransparentCanvas(canvas: HTMLCanvasElement, padding = 2) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+
+  const { width, height } = canvas
+  const imageData = ctx.getImageData(0, 0, width, height)
+  const data = imageData.data
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = data[(y * width + x) * 4 + 3]
+      if (alpha <= 8) continue
+      if (x < minX) minX = x
+      if (y < minY) minY = y
+      if (x > maxX) maxX = x
+      if (y > maxY) maxY = y
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return canvas
+
+  minX = Math.max(0, minX - padding)
+  minY = Math.max(0, minY - padding)
+  maxX = Math.min(width - 1, maxX + padding)
+  maxY = Math.min(height - 1, maxY + padding)
+  const trimWidth = maxX - minX + 1
+  const trimHeight = maxY - minY + 1
+  if (trimWidth >= width && trimHeight >= height) return canvas
+
+  const trimmed = document.createElement('canvas')
+  trimmed.width = trimWidth
+  trimmed.height = trimHeight
+  const trimmedCtx = trimmed.getContext('2d')
+  if (!trimmedCtx) return canvas
+  trimmedCtx.imageSmoothingEnabled = true
+  trimmedCtx.imageSmoothingQuality = 'high'
+  trimmedCtx.drawImage(canvas, minX, minY, trimWidth, trimHeight, 0, 0, trimWidth, trimHeight)
+  return trimmed
+}
+
 function applyAlphaKey(canvas: HTMLCanvasElement, getAlphaScale: (red: number, green: number, blue: number, alpha: number, x: number, y: number) => number) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return canvas
@@ -1719,6 +1783,19 @@ function processCometAsset(image: HTMLImageElement) {
     if (luma < 76) return (luma - 18) / 58
     return 1
   })
+}
+
+function processDerelictWreckAsset(image: HTMLImageElement, variant: number) {
+  const data = getDerelictWreckVariantData(variant)
+  const crop = {
+    x: Math.round(image.naturalWidth * data.crop.x),
+    y: Math.round(image.naturalHeight * data.crop.y),
+    width: Math.round(image.naturalWidth * data.crop.width),
+    height: Math.round(image.naturalHeight * data.crop.height),
+  }
+  const canvas = makeSpriteProcessingCanvas(image, 640, crop)
+  if (!canvas) return null
+  return trimTransparentCanvas(canvas, 3)
 }
 
 function processGalaxyAsset(image: HTMLImageElement) {
@@ -2068,6 +2145,10 @@ function warmRaidCanvasFilterVariants() {
     if (!filters) continue
     for (const filter of filters) warmCanvasSpriteFilter(sprite, filter)
   }
+
+  for (let variant = 0; variant < RAID_DERELICT_WRECK_VARIANTS.length; variant += 1) {
+    warmCanvasSpriteFilter(getDerelictWreckCanvasSprite(variant), RAID_DERELICT_WRECK_FILTER)
+  }
 }
 
 function getCachedCanvasPattern(ctx: CanvasRenderingContext2D, texture: HTMLCanvasElement) {
@@ -2087,6 +2168,22 @@ function getRaidOtherCanvasSprite(key: RaidOtherAssetKey) {
   const existing = canvasSpriteCache.get(cacheKey)
   if (existing) return existing
   return makeImageCanvasSprite(cacheKey, getPublicAssetUrl(RAID_OTHER_ASSET_PATHS[key]), getOtherAssetProcessor(key))
+}
+
+function getDerelictWreckVariantIndex(variant: number) {
+  return Math.abs(Math.trunc(variant)) % RAID_DERELICT_WRECK_VARIANTS.length
+}
+
+function getDerelictWreckVariantData(variant: number) {
+  return RAID_DERELICT_WRECK_VARIANTS[getDerelictWreckVariantIndex(variant)]
+}
+
+function getDerelictWreckCanvasSprite(variant: number) {
+  const index = getDerelictWreckVariantIndex(variant)
+  const cacheKey = `other-image:derelict-wreck-${index}`
+  const existing = canvasSpriteCache.get(cacheKey)
+  if (existing) return existing
+  return makeImageCanvasSprite(cacheKey, getPublicAssetUrl(RAID_DERELICT_WRECK_ASSET_PATH), (image) => processDerelictWreckAsset(image, index))
 }
 
 function getShipCanvasSprite(shipKey: string) {
@@ -2179,6 +2276,7 @@ function warmRaidCanvasAssets() {
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) entries.push(getNormalAlienCanvasSprite(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) entries.push(getEliteAlienCanvasSprite(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) entries.push(getRaidOtherCanvasSprite(key))
+  for (let variant = 0; variant < RAID_DERELICT_WRECK_VARIANTS.length; variant += 1) entries.push(getDerelictWreckCanvasSprite(variant))
   return entries
 }
 
@@ -2204,6 +2302,7 @@ function getRaidPersistentImageUrls() {
   for (let variant = 0; variant < RAID_ALIEN_SPRITE_COUNT; variant += 1) urls.add(getRaidAlienSpriteUrl(variant))
   for (let variant = 0; variant < RAID_ELITE_SPRITE_COUNT; variant += 1) urls.add(getRaidEliteSpriteUrl(variant))
   for (const key of Object.keys(RAID_OTHER_ASSET_PATHS) as RaidOtherAssetKey[]) urls.add(getPublicAssetUrl(RAID_OTHER_ASSET_PATHS[key]))
+  urls.add(getPublicAssetUrl(RAID_DERELICT_WRECK_ASSET_PATH))
   return [...urls]
 }
 
@@ -2965,6 +3064,34 @@ function cloneIonStrike(strike: IonStrike): IonStrike {
 
 function cloneDerelictWreck(wreck: DerelictWreck): DerelictWreck {
   return { ...wreck }
+}
+
+function updateDerelictWreckMotion(wreck: DerelictWreck, dt: number, nowSeconds: number) {
+  wreck.x += wreck.vx * dt
+  wreck.y += wreck.vy * dt
+  wreck.vx += Math.sin(nowSeconds * 0.62 + wreck.phase) * dt * 0.18
+  wreck.vy += Math.sin(nowSeconds * 0.78 + wreck.phase) * dt * 0.22
+
+  const xPadding = clamp(wreck.width * 0.36, 9, 18)
+  const yPadding = clamp(wreck.height * 0.48, 6, 11)
+  const minX = xPadding
+  const maxX = WIDTH - xPadding
+  const minY = 17 + yPadding
+  const maxY = 66 - yPadding
+
+  if (wreck.x < minX || wreck.x > maxX) {
+    const rebound = Math.max(1.2, Math.abs(wreck.vx) * 0.82)
+    wreck.x = clamp(wreck.x, minX, maxX)
+    wreck.vx = wreck.x <= minX ? rebound : -rebound
+  }
+  if (wreck.y < minY || wreck.y > maxY) {
+    const rebound = Math.max(0.7, Math.abs(wreck.vy) * 0.78)
+    wreck.y = clamp(wreck.y, minY, maxY)
+    wreck.vy = wreck.y <= minY ? rebound : -rebound
+  }
+
+  wreck.vx = clamp(wreck.vx, -3.4, 3.4)
+  wreck.vy = clamp(wreck.vy, -2.2, 2.2)
 }
 
 function roundNetworkNumber(value: number) {
@@ -10184,40 +10311,47 @@ function drawDerelictWreck(
 ) {
   const x = toX(wreck.x)
   const y = toY(wreck.y)
-  const w = Math.max(90, (wreck.width / WIDTH) * viewportWidth)
-  const h = w * 0.34
+  const variant = getDerelictWreckVariantIndex(wreck.variant ?? wreck.id)
+  const sprite = getDerelictWreckCanvasSprite(variant)
+  const mobileScale = viewportWidth <= 640 ? 1.28 : 1
+  const w = Math.max(viewportWidth <= 640 ? 132 : 90, (wreck.width / WIDTH) * viewportWidth * mobileScale)
+  const h = Math.max(viewportWidth <= 640 ? 76 : 54, (wreck.height / WIDTH) * viewportWidth * mobileScale)
   const damage = clamp(1 - wreck.hp / Math.max(1, wreck.maxHp), 0, 1)
   ctx.save()
   ctx.translate(x, y)
-  ctx.rotate(Math.sin(time / 1300 + wreck.phase) * 0.08)
+  ctx.rotate((wreck.rotation ?? 0) + Math.sin(time / 1300 + wreck.phase) * 0.08)
   ctx.shadowBlur = 14
   ctx.shadowColor = 'rgba(239,68,68,0.28)'
-  const hull = ctx.createLinearGradient(-w * 0.5, -h * 0.5, w * 0.5, h * 0.5)
-  hull.addColorStop(0, '#94a3b8')
-  hull.addColorStop(0.42, '#334155')
-  hull.addColorStop(1, '#020617')
-  ctx.fillStyle = hull
-  ctx.strokeStyle = 'rgba(226,232,240,0.52)'
-  ctx.lineWidth = Math.max(1, w * 0.01)
-  ctx.beginPath()
-  ctx.moveTo(-w * 0.52, -h * 0.12)
-  ctx.lineTo(-w * 0.2, -h * 0.42)
-  ctx.lineTo(w * 0.46, -h * 0.2)
-  ctx.lineTo(w * 0.36, h * 0.22)
-  ctx.lineTo(-w * 0.36, h * 0.42)
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
+  const drewSprite = drawCanvasImageContain(ctx, sprite, 0, 0, w, h, RAID_DERELICT_WRECK_FILTER, 0.92)
+  if (!drewSprite) {
+    const hull = ctx.createLinearGradient(-w * 0.5, -h * 0.5, w * 0.5, h * 0.5)
+    hull.addColorStop(0, '#94a3b8')
+    hull.addColorStop(0.42, '#334155')
+    hull.addColorStop(1, '#020617')
+    ctx.fillStyle = hull
+    ctx.strokeStyle = 'rgba(226,232,240,0.52)'
+    ctx.lineWidth = Math.max(1, w * 0.01)
+    ctx.beginPath()
+    ctx.moveTo(-w * 0.52, -h * 0.12)
+    ctx.lineTo(-w * 0.2, -h * 0.42)
+    ctx.lineTo(w * 0.46, -h * 0.2)
+    ctx.lineTo(w * 0.36, h * 0.22)
+    ctx.lineTo(-w * 0.36, h * 0.42)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+  }
   ctx.shadowBlur = 0
   ctx.globalCompositeOperation = 'lighter'
-  ctx.globalAlpha = 0.26 + damage * 0.42
+  ctx.globalAlpha = 0.14 + damage * 0.32
   ctx.strokeStyle = 'rgba(251,113,133,0.9)'
   ctx.lineWidth = Math.max(1, w * 0.008)
   for (let index = 0; index < 4; index += 1) {
-    const ox = -w * 0.3 + index * w * 0.18
+    const ox = -w * 0.32 + index * w * 0.19
+    const jitter = Math.sin(wreck.phase + index * 1.7) * h * 0.1
     ctx.beginPath()
-    ctx.moveTo(ox, -h * 0.22)
-    ctx.lineTo(ox + w * 0.1, h * 0.18)
+    ctx.moveTo(ox, -h * 0.18 + jitter)
+    ctx.lineTo(ox + w * 0.08, h * 0.14 - jitter)
     ctx.stroke()
   }
   ctx.restore()
@@ -10997,6 +11131,7 @@ export function GradiusRaid({
   const randomEventTimerRef = useRef(24 + Math.random() * 18)
   const randomEventSpawnTimerRef = useRef(0)
   const lastRandomEventKindRef = useRef<RaidRandomEventKind | null>(null)
+  const localDerelictWreckTestTriggeredRef = useRef(false)
   const highScoreRef = useRef(getHighScore())
   const unlockedStageRef = useRef(getUnlockedStage())
   const raidBgmElementRef = useRef<HTMLAudioElement | null>(null)
@@ -11670,8 +11805,7 @@ export function GradiusRaid({
     keepNetworkVisibleInPlace(meteorsRef.current)
 
     for (const wreck of wrecksRef.current) {
-      wreck.x += wreck.vx * dt
-      wreck.y += wreck.vy * dt
+      updateDerelictWreckMotion(wreck, dt, performance.now() / 1000)
     }
     keepNetworkVisibleInPlace(wrecksRef.current)
 
@@ -13348,7 +13482,8 @@ export function GradiusRaid({
     asteroidSpawnDelayRef.current = 0
     asteroidWarningRef.current = 0
     randomEventRef.current = null
-    randomEventTimerRef.current = 20 + Math.random() * 18
+    localDerelictWreckTestTriggeredRef.current = false
+    randomEventTimerRef.current = shouldForceLocalDerelictWreckTest(stage, mode) ? 0.2 : 20 + Math.random() * 18
     randomEventSpawnTimerRef.current = 0
     lastRandomEventKindRef.current = null
     nukeCooldownRef.current = 0
@@ -14980,17 +15115,22 @@ export function GradiusRaid({
         } else if (activeRandomEvent.kind === 'wreck' && randomEventSpawnTimerRef.current <= 0 && wrecksRef.current.length < MAX_WRECKS) {
           const leftEntry = Math.random() < 0.5
           const hp = 170 + stageRef.current * 18 + getPowerScore(player) * 5
+          const variant = Math.floor(Math.random() * RAID_DERELICT_WRECK_VARIANTS.length)
+          const variantData = getDerelictWreckVariantData(variant)
+          const scale = 0.92 + Math.random() * 0.22
           wrecksRef.current.push({
             id: wreckId++,
-            x: leftEntry ? -18 : 118,
-            y: 24 + Math.random() * 34,
-            vx: leftEntry ? 9 + Math.random() * 4 : -9 - Math.random() * 4,
-            vy: 3 + Math.random() * 5,
-            width: 34 + Math.random() * 10,
-            height: 11,
+            x: leftEntry ? 18 + Math.random() * 8 : 82 - Math.random() * 8,
+            y: 26 + Math.random() * 24,
+            vx: leftEntry ? 1.3 + Math.random() * 1.2 : -1.3 - Math.random() * 1.2,
+            vy: -0.5 + Math.random() * 1.2,
+            width: variantData.width * scale,
+            height: variantData.height * scale,
             hp,
             maxHp: hp,
             phase: Math.random() * Math.PI * 2,
+            variant,
+            rotation: variantData.rotation + (leftEntry ? 0 : Math.PI) + (Math.random() - 0.5) * 7 * DEG,
           })
           randomEventSpawnTimerRef.current = 999
         } else if (activeRandomEvent.kind === 'ambush' && randomEventSpawnTimerRef.current <= 0) {
@@ -15040,10 +15180,12 @@ export function GradiusRaid({
         randomEventSpawnTimerRef.current = 0
         randomEventTimerRef.current = getRandomEventInterval()
       }
-    } else if (canSpawnStageEnemies && !bossActive && stageRef.current >= 2 && !anyAsteroidEventActive) {
+    } else if (canSpawnStageEnemies && !bossActive && (stageRef.current >= 2 || shouldForceLocalDerelictWreckTest(stageRef.current, raidModeRef.current)) && !anyAsteroidEventActive) {
       randomEventTimerRef.current = Math.max(0, randomEventTimerRef.current - dt)
       if (randomEventTimerRef.current <= 0) {
-        startRandomRaidEvent(pickNextRandomRaidEventKind(stageRef.current, stageRef.current % 2 === 0, lastRandomEventKindRef.current))
+        const forceLocalDerelictWreck = shouldForceLocalDerelictWreckTest(stageRef.current, raidModeRef.current) && !localDerelictWreckTestTriggeredRef.current
+        if (forceLocalDerelictWreck) localDerelictWreckTestTriggeredRef.current = true
+        startRandomRaidEvent(forceLocalDerelictWreck ? 'wreck' : pickNextRandomRaidEventKind(stageRef.current, stageRef.current % 2 === 0, lastRandomEventKindRef.current))
       }
     }
 
@@ -15206,10 +15348,8 @@ export function GradiusRaid({
     const wrecks = wrecksRef.current
     let liveWreckCount = 0
     for (const wreck of wrecks) {
-      wreck.x += wreck.vx * dt
-      wreck.y += wreck.vy * dt
-      wreck.vy += Math.sin(nowSeconds + wreck.phase) * dt * 1.5
-      if (wreck.hp > 0 && wreck.x > -28 && wreck.x < WIDTH + 28 && wreck.y > -14 && wreck.y < HEIGHT + 18) {
+      updateDerelictWreckMotion(wreck, dt, nowSeconds)
+      if (wreck.hp > 0) {
         wrecks[liveWreckCount] = wreck
         liveWreckCount += 1
       }
