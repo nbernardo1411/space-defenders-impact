@@ -2,6 +2,7 @@ import { ENDLESS_UNLOCK_STORAGE_KEY } from './components/games/towerDefense/conf
 import { isCreatorPlayerName, PLAYER_NAME_STORAGE_KEY, type LeaderboardMode } from './leaderboards'
 
 export type RunStatus = 'victory' | 'gameover' | 'exit'
+export type RaidDifficultyKey = 'easy' | 'normal' | 'hard' | 'expert'
 
 export type RunResult = {
   mode: LeaderboardMode
@@ -15,9 +16,11 @@ export type RunResult = {
   enemiesDestroyed?: number
   bossesDefeated?: number
   devilBossEncountered?: boolean
+  devilBossDefeated?: boolean
   pickupsCollected?: number
   nukesUsed?: number
   raidMode?: 'campaign' | 'endless'
+  difficulty?: RaidDifficultyKey
 }
 
 export type AchievementId =
@@ -27,22 +30,44 @@ export type AchievementId =
   | 'boss_breaker'
   | 'defense_veteran'
   | 'defense_legend'
+  | 'defense_score_elite'
   | 'endless_survivor'
   | 'endless_warden'
   | 'endless_legend'
+  | 'defense_overwatch'
+  | 'defense_endless_commander'
   | 'raid_endless_launch'
   | 'raid_endless_survivor'
   | 'raid_endless_vanguard'
   | 'raid_endless_legend'
   | 'raid_endless_boss_reaper'
   | 'raid_endless_score_ace'
+  | 'raid_endless_super_junkie'
+  | 'raid_endless_ultimate_junkie'
+  | 'raid_endless_deep_space'
+  | 'raid_endless_void_cartographer'
+  | 'raid_endless_boss_hunter'
+  | 'raid_hard_clear'
+  | 'raid_expert_clear'
+  | 'expert_clean_reactor'
+  | 'raid_score_vanguard'
+  | 'raid_score_overlord'
+  | 'raid_expert_ace'
+  | 'devil_contact'
+  | 'devil_breaker'
+  | 'devil_clean_break'
   | 'swarm_reaper'
   | 'swarm_extinction'
   | 'boss_executioner'
+  | 'boss_annihilator'
   | 'supply_magnet'
+  | 'supply_chain_master'
   | 'battle_hardened'
+  | 'run_centurion'
   | 'score_chaser'
   | 'score_legend'
+  | 'score_mythic'
+  | 'score_transcendent'
   | 'coop_wingman'
   | 'coop_clear'
   | 'coop_veteran'
@@ -55,6 +80,14 @@ export type AchievementId =
   | 'ship_legend'
   | 'fleet_captain'
   | 'fleet_legend'
+  | 'fleet_paragon'
+  | 'all_ships_sortie'
+  | 'fleet_mastery_circle'
+  | 'mesiah_commander'
+  | 'mesiah_ace'
+  | 'core_lander_awakening'
+  | 'god_frame_unlocked'
+  | 'core_lander_devotee'
   | 'squid_hunter'
   | 'squid_breaker'
   | 'serpent_breaker'
@@ -74,6 +107,9 @@ export type CodexId =
   | 'supply_routes'
   | 'commander_records'
   | 'weapon_lab'
+  | 'difficulty_protocols'
+  | 'score_multiplier_table'
+  | 'expert_ops_manual'
   | 'elite_contacts'
   | 'elite_hunter_cells'
   | 'asteroid_cluster'
@@ -87,12 +123,26 @@ export type CodexId =
   | 'serpent_scales'
   | 'orbital_fortress'
   | 'devil_gundam'
+  | 'devil_cells'
+  | 'master_projectile_trace'
+  | 'devil_break_report'
   | 'fortress_beam_core'
   | 'final_gauntlet'
   | 'endless_swarm'
   | 'ship_hangar'
+  | 'fleet_registry'
   | 'mastery_lab'
   | 'pilot_academy'
+  | 'boss_defeat_chain'
+  | 'mesiah_battleship'
+  | 'mesiah_command_log'
+  | 'comet_drone_protocol'
+  | 'core_lander_frame'
+  | 'core_frame_variants'
+  | 'burning_mode'
+  | 'god_barrage_art'
+  | 'spiegel_mirage_system'
+  | 'deep_endless_chart'
   | 'pickup_arsenal'
   | 'nuke_protocol'
   | 'nuke_failsafe'
@@ -153,22 +203,44 @@ export const ACHIEVEMENT_IDS: AchievementId[] = [
   'boss_breaker',
   'defense_veteran',
   'defense_legend',
+  'defense_score_elite',
   'endless_survivor',
   'endless_warden',
   'endless_legend',
+  'defense_overwatch',
+  'defense_endless_commander',
   'raid_endless_launch',
   'raid_endless_survivor',
   'raid_endless_vanguard',
   'raid_endless_legend',
   'raid_endless_boss_reaper',
   'raid_endless_score_ace',
+  'raid_endless_super_junkie',
+  'raid_endless_ultimate_junkie',
+  'raid_endless_deep_space',
+  'raid_endless_void_cartographer',
+  'raid_endless_boss_hunter',
+  'raid_hard_clear',
+  'raid_expert_clear',
+  'expert_clean_reactor',
+  'raid_score_vanguard',
+  'raid_score_overlord',
+  'raid_expert_ace',
+  'devil_contact',
+  'devil_breaker',
+  'devil_clean_break',
   'swarm_reaper',
   'swarm_extinction',
   'boss_executioner',
+  'boss_annihilator',
   'supply_magnet',
+  'supply_chain_master',
   'battle_hardened',
+  'run_centurion',
   'score_chaser',
   'score_legend',
+  'score_mythic',
+  'score_transcendent',
   'coop_wingman',
   'coop_clear',
   'coop_veteran',
@@ -181,6 +253,14 @@ export const ACHIEVEMENT_IDS: AchievementId[] = [
   'ship_legend',
   'fleet_captain',
   'fleet_legend',
+  'fleet_paragon',
+  'all_ships_sortie',
+  'fleet_mastery_circle',
+  'mesiah_commander',
+  'mesiah_ace',
+  'core_lander_awakening',
+  'god_frame_unlocked',
+  'core_lander_devotee',
   'squid_hunter',
   'squid_breaker',
   'serpent_breaker',
@@ -201,6 +281,9 @@ export const CODEX_IDS: CodexId[] = [
   'supply_routes',
   'commander_records',
   'weapon_lab',
+  'difficulty_protocols',
+  'score_multiplier_table',
+  'expert_ops_manual',
   'elite_contacts',
   'elite_hunter_cells',
   'asteroid_cluster',
@@ -214,12 +297,26 @@ export const CODEX_IDS: CodexId[] = [
   'serpent_scales',
   'orbital_fortress',
   'devil_gundam',
+  'devil_cells',
+  'master_projectile_trace',
+  'devil_break_report',
   'fortress_beam_core',
   'final_gauntlet',
   'endless_swarm',
   'ship_hangar',
+  'fleet_registry',
   'mastery_lab',
   'pilot_academy',
+  'boss_defeat_chain',
+  'mesiah_battleship',
+  'mesiah_command_log',
+  'comet_drone_protocol',
+  'core_lander_frame',
+  'core_frame_variants',
+  'burning_mode',
+  'god_barrage_art',
+  'spiegel_mirage_system',
+  'deep_endless_chart',
   'pickup_arsenal',
   'nuke_protocol',
   'nuke_failsafe',
@@ -355,9 +452,19 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
 
   const isGradiusRun = result.mode === 'gradius_solo' || result.mode === 'gradius_endless' || result.mode === 'gradius_multiplayer'
   const isGradiusEndlessRun = result.mode === 'gradius_endless' || (isGradiusRun && result.raidMode === 'endless')
+  const isGradiusCampaignRun = (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.raidMode !== 'endless'
   if (isGradiusEndlessRun) {
     progress.gradiusEndlessTotalScore += Math.max(0, Math.floor(result.score))
   }
+
+  const shipMasteries = Object.values(progress.shipMastery)
+  const coreLanderMastery = progress.shipMastery.coreLander
+  const mesiahMastery = progress.shipMastery.mesiah
+  const coreLanderAwakened = progress.gradiusEndlessTotalScore >= CORE_LANDER_UNLOCK_GRADIUS_ENDLESS_SCORE || (coreLanderMastery?.runs ?? 0) > 0
+  const godFrameUnlocked = (coreLanderMastery?.totalScore ?? 0) >= CORE_LANDER_GOD_GUNDAM_UNLOCK_SCORE
+  const gradiusCampaignCleared = isGradiusCampaignRun && result.status === 'victory'
+  const hardOrExpertClear = result.difficulty === 'hard' || result.difficulty === 'expert'
+  const allShipsSortied = shipMasteries.filter((ship) => ship.runs > 0).length >= 9
 
   const unlockAchievement = (id: AchievementId, condition: boolean) => {
     if (!condition || progress.achievements[id]) return
@@ -371,34 +478,64 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   unlockAchievement('boss_breaker', progress.bossesDefeated >= 10)
   unlockAchievement('defense_veteran', progress.bestStageByMode.ship_defense_normal >= 10)
   unlockAchievement('defense_legend', result.mode === 'ship_defense_normal' && result.status === 'victory' && result.score >= 15000)
+  unlockAchievement('defense_score_elite', result.mode === 'ship_defense_normal' && result.status === 'victory' && result.score >= 30000)
   unlockAchievement('endless_survivor', result.mode === 'ship_defense_endless' && result.stage >= 15)
   unlockAchievement('endless_warden', result.mode === 'ship_defense_endless' && result.stage >= 25)
   unlockAchievement('endless_legend', result.mode === 'ship_defense_endless' && result.stage >= 40)
+  unlockAchievement('defense_overwatch', result.mode === 'ship_defense_endless' && result.stage >= 60)
+  unlockAchievement('defense_endless_commander', result.mode === 'ship_defense_endless' && result.stage >= 80)
   unlockAchievement('raid_endless_launch', isGradiusEndlessRun && result.score > 0)
   unlockAchievement('raid_endless_survivor', isGradiusEndlessRun && result.stage >= 10)
   unlockAchievement('raid_endless_vanguard', isGradiusEndlessRun && result.stage >= 20)
   unlockAchievement('raid_endless_legend', isGradiusEndlessRun && result.stage >= 30)
   unlockAchievement('raid_endless_boss_reaper', isGradiusEndlessRun && (result.bossesDefeated ?? 0) >= 10)
   unlockAchievement('raid_endless_score_ace', isGradiusEndlessRun && result.score >= 150000)
+  unlockAchievement('raid_endless_super_junkie', isGradiusEndlessRun && result.score >= 5000000)
+  unlockAchievement('raid_endless_ultimate_junkie', isGradiusEndlessRun && result.score >= 10000000)
+  unlockAchievement('raid_endless_deep_space', isGradiusEndlessRun && result.stage >= 50)
+  unlockAchievement('raid_endless_void_cartographer', isGradiusEndlessRun && result.stage >= 75)
+  unlockAchievement('raid_endless_boss_hunter', isGradiusEndlessRun && (result.bossesDefeated ?? 0) >= 25)
+  unlockAchievement('raid_hard_clear', gradiusCampaignCleared && hardOrExpertClear)
+  unlockAchievement('raid_expert_clear', gradiusCampaignCleared && result.difficulty === 'expert')
+  unlockAchievement('expert_clean_reactor', gradiusCampaignCleared && result.difficulty === 'expert' && (result.nukesUsed ?? 0) === 0)
+  unlockAchievement('raid_score_vanguard', gradiusCampaignCleared && result.score >= 75000)
+  unlockAchievement('raid_score_overlord', gradiusCampaignCleared && result.score >= 150000)
+  unlockAchievement('raid_expert_ace', gradiusCampaignCleared && result.difficulty === 'expert' && result.score >= 100000)
+  unlockAchievement('devil_contact', isGradiusEndlessRun && Boolean(result.devilBossEncountered))
+  unlockAchievement('devil_breaker', isGradiusEndlessRun && Boolean(result.devilBossDefeated))
+  unlockAchievement('devil_clean_break', isGradiusEndlessRun && Boolean(result.devilBossDefeated) && (result.nukesUsed ?? 0) === 0)
   unlockAchievement('swarm_reaper', progress.enemiesDestroyed >= 500)
   unlockAchievement('swarm_extinction', progress.enemiesDestroyed >= 2500)
   unlockAchievement('boss_executioner', progress.bossesDefeated >= 50)
+  unlockAchievement('boss_annihilator', progress.bossesDefeated >= 150)
   unlockAchievement('supply_magnet', progress.pickupsCollected >= 150)
+  unlockAchievement('supply_chain_master', progress.pickupsCollected >= 500)
   unlockAchievement('battle_hardened', progress.totalRuns >= 25)
+  unlockAchievement('run_centurion', progress.totalRuns >= 100)
   unlockAchievement('score_chaser', progress.totalScore >= 100000)
   unlockAchievement('score_legend', progress.totalScore >= 500000)
+  unlockAchievement('score_mythic', progress.totalScore >= 2500000)
+  unlockAchievement('score_transcendent', progress.totalScore >= 10000000)
   unlockAchievement('coop_wingman', result.mode === 'gradius_multiplayer' && result.score > 0)
   unlockAchievement('coop_clear', result.mode === 'gradius_multiplayer' && result.status === 'victory')
   unlockAchievement('coop_veteran', result.mode === 'gradius_multiplayer' && result.stage >= 10)
   unlockAchievement('nuke_saver', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory' && (result.nukesUsed ?? 0) === 0)
   unlockAchievement('nuke_commander', progress.nukesUsed >= 20)
   unlockAchievement('restraint_protocol', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 10 && (result.nukesUsed ?? 0) === 0)
-  unlockAchievement('ship_specialist', Object.values(progress.shipMastery).some((ship) => ship.level >= 3))
-  unlockAchievement('ship_adept', Object.values(progress.shipMastery).some((ship) => ship.level >= 8))
-  unlockAchievement('ship_elite', Object.values(progress.shipMastery).some((ship) => ship.level >= 12))
-  unlockAchievement('ship_legend', Object.values(progress.shipMastery).some((ship) => ship.level >= 16))
-  unlockAchievement('fleet_captain', Object.values(progress.shipMastery).filter((ship) => ship.runs > 0).length >= 4)
-  unlockAchievement('fleet_legend', Object.values(progress.shipMastery).filter((ship) => ship.level >= 5).length >= 3)
+  unlockAchievement('ship_specialist', shipMasteries.some((ship) => ship.level >= 3))
+  unlockAchievement('ship_adept', shipMasteries.some((ship) => ship.level >= 8))
+  unlockAchievement('ship_elite', shipMasteries.some((ship) => ship.level >= 12))
+  unlockAchievement('ship_legend', shipMasteries.some((ship) => ship.level >= 16))
+  unlockAchievement('fleet_captain', shipMasteries.filter((ship) => ship.runs > 0).length >= 4)
+  unlockAchievement('fleet_legend', shipMasteries.filter((ship) => ship.level >= 5).length >= 3)
+  unlockAchievement('fleet_paragon', shipMasteries.filter((ship) => ship.level >= 8).length >= 5)
+  unlockAchievement('all_ships_sortie', allShipsSortied)
+  unlockAchievement('fleet_mastery_circle', shipMasteries.filter((ship) => ship.level >= 12).length >= 5)
+  unlockAchievement('mesiah_commander', (mesiahMastery?.runs ?? 0) > 0)
+  unlockAchievement('mesiah_ace', (mesiahMastery?.totalScore ?? 0) >= 1000000)
+  unlockAchievement('core_lander_awakening', coreLanderAwakened)
+  unlockAchievement('god_frame_unlocked', godFrameUnlocked)
+  unlockAchievement('core_lander_devotee', (coreLanderMastery?.totalScore ?? 0) >= 5000000)
   unlockAchievement('squid_hunter', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 5)
   unlockAchievement('squid_breaker', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 6)
   unlockAchievement('serpent_breaker', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 10)
@@ -423,6 +560,9 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   unlockCodex('supply_routes', progress.pickupsCollected >= 10)
   unlockCodex('commander_records', progress.totalRuns >= 5)
   unlockCodex('weapon_lab', progress.bestScoreByMode.gradius_solo > 0 || progress.bestScoreByMode.gradius_endless > 0 || progress.bestScoreByMode.gradius_multiplayer > 0)
+  unlockCodex('difficulty_protocols', isGradiusRun)
+  unlockCodex('score_multiplier_table', isGradiusRun && Boolean(result.difficulty))
+  unlockCodex('expert_ops_manual', isGradiusRun && result.difficulty === 'expert')
   unlockCodex('elite_contacts', result.stage >= 2 || progress.bossesDefeated >= 1)
   unlockCodex('elite_hunter_cells', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 4)
   unlockCodex('asteroid_cluster', result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer')
@@ -436,12 +576,26 @@ export function recordRunResult(result: RunResult): ProgressUpdate {
   unlockCodex('serpent_scales', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.stage >= 11)
   unlockCodex('orbital_fortress', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && (result.stage >= 15 || result.status === 'victory'))
   unlockCodex('devil_gundam', isGradiusEndlessRun && Boolean(result.devilBossEncountered))
+  unlockCodex('devil_cells', isGradiusEndlessRun && Boolean(result.devilBossEncountered))
+  unlockCodex('master_projectile_trace', isGradiusEndlessRun && Boolean(result.devilBossEncountered))
+  unlockCodex('devil_break_report', isGradiusEndlessRun && Boolean(result.devilBossDefeated))
   unlockCodex('fortress_beam_core', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && (result.stage >= 15 || result.status === 'victory'))
   unlockCodex('final_gauntlet', (result.mode === 'gradius_solo' || result.mode === 'gradius_multiplayer') && result.status === 'victory')
   unlockCodex('endless_swarm', result.mode === 'ship_defense_endless')
   unlockCodex('ship_hangar', Boolean(result.shipKey))
-  unlockCodex('mastery_lab', Object.values(progress.shipMastery).some((ship) => ship.level >= 3))
-  unlockCodex('pilot_academy', Object.values(progress.shipMastery).some((ship) => ship.runs >= 3))
+  unlockCodex('fleet_registry', shipMasteries.filter((ship) => ship.runs > 0).length >= 4)
+  unlockCodex('mastery_lab', shipMasteries.some((ship) => ship.level >= 3))
+  unlockCodex('pilot_academy', shipMasteries.some((ship) => ship.runs >= 3))
+  unlockCodex('boss_defeat_chain', progress.bossesDefeated >= 25)
+  unlockCodex('mesiah_battleship', (mesiahMastery?.runs ?? 0) > 0 || Boolean(progress.achievements.fortress_fall))
+  unlockCodex('mesiah_command_log', (mesiahMastery?.totalScore ?? 0) >= 500000)
+  unlockCodex('comet_drone_protocol', (mesiahMastery?.runs ?? 0) > 0)
+  unlockCodex('core_lander_frame', coreLanderAwakened)
+  unlockCodex('core_frame_variants', godFrameUnlocked)
+  unlockCodex('burning_mode', coreLanderAwakened || (coreLanderMastery?.runs ?? 0) > 0)
+  unlockCodex('god_barrage_art', godFrameUnlocked)
+  unlockCodex('spiegel_mirage_system', godFrameUnlocked)
+  unlockCodex('deep_endless_chart', isGradiusEndlessRun && result.stage >= 50)
   unlockCodex('pickup_arsenal', (result.pickupsCollected ?? 0) > 0 || progress.pickupsCollected > 0)
   unlockCodex('nuke_protocol', (result.nukesUsed ?? 0) > 0 || progress.nukesUsed > 0)
   unlockCodex('nuke_failsafe', progress.nukesUsed >= 5)

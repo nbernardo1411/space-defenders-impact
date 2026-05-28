@@ -10939,6 +10939,7 @@ export function GradiusRaid({
   const enemiesDestroyedRef = useRef(0)
   const bossesDefeatedRef = useRef(0)
   const devilBossEncounteredRef = useRef(false)
+  const devilBossDefeatedRef = useRef(false)
   const devilBossNextEligibleStageRef = useRef(1)
   const devilPreBuffRankRef = useRef(1)
   const [selectedDifficulty, setSelectedDifficulty] = useState<RaidDifficulty>('normal')
@@ -13363,6 +13364,7 @@ export function GradiusRaid({
     enemiesDestroyedRef.current = 0
     bossesDefeatedRef.current = 0
     devilBossEncounteredRef.current = false
+    devilBossDefeatedRef.current = false
     devilBossNextEligibleStageRef.current = stage
     pickupsCollectedRef.current = 0
     nukesUsedRef.current = 0
@@ -14366,7 +14368,9 @@ export function GradiusRaid({
       pickupsCollected: pickupsCollectedRef.current,
       nukesUsed: nukesUsedRef.current,
       raidMode: raidModeRef.current,
+      difficulty: raidDifficultyRef.current,
       devilBossEncountered: devilBossEncounteredRef.current,
+      devilBossDefeated: devilBossDefeatedRef.current,
     })
   }, [onRunComplete, playerName])
 
@@ -16068,6 +16072,7 @@ export function GradiusRaid({
         bossesDefeatedRef.current += 1
         enemy.defeatTimer = STAGE_CLEAR_SECONDS
         if (enemy.bossKind === 'devil') {
+          devilBossDefeatedRef.current = true
           enemy.devilDefeatedTimer = enemy.defeatTimer
           enemy.devilVisualPose = 'rage'
           enemy.devilPoseChangedAt = now
@@ -16532,6 +16537,7 @@ export function GradiusRaid({
               bossesDefeatedRef.current += 1
               enemy.defeatTimer = STAGE_CLEAR_SECONDS
               if (enemy.bossKind === 'devil') {
+                devilBossDefeatedRef.current = true
                 enemy.devilDefeatedTimer = enemy.defeatTimer
                 enemy.devilVisualPose = 'rage'
                 enemy.devilPoseChangedAt = now

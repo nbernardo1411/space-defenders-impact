@@ -58,7 +58,7 @@
 
 .progress-panel__header span,
 .progress-card > span,
-.unlock-card > span {
+.unlock-card__body > span {
   color: #6ef5cb;
   font-size: 0.72rem;
   font-weight: 900;
@@ -517,6 +517,70 @@
   gap: 20px;
 }
 
+.unlock-tabbed {
+  display: grid;
+  gap: 14px;
+}
+
+.unlock-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.unlock-tab {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(4, 8, 16, 0.74);
+  color: #cbd5e1;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.unlock-tab span {
+  min-width: 0;
+  color: inherit;
+  font-size: 0.86rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.unlock-tab b {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.unlock-tab--active {
+  border-color: rgba(110, 245, 203, 0.7);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(110, 245, 203, 0.16), transparent 46%),
+    rgba(8, 20, 32, 0.86);
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(110, 245, 203, 0.16),
+    0 0 18px rgba(110, 245, 203, 0.08);
+}
+
+.unlock-tab--active b {
+  color: #6ef5cb;
+}
+
+.unlock-tabbed__panel {
+  min-width: 0;
+}
+
 .unlock-section {
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
@@ -552,7 +616,7 @@
 }
 
 .unlock-grid--large .unlock-card {
-  min-height: 166px;
+  min-height: 178px;
   padding: 18px;
 }
 
@@ -567,6 +631,10 @@
 
 .unlock-card {
   min-height: 138px;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
   opacity: 0.62;
 }
 
@@ -574,6 +642,346 @@
   opacity: 1;
   border-color: rgba(110, 245, 203, 0.42);
   box-shadow: inset 0 0 22px rgba(20, 184, 166, 0.08);
+}
+
+.unlock-card--tier-elite.unlock-card--unlocked {
+  border-color: rgba(110, 245, 203, 0.5);
+  box-shadow:
+    inset 0 0 26px rgba(20, 184, 166, 0.1),
+    0 0 18px rgba(56, 189, 248, 0.08);
+}
+
+.unlock-card--tier-legendary.unlock-card--unlocked {
+  border-color: rgba(251, 191, 36, 0.5);
+  background:
+    radial-gradient(circle at 16% 50%, rgba(251, 191, 36, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.7), rgba(3, 7, 18, 0.9));
+  box-shadow:
+    inset 0 0 30px rgba(251, 191, 36, 0.09),
+    0 0 22px rgba(251, 191, 36, 0.08);
+}
+
+.unlock-card--tier-mythic.unlock-card--unlocked {
+  border-color: rgba(255, 255, 255, 0.58);
+  background:
+    radial-gradient(circle at 14% 48%, rgba(255, 255, 255, 0.12), transparent 28%),
+    radial-gradient(circle at 22% 52%, rgba(251, 191, 36, 0.11), transparent 42%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.74), rgba(3, 7, 18, 0.92));
+  box-shadow:
+    inset 0 0 34px rgba(255, 255, 255, 0.08),
+    0 0 26px rgba(251, 191, 36, 0.1);
+}
+
+.unlock-card__badge {
+  --badge-size: 76px;
+  --badge-svg-size: 70px;
+  --badge-asset-scale: 1;
+  --badge-ring-opacity: 0;
+  --badge-halo-opacity: 0;
+  --badge-core: #38bdf8;
+  --badge-edge: #0f172a;
+  --badge-mark: #e0f2fe;
+  --badge-soft: rgba(56, 189, 248, 0.24);
+  --badge-glow: rgba(56, 189, 248, 0.18);
+  position: relative;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  align-self: center;
+  width: var(--badge-size);
+  height: var(--badge-size);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--badge-soft), transparent 68%),
+    rgba(3, 7, 18, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.08),
+    0 0 20px var(--badge-glow);
+  filter: grayscale(0.8) brightness(0.72);
+  overflow: visible;
+}
+
+.unlock-card__badge::before,
+.unlock-card__badge::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+.unlock-card__badge::before {
+  inset: -4px;
+  z-index: 0;
+  border: 1px solid var(--badge-core);
+  box-shadow:
+    0 0 10px var(--badge-glow),
+    inset 0 0 8px var(--badge-glow);
+  opacity: var(--badge-ring-opacity);
+}
+
+.unlock-card__badge::after {
+  inset: -10px;
+  z-index: -1;
+  background:
+    radial-gradient(circle, var(--badge-glow), transparent 58%),
+    conic-gradient(from -35deg, transparent 0 10%, var(--badge-core) 14%, transparent 20% 48%, var(--badge-core) 54%, transparent 62% 100%);
+  opacity: var(--badge-halo-opacity);
+  filter: blur(1px);
+}
+
+.unlock-card__badge svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: var(--badge-svg-size);
+  height: var(--badge-svg-size);
+}
+
+.unlock-card__badge-asset {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  z-index: 2;
+  display: block;
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+  transform: translate(-50%, -50%) scale(var(--badge-asset-scale));
+  filter:
+    drop-shadow(0 0 8px var(--badge-glow))
+    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+}
+
+.unlock-card__badge-asset--ship {
+  width: 60px;
+  height: 60px;
+}
+
+.unlock-card__badge-asset--wide {
+  width: 70px;
+  height: 58px;
+}
+
+.unlock-card__badge-asset--boss {
+  width: 68px;
+  height: 68px;
+}
+
+.unlock-card__badge-asset--planet {
+  width: 66px;
+  height: 66px;
+}
+
+.unlock-card__badge-asset--hazard {
+  width: 54px;
+  height: 54px;
+}
+
+.unlock-card__badge-chip {
+  position: absolute;
+  z-index: 3;
+  right: -4px;
+  bottom: 4px;
+  max-width: 54px;
+  min-width: 28px;
+  border: 1px solid var(--badge-core);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.82);
+  box-shadow: 0 0 10px var(--badge-glow);
+  color: #ffffff;
+  font-style: normal;
+  font-size: 0.55rem;
+  font-weight: 900;
+  line-height: 1;
+  overflow: hidden;
+  padding: 3px 5px;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.unlock-card__badge--tier-advanced {
+  --badge-size: 78px;
+  --badge-svg-size: 72px;
+  --badge-asset-scale: 1.03;
+  --badge-ring-opacity: 0.28;
+  --badge-halo-opacity: 0.08;
+}
+
+.unlock-card__badge--tier-elite {
+  --badge-size: 82px;
+  --badge-svg-size: 76px;
+  --badge-asset-scale: 1.07;
+  --badge-ring-opacity: 0.42;
+  --badge-halo-opacity: 0.13;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.12),
+    0 0 24px var(--badge-glow),
+    0 0 12px rgba(255, 255, 255, 0.08);
+}
+
+.unlock-card__badge--tier-legendary {
+  --badge-size: 88px;
+  --badge-svg-size: 82px;
+  --badge-asset-scale: 1.12;
+  --badge-ring-opacity: 0.66;
+  --badge-halo-opacity: 0.2;
+  background:
+    conic-gradient(from -24deg, rgba(255,255,255,0.13), transparent 16%, var(--badge-soft) 28%, transparent 43%, rgba(255,255,255,0.14), transparent 70%),
+    radial-gradient(circle, var(--badge-soft), transparent 70%),
+    rgba(3, 7, 18, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.15),
+    0 0 30px var(--badge-glow),
+    0 0 18px rgba(251, 191, 36, 0.12);
+}
+
+.unlock-card__badge--tier-mythic {
+  --badge-size: 92px;
+  --badge-svg-size: 86px;
+  --badge-asset-scale: 1.17;
+  --badge-ring-opacity: 0.82;
+  --badge-halo-opacity: 0.28;
+  background:
+    conic-gradient(from -36deg, rgba(255,255,255,0.24), transparent 12%, var(--badge-core) 22%, transparent 36%, rgba(255,255,255,0.2), transparent 54%, var(--badge-soft) 66%, transparent 80%),
+    radial-gradient(circle at 50% 48%, rgba(255,255,255,0.15), transparent 26%),
+    radial-gradient(circle, var(--badge-soft), transparent 72%),
+    rgba(3, 7, 18, 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.2),
+    inset 0 0 18px rgba(255,255,255,0.08),
+    0 0 34px var(--badge-glow),
+    0 0 24px rgba(251, 191, 36, 0.16);
+}
+
+.unlock-card__badge--tier-legendary .unlock-card__badge-plate,
+.unlock-card__badge--tier-mythic .unlock-card__badge-plate {
+  stroke-width: 2.7;
+}
+
+.unlock-card__badge--tier-mythic .unlock-card__badge-core {
+  stroke-width: 2;
+}
+
+.unlock-card__badge-plate {
+  fill: var(--badge-edge);
+  stroke: var(--badge-core);
+  stroke-width: 2;
+}
+
+.unlock-card__badge-core {
+  fill: var(--badge-soft);
+  stroke: var(--badge-core);
+  stroke-width: 1.5;
+}
+
+.unlock-card__badge-mark {
+  fill: var(--badge-mark);
+  filter: drop-shadow(0 0 5px var(--badge-glow));
+}
+
+.unlock-card__badge-mark--ghost {
+  opacity: 0.34;
+}
+
+.unlock-card__badge-label {
+  fill: #ffffff;
+  font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  paint-order: stroke;
+  stroke: rgba(2, 6, 23, 0.78);
+  stroke-width: 2.4px;
+  text-transform: uppercase;
+}
+
+.unlock-card__badge--unlocked {
+  filter: none;
+}
+
+.unlock-card__badge--defense {
+  --badge-core: #6ef5cb;
+  --badge-edge: #0f3d35;
+  --badge-mark: #ecfdf5;
+  --badge-soft: rgba(110, 245, 203, 0.24);
+  --badge-glow: rgba(110, 245, 203, 0.2);
+}
+
+.unlock-card__badge--endless {
+  --badge-core: #a78bfa;
+  --badge-edge: #2e1065;
+  --badge-mark: #f5f3ff;
+  --badge-soft: rgba(167, 139, 250, 0.24);
+  --badge-glow: rgba(167, 139, 250, 0.2);
+}
+
+.unlock-card__badge--raid {
+  --badge-core: #38bdf8;
+  --badge-edge: #082f49;
+  --badge-mark: #ecfeff;
+  --badge-soft: rgba(56, 189, 248, 0.24);
+  --badge-glow: rgba(56, 189, 248, 0.2);
+}
+
+.unlock-card__badge--boss {
+  --badge-core: #fb7185;
+  --badge-edge: #450a0a;
+  --badge-mark: #fff1f2;
+  --badge-soft: rgba(251, 113, 133, 0.25);
+  --badge-glow: rgba(251, 113, 133, 0.22);
+}
+
+.unlock-card__badge--nuke {
+  --badge-core: #f97316;
+  --badge-edge: #431407;
+  --badge-mark: #fff7ed;
+  --badge-soft: rgba(249, 115, 22, 0.26);
+  --badge-glow: rgba(249, 115, 22, 0.22);
+}
+
+.unlock-card__badge--pickup {
+  --badge-core: #facc15;
+  --badge-edge: #422006;
+  --badge-mark: #fefce8;
+  --badge-soft: rgba(250, 204, 21, 0.26);
+  --badge-glow: rgba(250, 204, 21, 0.22);
+}
+
+.unlock-card__badge--ship {
+  --badge-core: #22d3ee;
+  --badge-edge: #0f172a;
+  --badge-mark: #f8fafc;
+  --badge-soft: rgba(34, 211, 238, 0.24);
+  --badge-glow: rgba(34, 211, 238, 0.2);
+}
+
+.unlock-card__badge--score {
+  --badge-core: #fbbf24;
+  --badge-edge: #451a03;
+  --badge-mark: #fff7ed;
+  --badge-soft: rgba(251, 191, 36, 0.27);
+  --badge-glow: rgba(251, 191, 36, 0.24);
+}
+
+.unlock-card__badge--coop {
+  --badge-core: #60a5fa;
+  --badge-edge: #172554;
+  --badge-mark: #eff6ff;
+  --badge-soft: rgba(96, 165, 250, 0.24);
+  --badge-glow: rgba(96, 165, 250, 0.2);
+}
+
+.unlock-card__badge--codex {
+  --badge-core: #94a3b8;
+  --badge-edge: #111827;
+  --badge-mark: #f8fafc;
+  --badge-soft: rgba(148, 163, 184, 0.22);
+  --badge-glow: rgba(148, 163, 184, 0.16);
+}
+
+.unlock-card__body {
+  min-width: 0;
 }
 
 .unlock-card strong {
@@ -907,6 +1315,10 @@
     grid-template-columns: 1fr;
   }
 
+  .unlock-grid--large .unlock-card {
+    min-height: 0;
+  }
+
   .progress-ship-mastery {
     grid-template-columns: 92px minmax(0, 1fr);
   }
@@ -985,6 +1397,61 @@
 }
 
 @media (max-width: 420px) {
+  .unlock-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .unlock-tab {
+    min-height: 52px;
+  }
+
+  .unlock-card {
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .unlock-card__badge {
+    width: 58px;
+    height: 58px;
+  }
+
+  .unlock-card__badge svg {
+    width: 54px;
+    height: 54px;
+  }
+
+  .unlock-card__badge-asset,
+  .unlock-card__badge-asset--ship,
+  .unlock-card__badge-asset--hazard {
+    width: 46px;
+    height: 46px;
+  }
+
+  .unlock-card__badge-asset--wide {
+    width: 54px;
+    height: 44px;
+  }
+
+  .unlock-card__badge-asset--boss,
+  .unlock-card__badge-asset--planet {
+    width: 52px;
+    height: 52px;
+  }
+
+  .unlock-card__badge-chip {
+    right: -2px;
+    bottom: 2px;
+    max-width: 44px;
+    min-width: 24px;
+    font-size: 0.48rem;
+    padding: 2px 4px;
+  }
+
+  .unlock-card__badge-label {
+    font-size: 9.5px;
+  }
+
   .enemy-almanac__grid {
     grid-template-columns: 1fr;
   }
