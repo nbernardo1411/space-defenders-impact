@@ -51,6 +51,7 @@ type ProgressionView = 'profile' | 'achievements' | 'codex' | 'stageMap'
 type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidMultiplayer' | 'leaderboards' | ProgressionView
 type GameMode = 'normal' | 'endless'
 type ActiveGame = 'towerDefense' | 'rocketRaid'
+type RaidLaunchMode = 'campaign' | 'endless'
 
 const PROGRESSION_VIEWS: ProgressionView[] = ['profile', 'achievements', 'codex', 'stageMap']
 
@@ -83,6 +84,7 @@ function App() {
   const [language, setLanguage] = useState<LanguageCode>(getInitialLanguage)
   const [gameMode, setGameMode] = useState<GameMode>('normal')
   const [activeGame, setActiveGame] = useState<ActiveGame>('towerDefense')
+  const [raidLaunchMode, setRaidLaunchMode] = useState<RaidLaunchMode>('campaign')
   const [raidMultiplayerSession, setRaidMultiplayerSession] = useState<RaidMultiplayerSession | null>(null)
   const [cutsceneIndex, setCutsceneIndex] = useState(0)
   const [playerName, setPlayerName] = useState(getStoredPlayerName)
@@ -103,6 +105,7 @@ function App() {
   const releaseText = useMemo(() => getReleaseText(language), [language])
   const creatorUnlock = isCreatorPlayerName(playerName)
   const canPlayEndless = endlessUnlocked || creatorUnlock
+  const canPlayGradiusEndless = progress.gradiusRaidEndlessUnlocked || creatorUnlock
   const currentScene = useMemo(
     () => ({
       ...text.cutscene.scenes[cutsceneIndex],
@@ -300,8 +303,10 @@ function App() {
     setScreen('rocketMode')
   }
 
-  const startRocketRaidSingle = () => {
+  const startRocketRaidSingle = (mode: RaidLaunchMode = 'campaign') => {
+    if (mode === 'endless' && !canPlayGradiusEndless) return
     setRaidMultiplayerSession(null)
+    setRaidLaunchMode(mode)
     setActiveGame('rocketRaid')
     setScreen('game')
   }
@@ -388,6 +393,16 @@ function App() {
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
     setScreen('title')
+  }
+
+  const closeRocketRaid = () => {
+    const nextProgress = loadProgress()
+    setProgress(nextProgress)
+    setEndlessUnlocked(nextProgress.towerDefenseEndlessUnlocked)
+    syncCloudProgress(nextProgress)
+    raidMultiplayerSession?.socket.close()
+    setRaidMultiplayerSession(null)
+    setScreen('rocketMode')
   }
 
   const runResultsOverlay = lastRunUpdate ? (
@@ -624,14 +639,22 @@ function App() {
           <h1>{text.rocketMode.title}</h1>
           <p>{text.rocketMode.copy}</p>
 
-          <div className="mode-screen__actions">
-            <button className="mode-screen__button" onClick={startRocketRaidSingle}>
+          <div className="mode-screen__actions mode-screen__actions--raid">
+            <button className="mode-screen__button" onClick={() => startRocketRaidSingle('campaign')}>
               <span>{text.rocketMode.single}</span>
-              <strong>{text.rocketMode.start}</strong>
+              <strong className="mode-screen__button-fit-text">{text.rocketMode.start}</strong>
+            </button>
+            <button
+              className="mode-screen__button mode-screen__button--endless"
+              disabled={!canPlayGradiusEndless}
+              onClick={() => startRocketRaidSingle('endless')}
+            >
+              <span>{text.rocketMode.endless}</span>
+              <strong className="mode-screen__button-fit-text">{canPlayGradiusEndless ? text.rocketMode.startEndless : text.rocketMode.endlessLocked}</strong>
             </button>
             <button className="mode-screen__button mode-screen__button--accent" onClick={() => setScreen('raidMultiplayer')}>
               <span>{text.rocketMode.twoPlayers}</span>
-              <strong>{text.rocketMode.multiplayer}</strong>
+              <strong className="mode-screen__button-fit-text">{text.rocketMode.multiplayer}</strong>
             </button>
           </div>
         </div>
@@ -682,6 +705,7 @@ function App() {
           onBack={() => setScreen('rocketMode')}
           onStart={(session) => {
             setRaidMultiplayerSession(session)
+            setRaidLaunchMode('campaign')
             setActiveGame('rocketRaid')
             setScreen('game')
           }}
@@ -696,7 +720,8 @@ function App() {
     <div className="app">
       {activeGame === 'rocketRaid' ? (
         <GradiusRaid
-          onClose={closeGame}
+          onClose={closeRocketRaid}
+          initialMode={raidLaunchMode}
           multiplayerSession={raidMultiplayerSession}
           playerName={playerName}
           language={language}

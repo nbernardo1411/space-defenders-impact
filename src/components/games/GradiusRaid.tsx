@@ -19,6 +19,13 @@ type MirageBossKind = 'squid' | 'snake'
 type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 type RaidMode = 'campaign' | 'endless'
+type RaidDifficulty = 'easy' | 'normal' | 'hard' | 'expert'
+const DIFFICULTY_CONFIGS: Record<RaidDifficulty, { enemyHpMult: number; damageMult: number; scoreMult: number; playerHpBonus: number; oneHp: boolean }> = {
+  easy:   { enemyHpMult: 0.65, damageMult: 1,   scoreMult: 0.6,  playerHpBonus: 2, oneHp: false },
+  normal: { enemyHpMult: 1,    damageMult: 1,   scoreMult: 1,    playerHpBonus: 0, oneHp: false },
+  hard:   { enemyHpMult: 2,    damageMult: 2,   scoreMult: 1.4,  playerHpBonus: 0, oneHp: false },
+  expert: { enemyHpMult: 2,    damageMult: 2,   scoreMult: 2,    playerHpBonus: 0, oneHp: true  },
+}
 export type RaidAssetPreloadState = { status: 'idle' | 'loading' | 'ready'; loaded: number; total: number }
 type DevilBossPose = 'idle' | 'idle2' | 'attack' | 'attack2' | 'rage'
 type MultiplayerConnectionQuality = 'good' | 'ok' | 'poor' | 'offline'
@@ -10848,17 +10855,20 @@ type RaidMultiplayerSession = {
 
 export function GradiusRaid({
   onClose,
+  initialMode = 'campaign',
   multiplayerSession,
   playerName,
   language = 'en',
   onRunComplete,
 }: {
   onClose: () => void
+  initialMode?: RaidMode
   multiplayerSession?: RaidMultiplayerSession | null
   playerName: string
   language?: LanguageCode
   onRunComplete?: (result: RunResult) => void
 }) {
+  const initialRaidMode: RaidMode = multiplayerSession ? 'campaign' : initialMode
   const rootRef = useRef<HTMLDivElement | null>(null)
   const pixiBackgroundHostRef = useRef<HTMLDivElement | null>(null)
   const pixiBackgroundRef = useRef<PixiRaidBackground | null>(null)
@@ -10931,6 +10941,11 @@ export function GradiusRaid({
   const devilBossEncounteredRef = useRef(false)
   const devilBossNextEligibleStageRef = useRef(1)
   const devilPreBuffRankRef = useRef(1)
+  const [selectedDifficulty, setSelectedDifficulty] = useState<RaidDifficulty>('normal')
+  const raidDifficultyRef = useRef<RaidDifficulty>('normal')
+  const scoreMultRef = useRef(1)
+  const enemyHpMultRef = useRef(1)
+  const enemyDamageMultRef = useRef(1)
   const pickupsCollectedRef = useRef(0)
   const nukesUsedRef = useRef(0)
   const shotsRef = useRef<Shot[]>([])
@@ -10951,7 +10966,7 @@ export function GradiusRaid({
   const ripplesRef = useRef<Ripple[]>([])
   const homingTargetsRef = useRef<Map<number, Enemy>>(new Map())
   const phaseRef = useRef<GamePhase>('select')
-  const raidModeRef = useRef<RaidMode>('campaign')
+  const raidModeRef = useRef<RaidMode>(initialRaidMode)
   const stageRef = useRef(1)
   const waveRef = useRef(1)
   const spawnTimerRef = useRef(0.5)
@@ -10999,6 +11014,7 @@ export function GradiusRaid({
   const [briefingStep, setBriefingStep] = useState(0)
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [difficultyOpen, setDifficultyOpen] = useState(false)
   const [audioMix, setAudioMix] = useState<AudioMixSettings>(() => getGameAudioMixSettings())
   const [assetPreload, setAssetPreload] = useState<RaidAssetPreloadState>(getRaidAssetPreloadInitialState)
   const [snapshot, setSnapshot] = useState<Snapshot>(() => ({
@@ -11025,7 +11041,7 @@ export function GradiusRaid({
     nukeFlash: 0,
     asteroidWarning: 0,
     randomEvent: null,
-    raidMode: 'campaign',
+    raidMode: initialRaidMode,
   }))
   const [multiplayerConnection, setMultiplayerConnection] = useState<{
     quality: MultiplayerConnectionQuality
@@ -13035,6 +13051,7 @@ export function GradiusRaid({
   const detonateNuke = useCallback((targetX = 50, targetY = 46) => {
     if (phaseRef.current !== 'playing') return
     const player = playerRef.current
+    const scoreMult = scoreMultRef.current
     nukeBlastOriginRef.current = { x: targetX, y: targetY }
     nukeFlashRef.current = NUKE_FLASH_SECONDS
     player.invuln = Math.max(player.invuln, 0.75)
@@ -13075,9 +13092,9 @@ export function GradiusRaid({
       destroyed += 1
       enemiesDestroyedRef.current += 1
       const scoreValue = 95 + waveRef.current * 14
-      player.score += scoreValue
+      player.score += Math.round(scoreValue * scoreMult)
       if (remotePlayerRef.current) {
-        remotePlayerRef.current.score += scoreValue
+        remotePlayerRef.current.score += Math.round(scoreValue * scoreMult)
       }
       if (markedExplosions < 10) {
         markedExplosions += 1
@@ -13097,9 +13114,9 @@ export function GradiusRaid({
       }
 
       vaporizedAsteroids += 1
-      player.score += asteroid.tier === 2 ? 140 : asteroid.tier === 1 ? 65 : 24
+      player.score += Math.round((asteroid.tier === 2 ? 140 : asteroid.tier === 1 ? 65 : 24) * scoreMult)
       if (remotePlayerRef.current) {
-        remotePlayerRef.current.score += asteroid.tier === 2 ? 140 : asteroid.tier === 1 ? 65 : 24
+        remotePlayerRef.current.score += Math.round((asteroid.tier === 2 ? 140 : asteroid.tier === 1 ? 65 : 24) * scoreMult)
       }
       if (markedExplosions < 10) {
         markedExplosions += 1
@@ -13283,6 +13300,22 @@ export function GradiusRaid({
     if (fullyBuffed || forceLocalDevilTest) {
       fullyBuffRaidPlayer(playerRef.current)
       if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
+    }
+    const diffCfg = DIFFICULTY_CONFIGS[raidDifficultyRef.current]
+    scoreMultRef.current = diffCfg.scoreMult
+    enemyHpMultRef.current = diffCfg.enemyHpMult
+    enemyDamageMultRef.current = diffCfg.damageMult
+    if (diffCfg.oneHp) {
+      playerRef.current.hp = 1
+      playerRef.current.maxHp = 1
+      if (remotePlayerRef.current) { remotePlayerRef.current.hp = 1; remotePlayerRef.current.maxHp = 1 }
+    } else if (diffCfg.playerHpBonus > 0) {
+      playerRef.current.hp = playerRef.current.maxHp + diffCfg.playerHpBonus
+      playerRef.current.maxHp = playerRef.current.maxHp + diffCfg.playerHpBonus
+      if (remotePlayerRef.current) {
+        remotePlayerRef.current.hp = remotePlayerRef.current.maxHp + diffCfg.playerHpBonus
+        remotePlayerRef.current.maxHp = remotePlayerRef.current.maxHp + diffCfg.playerHpBonus
+      }
     }
     shotsRef.current = []
     enemyShotsRef.current = []
@@ -14090,15 +14123,16 @@ export function GradiusRaid({
     const hp = 2 + Math.floor(wave / 2) + Math.floor(powerPressure / 4)
     const eliteHpMultiplier = kind === 'brood' ? 12 : kind === 'lancer' ? 9.2 : 10.4
     const eliteStagePressure = Math.max(0, stage - 1)
-    const eliteHp = Math.round((38 + hp * eliteHpMultiplier + eliteStagePressure * 11.5 + wave * 3.4 + powerPressure * 4.2) * (multiplayerSessionRef.current ? 1.36 : 1))
+    const eliteHp = Math.round((38 + hp * eliteHpMultiplier + eliteStagePressure * 11.5 + wave * 3.4 + powerPressure * 4.2) * (multiplayerSessionRef.current ? 1.36 : 1) * enemyHpMultRef.current)
+    const normalHp = Math.max(1, Math.round(hp * enemyHpMultRef.current))
     enemiesRef.current.push({
       id: enemyId++,
       x: isElite ? eliteX : x,
       y: isElite ? Math.min(y, -7 - Math.random() * 16) : y,
       vx: kind === 'lancer' ? (Math.random() < 0.5 ? -1 : 1) * 10 : (Math.random() - 0.5) * (isElite ? 7 : 4),
       vy: isElite ? kind === 'brood' ? 10.4 : kind === 'lancer' ? 13.2 : 11.8 : 14 + Math.random() * 7 + wave * 0.38,
-      hp: isElite ? eliteHp : hp,
-      maxHp: isElite ? eliteHp : hp,
+      hp: isElite ? eliteHp : normalHp,
+      maxHp: isElite ? eliteHp : normalHp,
       radius: isElite ? kind === 'brood' ? 6.4 : kind === 'lancer' ? 5.7 : 6 : 3.7,
       variant: isElite ? enemyId % RAID_ELITE_SPRITE_COUNT : enemyId % RAID_ALIEN_SPRITE_COUNT,
       isBoss: false,
@@ -14182,7 +14216,7 @@ export function GradiusRaid({
     const bossBaseHp = bossKind === 'devil'
       ? 1300 + wave * 165 + stagePressure * 290 + powerScore * 80
       : 1450 + wave * 180 + stagePressure * 320 + powerScore * 90
-    const hp = Math.round(bossBaseHp * hpMultiplier * multiplayerBossMultiplier)
+    const hp = Math.round(bossBaseHp * hpMultiplier * multiplayerBossMultiplier * enemyHpMultRef.current)
     const radius =
       bossKind === 'devil' ? 12.8 :
         bossKind === 'final' ? 25 :
@@ -14358,8 +14392,9 @@ export function GradiusRaid({
   const damagePlayer = useCallback((amount: number, targetPlayer = playerRef.current) => {
     const player = targetPlayer
     if (player.hp <= 0 || player.invuln > 0) return
+    const scaledAmount = Math.max(1, Math.round(amount * enemyDamageMultRef.current))
     if (player.forceField > 0) {
-      player.forceField = Math.max(0, player.forceField - amount)
+      player.forceField = Math.max(0, player.forceField - scaledAmount)
       player.invuln = 0.22
       spawnSparks(player.x, player.y, '#22d3ee', 24, 7)
       addRipple(player.x, player.y, '#22d3ee', player.forceField > 0 ? 12 : 17)
@@ -14374,7 +14409,7 @@ export function GradiusRaid({
       playGameSound('hit')
       return
     }
-    player.hp -= amount
+    player.hp -= scaledAmount
     player.invuln = 1.05
     spawnSparks(player.x, player.y, '#fca5a5', 22, 6)
     addRipple(player.x, player.y, '#ef4444', 10)
@@ -14620,6 +14655,7 @@ export function GradiusRaid({
     if (phaseRef.current !== 'playing') return
 
     const player = playerRef.current
+    const scoreMult = scoreMultRef.current
     nukeCooldownRef.current = Math.max(0, nukeCooldownRef.current - dt)
     nukeFlashRef.current = Math.max(0, nukeFlashRef.current - dt)
     asteroidWarningRef.current = Math.max(0, asteroidWarningRef.current - dt)
@@ -14702,7 +14738,7 @@ export function GradiusRaid({
       }
       if (before > 0 && stageClearRef.current <= 0) {
         if (victoryPendingRef.current) {
-          // Victory transition: fly-forward done � fade to black then show cutscene
+          // Victory transition: fly-forward done - fade to black then show cutscene
           victoryPendingRef.current = false
           phaseRef.current = 'victory'
           victoryBlackoutRef.current = VICTORY_BLACKOUT_SECONDS
@@ -15846,9 +15882,9 @@ export function GradiusRaid({
       ))
       const scoreValue = asteroid.tier === 2 ? 190 : asteroid.tier === 1 ? 82 : 26
       if (awardScore) {
-        player.score += scoreValue + stageRef.current * 4
+        player.score += Math.round((scoreValue + stageRef.current * 4) * scoreMult)
         if (remotePlayerRef.current) {
-          remotePlayerRef.current.score += scoreValue + stageRef.current * 4
+          remotePlayerRef.current.score += Math.round((scoreValue + stageRef.current * 4) * scoreMult)
         }
       }
       spawnSparks(asteroid.x, asteroid.y, asteroid.tier === 2 ? '#fb923c' : '#fbbf24', asteroid.tier === 2 ? 38 : 22, asteroid.tier === 2 ? 8 : 5)
@@ -15910,8 +15946,8 @@ export function GradiusRaid({
           if (enemy.hp <= 0 && !enemy.isBoss) {
             enemiesDestroyedRef.current += 1
             const scoreValue = enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
-            player.score += scoreValue
-            if (remotePlayer) remotePlayer.score += scoreValue
+            player.score += Math.round(scoreValue * scoreMult)
+            if (remotePlayer) remotePlayer.score += Math.round(scoreValue * scoreMult)
             spawnSparks(enemy.x, enemy.y, enemy.isMiniBoss ? '#c084fc' : '#fb7185', enemy.isMiniBoss ? 42 : 18, enemy.isMiniBoss ? 7 : 5)
             addRipple(enemy.x, enemy.y, enemy.isMiniBoss ? '#a855f7' : '#f97316', enemy.isMiniBoss ? 14 : 9)
             if (enemy.isMiniBoss) {
@@ -16012,8 +16048,8 @@ export function GradiusRaid({
             shot.y = -999
           }
           if (wreck.hp <= 0) {
-            player.score += 240 + stageRef.current * 18
-            if (remotePlayerRef.current) remotePlayerRef.current.score += 240 + stageRef.current * 18
+            player.score += Math.round((240 + stageRef.current * 18) * scoreMult)
+            if (remotePlayerRef.current) remotePlayerRef.current.score += Math.round((240 + stageRef.current * 18) * scoreMult)
             spawnSparks(wreck.x, wreck.y, '#fb7185', 44, 8)
             addRipple(wreck.x, wreck.y, '#fb7185', 17)
             playGameSound('explosion_big')
@@ -16038,9 +16074,9 @@ export function GradiusRaid({
         }
       }
       const scoreValue = enemy.bossKind === 'devil' ? 150000 : enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
-      player.score += scoreValue
+      player.score += Math.round(scoreValue * scoreMult)
       if (remotePlayerRef.current) {
-        remotePlayerRef.current.score += scoreValue
+        remotePlayerRef.current.score += Math.round(scoreValue * scoreMult)
       }
       spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fda4af' : enemy.isMiniBoss ? '#c084fc' : '#fb7185', enemy.isBoss ? 60 : enemy.isMiniBoss ? 42 : 18, enemy.isBoss ? 8 : enemy.isMiniBoss ? 7 : 5)
       addRipple(enemy.x, enemy.y, enemy.isBoss ? '#fb7185' : enemy.isMiniBoss ? '#a855f7' : '#f97316', enemy.isBoss ? 18 : enemy.isMiniBoss ? 14 : 9)
@@ -16246,8 +16282,8 @@ export function GradiusRaid({
           targetAsteroid.hp -= (getPlayerBaseAttack(owner) + getGodGundamStageAttackBonus(stageRef.current)) * GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND * 1.35 * dt * damageScale
           if (targetAsteroid.hp <= 0) {
             const scoreValue = 180 + stageRef.current * 15 + targetAsteroid.tier * 80
-            player.score += scoreValue
-            if (remotePlayerRef.current) remotePlayerRef.current.score += scoreValue
+            player.score += Math.round(scoreValue * scoreMult)
+            if (remotePlayerRef.current) remotePlayerRef.current.score += Math.round(scoreValue * scoreMult)
             spawnSparks(targetAsteroid.x, targetAsteroid.y, targetAsteroid.tier === 2 ? '#fb923c' : '#fbbf24', targetAsteroid.tier === 2 ? 38 : 22, targetAsteroid.tier === 2 ? 8 : 5)
             addRipple(targetAsteroid.x, targetAsteroid.y, targetAsteroid.tier === 2 ? '#fb923c' : '#fbbf24', targetAsteroid.tier === 2 ? 15 : 9)
             playGameSound(targetAsteroid.tier === 2 ? 'explosion_big' : 'explosion')
@@ -16415,8 +16451,8 @@ export function GradiusRaid({
               spawnSparks(asteroid.x, asteroid.y, '#facc15', asteroid.tier === 2 ? 10 : 6, 5)
               if (asteroid.hp <= 0) {
                 const scoreValue = 180 + stageRef.current * 15 + asteroid.tier * 80
-                player.score += scoreValue
-                if (remotePlayerRef.current) remotePlayerRef.current.score += scoreValue
+                player.score += Math.round(scoreValue * scoreMult)
+                if (remotePlayerRef.current) remotePlayerRef.current.score += Math.round(scoreValue * scoreMult)
                 spawnSparks(asteroid.x, asteroid.y, asteroid.tier === 2 ? '#fb923c' : '#fbbf24', asteroid.tier === 2 ? 38 : 22, asteroid.tier === 2 ? 8 : 5)
                 addRipple(asteroid.x, asteroid.y, asteroid.tier === 2 ? '#fb923c' : '#fbbf24', asteroid.tier === 2 ? 15 : 9)
                 playGameSound(asteroid.tier === 2 ? 'explosion_big' : 'explosion')
@@ -16502,9 +16538,9 @@ export function GradiusRaid({
               }
             }
             const scoreValue = enemy.bossKind === 'devil' ? 150000 : enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
-            player.score += scoreValue
+            player.score += Math.round(scoreValue * scoreMult)
             if (remotePlayerRef.current) {
-              remotePlayerRef.current.score += scoreValue
+              remotePlayerRef.current.score += Math.round(scoreValue * scoreMult)
             }
             spawnSparks(enemy.x, enemy.y, enemy.isBoss ? '#fda4af' : enemy.isMiniBoss ? '#c084fc' : '#fb7185', enemy.isBoss ? 60 : enemy.isMiniBoss ? 42 : 18, enemy.isBoss ? 8 : enemy.isMiniBoss ? 7 : 5)
             addRipple(enemy.x, enemy.y, enemy.isBoss ? '#fb7185' : enemy.isMiniBoss ? '#a855f7' : '#f97316', enemy.isBoss ? 18 : enemy.isMiniBoss ? 14 : 9)
@@ -16688,7 +16724,7 @@ export function GradiusRaid({
               enemy.hp = Math.max(1, enemy.hp - (enemy.isBoss ? 28 + waveRef.current * 8 : 34 + waveRef.current * 7))
             } else {
               enemy.hp = 0
-              targetPlayer.score += 70 + waveRef.current * 10
+              targetPlayer.score += Math.round((70 + waveRef.current * 10) * scoreMult)
               spawnPowerUp(enemy.x, enemy.y)
             }
             spawnSparks(enemy.x, enemy.y, '#22d3ee', enemy.isBoss || enemy.isMiniBoss ? 40 : 18, 7)
@@ -16817,7 +16853,7 @@ export function GradiusRaid({
               targetPlayer.weaponTimers[powerUp.type] = 1
             }
           }
-          targetPlayer.score += 120
+          targetPlayer.score += Math.round(120 * scoreMult)
           spawnSparks(powerUp.x, powerUp.y, powerColor(powerUp.type), 24, 6)
           addRipple(powerUp.x, powerUp.y, powerColor(powerUp.type), 11)
           playPickupVoiceLine(powerUp.type)
@@ -17004,6 +17040,22 @@ export function GradiusRaid({
   const isMultiplayer = Boolean(multiplayerSession)
   const isEndlessRun = snapshot.raidMode === 'endless'
   const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
+  const canUseCampaignStageTools = !isEndlessRun && !isMultiplayer && completedCampaign && canControlOverlay
+  const canContinueCampaignCheckpoint = !isEndlessRun && !isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1
+  const primaryRaidMenuLabel = snapshot.phase === 'gameover'
+    ? isMultiplayer ? menuText.restartCoop : isEndlessRun ? menuText.restartEndless : menuText.restartStage1
+    : isEndlessRun ? menuText.startEndlessRaid : menuText.startRaid
+  const startCurrentRaidMode = () => {
+    if (snapshot.phase === 'gameover') {
+      resetGame(1, false, isEndlessRun ? 'endless' : 'campaign')
+      return
+    }
+    if (isEndlessRun) {
+      resetGame(1, false, 'endless')
+      return
+    }
+    openBriefing()
+  }
   const [graphicsQuality, setGraphicsQualityState] = useState<GraphicsQuality>(() => getGraphicsQuality())
   const applyGraphicsQuality = (q: GraphicsQuality) => {
     graphicsQualityRef.current = q
@@ -17033,6 +17085,13 @@ export function GradiusRaid({
     { key: 'impact', label: menuText.impactVolume },
     { key: 'ui', label: menuText.uiVolume },
   ]
+  const difficultyOptions: Array<{ key: RaidDifficulty; label: string; description: string }> = [
+    { key: 'easy', label: menuText.diffEasy, description: menuText.diffEasyDesc },
+    { key: 'normal', label: menuText.diffNormal, description: menuText.diffNormalDesc },
+    { key: 'hard', label: menuText.diffHard, description: menuText.diffHardDesc },
+    { key: 'expert', label: menuText.diffExpert, description: menuText.diffExpertDesc },
+  ]
+  const selectedDifficultyLabel = difficultyOptions.find((option) => option.key === selectedDifficulty)?.label ?? menuText.diffNormal
   const connectionClass = `raid__connection raid__connection--${multiplayerConnection.quality}`
   const finalScore = Math.max(player.score, snapshot.allyPlayer?.score ?? 0)
   const finaleShipSize = getShipSpriteSize(player.ship.key, 'picker') + 22
@@ -17215,7 +17274,7 @@ export function GradiusRaid({
         </div>
       )}
 
-      {settingsOpen && snapshot.phase === 'paused' && (
+      {settingsOpen && (snapshot.phase === 'paused' || snapshot.phase === 'select' || snapshot.phase === 'gameover') && (
         <div className="raid__settings-overlay" role="dialog" aria-modal="true" aria-label={menuText.settings}>
           <div className="raid__panel raid__panel--settings">
             <div className="raid__kicker">{menuText.settings}</div>
@@ -17256,6 +17315,33 @@ export function GradiusRaid({
             </div>
             <div className="raid__pause-actions">
               <button type="button" className="raid__start" onClick={() => setSettingsOpen(false)}>{menuText.close}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {difficultyOpen && (snapshot.phase === 'paused' || snapshot.phase === 'select' || snapshot.phase === 'gameover') && (
+        <div className="raid__settings-overlay" role="dialog" aria-modal="true" aria-label={menuText.selectDifficulty}>
+          <div className="raid__panel raid__panel--settings raid__panel--difficulty">
+            <div className="raid__kicker">{menuText.difficulty}</div>
+            <h2>{menuText.selectDifficulty}</h2>
+            <div className="raid__settings-section">
+              <div className="raid__difficulty-grid">
+                {difficultyOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`raid__difficulty-card raid__difficulty-card--${option.key}${selectedDifficulty === option.key ? ' raid__difficulty-card--active' : ''}`}
+                    onClick={() => { setSelectedDifficulty(option.key); raidDifficultyRef.current = option.key }}
+                  >
+                    <b>{option.label}</b>
+                    <span>{option.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="raid__pause-actions">
+              <button type="button" className="raid__start" onClick={() => setDifficultyOpen(false)}>{menuText.close}</button>
             </div>
           </div>
         </div>
@@ -17418,11 +17504,6 @@ export function GradiusRaid({
                   {menuText.startNewLaunch}
                 </button>
               ) : null}
-              {!isMultiplayer && completedCampaign && canControlOverlay ? (
-                <button type="button" className="raid__menu-button" onClick={() => resetGame(1, false, 'endless')}>
-                  {menuText.endlessFlight}
-                </button>
-              ) : null}
               <button type="button" className="raid__menu-button" onClick={exitRaid}>
                 {menuText.close}
               </button>
@@ -17431,7 +17512,7 @@ export function GradiusRaid({
         </div>
       )}
 
-      {stagePickerOpen && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
+      {stagePickerOpen && !isEndlessRun && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
         <div className="raid__stage-modal" role="dialog" aria-modal="true" aria-label={menuText.selectStageTitle}>
           <div className="raid__stage-modal-panel">
             <div className="raid__kicker">{menuText.selectStageTitle}</div>
@@ -17492,33 +17573,21 @@ export function GradiusRaid({
                 })()
               ))}
             </div>
-            {!isMultiplayer && completedCampaign && canControlOverlay ? (
+            {canUseCampaignStageTools ? (
               <div className="raid__stage-picker-row">
                 <button type="button" className="raid__menu-button raid__menu-button--wide" onClick={() => setStagePickerOpen(true)}>
                   {menuText.selectStage}
                 </button>
               </div>
             ) : null}
-            <div className="raid__records">
-              <span>{menuText.best} {snapshot.highScore.toLocaleString()}</span>
-              {!isMultiplayer && snapshot.phase === 'gameover' && checkpointStage > 1 ? <span>{menuText.checkpointStage} {checkpointStage}</span> : <span>{isMultiplayer ? menuText.coopRun : menuText.pcFollowsCursor}</span>}
-              <span>{isMultiplayer ? menuText.bothPilotsMustFall : isEndlessRun ? menuText.endlessFlight : completedCampaign ? menuText.endlessFlightUnlocked : menuText.mobileFollowsFinger}</span>
-            </div>
-            <div className="raid__gfx-row">
-              <span className="raid__gfx-label">{menuText.graphics}</span>
-              {(['low', 'medium', 'high', 'max'] as GraphicsQuality[]).map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  className={graphicsQuality === q ? 'raid__gfx-btn raid__gfx-btn--active' : 'raid__gfx-btn'}
-                  onClick={() => applyGraphicsQuality(q)}
-                >
-                  {menuText[q]}
-                </button>
-              ))}
+            <div className="raid__pause-actions raid__pause-actions--pre">
+              <button type="button" className="raid__menu-button raid__menu-button--difficulty" onClick={() => setDifficultyOpen(true)}>
+                <span className="raid__menu-button-fit-text">{menuText.selectDifficulty} : {selectedDifficultyLabel}</span>
+              </button>
+              <button type="button" className="raid__menu-button" onClick={() => setSettingsOpen(true)}>{menuText.settings}</button>
             </div>
             <div className="raid__pause-actions">
-              {!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 && (
+              {canContinueCampaignCheckpoint && (
                 <button type="button" className="raid__start" onClick={() => resetGame(checkpointStage, true)}>
                   {menuText.continueStage} {checkpointStage}
                 </button>
@@ -17526,17 +17595,14 @@ export function GradiusRaid({
               {canControlOverlay ? (
                 <button
                   type="button"
-                  className={!isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1 ? 'raid__menu-button' : 'raid__start'}
-                  onClick={snapshot.phase === 'gameover' ? () => resetGame(1) : openBriefing}
+                  className={canContinueCampaignCheckpoint ? 'raid__menu-button' : 'raid__start'}
+                  onClick={startCurrentRaidMode}
                 >
-                  {snapshot.phase === 'gameover' ? isMultiplayer ? menuText.restartCoop : isEndlessRun ? menuText.restartEndless : menuText.restartStage1 : menuText.startRaid}
+                  {primaryRaidMenuLabel}
                 </button>
               ) : (
                 <button type="button" className="raid__start" onClick={exitRaid}>{menuText.exitCoop}</button>
               )}
-              {!isMultiplayer && completedCampaign && canControlOverlay ? (
-                <button type="button" className="raid__menu-button" onClick={() => resetGame(1, false, 'endless')}>{menuText.endlessFlight}</button>
-              ) : null}
               {canControlOverlay ? (
                 <button type="button" className="raid__menu-button" onClick={exitRaid}>{hudText.exit}</button>
               ) : null}

@@ -2396,6 +2396,10 @@
   width: min(560px, 100%);
 }
 
+.raid__panel--difficulty {
+  width: min(760px, 100%);
+}
+
 .raid__settings-section {
   margin-top: 16px;
   padding: 14px;
@@ -2415,6 +2419,77 @@
 
 .raid__gfx-row--settings {
   margin-top: 10px;
+}
+
+.raid__difficulty-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.raid__difficulty-card {
+  --raid-difficulty-title: #fff7f7;
+  min-height: 108px;
+  padding: 15px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(8, 12, 22, 0.88), rgba(5, 8, 14, 0.78)),
+    radial-gradient(circle at 20% 0%, rgba(239, 35, 60, 0.16), transparent 48%);
+  color: #d9e2f0;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.raid__difficulty-card--easy {
+  --raid-difficulty-title: #d9fff4;
+}
+
+.raid__difficulty-card--normal {
+  --raid-difficulty-title: #f8fafc;
+}
+
+.raid__difficulty-card--hard {
+  --raid-difficulty-title: #fb923c;
+}
+
+.raid__difficulty-card--expert {
+  --raid-difficulty-title: #ef4444;
+}
+
+.raid__difficulty-card:hover {
+  border-color: rgba(248, 113, 113, 0.6);
+  transform: translateY(-1px);
+}
+
+.raid__difficulty-card--active {
+  border-color: rgba(252, 165, 165, 0.82);
+  background:
+    linear-gradient(180deg, rgba(63, 7, 18, 0.88), rgba(12, 9, 18, 0.82)),
+    radial-gradient(circle at 20% 0%, rgba(239, 35, 60, 0.28), transparent 52%);
+  box-shadow: 0 0 22px rgba(239, 35, 60, 0.16), inset 0 0 0 1px rgba(252, 165, 165, 0.1);
+}
+
+.raid__difficulty-card b {
+  display: block;
+  color: var(--raid-difficulty-title);
+  font-size: 0.86rem;
+  font-weight: 1000;
+  letter-spacing: 0.08rem;
+  line-height: 1.15;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--raid-difficulty-title) 38%, transparent);
+}
+
+.raid__difficulty-card span {
+  display: block;
+  margin-top: 8px;
+  color: #aebbd0;
+  font-size: 0.82rem;
+  font-weight: 760;
+  line-height: 1.35;
 }
 
 .raid__volume-list {
@@ -2446,6 +2521,14 @@
 }
 
 @media (max-width: 640px) {
+  .raid__difficulty-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .raid__difficulty-card {
+    min-height: 96px;
+  }
+
   .raid__volume-control {
     grid-template-columns: 1fr 46px;
   }
@@ -2638,6 +2721,10 @@
   min-height: 48px;
 }
 
+.raid__pause-actions--pre .raid__menu-button {
+  flex: 0 0 min(240px, 100%);
+}
+
 .raid__menu-button {
   padding: 13px 24px;
   border: 1px solid rgba(239, 35, 60, 0.55);
@@ -2647,6 +2734,21 @@
   font-weight: 900;
   letter-spacing: 0.08rem;
   text-transform: uppercase;
+}
+
+.raid__menu-button--difficulty {
+  container-type: inline-size;
+  padding-inline: 8px;
+  white-space: nowrap;
+  letter-spacing: 0;
+  font-size: 0.66rem;
+}
+
+.raid__menu-button-fit-text {
+  display: block;
+  white-space: nowrap;
+  letter-spacing: clamp(0.008rem, 0.16cqw, 0.04rem);
+  font-size: clamp(0.56rem, 5.1cqw, 0.78rem);
 }
 
 @keyframes raidNebula {
