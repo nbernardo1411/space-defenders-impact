@@ -1074,7 +1074,7 @@ function cleanOptionalStage(value) {
 
 function cleanShipKey(value) {
   const shipKey = String(value || '').trim()
-  const allowedShipKeys = new Set(['rocket', 'fast', 'gatling', 'laser', 'dreadnought', 'xwing', 'spaceEt'])
+  const allowedShipKeys = new Set(['rocket', 'fast', 'gatling', 'laser', 'dreadnought', 'xwing', 'spaceEt', 'mesiah', 'coreLander'])
   return allowedShipKeys.has(shipKey) ? shipKey : 'rocket'
 }
 

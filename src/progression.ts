@@ -4,14 +4,25 @@ import { isCreatorPlayerName, PLAYER_NAME_STORAGE_KEY, type LeaderboardMode } fr
 export type RunStatus = 'victory' | 'gameover' | 'exit'
 export type RaidDifficultyKey = 'easy' | 'normal' | 'hard' | 'expert'
 
+export type RunResultPilot = {
+  label: string
+  name: string
+  shipKey: string
+  score: number
+  hp: number
+  maxHp: number
+}
+
 export type RunResult = {
   mode: LeaderboardMode
   status: RunStatus
   playerName: string
   score: number
+  teamScore?: number
   stage: number
   wave?: number
   shipKey?: string | null
+  pilots?: RunResultPilot[]
   durationMs?: number
   enemiesDestroyed?: number
   bossesDefeated?: number

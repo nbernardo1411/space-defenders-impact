@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RaidShipSprite } from './games/RaidShipSprite'
 import { getLanguageText, getRaidText, type LanguageCode } from '../i18n'
+import { isNativeLanRelayAvailable, startLanRelay } from '../native/lanRelay'
+import { getCoreLanderModel, getMesiahShipColor, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, loadProgress } from '../progression'
 
 const DEFAULT_RAID_RELAY_URL = 'https://space-raid-relay.onrender.com'
 
@@ -34,9 +36,12 @@ export type RaidMultiplayerSession = {
   players: RoomPlayer[]
 }
 
+export type RaidMultiplayerConnectionMode = 'online' | 'local'
+
 type RaidMultiplayerLobbyProps = {
   playerName: string
   language: LanguageCode
+  connectionMode: RaidMultiplayerConnectionMode
   onBack: () => void
   onStart: (session: RaidMultiplayerSession) => void
 }
@@ -57,7 +62,11 @@ const getDefaultRelayUrl = () => {
   return DEFAULT_RAID_RELAY_URL
 }
 
-const normalizeRelayUrl = (value: string) => {
+const isLocalRelayEndpoint = (value: string) => (
+  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/i.test(value)
+)
+
+const normalizeRelayUrl = (value: string, preferLocal = false) => {
   const trimmed = value.trim()
   if (!trimmed) return ''
 
@@ -65,7 +74,13 @@ const normalizeRelayUrl = (value: string) => {
   if (trimmed.startsWith('http://')) return `ws://${trimmed.slice('http://'.length)}`
   if (trimmed.startsWith('https://')) return `wss://${trimmed.slice('https://'.length)}`
 
-  return `wss://${trimmed}`
+  return `${preferLocal || isLocalRelayEndpoint(trimmed) ? 'ws' : 'wss'}://${trimmed}`
+}
+
+const normalizeLanEndpoint = (value: string) => {
+  const trimmed = value.trim().replace(/^wss?:\/\//i, '').replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+  if (!trimmed) return ''
+  return trimmed.includes(':') ? trimmed : `${trimmed}:8787`
 }
 
 const SHIP_OPTIONS = [
@@ -76,33 +91,52 @@ const SHIP_OPTIONS = [
   { key: 'dreadnought', name: 'Obsidian Ark' },
   { key: 'xwing', name: 'Crosswing Nova' },
   { key: 'spaceEt', name: 'Space Jet' },
+  { key: 'mesiah', name: 'Mesiah' },
+  { key: 'coreLander', name: 'Core Lander' },
 ]
 
 const getShipName = (shipKey: string) => SHIP_OPTIONS.find((ship) => ship.key === shipKey)?.name ?? 'Black Comet'
 
 const getLobbyShipSize = (shipKey: string) => {
+  if (shipKey === 'mesiah') return 58
+  if (shipKey === 'coreLander') return 56
   if (shipKey === 'dreadnought') return 52
   if (shipKey === 'spaceEt') return 54
   if (shipKey === 'xwing') return 50
   return 48
 }
 
-export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: RaidMultiplayerLobbyProps) {
+const getMultiplayerShipOptions = (progress: ReturnType<typeof loadProgress>) => (
+  SHIP_OPTIONS.filter((ship) => {
+    if (ship.key === 'mesiah') return isGradiusRaidEndlessUnlocked(progress)
+    if (ship.key === 'coreLander') return isCoreLanderUnlocked(progress)
+    return true
+  })
+)
+
+export function RaidMultiplayerLobby({ playerName, language, connectionMode, onBack, onStart }: RaidMultiplayerLobbyProps) {
   const text = getLanguageText(language).lobby
   const raidText = getRaidText(language)
   const getLocalizedShipName = (shipKey: string) => raidText.ships[shipKey as keyof typeof raidText.ships]?.name ?? getShipName(shipKey)
+  const progress = useMemo(() => loadProgress(), [])
+  const availableShipOptions = useMemo(() => getMultiplayerShipOptions(progress), [progress])
+  const mesiahVisualShipKey = getMesiahShipColor(progress) === 'white' ? 'mesiahWhite' : 'mesiahBlack'
+  const coreLanderVisualShipKey = getCoreLanderModel(progress)
   const socketRef = useRef<WebSocket | null>(null)
   const handoffRef = useRef(false)
   const roomRef = useRef<RoomSnapshot | null>(null)
   const peerIdRef = useRef<string | null>(null)
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
-  const relayUrl = useMemo(getDefaultRelayUrl, [])
+  const onlineRelayUrl = useMemo(getDefaultRelayUrl, [])
   const [joinCode, setJoinCode] = useState('')
+  const [localHostInput, setLocalHostInput] = useState('')
+  const [localHostAddress, setLocalHostAddress] = useState('')
   const [room, setRoom] = useState<RoomSnapshot | null>(null)
   const [peerId, setPeerId] = useState<string | null>(null)
   const [status, setStatus] = useState<string>(text.statusInitial)
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
+  const isLocalMode = connectionMode === 'local'
 
   const ownPlayer = useMemo(
     () => room?.players.find((player) => player.id === peerId) ?? null,
@@ -123,6 +157,11 @@ export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: 
   }, [ownPlayer?.shipKey])
 
   useEffect(() => {
+    if (availableShipOptions.some((ship) => ship.key === selectedShipKey)) return
+    setSelectedShipKey(availableShipOptions[0]?.key ?? SHIP_OPTIONS[0].key)
+  }, [availableShipOptions, selectedShipKey])
+
+  useEffect(() => {
     return () => {
       if (!handoffRef.current) {
         socketRef.current?.close()
@@ -131,8 +170,8 @@ export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: 
     }
   }, [])
 
-  const connect = (onOpen: (socket: WebSocket) => void) => {
-    const url = normalizeRelayUrl(relayUrl)
+  const connect = (onOpen: (socket: WebSocket) => void, relayTarget = onlineRelayUrl) => {
+    const url = normalizeRelayUrl(relayTarget, isLocalMode)
     if (!url) {
       setError(text.noService)
       return
@@ -240,8 +279,38 @@ export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: 
   }
 
   const hostRoom = () => {
-    connect((socket) => {
-      send(socket, { type: 'create-room', name: playerName, shipKey: selectedShipKey })
+    if (!isLocalMode) {
+      connect((socket) => {
+        send(socket, { type: 'create-room', name: playerName, shipKey: selectedShipKey })
+      })
+      return
+    }
+
+    if (!isNativeLanRelayAvailable()) {
+      setError(text.localHostUnavailable)
+      return
+    }
+
+    setError('')
+    setConnecting(true)
+    setStatus(text.localHostStarting)
+    void startLanRelay(8787).then((relay) => {
+      if (!relay.running) {
+        setConnecting(false)
+        setError(text.localHostUnavailable)
+        return
+      }
+
+      const port = relay.port || 8787
+      const shareUrl = relay.url || (relay.ipAddress ? `ws://${relay.ipAddress}:${port}` : '')
+      setLocalHostAddress(shareUrl.replace(/^ws:\/\//i, ''))
+      setLocalHostInput(shareUrl.replace(/^ws:\/\//i, ''))
+      connect((socket) => {
+        send(socket, { type: 'create-room', name: playerName, shipKey: selectedShipKey })
+      }, `127.0.0.1:${port}`)
+    }).catch(() => {
+      setConnecting(false)
+      setError(text.localHostUnavailable)
     })
   }
 
@@ -249,6 +318,19 @@ export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: 
     const code = joinCode.trim().toUpperCase()
     if (!code) {
       setError(text.enterCode)
+      return
+    }
+
+    if (isLocalMode) {
+      const endpoint = normalizeLanEndpoint(localHostInput)
+      if (!endpoint) {
+        setError(text.enterHostAddress)
+        return
+      }
+
+      connect((socket) => {
+        send(socket, { type: 'join-room', name: playerName, roomCode: code, shipKey: selectedShipKey })
+      }, endpoint)
       return
     }
 
@@ -286,10 +368,10 @@ export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: 
           {text.back}
         </button>
 
-        <div className="mode-screen__eyebrow">{text.eyebrow}</div>
-        <h1>{text.title}</h1>
+        <div className="mode-screen__eyebrow">{isLocalMode ? text.localEyebrow : text.eyebrow}</div>
+        <h1>{isLocalMode ? text.localTitle : text.title}</h1>
         <p>
-          {text.copy}
+          {isLocalMode ? text.localCopy : text.copy}
         </p>
 
         <div className="raid-lobby__grid">
@@ -299,29 +381,47 @@ export function RaidMultiplayerLobby({ playerName, language, onBack, onStart }: 
           </div>
         </div>
 
+        {isLocalMode ? (
+          <div className="raid-lobby__lan-card">
+            <span>{text.localHostAddress}</span>
+            <strong>{localHostAddress || text.localHostWaiting}</strong>
+            <small>{text.localHostHint}</small>
+          </div>
+        ) : null}
+
         <div className="raid-lobby__ships" aria-label={text.chooseShip}>
-          {SHIP_OPTIONS.map((ship) => (
-            <button
-              key={ship.key}
-              data-ship={ship.key}
-              className={selectedShipKey === ship.key ? 'raid-lobby__ship raid-lobby__ship--active' : 'raid-lobby__ship'}
-              type="button"
-              onClick={() => chooseShip(ship.key)}
-              disabled={Boolean(ownPlayer?.ready)}
-            >
-              <span className="raid-lobby__ship-art" aria-hidden="true">
-                <RaidShipSprite shipKey={ship.key} size={getLobbyShipSize(ship.key)} />
-              </span>
-              <span className="raid-lobby__ship-name">{getLocalizedShipName(ship.key)}</span>
-            </button>
-          ))}
+          {availableShipOptions.map((ship) => {
+            const shipSpriteKey = ship.key === 'mesiah' ? mesiahVisualShipKey : ship.key === 'coreLander' ? coreLanderVisualShipKey : ship.key
+            return (
+              <button
+                key={ship.key}
+                data-ship={ship.key}
+                className={selectedShipKey === ship.key ? 'raid-lobby__ship raid-lobby__ship--active' : 'raid-lobby__ship'}
+                type="button"
+                onClick={() => chooseShip(ship.key)}
+                disabled={Boolean(ownPlayer?.ready)}
+              >
+                <span className="raid-lobby__ship-art" aria-hidden="true">
+                  <RaidShipSprite shipKey={shipSpriteKey} size={getLobbyShipSize(ship.key)} />
+                </span>
+                <span className="raid-lobby__ship-name">{getLocalizedShipName(ship.key)}</span>
+              </button>
+            )
+          })}
         </div>
 
         <div className="raid-lobby__actions">
           <button disabled={connecting} onClick={hostRoom}>
-            {text.hostRoom}
+            {isLocalMode ? text.startLanHost : text.hostRoom}
           </button>
-          <label className="raid-lobby__join">
+          <label className={isLocalMode ? 'raid-lobby__join raid-lobby__join--local' : 'raid-lobby__join'}>
+            {isLocalMode ? (
+              <input
+                value={localHostInput}
+                placeholder={text.localHostPlaceholder}
+                onChange={(event) => setLocalHostInput(event.target.value)}
+              />
+            ) : null}
             <input
               value={joinCode}
               placeholder={text.roomPlaceholder}

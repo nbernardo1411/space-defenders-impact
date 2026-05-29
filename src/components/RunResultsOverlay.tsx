@@ -14,6 +14,7 @@ export function RunResultsOverlay({ result, update, language, onClose }: RunResu
   const raidText = getRaidText(language)
   const statusLabel = result.status === 'victory' ? text.victory : result.status === 'gameover' ? text.gameover : text.exit
   const shipName = result.shipKey ? raidText.ships[result.shipKey as keyof typeof raidText.ships]?.name : null
+  const scoreDisplay = result.teamScore ?? result.score
   const unlocks = [
     ...update.unlockedAchievements.map((id) => text.achievementsMap[id].title),
     ...update.unlockedCodex.map((id) => text.codexMap[id].title),
@@ -28,7 +29,7 @@ export function RunResultsOverlay({ result, update, language, onClose }: RunResu
 
         <div className="result-overlay__stats">
           <div><b>{text.status}</b><strong>{statusLabel}</strong></div>
-          <div><b>{text.score}</b><strong>{result.score.toLocaleString()}</strong></div>
+          <div><b>{result.teamScore ? text.teamScore : text.score}</b><strong>{scoreDisplay.toLocaleString()}</strong></div>
           <div><b>{text.stage}</b><strong>{result.stage}</strong></div>
           {typeof result.wave === 'number' ? <div><b>{text.wave}</b><strong>{result.wave}</strong></div> : null}
           {shipName ? <div><b>{text.shipMastery}</b><strong>{shipName}</strong></div> : null}
@@ -36,6 +37,29 @@ export function RunResultsOverlay({ result, update, language, onClose }: RunResu
           <div><b>{text.bosses}</b><strong>{result.bossesDefeated ?? 0}</strong></div>
           <div><b>{text.pickups}</b><strong>{result.pickupsCollected ?? 0}</strong></div>
         </div>
+
+        {result.pilots?.length ? (
+          <section className="result-overlay__pilots">
+            <h3>{text.pilotBreakdown}</h3>
+            <div className="result-overlay__pilot-grid">
+              {result.pilots.map((pilot) => {
+                const pilotShipName = raidText.ships[pilot.shipKey as keyof typeof raidText.ships]?.name ?? pilot.shipKey
+                const hull = `${Math.max(0, Math.ceil(pilot.hp))}/${Math.max(1, Math.ceil(pilot.maxHp))}`
+                return (
+                  <article key={pilot.label} className="result-overlay__pilot-card">
+                    <span>{pilot.label}</span>
+                    <strong>{pilot.name}</strong>
+                    <dl>
+                      <div><dt>{text.ship}</dt><dd>{pilotShipName}</dd></div>
+                      <div><dt>{text.score}</dt><dd>{pilot.score.toLocaleString()}</dd></div>
+                      <div><dt>{text.hull}</dt><dd>{hull}</dd></div>
+                    </dl>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
 
         <section className="result-overlay__unlocks">
           <h3>{text.newUnlocks}</h3>

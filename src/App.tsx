@@ -1,10 +1,10 @@
 import './App.css'
 import { LeaderboardsScreen } from './components/LeaderboardsScreen'
 import { ProgressionScreen } from './components/ProgressionScreen'
-import { RaidMultiplayerLobby, type RaidMultiplayerSession } from './components/RaidMultiplayerLobby'
+import { RaidMultiplayerLobby, type RaidMultiplayerConnectionMode, type RaidMultiplayerSession } from './components/RaidMultiplayerLobby'
 import { RunResultsOverlay } from './components/RunResultsOverlay'
 import { GradiusRaid, preloadGradiusRaidAssets, type RaidAssetPreloadState } from './components/games/GradiusRaid'
-import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl } from './components/games/RaidShipSprite'
+import { getRaidAlienSpriteUrl, getRaidShipSpriteUrl, RaidShipSprite } from './components/games/RaidShipSprite'
 import { SpaceImpactDefense } from './components/games/SpaceImpactDefense'
 import { getPublicAssetUrl } from './components/games/sound'
 import {
@@ -18,7 +18,8 @@ import {
   type LanguageCode,
 } from './i18n'
 import { getStoredPlayerName, getStoredRecoveryCode, hasStoredPlayerName, isCreatorPlayerName, registerPlayerName, restorePlayerName, saveStoredPlayerName, uploadPlayerProgress, type PlayerNameRegistrationResult } from './leaderboards'
-import { getStoredTowerDefenseEndlessUnlock, loadProgress, normalizeProgress, recordRunResult, resetProgressForNewAccount, saveProgress, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
+import { getCoreLanderModel, getMesiahShipColor, getStoredTowerDefenseEndlessUnlock, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, loadProgress, normalizeProgress, recordRunResult, resetProgressForNewAccount, saveProgress, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
+import { isNativeLanRelayAvailable } from './native/lanRelay'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed - kept for prop compatibility)
@@ -48,12 +49,34 @@ const CUTSCENE_SCENES = [
 ] as const
 
 type ProgressionView = 'profile' | 'achievements' | 'codex' | 'stageMap'
-type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidMultiplayer' | 'leaderboards' | ProgressionView
+type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidCoopMode' | 'raidSameScreenBriefing' | 'raidMultiplayer' | 'leaderboards' | ProgressionView
 type GameMode = 'normal' | 'endless'
 type ActiveGame = 'towerDefense' | 'rocketRaid'
 type RaidLaunchMode = 'campaign' | 'endless'
 
 const PROGRESSION_VIEWS: ProgressionView[] = ['profile', 'achievements', 'codex', 'stageMap']
+
+const RAID_COOP_SHIP_OPTIONS = [
+  { key: 'rocket', name: 'Black Comet' },
+  { key: 'fast', name: 'Red Wraith' },
+  { key: 'gatling', name: 'Crimson Saw' },
+  { key: 'laser', name: 'Night Lance' },
+  { key: 'dreadnought', name: 'Obsidian Ark' },
+  { key: 'xwing', name: 'Crosswing Nova' },
+  { key: 'spaceEt', name: 'Space Jet' },
+  { key: 'mesiah', name: 'Mesiah' },
+  { key: 'coreLander', name: 'Core Lander' },
+] as const
+
+function isAndroidDeviceRuntime() {
+  if (isNativeLanRelayAvailable()) return true
+  if (typeof navigator === 'undefined') return false
+  return /android/i.test(navigator.userAgent)
+}
+
+function isMenuBgmScreen(screen: ScreenState) {
+  return screen !== 'game'
+}
 
 function MenuShipSprite({ shipKey }: { shipKey: string }) {
   return (
@@ -85,7 +108,10 @@ function App() {
   const [gameMode, setGameMode] = useState<GameMode>('normal')
   const [activeGame, setActiveGame] = useState<ActiveGame>('towerDefense')
   const [raidLaunchMode, setRaidLaunchMode] = useState<RaidLaunchMode>('campaign')
+  const [raidMultiplayerConnectionMode, setRaidMultiplayerConnectionMode] = useState<RaidMultiplayerConnectionMode>('online')
   const [raidMultiplayerSession, setRaidMultiplayerSession] = useState<RaidMultiplayerSession | null>(null)
+  const [raidSameScreenCoop, setRaidSameScreenCoop] = useState(false)
+  const [sameScreenGuestShipKey, setSameScreenGuestShipKey] = useState('fast')
   const [cutsceneIndex, setCutsceneIndex] = useState(0)
   const [playerName, setPlayerName] = useState(getStoredPlayerName)
   const [playerNameDraft, setPlayerNameDraft] = useState(playerName === 'Pilot' && !hasStoredPlayerName() ? '' : playerName)
@@ -106,6 +132,21 @@ function App() {
   const creatorUnlock = isCreatorPlayerName(playerName)
   const canPlayEndless = endlessUnlocked || creatorUnlock
   const canPlayGradiusEndless = progress.gradiusRaidEndlessUnlocked || creatorUnlock
+  const isAndroidDevice = useMemo(isAndroidDeviceRuntime, [])
+  const sameScreenShipOptions = useMemo(() => (
+    RAID_COOP_SHIP_OPTIONS.filter((ship) => {
+      if (ship.key === 'mesiah') return isGradiusRaidEndlessUnlocked(progress)
+      if (ship.key === 'coreLander') return isCoreLanderUnlocked(progress)
+      return true
+    })
+  ), [progress])
+  const getSameScreenShipSpriteKey = (shipKey: string) => (
+    shipKey === 'mesiah'
+      ? getMesiahShipColor(progress) === 'white' ? 'mesiahWhite' : 'mesiahBlack'
+      : shipKey === 'coreLander'
+        ? getCoreLanderModel(progress)
+        : shipKey
+  )
   const currentScene = useMemo(
     () => ({
       ...text.cutscene.scenes[cutsceneIndex],
@@ -115,6 +156,11 @@ function App() {
   )
   const raidAssetPreloadPercent = Math.min(100, Math.round(raidAssetPreload.loaded / Math.max(1, raidAssetPreload.total) * 100))
   const raidAssetsReady = raidAssetPreload.status === 'ready'
+
+  useEffect(() => {
+    if (sameScreenShipOptions.some((ship) => ship.key === sameScreenGuestShipKey)) return
+    setSameScreenGuestShipKey(sameScreenShipOptions[1]?.key ?? sameScreenShipOptions[0]?.key ?? 'fast')
+  }, [sameScreenGuestShipKey, sameScreenShipOptions])
 
   useEffect(() => {
     let cancelled = false
@@ -224,7 +270,7 @@ function App() {
       hasInteractedRef.current = true
 
       const bgm = bgmRef.current
-      if (bgm && screen === 'title') {
+      if (bgm && isMenuBgmScreen(screen)) {
         bgm.play().catch(() => {})
       }
 
@@ -246,7 +292,7 @@ function App() {
     const bgm = bgmRef.current
     if (!bgm) return
 
-    if (screen === 'title') {
+    if (isMenuBgmScreen(screen)) {
       if (hasInteractedRef.current) {
         bgm.play().catch(() => {})
       }
@@ -306,7 +352,16 @@ function App() {
   const startRocketRaidSingle = (mode: RaidLaunchMode = 'campaign') => {
     if (mode === 'endless' && !canPlayGradiusEndless) return
     setRaidMultiplayerSession(null)
+    setRaidSameScreenCoop(false)
     setRaidLaunchMode(mode)
+    setActiveGame('rocketRaid')
+    setScreen('game')
+  }
+
+  const startSameScreenCoop = () => {
+    setRaidMultiplayerSession(null)
+    setRaidSameScreenCoop(true)
+    setRaidLaunchMode('campaign')
     setActiveGame('rocketRaid')
     setScreen('game')
   }
@@ -392,6 +447,7 @@ function App() {
     syncCloudProgress(nextProgress)
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
+    setRaidSameScreenCoop(false)
     setScreen('title')
   }
 
@@ -402,6 +458,7 @@ function App() {
     syncCloudProgress(nextProgress)
     raidMultiplayerSession?.socket.close()
     setRaidMultiplayerSession(null)
+    setRaidSameScreenCoop(false)
     setScreen('rocketMode')
   }
 
@@ -652,9 +709,132 @@ function App() {
               <span>{text.rocketMode.endless}</span>
               <strong className="mode-screen__button-fit-text">{canPlayGradiusEndless ? text.rocketMode.startEndless : text.rocketMode.endlessLocked}</strong>
             </button>
-            <button className="mode-screen__button mode-screen__button--accent" onClick={() => setScreen('raidMultiplayer')}>
+            <button className="mode-screen__button mode-screen__button--accent" onClick={() => setScreen('raidCoopMode')}>
               <span>{text.rocketMode.twoPlayers}</span>
               <strong className="mode-screen__button-fit-text">{text.rocketMode.multiplayer}</strong>
+            </button>
+          </div>
+        </div>
+
+        {playerNamePrompt}
+        {runResultsOverlay}
+      </div>
+    )
+  }
+
+  if (screen === 'raidCoopMode') {
+    const canUseLocalCoop = isNativeLanRelayAvailable()
+    const canUseSameScreenCoop = !isAndroidDevice
+
+    return (
+      <div className="mode-screen">
+        <div className="mode-screen__stars" />
+        <div className="mode-screen__panel">
+          <button className="mode-screen__back" onClick={() => setScreen('rocketMode')}>
+            {text.lobby.back}
+          </button>
+
+          <div className="mode-screen__eyebrow">{text.lobby.modeEyebrow}</div>
+          <h1>{text.lobby.modeTitle}</h1>
+          <p>{canUseLocalCoop ? text.lobby.modeCopy : canUseSameScreenCoop ? text.lobby.sameScreenModeCopy : text.lobby.onlineCoopDesc}</p>
+
+          <div className={canUseLocalCoop || canUseSameScreenCoop ? 'mode-screen__actions mode-screen__actions--coop' : 'mode-screen__actions mode-screen__actions--coop mode-screen__actions--coop-online-only'}>
+            {canUseSameScreenCoop ? (
+              <button
+                className="mode-screen__button mode-screen__button--same-screen"
+                onClick={() => setScreen('raidSameScreenBriefing')}
+              >
+                <span>{text.lobby.sameScreenCoop}</span>
+                <strong>{text.lobby.sameScreenCoopTitle}</strong>
+                <small>{text.lobby.sameScreenCoopDesc}</small>
+              </button>
+            ) : null}
+            {canUseLocalCoop ? (
+              <button
+                className="mode-screen__button mode-screen__button--local"
+                onClick={() => {
+                  setRaidMultiplayerConnectionMode('local')
+                  setScreen('raidMultiplayer')
+                }}
+              >
+                <span>{text.lobby.localCoop}</span>
+                <strong>{text.lobby.localCoopTitle}</strong>
+                <small>{text.lobby.localCoopDesc}</small>
+              </button>
+            ) : null}
+            <button
+              className="mode-screen__button mode-screen__button--accent"
+              onClick={() => {
+                setRaidMultiplayerConnectionMode('online')
+                setScreen('raidMultiplayer')
+              }}
+            >
+              <span>{text.lobby.onlineCoop}</span>
+              <strong>{text.lobby.onlineCoopTitle}</strong>
+              <small>{text.lobby.onlineCoopDesc}</small>
+            </button>
+          </div>
+        </div>
+
+        {playerNamePrompt}
+        {runResultsOverlay}
+      </div>
+    )
+  }
+
+  if (screen === 'raidSameScreenBriefing') {
+    const selectedGuestShip = sameScreenShipOptions.find((ship) => ship.key === sameScreenGuestShipKey) ?? sameScreenShipOptions[0]
+
+    return (
+      <div className="mode-screen">
+        <div className="mode-screen__stars" />
+        <div className="mode-screen__panel mode-screen__panel--briefing">
+          <button className="mode-screen__back" onClick={() => setScreen('raidCoopMode')}>
+            {text.lobby.back}
+          </button>
+
+          <div className="mode-screen__eyebrow">{text.lobby.sameScreenEyebrow}</div>
+          <h1>{text.lobby.sameScreenTitle}</h1>
+          <p>{text.lobby.sameScreenCopy}</p>
+
+          <div className="same-screen-briefing">
+            <div className="same-screen-briefing__card">
+              <span>{text.lobby.sameScreenP1}</span>
+              <strong>{text.lobby.sameScreenP1Controls}</strong>
+            </div>
+            <div className="same-screen-briefing__card same-screen-briefing__card--accent">
+              <span>{text.lobby.sameScreenP2}</span>
+              <strong>{text.lobby.sameScreenP2Controls}</strong>
+            </div>
+          </div>
+
+          <div className="same-screen-ships" aria-label={text.lobby.sameScreenP2Ship}>
+            <span>{text.lobby.sameScreenP2Ship}</span>
+            <div className="same-screen-ships__grid">
+              {sameScreenShipOptions.map((ship) => {
+                const shipCopy = raidText.ships[ship.key as keyof typeof raidText.ships] ?? ship
+                const spriteKey = getSameScreenShipSpriteKey(ship.key)
+                return (
+                  <button
+                    key={ship.key}
+                    type="button"
+                    className={sameScreenGuestShipKey === ship.key ? 'same-screen-ships__button same-screen-ships__button--active' : 'same-screen-ships__button'}
+                    onClick={() => setSameScreenGuestShipKey(ship.key)}
+                  >
+                    <RaidShipSprite shipKey={spriteKey} size={ship.key === 'mesiah' || ship.key === 'coreLander' ? 50 : 42} />
+                    <strong>{shipCopy.name}</strong>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="mode-screen__actions mode-screen__actions--briefing">
+            <button className="mode-screen__button" onClick={() => setScreen('raidCoopMode')}>
+              <strong>{text.lobby.back}</strong>
+            </button>
+            <button className="mode-screen__button mode-screen__button--accent" disabled={!selectedGuestShip} onClick={startSameScreenCoop}>
+              <strong>{text.lobby.sameScreenStart}</strong>
             </button>
           </div>
         </div>
@@ -702,9 +882,11 @@ function App() {
         <RaidMultiplayerLobby
           playerName={playerName}
           language={language}
-          onBack={() => setScreen('rocketMode')}
+          connectionMode={raidMultiplayerConnectionMode}
+          onBack={() => setScreen('raidCoopMode')}
           onStart={(session) => {
             setRaidMultiplayerSession(session)
+            setRaidSameScreenCoop(false)
             setRaidLaunchMode('campaign')
             setActiveGame('rocketRaid')
             setScreen('game')
@@ -723,6 +905,8 @@ function App() {
           onClose={closeRocketRaid}
           initialMode={raidLaunchMode}
           multiplayerSession={raidMultiplayerSession}
+          sameScreenCoop={raidSameScreenCoop}
+          sameScreenGuestShipKey={sameScreenGuestShipKey}
           playerName={playerName}
           language={language}
           onRunComplete={handleRunComplete}

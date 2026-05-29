@@ -10991,6 +10991,8 @@ export function GradiusRaid({
   onClose,
   initialMode = 'campaign',
   multiplayerSession,
+  sameScreenCoop = false,
+  sameScreenGuestShipKey = 'fast',
   playerName,
   language = 'en',
   onRunComplete,
@@ -10998,11 +11000,13 @@ export function GradiusRaid({
   onClose: () => void
   initialMode?: RaidMode
   multiplayerSession?: RaidMultiplayerSession | null
+  sameScreenCoop?: boolean
+  sameScreenGuestShipKey?: string
   playerName: string
   language?: LanguageCode
   onRunComplete?: (result: RunResult) => void
 }) {
-  const initialRaidMode: RaidMode = multiplayerSession ? 'campaign' : initialMode
+  const initialRaidMode: RaidMode = multiplayerSession || sameScreenCoop ? 'campaign' : initialMode
   const rootRef = useRef<HTMLDivElement | null>(null)
   const pixiBackgroundHostRef = useRef<HTMLDivElement | null>(null)
   const pixiBackgroundRef = useRef<PixiRaidBackground | null>(null)
@@ -11028,6 +11032,8 @@ export function GradiusRaid({
   const progressRef = useRef(loadProgress())
   const shipCosmeticsCacheRef = useRef(new Map<string, { progress: ReturnType<typeof loadProgress>, cosmetics: Required<ShipCosmeticEquipState> }>())
   const multiplayerSessionRef = useRef<RaidMultiplayerSession | null>(multiplayerSession ?? null)
+  const sameScreenCoopRef = useRef(sameScreenCoop)
+  const sameScreenGuestShipKeyRef = useRef(sameScreenGuestShipKey)
   const multiplayerStartedRef = useRef(false)
   const multiplayerStateSeqRef = useRef(0)
   const multiplayerLastAppliedSeqRef = useRef(0)
@@ -11048,11 +11054,12 @@ export function GradiusRaid({
   const multiplayerLocalNukeRef = useRef(0)
   const multiplayerRemoteNukeRef = useRef(0)
   const multiplayerHandledRemoteNukeRef = useRef(0)
-  const coOpRunRef = useRef(Boolean(multiplayerSession))
+  const coOpRunRef = useRef(Boolean(multiplayerSession || sameScreenCoop))
   const remoteKeysRef = useRef(new Set<string>())
   const remotePointerTargetRef = useRef<Vec | null>(null)
   const remotePointerVisualRef = useRef<Vec | null>(null)
   const remotePlayerRef = useRef<Player | null>(null)
+  const isCoOpActive = () => Boolean(multiplayerSessionRef.current || sameScreenCoopRef.current)
   // Accumulated position error between local prediction and host state � drained gradually each frame
   const guestPositionCorrectionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   // Locally predicted shots for the guest (shown immediately, cleared when host confirms them)
@@ -11187,8 +11194,10 @@ export function GradiusRaid({
 
   useEffect(() => {
     multiplayerSessionRef.current = multiplayerSession ?? null
-    if (multiplayerSession) coOpRunRef.current = true
-  }, [multiplayerSession])
+    sameScreenCoopRef.current = sameScreenCoop
+    sameScreenGuestShipKeyRef.current = sameScreenGuestShipKey
+    if (multiplayerSession || sameScreenCoop) coOpRunRef.current = true
+  }, [multiplayerSession, sameScreenCoop, sameScreenGuestShipKey])
 
   const preloadRaidAssetsForMenu = useCallback(async (showLoading = false) => {
     if (showLoading) setAssetPreload((state) => state.status === 'ready' ? state : { status: 'loading', loaded: state.loaded, total: Math.max(1, state.total) })
@@ -12035,7 +12044,7 @@ export function GradiusRaid({
   const addRipple = useCallback((x: number, y: number, color: string, size: number) => {
     const quality = graphicsQualityRef.current
     if (quality === 'low') return
-    const profile = getRaidGraphicsProfile(quality, false, Boolean(multiplayerSessionRef.current))
+    const profile = getRaidGraphicsProfile(quality, false, isCoOpActive())
     if (ripplesRef.current.length >= profile.maxRipples) {
       const trimCount = ripplesRef.current.length - Math.max(0, profile.maxRipples - 1)
       for (let index = 0; index < trimCount; index += 1) recycleRipple(ripplesRef.current[index])
@@ -12224,7 +12233,7 @@ export function GradiusRaid({
     const refreshViewportMetrics = () => {
       const root = rootRef.current
       if (!root) return
-      viewportMetricsRef.current = makeRaidViewportMetrics(root, graphicsQualityRef.current, Boolean(multiplayerSessionRef.current))
+      viewportMetricsRef.current = makeRaidViewportMetrics(root, graphicsQualityRef.current, isCoOpActive())
     }
 
     refreshViewportMetrics()
@@ -12277,7 +12286,7 @@ export function GradiusRaid({
     if (!canvas || !root) return
 
     const gfxQuality = graphicsQualityRef.current
-    const multiplayerActive = Boolean(multiplayerSessionRef.current)
+    const multiplayerActive = isCoOpActive()
     let viewport = viewportMetricsRef.current
     if (!viewport || viewport.quality !== gfxQuality || viewport.multiplayer !== multiplayerActive) {
       viewport = makeRaidViewportMetrics(root, gfxQuality, multiplayerActive)
@@ -13091,7 +13100,7 @@ export function GradiusRaid({
   }, [])
 
   const spawnSparks = useCallback((x: number, y: number, color: string, count: number, size = 5) => {
-    const profile = getRaidGraphicsProfile(graphicsQualityRef.current, false, Boolean(multiplayerSessionRef.current))
+    const profile = getRaidGraphicsProfile(graphicsQualityRef.current, false, isCoOpActive())
     const budget = Math.max(0, profile.maxSparks - sparksRef.current.length)
     const spawnCount = Math.min(Math.ceil(count * profile.sparkScale), budget)
     for (let i = 0; i < spawnCount; i += 1) {
@@ -13406,6 +13415,7 @@ export function GradiusRaid({
 
   const resetGame = useCallback(async (startStage = 1, fullyBuffed = false, mode: RaidMode = raidModeRef.current) => {
     const session = multiplayerSessionRef.current
+    const sameScreen = sameScreenCoopRef.current
     if (session && !session.isHost) return
     await preloadRaidAssetsForMenu(true)
     progressRef.current = loadProgress()
@@ -13416,7 +13426,7 @@ export function GradiusRaid({
     const hostRoomPlayer = session?.players.find((roomPlayer) => roomPlayer.host)
     const guestRoomPlayer = session?.players.find((roomPlayer) => !roomPlayer.host)
     const hostShip = getShipByKey(hostRoomPlayer?.shipKey, selectedShipRef.current)
-    const guestShip = getShipByKey(guestRoomPlayer?.shipKey, SHIP_OPTIONS[1])
+    const guestShip = getShipByKey(sameScreen ? sameScreenGuestShipKeyRef.current : guestRoomPlayer?.shipKey, SHIP_OPTIONS[1])
 
     if (session?.isHost) {
       selectedShipRef.current = hostShip
@@ -13425,7 +13435,7 @@ export function GradiusRaid({
 
     playerRef.current = getInitialPlayer(session?.isHost ? hostShip : selectedShipRef.current)
     applyStartingStageLevel(playerRef.current, stage)
-    if (session?.isHost) {
+    if (session?.isHost || sameScreen) {
       remotePlayerRef.current = getInitialPlayer(guestShip)
       applyStartingStageLevel(remotePlayerRef.current, stage)
       remotePlayerRef.current.x = 58
@@ -14248,7 +14258,7 @@ export function GradiusRaid({
     for (const enemy of enemiesRef.current) {
       if (enemy.isMiniBoss && enemy.hp > 0) activeEliteCount += 1
     }
-    const eliteCap = getMaxActiveEliteEnemies(stage, Boolean(multiplayerSessionRef.current))
+    const eliteCap = getMaxActiveEliteEnemies(stage, isCoOpActive())
     const randomEliteKind = eliteKind === undefined && activeEliteCount < eliteCap && Math.random() < getEliteEnemyChance(stage, wave, trainSlot, Boolean(style))
       ? pickEliteEnemyKind(stage, wave, trainSlot)
       : null
@@ -14260,7 +14270,7 @@ export function GradiusRaid({
     const hp = 2 + Math.floor(wave / 2) + Math.floor(powerPressure / 4)
     const eliteHpMultiplier = kind === 'brood' ? 12 : kind === 'lancer' ? 9.2 : 10.4
     const eliteStagePressure = Math.max(0, stage - 1)
-    const eliteHp = Math.round((38 + hp * eliteHpMultiplier + eliteStagePressure * 11.5 + wave * 3.4 + powerPressure * 4.2) * (multiplayerSessionRef.current ? 1.36 : 1) * enemyHpMultRef.current)
+    const eliteHp = Math.round((38 + hp * eliteHpMultiplier + eliteStagePressure * 11.5 + wave * 3.4 + powerPressure * 4.2) * (isCoOpActive() ? 1.36 : 1) * enemyHpMultRef.current)
     const normalHp = Math.max(1, Math.round(hp * enemyHpMultRef.current))
     enemiesRef.current.push({
       id: enemyId++,
@@ -14349,7 +14359,7 @@ export function GradiusRaid({
                   bossKind === 'orb' ? 1.3 :
                     1.16
     const stagePressure = Math.max(0, stage - 1)
-    const multiplayerBossMultiplier = multiplayerSessionRef.current ? MULTIPLAYER_BOSS_HP_MULTIPLIER : 1
+    const multiplayerBossMultiplier = isCoOpActive() ? MULTIPLAYER_BOSS_HP_MULTIPLIER : 1
     const bossBaseHp = bossKind === 'devil'
       ? 1300 + wave * 165 + stagePressure * 290 + powerScore * 80
       : 1450 + wave * 180 + stagePressure * 320 + powerScore * 90
@@ -14465,13 +14475,16 @@ export function GradiusRaid({
     if (session && !session.isHost) return
     if (leaderboardSubmittedRef.current || score <= 0) return
 
+    const coOpRun = coOpRunRef.current
     const leaderboardName = session
       ? session.players.map((roomPlayer) => roomPlayer.name).join(' + ')
+      : coOpRun
+        ? `${playerName} + P2`
       : playerName
 
     leaderboardSubmittedRef.current = true
     void submitLeaderboardScore({
-      mode: session ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
+      mode: coOpRun ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
       playerName: leaderboardName,
       score,
       shipKey: selectedShipRef.current.key,
@@ -14481,22 +14494,49 @@ export function GradiusRaid({
 
   const reportRaidRunComplete = useCallback((status: RunStatus) => {
     if (runReportedRef.current) return
-    const score = Math.max(playerRef.current.score, remotePlayerRef.current?.score ?? 0)
+    const player = playerRef.current
+    const remotePlayer = remotePlayerRef.current
+    const score = Math.max(player.score, remotePlayer?.score ?? 0)
     if (score <= 0) return
 
     const session = multiplayerSessionRef.current
+    const coOpRun = coOpRunRef.current
+    const sameScreenPilots = sameScreenCoopRef.current && remotePlayer
+      ? [
+          {
+            label: 'P1',
+            name: playerName,
+            shipKey: player.ship.key,
+            score: player.score,
+            hp: player.hp,
+            maxHp: player.maxHp,
+          },
+          {
+            label: 'P2',
+            name: 'P2',
+            shipKey: remotePlayer.ship.key,
+            score: remotePlayer.score,
+            hp: remotePlayer.hp,
+            maxHp: remotePlayer.maxHp,
+          },
+        ]
+      : undefined
     const commanderName = session
       ? session.players.map((roomPlayer) => roomPlayer.name).join(' + ')
+      : coOpRun
+        ? `${playerName} + P2`
       : playerName
 
     runReportedRef.current = true
     onRunComplete?.({
-      mode: session ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
+      mode: coOpRun ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
       status,
       playerName: commanderName,
       score,
+      teamScore: sameScreenPilots ? sameScreenPilots.reduce((total, pilot) => total + Math.max(0, pilot.score), 0) : undefined,
       stage: stageRef.current,
       shipKey: selectedShipRef.current.key,
+      pilots: sameScreenPilots,
       durationMs: performance.now() - runStartTimeRef.current,
       enemiesDestroyed: enemiesDestroyedRef.current,
       bossesDefeated: bossesDefeatedRef.current,
@@ -14559,9 +14599,8 @@ export function GradiusRaid({
       playGameSound('gameover')
       spawnSparks(player.x, player.y, '#fb7185', 62, 8)
       addRipple(player.x, player.y, '#fb7185', 18)
-      const session = multiplayerSessionRef.current
       const ally = player === playerRef.current ? remotePlayerRef.current : playerRef.current
-      const allyAlive = Boolean(session && ally && ally.hp > 0)
+      const allyAlive = Boolean(coOpRunRef.current && ally && ally.hp > 0)
       if (allyAlive) {
         player.hp = 0
         player.invuln = 2.2
@@ -14592,9 +14631,8 @@ export function GradiusRaid({
     spawnSparks(player.x, player.y, '#fb7185', 76, 9)
     addRipple(player.x, player.y, '#fb7185', 21)
 
-    const session = multiplayerSessionRef.current
     const ally = player === playerRef.current ? remotePlayerRef.current : playerRef.current
-    const allyAlive = Boolean(session && ally && ally.hp > 0)
+    const allyAlive = Boolean(coOpRunRef.current && ally && ally.hp > 0)
     if (allyAlive) return
 
     phaseRef.current = 'gameover'
@@ -15134,7 +15172,7 @@ export function GradiusRaid({
           })
           randomEventSpawnTimerRef.current = 999
         } else if (activeRandomEvent.kind === 'ambush' && randomEventSpawnTimerRef.current <= 0) {
-          const eliteCap = getMaxActiveEliteEnemies(stageRef.current, Boolean(multiplayerSessionRef.current))
+          const eliteCap = getMaxActiveEliteEnemies(stageRef.current, isCoOpActive())
           let activeEliteCount = 0
           for (const enemy of enemiesRef.current) {
             if (enemy.isMiniBoss) activeEliteCount += 1
@@ -17078,6 +17116,8 @@ export function GradiusRaid({
   }, [advanceGuestVisuals, drawFxCanvas, predictGuestPlayer, sendMultiplayerInput, sendMultiplayerState, syncSnapshot, updateGame, updateMultiplayerConnection])
 
   useEffect(() => {
+    const p1Keys = new Set(['w', 'a', 's', 'd'])
+    const p2Keys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright'])
     const down = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()
       if (key === 'enter' && phaseRef.current === 'paused') resumeGame()
@@ -17096,6 +17136,28 @@ export function GradiusRaid({
         }
         else exitRaid()
       }
+      if (sameScreenCoopRef.current && phaseRef.current === 'playing') {
+        if (event.code === 'Space') {
+          event.preventDefault()
+          if (!event.repeat) activateNuke(playerRef.current)
+          return
+        }
+        if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+          event.preventDefault()
+          if (!event.repeat && remotePlayerRef.current) activateNuke(remotePlayerRef.current)
+          return
+        }
+        if (p1Keys.has(key)) {
+          event.preventDefault()
+          keysRef.current.add(key)
+          return
+        }
+        if (p2Keys.has(key)) {
+          event.preventDefault()
+          remoteKeysRef.current.add(key)
+          return
+        }
+      }
       if (event.code === 'Space' && phaseRef.current === 'playing') {
         event.preventDefault()
         if (!event.repeat) activateNuke()
@@ -17103,7 +17165,15 @@ export function GradiusRaid({
       }
       keysRef.current.add(key)
     }
-    const up = (event: KeyboardEvent) => keysRef.current.delete(event.key.toLowerCase())
+    const up = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+      if (sameScreenCoopRef.current) {
+        if (p1Keys.has(key)) keysRef.current.delete(key)
+        if (p2Keys.has(key)) remoteKeysRef.current.delete(key)
+        return
+      }
+      keysRef.current.delete(key)
+    }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     return () => {
@@ -17183,9 +17253,10 @@ export function GradiusRaid({
     ? clamp(snapshot.bossEntranceSlam / BOSS_ENTRANCE_SLAM_SECONDS, 0, 1)
     : 0
   const bossEntranceSlamActive = bossEntranceSlam > 0
-  const isMultiplayer = Boolean(multiplayerSession)
+  const isNetworkMultiplayer = Boolean(multiplayerSession)
+  const isMultiplayer = isNetworkMultiplayer || sameScreenCoop
   const isEndlessRun = snapshot.raidMode === 'endless'
-  const canControlOverlay = !isMultiplayer || Boolean(multiplayerSession?.isHost)
+  const canControlOverlay = !isNetworkMultiplayer || Boolean(multiplayerSession?.isHost)
   const canUseCampaignStageTools = !isEndlessRun && !isMultiplayer && completedCampaign && canControlOverlay
   const canContinueCampaignCheckpoint = !isEndlessRun && !isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1
   const primaryRaidMenuLabel = snapshot.phase === 'gameover'
@@ -17247,12 +17318,14 @@ export function GradiusRaid({
   const endingNukesUsed = nukesUsedRef.current
   const assetPreloadPercent = Math.min(100, Math.round(assetPreload.loaded / Math.max(1, assetPreload.total) * 100))
   const showAssetPreloadOverlay = assetPreload.status !== 'ready' && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'victory'
+  const displayedShipOptions = SHIP_OPTIONS
 
   return (
     <div
       className={`raid raid--theme-${((snapshot.stageTheme - 1) % RAID_BACKGROUND_THEME_COUNT) + 1}`}
       ref={rootRef}
       onPointerDown={(event) => {
+        if (sameScreenCoopRef.current) return
         if (isUiPointerTarget(event.target) || phaseRef.current !== 'playing') return
         updatePointer(event.clientX, event.clientY, event.pointerType)
         if (event.pointerType !== 'mouse') {
@@ -17261,6 +17334,7 @@ export function GradiusRaid({
         }
       }}
       onPointerMove={(event) => {
+        if (sameScreenCoopRef.current) return
         if (phaseRef.current !== 'playing') return
         if (event.pointerType === 'mouse' || touchPointerActiveRef.current) {
           updatePointer(event.clientX, event.clientY, event.pointerType)
@@ -17321,7 +17395,7 @@ export function GradiusRaid({
         <button className="raid__pause" type="button" onClick={pauseGame}>{hudText.pause}</button>
       </div>
 
-      {isMultiplayer && (
+      {isNetworkMultiplayer && (
         <div className={connectionClass} aria-live="polite">
           <i aria-hidden="true" />
           <span>{multiplayerConnection.label}</span>
@@ -17691,7 +17765,7 @@ export function GradiusRaid({
             <div className="raid__kicker">{snapshot.phase === 'gameover' ? menuText.runEnded : menuText.chooseShip}</div>
             <h2>{snapshot.phase === 'gameover' ? menuText.shipDestroyed : menuText.rocketRaid}</h2>
             <div className="raid__ship-grid">
-              {SHIP_OPTIONS.map((ship) => (
+              {displayedShipOptions.map((ship) => (
                 (() => {
                   const shipCopy = raidText.ships[ship.key as keyof typeof raidText.ships] ?? ship
                   const locked = (ship.key === 'mesiah' && !mesiahUnlocked) || (ship.key === 'coreLander' && !coreLanderUnlocked)
