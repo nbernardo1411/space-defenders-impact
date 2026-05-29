@@ -5,6 +5,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import android.content.Context;
 
 @CapacitorPlugin(name = "LanRelay")
 public class LanRelayPlugin extends Plugin {
@@ -20,7 +21,8 @@ public class LanRelayPlugin extends Plugin {
             try {
                 if (server == null || server.getPort() != port) {
                     if (server != null) server.stop();
-                    server = new LanRelayServer(port);
+                    Context context = getContext() != null ? getContext().getApplicationContext() : null;
+                    server = new LanRelayServer(context, port);
                 }
                 server.start();
                 call.resolve(buildStatus(server));

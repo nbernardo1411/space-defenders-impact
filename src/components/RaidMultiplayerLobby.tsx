@@ -184,14 +184,30 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
     socketRef.current?.close()
     const socket = new WebSocket(url)
     socketRef.current = socket
+    let opened = false
+    const connectTimeout = window.setTimeout(() => {
+      if (opened || socket.readyState !== WebSocket.CONNECTING) return
+      if (socketRef.current === socket) {
+        setConnecting(false)
+        setStatus(text.disconnected)
+        setError(text.unreachable)
+        socketRef.current = null
+      }
+      socket.close()
+    }, 9000)
+    const clearConnectTimeout = () => window.clearTimeout(connectTimeout)
 
     socket.onopen = () => {
+      if (socketRef.current !== socket) return
+      opened = true
+      clearConnectTimeout()
       setConnecting(false)
       setStatus(text.connected)
       onOpen(socket)
     }
 
     socket.onmessage = (event) => {
+      if (socketRef.current !== socket) return
       try {
         const message = JSON.parse(event.data) as RelayMessage
         handleRelayMessage(message)
@@ -201,11 +217,15 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
     }
 
     socket.onerror = () => {
+      if (socketRef.current !== socket) return
+      clearConnectTimeout()
       setConnecting(false)
       setError(text.unreachable)
     }
 
     socket.onclose = () => {
+      clearConnectTimeout()
+      if (socketRef.current !== socket && socketRef.current !== null) return
       setConnecting(false)
       setStatus(text.disconnected)
       socketRef.current = null

@@ -2,6 +2,8 @@ package com.zukito.spaceimpactdefender;
 
 import android.util.Base64;
 import android.util.Log;
+import android.content.Context;
+import android.net.wifi.WifiManager;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
@@ -42,12 +44,14 @@ public class LanRelayServer {
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Peer> peers = new ConcurrentHashMap<>();
     private final Map<String, Room> rooms = new ConcurrentHashMap<>();
+    private final Context context;
     private final int port;
     private volatile boolean running = false;
     private ServerSocket serverSocket;
     private Thread acceptThread;
 
-    public LanRelayServer(int port) {
+    public LanRelayServer(Context context, int port) {
+        this.context = context;
         this.port = port;
     }
 
@@ -90,30 +94,69 @@ public class LanRelayServer {
     }
 
     public String getLocalIpAddress() {
+        String wifiIp = getWifiManagerIpAddress();
+        if (!wifiIp.isEmpty()) return wifiIp;
+
         try {
+            List<InetAddress> preferredFallback = new ArrayList<>();
             List<InetAddress> fallback = new ArrayList<>();
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 NetworkInterface networkInterface = interfaces.nextElement();
                 if (!networkInterface.isUp() || networkInterface.isLoopback()) continue;
 
+                String name = networkInterface.getName().toLowerCase(Locale.US);
+                boolean preferred = name.startsWith("wlan")
+                    || name.startsWith("swlan")
+                    || name.startsWith("ap")
+                    || name.startsWith("eth")
+                    || name.startsWith("rndis")
+                    || name.startsWith("p2p")
+                    || name.startsWith("bt-pan");
+                boolean blocked = name.startsWith("rmnet")
+                    || name.startsWith("ccmni")
+                    || name.startsWith("tun")
+                    || name.startsWith("lo");
+
                 Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
                 while (addresses.hasMoreElements()) {
                     InetAddress address = addresses.nextElement();
                     if (!(address instanceof Inet4Address) || address.isLoopbackAddress()) continue;
 
-                    String name = networkInterface.getName().toLowerCase(Locale.US);
-                    if (name.startsWith("wlan") || name.startsWith("swlan") || name.startsWith("ap") || name.startsWith("eth")) {
-                        return address.getHostAddress();
-                    }
-                    fallback.add(address);
+                    if (preferred && address.isSiteLocalAddress()) return address.getHostAddress();
+                    if (preferred) preferredFallback.add(address);
+                    else if (!blocked && address.isSiteLocalAddress()) fallback.add(address);
                 }
             }
+            if (!preferredFallback.isEmpty()) return preferredFallback.get(0).getHostAddress();
             if (!fallback.isEmpty()) return fallback.get(0).getHostAddress();
         } catch (SocketException exception) {
             Log.w(TAG, "Could not read LAN IP.", exception);
         }
         return "";
+    }
+
+    private String getWifiManagerIpAddress() {
+        try {
+            if (context == null) return "";
+            WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wifiManager == null || wifiManager.getConnectionInfo() == null) return "";
+
+            int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
+            if (ipAddress == 0) return "";
+
+            return String.format(
+                Locale.US,
+                "%d.%d.%d.%d",
+                ipAddress & 0xff,
+                (ipAddress >> 8) & 0xff,
+                (ipAddress >> 16) & 0xff,
+                (ipAddress >> 24) & 0xff
+            );
+        } catch (Exception exception) {
+            Log.w(TAG, "Could not read Wi-Fi IP.", exception);
+            return "";
+        }
     }
 
     private void acceptLoop() {
