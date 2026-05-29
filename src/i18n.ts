@@ -177,6 +177,7 @@ export const TEXT = {
       notConnected: 'Multiplayer service is not connected.',
       enterCode: 'Enter the host room code first.',
       enterHostAddress: 'Enter the host IP address first.',
+      invalidHostAddress: 'Enter the numeric host address shown by the host, like 192.168.1.5:8787.',
     },
   },
   zh: {
@@ -344,6 +345,7 @@ export const TEXT = {
       notConnected: '多人服务未连接。',
       enterCode: '请先输入房主房间码。',
       enterHostAddress: '请先输入房主 IP 地址。',
+      invalidHostAddress: '请输入房主显示的数字地址，例如 192.168.1.5:8787。',
     },
   },
   ja: {
@@ -511,6 +513,7 @@ export const TEXT = {
       notConnected: 'マルチプレイサービスに接続されていません。',
       enterCode: '先にホストのルームコードを入力してください。',
       enterHostAddress: '先にホスト IP アドレスを入力してください。',
+      invalidHostAddress: 'ホストに表示された数字のアドレスを入力してください。例: 192.168.1.5:8787',
     },
   },
   ko: {
@@ -678,6 +681,7 @@ export const TEXT = {
       notConnected: '멀티플레이 서비스가 연결되어 있지 않습니다.',
       enterCode: '먼저 호스트 방 코드를 입력하세요.',
       enterHostAddress: '먼저 호스트 IP 주소를 입력하세요.',
+      invalidHostAddress: '호스트에 표시된 숫자 주소를 입력하세요. 예: 192.168.1.5:8787',
     },
   },
 } as const

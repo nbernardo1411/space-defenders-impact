@@ -39,6 +39,7 @@ public class LanRelayServer {
     private static final int MAX_PAYLOAD_BYTES = 256 * 1024;
     private static final String WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     private static final Set<String> ALLOWED_SHIPS = new HashSet<>(Arrays.asList("rocket", "fast", "gatling", "laser", "dreadnought", "xwing", "spaceEt", "mesiah", "coreLander"));
+    private static final Set<String> ALLOWED_VISUAL_SHIPS = new HashSet<>(Arrays.asList("rocket", "fast", "gatling", "laser", "dreadnought", "xwing", "spaceEt", "mesiah", "mesiahBlack", "mesiahWhite", "coreLander", "coreLanderBurning", "godGundam", "godGundamBurning", "spiegel"));
 
     private final Object roomLock = new Object();
     private final SecureRandom random = new SecureRandom();
@@ -207,7 +208,7 @@ public class LanRelayServer {
         }
 
         String headers = headerBytes.toString(StandardCharsets.UTF_8.name());
-        if (headers.startsWith("GET /health ") || headers.startsWith("OPTIONS /health ")) {
+        if (isHealthRequest(headers)) {
             writeHealthResponse(socket);
             return false;
         }
@@ -234,6 +235,23 @@ public class LanRelayServer {
         socket.getOutputStream().write(response.getBytes(StandardCharsets.UTF_8));
         socket.getOutputStream().flush();
         return true;
+    }
+
+    private boolean isHealthRequest(String headers) {
+        String[] lines = headers.split("\r\n", 2);
+        if (lines.length == 0) return false;
+
+        String[] requestParts = lines[0].split(" ", 3);
+        if (requestParts.length < 2) return false;
+
+        String method = requestParts[0];
+        String path = requestParts[1];
+        int queryStart = path.indexOf('?');
+        if (queryStart >= 0) {
+            path = path.substring(0, queryStart);
+        }
+
+        return ("GET".equals(method) || "OPTIONS".equals(method)) && "/health".equals(path);
     }
 
     private void writeHealthResponse(Socket socket) throws IOException {
@@ -358,6 +376,7 @@ public class LanRelayServer {
                 break;
             case "set-ship":
                 peer.shipKey = cleanShipKey(message.optString("shipKey", ""));
+                peer.visualShipKey = cleanVisualShipKey(message.optString("visualShipKey", peer.shipKey), peer.shipKey);
                 peer.ready = false;
                 if (peer.roomCode != null) broadcastRoom(peer.roomCode);
                 break;
@@ -387,6 +406,7 @@ public class LanRelayServer {
             leaveRoom(peer);
             peer.name = cleanName(message.optString("name", ""));
             peer.shipKey = cleanShipKey(message.optString("shipKey", ""));
+            peer.visualShipKey = cleanVisualShipKey(message.optString("visualShipKey", peer.shipKey), peer.shipKey);
             peer.ready = false;
             peer.isHost = true;
 
@@ -417,6 +437,7 @@ public class LanRelayServer {
             leaveRoom(peer);
             peer.name = cleanName(message.optString("name", ""));
             peer.shipKey = cleanShipKey(message.optString("shipKey", ""));
+            peer.visualShipKey = cleanVisualShipKey(message.optString("visualShipKey", peer.shipKey), peer.shipKey);
             peer.ready = false;
             peer.isHost = room.hostId.equals(peer.id);
             peer.roomCode = code;
@@ -533,7 +554,8 @@ public class LanRelayServer {
                     .put("name", peer != null ? peer.name : "Pilot")
                     .put("ready", peer != null && peer.ready)
                     .put("host", room.hostId.equals(peerId))
-                    .put("shipKey", peer != null ? peer.shipKey : "rocket"));
+                    .put("shipKey", peer != null ? peer.shipKey : "rocket")
+                    .put("visualShipKey", peer != null ? peer.visualShipKey : "rocket"));
             }
             return new JSONObject().put("code", room.code).put("players", players);
         }
@@ -609,6 +631,22 @@ public class LanRelayServer {
         return ALLOWED_SHIPS.contains(shipKey) ? shipKey : "rocket";
     }
 
+    private String cleanVisualShipKey(String value, String shipKey) {
+        String visualShipKey = value == null ? "" : value.trim();
+        if (!ALLOWED_VISUAL_SHIPS.contains(visualShipKey)) return shipKey;
+        if ("mesiah".equals(shipKey)) {
+            return ("mesiah".equals(visualShipKey) || "mesiahBlack".equals(visualShipKey) || "mesiahWhite".equals(visualShipKey))
+                ? visualShipKey
+                : "mesiah";
+        }
+        if ("coreLander".equals(shipKey)) {
+            return ("coreLander".equals(visualShipKey) || "coreLanderBurning".equals(visualShipKey) || "godGundam".equals(visualShipKey) || "godGundamBurning".equals(visualShipKey) || "spiegel".equals(visualShipKey))
+                ? visualShipKey
+                : "coreLander";
+        }
+        return visualShipKey.equals(shipKey) ? visualShipKey : shipKey;
+    }
+
     private String randomId() {
         byte[] bytes = new byte[8];
         random.nextBytes(bytes);
@@ -644,6 +682,7 @@ public class LanRelayServer {
         boolean ready = false;
         boolean isHost = false;
         String shipKey = "rocket";
+        String visualShipKey = "rocket";
 
         Peer(String id, Socket socket) {
             this.id = id;

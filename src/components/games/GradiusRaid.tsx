@@ -75,6 +75,7 @@ type Player = Vec & {
   score: number
   rank: number
   ship: ShipOption
+  visualShipKey: string
   weapons: Record<WeaponKey, number>
   weaponTimers: Record<WeaponKey, number>
   engineBoost: number
@@ -2824,7 +2825,27 @@ function normalizeMesiahScoutDrones(player: Player) {
   return player.mesiahScoutDrones
 }
 
-function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
+function sanitizePlayerVisualShipKey(shipKey: string, visualShipKey?: string | null) {
+  if (shipKey === 'mesiah') {
+    return visualShipKey === 'mesiahWhite' || visualShipKey === 'mesiahBlack' || visualShipKey === 'mesiah'
+      ? visualShipKey
+      : 'mesiahBlack'
+  }
+  if (shipKey === 'coreLander') {
+    return visualShipKey === 'godGundam' || visualShipKey === 'godGundamBurning' || visualShipKey === 'spiegel' || visualShipKey === 'coreLanderBurning' || visualShipKey === 'coreLander'
+      ? visualShipKey
+      : 'coreLander'
+  }
+  return visualShipKey === shipKey ? visualShipKey : shipKey
+}
+
+function getDefaultPlayerVisualShipKey(shipKey: string, progress: ReturnType<typeof loadProgress>) {
+  if (shipKey === 'mesiah') return getMesiahShipColor(progress) === 'white' ? 'mesiahWhite' : 'mesiahBlack'
+  if (shipKey === 'coreLander') return getCoreLanderModel(progress)
+  return shipKey
+}
+
+function getInitialPlayer(ship = SHIP_OPTIONS[0], visualShipKey?: string): Player {
   const passiveForceField = ship.key === 'spaceEt' ? SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES : 0
   return {
     x: 50,
@@ -2843,6 +2864,7 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     score: 0,
     rank: 1,
     ship,
+    visualShipKey: sanitizePlayerVisualShipKey(ship.key, visualShipKey),
     weapons: { ...EMPTY_WEAPONS },
     weaponTimers: { ...EMPTY_WEAPON_TIMERS },
     engineBoost: 0,
@@ -2940,6 +2962,7 @@ function clonePlayer(player: Player): Player {
   return {
     ...player,
     ship: { ...player.ship },
+    visualShipKey: sanitizePlayerVisualShipKey(player.ship.key, player.visualShipKey),
     weapons: { ...player.weapons },
     weaponTimers: { ...player.weaponTimers },
     weaponCooldowns: { ...player.weaponCooldowns },
@@ -2980,19 +3003,28 @@ function getMesiahVisualShipKeyFromProgress(progress: ReturnType<typeof loadProg
 }
 
 function getRaidPlayerVisualShipKey(player: Player, progress: ReturnType<typeof loadProgress>) {
-  const coreModel = getCoreLanderCombatModel(progress)
+  const visualShipKey = sanitizePlayerVisualShipKey(
+    player.ship.key,
+    player.visualShipKey ?? getDefaultPlayerVisualShipKey(player.ship.key, progress),
+  )
+  const coreModel = getCoreLanderCombatModelFromVisualShipKey(visualShipKey)
   if (player.ship.key === 'coreLander' && coreModel) return coreModel
   if (player.ship.key === 'coreLander' && (player.burningBlend ?? 0) >= 0.98) return 'coreLanderBurning'
-  return player.ship.key === 'mesiah' ? getMesiahVisualShipKeyFromProgress(progress) : player.ship.key
+  return player.ship.key === 'mesiah' ? visualShipKey : player.ship.key
 }
 
-function getCoreLanderCombatModel(progress: ReturnType<typeof loadProgress>): CoreLanderCombatModel | null {
-  const model = getCoreLanderModel(progress)
-  return model === 'godGundam' || model === 'spiegel' ? model : null
+function getCoreLanderCombatModelFromVisualShipKey(visualShipKey?: string | null): CoreLanderCombatModel | null {
+  return visualShipKey === 'godGundam' || visualShipKey === 'spiegel' ? visualShipKey : null
+}
+
+function getPlayerCoreLanderCombatModel(player: Player, progress?: ReturnType<typeof loadProgress>): CoreLanderCombatModel | null {
+  if (player.ship.key !== 'coreLander') return null
+  const fallback = progress ? getDefaultPlayerVisualShipKey(player.ship.key, progress) : player.visualShipKey
+  return getCoreLanderCombatModelFromVisualShipKey(sanitizePlayerVisualShipKey(player.ship.key, player.visualShipKey ?? fallback))
 }
 
 function isGodGundamBarragePilot(player: Player, progress: ReturnType<typeof loadProgress>) {
-  return player.ship.key === 'coreLander' && Boolean(getCoreLanderCombatModel(progress))
+  return player.ship.key === 'coreLander' && Boolean(getPlayerCoreLanderCombatModel(player, progress))
 }
 
 function getGodGundamGameplayRenderSize(viewportWidth: number) {
@@ -3536,11 +3568,11 @@ function isSpiegelCombatModel(model?: CoreLanderCombatModel | null) {
 }
 
 function hasSpiegelShadowClones(player: Player, model?: CoreLanderCombatModel | null) {
-  return isCoreLanderBurning(player) && isSpiegelCombatModel(model ?? getCoreLanderCombatModel(loadProgress()))
+  return isCoreLanderBurning(player) && isSpiegelCombatModel(model ?? getPlayerCoreLanderCombatModel(player))
 }
 
 function canUseGodGundamBurningDamage(player: Player, model?: CoreLanderCombatModel | null) {
-  return isCoreLanderBurning(player) && !isSpiegelCombatModel(model ?? getCoreLanderCombatModel(loadProgress()))
+  return isCoreLanderBurning(player) && !isSpiegelCombatModel(model ?? getPlayerCoreLanderCombatModel(player))
 }
 
 function getSpiegelLowHpDamageScale(player: Player, model?: CoreLanderCombatModel | null) {
@@ -3687,7 +3719,7 @@ function getDevilBossRedFilter(redStep: number) {
 }
 
 function getPlayerBaseAttack(player: Player) {
-  const coreLanderModel = player.ship.key === 'coreLander' ? getCoreLanderCombatModel(loadProgress()) : null
+  const coreLanderModel = getPlayerCoreLanderCombatModel(player)
   const coreLanderBonus = player.ship.key === 'coreLander' ? CORE_LANDER_BASE_DAMAGE_BONUS : 0
   const burningBonus = canUseGodGundamBurningDamage(player, coreLanderModel)
     ? CORE_LANDER_BURNING_DAMAGE_BONUS + CORE_LANDER_BURNING_RAGE_DAMAGE_BONUS * getCoreLanderBurningRage(player)
@@ -3736,6 +3768,13 @@ function levelUpPlayer(player: Player) {
 
 function applyStartingStageLevel(player: Player, stage: number) {
   player.rank = clamp(stage, 1, PLAYER_MAX_RANK)
+}
+
+function animateStageClearPlayer(player: Player, dt: number, targetX: number) {
+  player.x += (targetX - player.x) * Math.min(1, dt * 4.8)
+  player.y = Math.max(-26, player.y - dt * 38)
+  player.engineBoost = Math.max(player.engineBoost ?? 0, 1.18)
+  player.invuln = Math.max(player.invuln, 0.45)
 }
 
 function movePlayerWithInput(player: Player, dt: number, pointerTarget: Vec | null, keys: Set<string>, coreLanderModel: CoreLanderCombatModel | null = null) {
@@ -8316,7 +8355,9 @@ function drawRaidOptions(
         drawCanvasSprite(ctx, scoutSprite, x, y, scoutSize, 'brightness(1.14) contrast(1.16) saturate(1.34)', 1, scout.rotation, 1, color)
       }
     } else {
-      const supportShipKey = player.ship.key === 'coreLander' ? 'coreLander' : player.ship.key
+      const supportShipKey = player.ship.key === 'coreLander'
+        ? getCoreLanderCombatModelFromVisualShipKey(mesiahVisualShipKey) ?? 'coreLander'
+        : player.ship.key
       const supportOffset = viewportWidth < 640 ? 12 : 5.6
       const supportMaxBox = viewportWidth < 860 ? 36 : 53
       drawSupportPair(
@@ -10999,6 +11040,7 @@ type RaidMultiplayerSession = {
     ready: boolean
     host: boolean
     shipKey: string
+    visualShipKey?: string
   }>
 }
 
@@ -11267,11 +11309,13 @@ export function GradiusRaid({
       unlockedStageRef.current,
       player.hp,
       player.maxHp,
+      player.visualShipKey,
       Math.ceil(player.shield * 10),
       player.forceField,
       player.score,
       player.rank,
       remotePlayer?.ship.key ?? '',
+      remotePlayer?.visualShipKey ?? '',
       remotePlayer?.score ?? 0,
       remotePlayer?.hp ?? 0,
       remotePlayer?.maxHp ?? 0,
@@ -11512,9 +11556,27 @@ export function GradiusRaid({
         current.score = nextGuestPlayer.score
         current.rank = nextGuestPlayer.rank
         current.ship = nextGuestPlayer.ship
+        current.visualShipKey = nextGuestPlayer.visualShipKey
         current.weapons = { ...nextGuestPlayer.weapons }
         current.weaponTimers = { ...nextGuestPlayer.weaponTimers }
         current.specialCooldown = nextGuestPlayer.specialCooldown
+        current.engineBoost = Math.max(current.engineBoost ?? 0, nextGuestPlayer.engineBoost ?? 0)
+        current.spiegelAfterimageStrength = nextGuestPlayer.spiegelAfterimageStrength ?? current.spiegelAfterimageStrength ?? 0
+        current.spiegelAfterimages = (nextGuestPlayer.spiegelAfterimages ?? []).map((afterimage) => ({ ...afterimage }))
+        current.mesiahDroneTimer = nextGuestPlayer.mesiahDroneTimer ?? current.mesiahDroneTimer ?? 0
+        current.mesiahDroneCooldown = nextGuestPlayer.mesiahDroneCooldown ?? 0
+        current.mesiahDroneFireCooldown = nextGuestPlayer.mesiahDroneFireCooldown ?? current.mesiahDroneFireCooldown ?? 0
+        current.mesiahRocketCooldown = nextGuestPlayer.mesiahRocketCooldown ?? current.mesiahRocketCooldown ?? 0
+        current.mesiahDrones = normalizeMesiahDrones(nextGuestPlayer).map((drone) => ({ ...drone }))
+        current.mesiahScoutDrones = normalizeMesiahScoutDrones(nextGuestPlayer).map((scout) => ({ ...scout }))
+        current.burningBlend = nextGuestPlayer.burningBlend ?? current.burningBlend ?? 0
+        current.godMeleeHeat = nextGuestPlayer.godMeleeHeat ?? current.godMeleeHeat ?? 0
+        current.godMeleeExhaust = nextGuestPlayer.godMeleeExhaust ?? current.godMeleeExhaust ?? 0
+        current.godMeleeVisualTimer = nextGuestPlayer.godMeleeVisualTimer ?? current.godMeleeVisualTimer ?? 0
+        current.godMeleeCloak = nextGuestPlayer.godMeleeCloak ?? current.godMeleeCloak ?? 0
+        current.godMeleeChainX = nextGuestPlayer.godMeleeChainX ?? current.godMeleeChainX ?? current.x
+        current.godMeleeChainY = nextGuestPlayer.godMeleeChainY ?? current.godMeleeChainY ?? current.y
+        current.godMeleeLastTargetKey = nextGuestPlayer.godMeleeLastTargetKey ?? current.godMeleeLastTargetKey ?? ''
         // fireCooldown and weaponCooldowns are kept local so prediction timing is unaffected
       }
       // Expire locally predicted shots � confirmed shots from host have arrived
@@ -11705,7 +11767,17 @@ export function GradiusRaid({
     if (!guestPlayer || guestPlayer.hp <= 0) return
 
     // Move own ship locally � never wait for the network
-    movePlayerWithInput(guestPlayer, dt, pointerTargetRef.current, keysRef.current, getCoreLanderCombatModel(progressRef.current))
+    if (stageClearRef.current > 0) {
+      animateStageClearPlayer(guestPlayer, dt, 58)
+      pointerTargetRef.current = null
+      pointerVisualRef.current = null
+      remotePointerVisualRef.current = null
+      return
+    }
+
+    movePlayerWithInput(guestPlayer, dt, pointerTargetRef.current, keysRef.current, getPlayerCoreLanderCombatModel(guestPlayer, progressRef.current))
+    const isSmallViewport = Boolean(viewportMetricsRef.current && viewportMetricsRef.current.cssWidth < 640)
+    updatePlayerTimers(guestPlayer, dt, enemiesRef.current, isSmallViewport)
 
     // Drain accumulated position correction gradually so the fix is invisible
     const corr = guestPositionCorrectionRef.current
@@ -13066,12 +13138,11 @@ export function GradiusRaid({
     const isGuestView = Boolean(multiplayerSessionRef.current && !multiplayerSessionRef.current.isHost)
     const ownShipRef = isGuestView ? remotePlayerRef.current : playerRef.current
     const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
-    const mesiahSupportVisualShipKey = getMesiahVisualShipKeyFromProgress(progressRef.current)
     const stageClearActive = stageClearRef.current > 0
     const hideOwnShipForBarrage = Boolean(ownShipRef && !stageClearActive && isGodGundamBarragePilot(ownShipRef, progressRef.current) && (godBarrageRef.current || (ownShipRef.godMeleeCloak ?? 0) > 0))
     const hideAllyShipForBarrage = Boolean(allyShipRef && !stageClearActive && isGodGundamBarragePilot(allyShipRef, progressRef.current) && (godBarrageRef.current || (allyShipRef.godMeleeCloak ?? 0) > 0))
-    if (gfxProfile.drawOptionShips && ownShipRef && !hideOwnShipForBarrage) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR, mesiahSupportVisualShipKey)
-    if (gfxProfile.drawOptionShips && allyShipRef && !hideAllyShipForBarrage) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, mesiahSupportVisualShipKey)
+    if (gfxProfile.drawOptionShips && ownShipRef && !hideOwnShipForBarrage) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR, getRaidPlayerVisualShipKey(ownShipRef, progressRef.current))
+    if (gfxProfile.drawOptionShips && allyShipRef && !hideAllyShipForBarrage) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getRaidPlayerVisualShipKey(allyShipRef, progressRef.current))
     const sameScreenIdentityAura = sameScreenCoopRef.current
     if (ownShipRef && !hideOwnShipForBarrage) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current), sameScreenIdentityAura ? PLAYER_COLOR : null)
     if (allyShipRef && !hideAllyShipForBarrage) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current), sameScreenIdentityAura ? ALLY_PLAYER_COLOR : null)
@@ -13373,7 +13444,7 @@ export function GradiusRaid({
     if (isGodGundamBarragePilot(player, progressRef.current)) {
       if (!barrageTarget) return
       if (godBarrageRef.current) return
-      const barrageModel = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
+      const barrageModel = getPlayerCoreLanderCombatModel(player, progressRef.current) ?? 'godGundam'
       player.specialCooldown = getNukeCooldownSeconds(stageRef.current)
       player.invuln = Math.max(player.invuln, GOD_GUNDAM_BARRAGE_DURATION_SECONDS + 0.75)
       godBarrageRef.current = {
@@ -13451,16 +13522,27 @@ export function GradiusRaid({
     const guestRoomPlayer = session?.players.find((roomPlayer) => !roomPlayer.host)
     const hostShip = getShipByKey(hostRoomPlayer?.shipKey, selectedShipRef.current)
     const guestShip = getShipByKey(sameScreen ? sameScreenGuestShipKeyRef.current : guestRoomPlayer?.shipKey, SHIP_OPTIONS[1])
+    const hostVisualShipKey = sanitizePlayerVisualShipKey(
+      hostShip.key,
+      hostRoomPlayer?.visualShipKey ?? getDefaultPlayerVisualShipKey(hostShip.key, progressRef.current),
+    )
+    const guestVisualShipKey = sanitizePlayerVisualShipKey(
+      guestShip.key,
+      sameScreen
+        ? getDefaultPlayerVisualShipKey(guestShip.key, progressRef.current)
+        : guestRoomPlayer?.visualShipKey ?? getDefaultPlayerVisualShipKey(guestShip.key, progressRef.current),
+    )
+    const localVisualShipKey = getDefaultPlayerVisualShipKey(selectedShipRef.current.key, progressRef.current)
 
     if (session?.isHost) {
       selectedShipRef.current = hostShip
       setSelectedShipKey(hostShip.key)
     }
 
-    playerRef.current = getInitialPlayer(session?.isHost ? hostShip : selectedShipRef.current)
+    playerRef.current = getInitialPlayer(session?.isHost ? hostShip : selectedShipRef.current, session?.isHost ? hostVisualShipKey : localVisualShipKey)
     applyStartingStageLevel(playerRef.current, stage)
     if (session?.isHost || sameScreen) {
-      remotePlayerRef.current = getInitialPlayer(guestShip)
+      remotePlayerRef.current = getInitialPlayer(guestShip, guestVisualShipKey)
       applyStartingStageLevel(remotePlayerRef.current, stage)
       remotePlayerRef.current.x = 58
       remotePlayerRef.current.y = 84
@@ -13617,7 +13699,7 @@ export function GradiusRaid({
     if (ship.key === 'coreLander' && !isCoreLanderUnlocked(progressRef.current)) return
     selectedShipRef.current = ship
     setSelectedShipKey(ship.key)
-    playerRef.current = getInitialPlayer(ship)
+    playerRef.current = getInitialPlayer(ship, getDefaultPlayerVisualShipKey(ship.key, progressRef.current))
     playGameSound('select')
     syncSnapshot()
   }, [syncSnapshot])
@@ -13658,9 +13740,9 @@ export function GradiusRaid({
     for (const key of WEAPON_KEYS) totalStacks += stacks[key]
     const shipKey = player.ship.key
     const coreLanderBurning = isCoreLanderBurning(player)
-    const coreLanderCombatModel = shipKey === 'coreLander' ? getCoreLanderCombatModel(progressRef.current) : null
+    const coreLanderCombatModel = getPlayerCoreLanderCombatModel(player, progressRef.current)
     const coreLanderFireInterval = getCoreLanderFireInterval(player)
-    const isWhiteMesiah = shipKey === 'mesiah' && getMesiahVisualShipKeyFromProgress(progressRef.current) === 'mesiahWhite'
+    const isWhiteMesiah = shipKey === 'mesiah' && getRaidPlayerVisualShipKey(player, progressRef.current) === 'mesiahWhite'
     const canFireMain = player.fireCooldown <= 0
     const canFireMesiahDrones = shipKey === 'mesiah' && player.hp > 0 && player.mesiahDroneFireCooldown <= 0
     if (!canFireMain && !canFireMesiahDrones) return
@@ -14925,15 +15007,9 @@ export function GradiusRaid({
       asteroidSpawnDelayRef.current = 0
       randomEventRef.current = null
       randomEventSpawnTimerRef.current = 0
-      player.x += (50 - player.x) * Math.min(1, dt * 4.8)
-      player.y = Math.max(-26, player.y - dt * 38)
-      player.engineBoost = Math.max(player.engineBoost ?? 0, 1.18)
-      player.invuln = Math.max(player.invuln, 0.45)
+      animateStageClearPlayer(player, dt, 50)
       if (remotePlayer) {
-        remotePlayer.x += (58 - remotePlayer.x) * Math.min(1, dt * 4.8)
-        remotePlayer.y = Math.max(-26, remotePlayer.y - dt * 38)
-        remotePlayer.engineBoost = Math.max(remotePlayer.engineBoost ?? 0, 1.18)
-        remotePlayer.invuln = Math.max(remotePlayer.invuln, 0.45)
+        animateStageClearPlayer(remotePlayer, dt, 58)
       }
       updateSparksInPlace(sparksRef.current, dt)
       updateRipplesInPlace(ripplesRef.current, dt)
@@ -15020,7 +15096,7 @@ export function GradiusRaid({
       pointerVisualRef.current = null
     }
     if (player.hp > 0 && !playerInGodBarrage) {
-      movePlayerWithInput(player, dt, pointerTargetRef.current, keysRef.current, getCoreLanderCombatModel(progressRef.current))
+      movePlayerWithInput(player, dt, pointerTargetRef.current, keysRef.current, getPlayerCoreLanderCombatModel(player, progressRef.current))
     }
     const remotePlayer = remotePlayerRef.current
     const remotePlayerInGodBarrage = Boolean(remotePlayer && godBarrageRef.current && isGodGundamBarragePilot(remotePlayer, progressRef.current))
@@ -15031,7 +15107,7 @@ export function GradiusRaid({
       remotePointerVisualRef.current = null
     }
     if (remotePlayer && remotePlayer.hp > 0 && !remotePlayerInGodBarrage) {
-      movePlayerWithInput(remotePlayer, dt, remotePointerTargetRef.current, remoteKeysRef.current, getCoreLanderCombatModel(progressRef.current))
+      movePlayerWithInput(remotePlayer, dt, remotePointerTargetRef.current, remoteKeysRef.current, getPlayerCoreLanderCombatModel(remotePlayer, progressRef.current))
     }
 
     const isSmallViewport = Boolean(viewportMetricsRef.current && viewportMetricsRef.current.cssWidth < 640)
@@ -16334,7 +16410,7 @@ export function GradiusRaid({
     playGameSound(enemy.isBoss ? 'destroyed_explosion' : enemy.isMiniBoss ? 'explosion_big' : 'explosion')
     }
     const spawnGodGundamPassiveStrike = (owner: Player, target: Vec & { radius: number }, visualIndex: number, sourceOverride?: Vec, preserveChain = false, attackSideOverride?: -1 | 1) => {
-      const model = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
+      const model = getPlayerCoreLanderCombatModel(owner, progressRef.current) ?? 'godGundam'
       const sourceX = sourceOverride?.x ?? owner.godMeleeChainX ?? owner.x
       const sourceY = sourceOverride?.y ?? owner.godMeleeChainY ?? owner.y
       const side = sourceX <= target.x ? -1 : 1
@@ -16375,7 +16451,7 @@ export function GradiusRaid({
         return
       }
 
-      const ownerModel = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
+      const ownerModel = getPlayerCoreLanderCombatModel(owner, progressRef.current) ?? 'godGundam'
       const meleeColor = ownerModel === 'spiegel' ? '#f87171' : '#facc15'
       const meleeRippleColor = ownerModel === 'spiegel' ? '#e2e8f0' : '#fbbf24'
       const range = getGodGundamMeleeRange(owner, ownerModel)
@@ -17267,9 +17343,11 @@ export function GradiusRaid({
   const coreLanderUnlocked = isCoreLanderUnlocked(progressRef.current)
   const mesiahVisualShipKey = getMesiahVisualShipKeyFromProgress(progressRef.current)
   const coreLanderVisualShipKey = getCoreLanderModel(progressRef.current)
+  const playerVisualShipKey = getRaidPlayerVisualShipKey(player, progressRef.current)
+  const allyVisualShipKey = snapshot.allyPlayer ? getRaidPlayerVisualShipKey(snapshot.allyPlayer, progressRef.current) : ''
   const checkpointStage = getCheckpointStage()
   const stageSelectButtons = Array.from({ length: MAX_RAID_STAGE }, (_, index) => index + 1)
-  const usingGodBarrage = player.ship.key === 'coreLander' && (coreLanderVisualShipKey === 'godGundam' || coreLanderVisualShipKey === 'spiegel')
+  const usingGodBarrage = player.ship.key === 'coreLander' && (playerVisualShipKey === 'godGundam' || playerVisualShipKey === 'spiegel')
   const nukeCooldown = Math.ceil(snapshot.nukeCooldown)
   const nukeStageLocked = snapshot.phase === 'playing' && snapshot.stageClear > 0
   const nukeReady = snapshot.phase === 'playing' && !nukeStageLocked && snapshot.nukeCooldown <= 0
@@ -17769,13 +17847,13 @@ export function GradiusRaid({
             <div className="raid__ending-earth" />
             <div className="raid__ending-wake raid__ending-wake--host" />
             <div className="raid__ending-ship raid__ending-ship--host">
-              <RaidShipSprite shipKey={player.ship.key === 'mesiah' ? mesiahVisualShipKey : player.ship.key === 'coreLander' ? coreLanderVisualShipKey : player.ship.key} size={finaleShipSize} />
+              <RaidShipSprite shipKey={playerVisualShipKey} size={finaleShipSize} />
             </div>
             {snapshot.allyPlayer ? (
               <>
                 <div className="raid__ending-wake raid__ending-wake--ally" />
                 <div className="raid__ending-ship raid__ending-ship--ally">
-                  <RaidShipSprite shipKey={snapshot.allyPlayer.ship.key === 'mesiah' ? mesiahVisualShipKey : snapshot.allyPlayer.ship.key === 'coreLander' ? coreLanderVisualShipKey : snapshot.allyPlayer.ship.key} size={finaleAllyShipSize} />
+                  <RaidShipSprite shipKey={allyVisualShipKey} size={finaleAllyShipSize} />
                 </div>
               </>
             ) : null}

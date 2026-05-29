@@ -12,6 +12,7 @@ type RoomPlayer = {
   ready: boolean
   host: boolean
   shipKey: string
+  visualShipKey?: string
 }
 
 type RoomSnapshot = {
@@ -85,6 +86,22 @@ const normalizeLanEndpoint = (value: string) => {
   return trimmed.includes(':') ? trimmed : `${trimmed}:8787`
 }
 
+const isValidLanEndpoint = (endpoint: string) => {
+  try {
+    const url = new URL(`http://${endpoint}`)
+    const port = Number(url.port || '8787')
+    const isValidPort = Number.isInteger(port) && port > 0 && port <= 65535
+    const isPlainEndpoint = url.pathname === '/' && !url.search && !url.hash
+    const isLocalhost = url.hostname.toLowerCase() === 'localhost'
+    const isIpv4 = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(url.hostname)
+      && url.hostname.split('.').every((part) => Number(part) >= 0 && Number(part) <= 255)
+
+    return isValidPort && isPlainEndpoint && (isLocalhost || isIpv4)
+  } catch {
+    return false
+  }
+}
+
 const probeLanEndpoint = async (endpoint: string) => {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 4500)
@@ -130,6 +147,12 @@ const getMultiplayerShipOptions = (progress: ReturnType<typeof loadProgress>) =>
   })
 )
 
+const getLobbyVisualShipKey = (shipKey: string, progress: ReturnType<typeof loadProgress>) => {
+  if (shipKey === 'mesiah') return getMesiahShipColor(progress) === 'white' ? 'mesiahWhite' : 'mesiahBlack'
+  if (shipKey === 'coreLander') return getCoreLanderModel(progress)
+  return shipKey
+}
+
 export function RaidMultiplayerLobby({ playerName, language, connectionMode, onBack, onStart }: RaidMultiplayerLobbyProps) {
   const text = getLanguageText(language).lobby
   const raidText = getRaidText(language)
@@ -143,6 +166,10 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
   const roomRef = useRef<RoomSnapshot | null>(null)
   const peerIdRef = useRef<string | null>(null)
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
+  const getSelectedShipPayload = (shipKey = selectedShipKey) => ({
+    shipKey,
+    visualShipKey: getLobbyVisualShipKey(shipKey, progress),
+  })
   const onlineRelayUrl = useMemo(getDefaultRelayUrl, [])
   const [joinCode, setJoinCode] = useState('')
   const [localHostInput, setLocalHostInput] = useState('')
@@ -317,7 +344,7 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
   const hostRoom = () => {
     if (!isLocalMode) {
       connect((socket) => {
-        send(socket, { type: 'create-room', name: playerName, shipKey: selectedShipKey })
+        send(socket, { type: 'create-room', name: playerName, ...getSelectedShipPayload() })
       })
       return
     }
@@ -342,7 +369,7 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
       setLocalHostAddress(shareUrl.replace(/^ws:\/\//i, ''))
       setLocalHostInput(shareUrl.replace(/^ws:\/\//i, ''))
       connect((socket) => {
-        send(socket, { type: 'create-room', name: playerName, shipKey: selectedShipKey })
+        send(socket, { type: 'create-room', name: playerName, ...getSelectedShipPayload() })
       }, `127.0.0.1:${port}`)
     }).catch(() => {
       setConnecting(false)
@@ -363,13 +390,17 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
         setError(text.enterHostAddress)
         return
       }
+      if (!isValidLanEndpoint(endpoint)) {
+        setError(text.invalidHostAddress)
+        return
+      }
 
       setError('')
       setConnecting(true)
       setStatus(text.connecting)
       void probeLanEndpoint(endpoint).then(() => {
         connect((socket) => {
-          send(socket, { type: 'join-room', name: playerName, roomCode: code, shipKey: selectedShipKey })
+          send(socket, { type: 'join-room', name: playerName, roomCode: code, ...getSelectedShipPayload() })
         }, endpoint)
       }).catch(() => {
         setConnecting(false)
@@ -380,14 +411,14 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
     }
 
     connect((socket) => {
-      send(socket, { type: 'join-room', name: playerName, roomCode: code, shipKey: selectedShipKey })
+      send(socket, { type: 'join-room', name: playerName, roomCode: code, ...getSelectedShipPayload() })
     })
   }
 
   const chooseShip = (shipKey: string) => {
     setSelectedShipKey(shipKey)
     if (socketRef.current?.readyState === WebSocket.OPEN) {
-      send(socketRef.current, { type: 'set-ship', shipKey })
+      send(socketRef.current, { type: 'set-ship', ...getSelectedShipPayload(shipKey) })
     }
   }
 

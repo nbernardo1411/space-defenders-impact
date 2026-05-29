@@ -20,7 +20,7 @@ let playerNameSchemaPromise = null
 
 /** @type {Map<string, { code: string, hostId: string, peers: Set<string> }>} */
 const rooms = new Map()
-/** @type {Map<string, { id: string, socket: import('node:net').Socket, roomCode: string | null, name: string, ready: boolean, isHost: boolean, shipKey: string }>} */
+/** @type {Map<string, { id: string, socket: import('node:net').Socket, roomCode: string | null, name: string, ready: boolean, isHost: boolean, shipKey: string, visualShipKey: string }>} */
 const peers = new Map()
 
 const server = createServer(async (req, res) => {
@@ -95,6 +95,7 @@ server.on('upgrade', (req, socket) => {
     ready: false,
     isHost: false,
     shipKey: 'rocket',
+    visualShipKey: 'rocket',
   })
 
   send(id, { type: 'hello', peerId: id })
@@ -740,6 +741,7 @@ function handleMessage(id, message) {
       leaveRoom(peer)
       peer.name = cleanName(message.name)
       peer.shipKey = cleanShipKey(message.shipKey)
+      peer.visualShipKey = cleanVisualShipKey(message.visualShipKey, peer.shipKey)
       peer.ready = false
       peer.isHost = true
 
@@ -768,6 +770,7 @@ function handleMessage(id, message) {
       leaveRoom(peer)
       peer.name = cleanName(message.name)
       peer.shipKey = cleanShipKey(message.shipKey)
+      peer.visualShipKey = cleanVisualShipKey(message.visualShipKey, peer.shipKey)
       peer.ready = false
       peer.isHost = room.hostId === id
       peer.roomCode = code
@@ -786,6 +789,7 @@ function handleMessage(id, message) {
 
     case 'set-ship': {
       peer.shipKey = cleanShipKey(message.shipKey)
+      peer.visualShipKey = cleanVisualShipKey(message.visualShipKey, peer.shipKey)
       peer.ready = false
       if (peer.roomCode) broadcastRoom(peer.roomCode)
       break
@@ -907,6 +911,7 @@ function snapshotRoom(code) {
         ready: Boolean(peer?.ready),
         host: room.hostId === peerId,
         shipKey: peer?.shipKey || 'rocket',
+        visualShipKey: peer?.visualShipKey || peer?.shipKey || 'rocket',
       }
     }),
   }
@@ -1076,6 +1081,19 @@ function cleanShipKey(value) {
   const shipKey = String(value || '').trim()
   const allowedShipKeys = new Set(['rocket', 'fast', 'gatling', 'laser', 'dreadnought', 'xwing', 'spaceEt', 'mesiah', 'coreLander'])
   return allowedShipKeys.has(shipKey) ? shipKey : 'rocket'
+}
+
+function cleanVisualShipKey(value, shipKey) {
+  const visualShipKey = String(value || '').trim()
+  const allowedVisualShipKeys = new Set(['rocket', 'fast', 'gatling', 'laser', 'dreadnought', 'xwing', 'spaceEt', 'mesiah', 'mesiahBlack', 'mesiahWhite', 'coreLander', 'coreLanderBurning', 'godGundam', 'godGundamBurning', 'spiegel'])
+  if (!allowedVisualShipKeys.has(visualShipKey)) return shipKey
+  if (shipKey === 'mesiah') {
+    return ['mesiah', 'mesiahBlack', 'mesiahWhite'].includes(visualShipKey) ? visualShipKey : 'mesiah'
+  }
+  if (shipKey === 'coreLander') {
+    return ['coreLander', 'coreLanderBurning', 'godGundam', 'godGundamBurning', 'spiegel'].includes(visualShipKey) ? visualShipKey : 'coreLander'
+  }
+  return visualShipKey === shipKey ? visualShipKey : shipKey
 }
 
 function cleanOptionalShipKey(value) {
