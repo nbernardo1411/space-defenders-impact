@@ -70,6 +70,7 @@ type Player = Vec & {
   optionTimer: number
   optionStacks: number
   fireCooldown: number
+  specialCooldown: number
   weaponCooldowns: Record<WeaponKey, number>
   score: number
   rank: number
@@ -2837,6 +2838,7 @@ function getInitialPlayer(ship = SHIP_OPTIONS[0]): Player {
     optionTimer: 0,
     optionStacks: 0,
     fireCooldown: 0,
+    specialCooldown: 0,
     weaponCooldowns: { ...EMPTY_WEAPON_TIMERS },
     score: 0,
     rank: 1,
@@ -2943,6 +2945,7 @@ function clonePlayer(player: Player): Player {
     weaponCooldowns: { ...player.weaponCooldowns },
     optionStacks: player.optionStacks ?? (player.optionTimer > 0 ? 1 : 0),
     engineBoost: player.engineBoost ?? 0,
+    specialCooldown: player.specialCooldown ?? 0,
     spiegelAfterimageStrength: player.spiegelAfterimageStrength ?? 0,
     spiegelAfterimages: (player.spiegelAfterimages ?? []).map((afterimage) => ({ ...afterimage })),
     mesiahDroneTimer: player.mesiahDroneTimer ?? 0,
@@ -3115,6 +3118,7 @@ function compactPlayer(player: Player): Player {
     optionTimer: roundNetworkNumber(player.optionTimer),
     optionStacks: Math.round(player.optionStacks ?? (player.optionTimer > 0 ? 1 : 0)),
     fireCooldown: roundNetworkNumber(player.fireCooldown),
+    specialCooldown: roundNetworkNumber(player.specialCooldown ?? 0),
     engineBoost: roundNetworkNumber(player.engineBoost),
     spiegelAfterimageStrength: roundNetworkNumber(player.spiegelAfterimageStrength ?? 0),
     spiegelAfterimages: (player.spiegelAfterimages ?? []).map((afterimage) => ({
@@ -8987,6 +8991,7 @@ function drawRaidPlayer(
   color = PLAYER_COLOR,
   cosmetics: Required<ShipCosmeticEquipState> = { trail: false, aura: false, frame: false },
   visualShipKey = player.ship.key,
+  identityAuraColor: string | null = null,
 ) {
   const x = toX(player.x)
   const y = toY(player.y)
@@ -9020,6 +9025,16 @@ function drawRaidPlayer(
 
   if (!drawGodGundamEngineOverSprite && !isDown && cosmetics.trail) drawMasteryEngineTrail(ctx, x, engineY, engineSize, time, color, cosmeticShipKey, engineBoost)
   if (!drawGodGundamEngineOverSprite && !isDown) drawPlayerEngine(ctx, x, engineY, engineSize, time, engineBoost)
+  if (!isDown && identityAuraColor) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    drawRadialEllipse(ctx, x, y, renderSize * 0.62, renderSize * 0.72, [
+      [0, hexToRgba(identityAuraColor, 0.12)],
+      [0.5, hexToRgba(identityAuraColor, 0.07)],
+      [1, 'rgba(0,0,0,0)'],
+    ])
+    ctx.restore()
+  }
   if (!isDown && cosmetics.aura) drawMasteryAura(ctx, x, y, renderSize, time, cosmeticShipKey, masteryPaintColor)
   if (!isDown && coreLanderBurningBlend > 0.04) {
     if (coreLanderCombatModel === 'spiegel') {
@@ -11124,7 +11139,6 @@ export function GradiusRaid({
   const stageClearRef = useRef(0)
   const stageEntryRef = useRef(0)
   const pendingNextStageRef = useRef<number | null>(null)
-  const nukeCooldownRef = useRef(0)
   const nukeFlashRef = useRef(0)
   const nukeStrikeRef = useRef<NukeStrike | null>(null)
   const nukeBlastOriginRef = useRef<Vec>({ x: 50, y: 46 })
@@ -11228,7 +11242,8 @@ export function GradiusRaid({
     const bossAlertBucket = bossAlertRef.current > 0 ? Math.ceil(bossAlertRef.current * 4) : 0
     const bossEntranceSlamBucket = bossEntranceSlamRef.current > 0 ? Math.ceil(bossEntranceSlamRef.current * 20) : 0
     const stageClearBucket = stageClearRef.current > 0 ? Math.ceil(stageClearRef.current * 30) : 0
-    const nukeCooldownBucket = nukeCooldownRef.current > 0 ? Math.ceil(nukeCooldownRef.current) : 0
+    const playerSpecialCooldownBucket = player.specialCooldown > 0 ? Math.ceil(player.specialCooldown) : 0
+    const remoteSpecialCooldownBucket = remotePlayer && remotePlayer.specialCooldown > 0 ? Math.ceil(remotePlayer.specialCooldown) : 0
     const nukeFlashBucket = nukeFlashRef.current > 0 ? Math.ceil(nukeFlashRef.current * 10) : 0
     const asteroidWarningBucket = asteroidWarningRef.current > 0 ? Math.ceil(asteroidWarningRef.current * 4) : 0
     const randomEvent = randomEventRef.current
@@ -11244,7 +11259,8 @@ export function GradiusRaid({
       highScoreRef.current,
       selectedShipRef.current.key,
       stageClearBucket,
-      nukeCooldownBucket,
+      playerSpecialCooldownBucket,
+      remoteSpecialCooldownBucket,
       nukeFlashBucket,
       asteroidWarningBucket,
       randomEventBucket,
@@ -11258,6 +11274,10 @@ export function GradiusRaid({
       remotePlayer?.ship.key ?? '',
       remotePlayer?.score ?? 0,
       remotePlayer?.hp ?? 0,
+      remotePlayer?.maxHp ?? 0,
+      remotePlayer?.rank ?? 0,
+      remotePlayer?.forceField ?? 0,
+      ...WEAPON_KEYS.map((key) => remotePlayer?.weapons[key] ?? 0),
       ...WEAPON_KEYS.map((key) => player.weapons[key]),
     ].join('|')
 
@@ -11289,7 +11309,7 @@ export function GradiusRaid({
       pointer: null,
       stageClear: stageClearRef.current,
       unlockedStage: unlockedStageRef.current,
-      nukeCooldown: nukeCooldownRef.current,
+      nukeCooldown: player.specialCooldown,
       nukeFlash: nukeFlashRef.current,
       asteroidWarning: asteroidWarningRef.current,
       randomEvent: cloneRaidRandomEvent(randomEventRef.current),
@@ -11387,7 +11407,7 @@ export function GradiusRaid({
     guestPointer: cloneVec(remotePointerVisualRef.current),
     stageClear: stageClearRef.current,
     unlockedStage: unlockedStageRef.current,
-    nukeCooldown: nukeCooldownRef.current,
+    nukeCooldown: playerRef.current.specialCooldown,
     nukeFlash: nukeFlashRef.current,
     nukeStrike: nukeStrikeRef.current ? { ...nukeStrikeRef.current } : null,
     nukeBlastOrigin: { ...nukeBlastOriginRef.current },
@@ -11494,6 +11514,7 @@ export function GradiusRaid({
         current.ship = nextGuestPlayer.ship
         current.weapons = { ...nextGuestPlayer.weapons }
         current.weaponTimers = { ...nextGuestPlayer.weaponTimers }
+        current.specialCooldown = nextGuestPlayer.specialCooldown
         // fireCooldown and weaponCooldowns are kept local so prediction timing is unaffected
       }
       // Expire locally predicted shots � confirmed shots from host have arrived
@@ -11546,7 +11567,6 @@ export function GradiusRaid({
       resetGuestPredictionState()
     }
     unlockedStageRef.current = state.unlockedStage
-    nukeCooldownRef.current = state.nukeCooldown
     nukeFlashRef.current = state.nukeFlash
     nukeStrikeRef.current = state.nukeStrike ? { ...state.nukeStrike } : null
     nukeBlastOriginRef.current = { ...state.nukeBlastOrigin }
@@ -11642,7 +11662,7 @@ export function GradiusRaid({
       pointer: null,
       stageClear: state.stageClear,
       unlockedStage: state.unlockedStage,
-      nukeCooldown: state.nukeCooldown,
+      nukeCooldown: ownPlayer.specialCooldown ?? state.nukeCooldown,
       nukeFlash: state.nukeFlash,
       asteroidWarning: state.asteroidWarning ?? 0,
       randomEvent: cloneRaidRandomEvent(state.randomEvent ?? null),
@@ -13052,8 +13072,9 @@ export function GradiusRaid({
     const hideAllyShipForBarrage = Boolean(allyShipRef && !stageClearActive && isGodGundamBarragePilot(allyShipRef, progressRef.current) && (godBarrageRef.current || (allyShipRef.godMeleeCloak ?? 0) > 0))
     if (gfxProfile.drawOptionShips && ownShipRef && !hideOwnShipForBarrage) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR, mesiahSupportVisualShipKey)
     if (gfxProfile.drawOptionShips && allyShipRef && !hideAllyShipForBarrage) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, mesiahSupportVisualShipKey)
-    if (ownShipRef && !hideOwnShipForBarrage) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current))
-    if (allyShipRef && !hideAllyShipForBarrage) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current))
+    const sameScreenIdentityAura = sameScreenCoopRef.current
+    if (ownShipRef && !hideOwnShipForBarrage) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current), sameScreenIdentityAura ? PLAYER_COLOR : null)
+    if (allyShipRef && !hideAllyShipForBarrage) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current), sameScreenIdentityAura ? ALLY_PLAYER_COLOR : null)
 
     for (const powerUp of powerUpsRef.current) {
       drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
@@ -13296,11 +13317,13 @@ export function GradiusRaid({
   const activateNuke = useCallback((sourcePlayer = playerRef.current) => {
     const session = multiplayerSessionRef.current
     if (session && !session.isHost) {
+      const localPlayer = remotePlayerRef.current
+      if (phaseRef.current !== 'playing' || stageClearRef.current > 0 || !localPlayer || localPlayer.hp <= 0 || (localPlayer.specialCooldown ?? 0) > 0) return
       multiplayerLocalNukeRef.current += 1
       return
     }
 
-    if (phaseRef.current !== 'playing' || stageClearRef.current > 0 || nukeCooldownRef.current > 0 || nukeStrikeRef.current || godBarrageRef.current) return
+    if (phaseRef.current !== 'playing' || stageClearRef.current > 0 || (sourcePlayer.specialCooldown ?? 0) > 0 || nukeStrikeRef.current) return
     if (sourcePlayer.hp <= 0) return
 
     const visibleEnemies = enemiesRef.current.filter((enemy) => (
@@ -13349,8 +13372,9 @@ export function GradiusRaid({
     }
     if (isGodGundamBarragePilot(player, progressRef.current)) {
       if (!barrageTarget) return
+      if (godBarrageRef.current) return
       const barrageModel = getCoreLanderCombatModel(progressRef.current) ?? 'godGundam'
-      nukeCooldownRef.current = getNukeCooldownSeconds(stageRef.current)
+      player.specialCooldown = getNukeCooldownSeconds(stageRef.current)
       player.invuln = Math.max(player.invuln, GOD_GUNDAM_BARRAGE_DURATION_SECONDS + 0.75)
       godBarrageRef.current = {
         model: barrageModel,
@@ -13378,7 +13402,7 @@ export function GradiusRaid({
       syncSnapshot()
       return
     }
-    nukeCooldownRef.current = getNukeCooldownSeconds(stageRef.current)
+    player.specialCooldown = getNukeCooldownSeconds(stageRef.current)
     player.invuln = Math.max(player.invuln, 1.15)
 
     let targetX = 50
@@ -13496,7 +13520,8 @@ export function GradiusRaid({
     randomEventTimerRef.current = shouldForceLocalDerelictWreckTest(stage, mode) ? 0.2 : 20 + Math.random() * 18
     randomEventSpawnTimerRef.current = 0
     lastRandomEventKindRef.current = null
-    nukeCooldownRef.current = 0
+    playerRef.current.specialCooldown = 0
+    if (remotePlayerRef.current) remotePlayerRef.current.specialCooldown = 0
     nukeFlashRef.current = 0
     nukeStrikeRef.current = null
     nukeBlastOriginRef.current = { x: 50, y: 46 }
@@ -14344,7 +14369,8 @@ export function GradiusRaid({
         fullyBuffRaidPlayer(remotePlayerRef.current)
         remotePlayerRef.current.rank = PLAYER_MAX_RANK
       }
-      nukeCooldownRef.current = 0
+      player.specialCooldown = 0
+      if (remotePlayerRef.current) remotePlayerRef.current.specialCooldown = 0
     }
     const hpMultiplier =
       bossKind === 'devil' ? 55 :
@@ -14833,7 +14859,11 @@ export function GradiusRaid({
 
     const player = playerRef.current
     const scoreMult = scoreMultRef.current
-    nukeCooldownRef.current = Math.max(0, nukeCooldownRef.current - dt)
+    player.specialCooldown = Math.max(0, (player.specialCooldown ?? 0) - dt)
+    const remotePlayerForCooldown = remotePlayerRef.current
+    if (remotePlayerForCooldown) {
+      remotePlayerForCooldown.specialCooldown = Math.max(0, (remotePlayerForCooldown.specialCooldown ?? 0) - dt)
+    }
     nukeFlashRef.current = Math.max(0, nukeFlashRef.current - dt)
     asteroidWarningRef.current = Math.max(0, asteroidWarningRef.current - dt)
     if (nukeStrikeRef.current) {
@@ -17013,7 +17043,10 @@ export function GradiusRaid({
           powerUp.y = HEIGHT + 99
           pickupsCollectedRef.current += 1
           if (powerUp.type === 'levelup') {
-            levelUpPlayer(targetPlayer)
+            const levelTargets = coOpRunRef.current ? livingPlayersThisTick : [targetPlayer]
+            for (const levelTarget of levelTargets) {
+              if (levelTarget.hp > 0) levelUpPlayer(levelTarget)
+            }
           } else if (powerUp.type === 'repair') {
             targetPlayer.hp = Math.min(targetPlayer.maxHp, targetPlayer.hp + 1)
           } else if (powerUp.type === 'shield') {
@@ -17319,10 +17352,73 @@ export function GradiusRaid({
   const assetPreloadPercent = Math.min(100, Math.round(assetPreload.loaded / Math.max(1, assetPreload.total) * 100))
   const showAssetPreloadOverlay = assetPreload.status !== 'ready' && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'victory'
   const displayedShipOptions = SHIP_OPTIONS
+  const getWeaponStackLabel = (hudPlayer: Player) => {
+    const entries = WEAPON_KEYS.filter((key) => hudPlayer.weapons[key] > 0)
+    return entries.length ? entries.map((key) => `${key[0].toUpperCase()}${hudPlayer.weapons[key]}`).join(' ') : hudText.base
+  }
+  const renderHullPips = (hudPlayer: Player, keyPrefix: string) => {
+    const hullPips = Array.from({ length: hudPlayer.maxHp }, (_, index) => index < hudPlayer.hp)
+    const fieldPips = Array.from({ length: Math.max(FORCE_FIELD_ARMOR, Math.ceil(hudPlayer.forceField)) }, (_, index) => index < hudPlayer.forceField)
+    return (
+      <>
+        {hullPips.map((filled, index) => <i key={`${keyPrefix}-hull-${index}`} className={filled ? 'raid__pip raid__pip--filled' : 'raid__pip'} />)}
+        {hudPlayer.forceField > 0 && fieldPips.map((filled, index) => (
+          <i key={`${keyPrefix}-force-${index}`} className={filled ? 'raid__pip raid__pip--force raid__pip--filled' : 'raid__pip raid__pip--force'} />
+        ))}
+      </>
+    )
+  }
+  const getPilotSpecialHud = (hudPlayer: Player, controlHint: string) => {
+    const visualShipKey = getRaidPlayerVisualShipKey(hudPlayer, progressRef.current)
+    const usesBarrage = hudPlayer.ship.key === 'coreLander' && (visualShipKey === 'godGundam' || visualShipKey === 'spiegel')
+    const label = usesBarrage ? hudText.barrage : hudText.nuke
+    const cooldown = Math.ceil(hudPlayer.specialCooldown ?? 0)
+    const hint = snapshot.phase === 'playing' && cooldown > 0
+      ? `${cooldown}s`
+      : nukeStageLocked
+      ? hudText.cooldown
+      : controlHint
+    return { label, hint }
+  }
+  const renderPilotHud = (hudPlayer: Player, pilotKey: 'p1' | 'p2', pilotLabel: string, controlHint: string) => {
+    const specialHud = getPilotSpecialHud(hudPlayer, controlHint)
+    return (
+      <div className={`raid__pilot-panel raid__pilot-panel--${pilotKey}`}>
+        <div className="raid__pilot-tag">
+          <b>{pilotLabel}</b>
+          <span>{hudPlayer.ship.name}</span>
+        </div>
+        <div className="raid__stat">
+          <span>{hudText.score}</span>
+          <b>{hudPlayer.score.toLocaleString()}</b>
+        </div>
+        <div className="raid__stat">
+          <span>{hudText.stage}</span>
+          <b>{snapshot.stageTheme}</b>
+        </div>
+        <div className="raid__stat raid__stat--level">
+          <span>{hudText.level}</span>
+          <b>LV {hudPlayer.rank} ATK {getPlayerBaseAttack(hudPlayer).toFixed(1)}</b>
+        </div>
+        <div className="raid__stat raid__stat--weapon">
+          <span>{hudText.stack}</span>
+          <b>{getWeaponStackLabel(hudPlayer)}</b>
+        </div>
+        <div className="raid__hp raid__hp--pilot" aria-label={`${pilotLabel} ${hudText.hullAndForce}`}>
+          {renderHullPips(hudPlayer, pilotKey)}
+        </div>
+        <div className="raid__pilot-special">
+          <span>{specialHud.label}</span>
+          <b>{specialHud.hint}</b>
+        </div>
+      </div>
+    )
+  }
+  const sameScreenAlly = sameScreenCoop ? snapshot.allyPlayer : null
 
   return (
     <div
-      className={`raid raid--theme-${((snapshot.stageTheme - 1) % RAID_BACKGROUND_THEME_COUNT) + 1}`}
+      className={`raid raid--theme-${((snapshot.stageTheme - 1) % RAID_BACKGROUND_THEME_COUNT) + 1}${sameScreenCoop ? ' raid--same-screen' : ''}`}
       ref={rootRef}
       onPointerDown={(event) => {
         if (sameScreenCoopRef.current) return
@@ -17348,52 +17444,60 @@ export function GradiusRaid({
         if (event.pointerType === 'mouse') clearPointer()
       }}
     >
-      <div className="raid__hud">
-        <div className="raid__stat">
-          <span>{hudText.score}</span>
-          <b>{player.score.toLocaleString()}</b>
+      {sameScreenAlly ? (
+        <div className="raid__hud raid__hud--same-screen">
+          {renderPilotHud(player, 'p1', 'P1', hudText.space)}
+          <button className="raid__pause raid__pause--center" type="button" onClick={pauseGame}>{hudText.pause}</button>
+          {renderPilotHud(sameScreenAlly, 'p2', 'P2', 'Shift')}
         </div>
-        <div className="raid__stat">
-          <span>{hudText.stage}</span>
-          <b>{snapshot.stageTheme}</b>
+      ) : (
+        <div className="raid__hud">
+          <div className="raid__stat">
+            <span>{hudText.score}</span>
+            <b>{player.score.toLocaleString()}</b>
+          </div>
+          <div className="raid__stat">
+            <span>{hudText.stage}</span>
+            <b>{snapshot.stageTheme}</b>
+          </div>
+          <div className="raid__stat raid__stat--level">
+            <span>{hudText.level}</span>
+            <b>LV {player.rank} ATK {playerBaseAttack.toFixed(1)}</b>
+          </div>
+          <div className="raid__stat raid__stat--weapon">
+            <span>{hudText.stack}</span>
+            <b>
+              {weaponEntries.length
+                ? weaponEntries.map((key) => `${key[0].toUpperCase()}${player.weapons[key]}`).join(' ')
+                : hudText.base}
+            </b>
+          </div>
+          <div className="raid__hp" aria-label={hudText.hullAndForce}>
+            {hpPips.map((filled, index) => <i key={index} className={filled ? 'raid__pip raid__pip--filled' : 'raid__pip'} />)}
+            {player.forceField > 0 && forcePips.map((filled, index) => (
+              <i key={`force-${index}`} className={filled ? 'raid__pip raid__pip--force raid__pip--filled' : 'raid__pip raid__pip--force'} />
+            ))}
+          </div>
+          <button
+            className={nukeReady ? 'raid__nuke raid__nuke--ready' : 'raid__nuke'}
+            type="button"
+            onClick={() => activateNuke()}
+            disabled={!nukeReady}
+            aria-label={nukeReady ? specialLaunchLabel : nukeStageLocked ? specialLockedLabel : snapshot.phase === 'playing' ? `${specialCoolingLabel} ${nukeCooldown} ${hudText.seconds}` : specialAvailableLabel}
+          >
+            <span className="raid__nuke-mark" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="raid__nuke-text">
+              <b>{nukeDisplay}</b>
+              <small>{nukeHint}</small>
+            </span>
+          </button>
+          <button className="raid__pause" type="button" onClick={pauseGame}>{hudText.pause}</button>
         </div>
-        <div className="raid__stat raid__stat--level">
-          <span>{hudText.level}</span>
-          <b>LV {player.rank} ATK {playerBaseAttack.toFixed(1)}</b>
-        </div>
-        <div className="raid__stat raid__stat--weapon">
-          <span>{hudText.stack}</span>
-          <b>
-            {weaponEntries.length
-              ? weaponEntries.map((key) => `${key[0].toUpperCase()}${player.weapons[key]}`).join(' ')
-              : hudText.base}
-          </b>
-        </div>
-        <div className="raid__hp" aria-label={hudText.hullAndForce}>
-          {hpPips.map((filled, index) => <i key={index} className={filled ? 'raid__pip raid__pip--filled' : 'raid__pip'} />)}
-          {player.forceField > 0 && forcePips.map((filled, index) => (
-            <i key={`force-${index}`} className={filled ? 'raid__pip raid__pip--force raid__pip--filled' : 'raid__pip raid__pip--force'} />
-          ))}
-        </div>
-        <button
-          className={nukeReady ? 'raid__nuke raid__nuke--ready' : 'raid__nuke'}
-          type="button"
-          onClick={() => activateNuke()}
-          disabled={!nukeReady}
-          aria-label={nukeReady ? specialLaunchLabel : nukeStageLocked ? specialLockedLabel : snapshot.phase === 'playing' ? `${specialCoolingLabel} ${nukeCooldown} ${hudText.seconds}` : specialAvailableLabel}
-        >
-          <span className="raid__nuke-mark" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span className="raid__nuke-text">
-            <b>{nukeDisplay}</b>
-            <small>{nukeHint}</small>
-          </span>
-        </button>
-        <button className="raid__pause" type="button" onClick={pauseGame}>{hudText.pause}</button>
-      </div>
+      )}
 
       {isNetworkMultiplayer && (
         <div className={connectionClass} aria-live="polite">
