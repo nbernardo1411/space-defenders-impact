@@ -83,6 +83,20 @@ const normalizeLanEndpoint = (value: string) => {
   return trimmed.includes(':') ? trimmed : `${trimmed}:8787`
 }
 
+const probeLanEndpoint = async (endpoint: string) => {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 4500)
+  try {
+    const response = await fetch(`http://${endpoint}/health?t=${Date.now()}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error('LAN relay health check failed')
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
 const SHIP_OPTIONS = [
   { key: 'rocket', name: 'Black Comet' },
   { key: 'fast', name: 'Red Wraith' },
@@ -186,11 +200,11 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
     socketRef.current = socket
     let opened = false
     const connectTimeout = window.setTimeout(() => {
-      if (opened || socket.readyState !== WebSocket.CONNECTING) return
+      if (opened || socketRef.current !== socket) return
       if (socketRef.current === socket) {
         setConnecting(false)
         setStatus(text.disconnected)
-        setError(text.unreachable)
+        setError(`${text.unreachable} ${relayTarget}`)
         socketRef.current = null
       }
       socket.close()
@@ -348,9 +362,18 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
         return
       }
 
-      connect((socket) => {
-        send(socket, { type: 'join-room', name: playerName, roomCode: code, shipKey: selectedShipKey })
-      }, endpoint)
+      setError('')
+      setConnecting(true)
+      setStatus(text.connecting)
+      void probeLanEndpoint(endpoint).then(() => {
+        connect((socket) => {
+          send(socket, { type: 'join-room', name: playerName, roomCode: code, shipKey: selectedShipKey })
+        }, endpoint)
+      }).catch(() => {
+        setConnecting(false)
+        setStatus(text.disconnected)
+        setError(`${text.unreachable} ${endpoint}`)
+      })
       return
     }
 

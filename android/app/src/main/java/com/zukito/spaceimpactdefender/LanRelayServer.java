@@ -207,6 +207,11 @@ public class LanRelayServer {
         }
 
         String headers = headerBytes.toString(StandardCharsets.UTF_8.name());
+        if (headers.startsWith("GET /health ") || headers.startsWith("OPTIONS /health ")) {
+            writeHealthResponse(socket);
+            return false;
+        }
+
         String key = "";
         for (String line : headers.split("\r\n")) {
             int separator = line.indexOf(':');
@@ -229,6 +234,21 @@ public class LanRelayServer {
         socket.getOutputStream().write(response.getBytes(StandardCharsets.UTF_8));
         socket.getOutputStream().flush();
         return true;
+    }
+
+    private void writeHealthResponse(Socket socket) throws IOException {
+        String body = "{\"ok\":true,\"service\":\"lan-relay\"}";
+        String response = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: application/json; charset=utf-8\r\n"
+            + "Access-Control-Allow-Origin: *\r\n"
+            + "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+            + "Access-Control-Allow-Headers: *\r\n"
+            + "Cache-Control: no-store\r\n"
+            + "Connection: close\r\n"
+            + "Content-Length: " + body.getBytes(StandardCharsets.UTF_8).length + "\r\n\r\n"
+            + body;
+        socket.getOutputStream().write(response.getBytes(StandardCharsets.UTF_8));
+        socket.getOutputStream().flush();
     }
 
     private void readWebSocketLoop(Peer peer) throws IOException {
