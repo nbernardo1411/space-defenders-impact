@@ -53,10 +53,12 @@ const getDefaultRelayUrl = () => {
   if (
     import.meta.env.DEV &&
     typeof window !== 'undefined' &&
-    ['localhost', '127.0.0.1'].includes(window.location.hostname) &&
     ['5173', '4173'].includes(window.location.port)
   ) {
-    return 'ws://localhost:8787'
+    const relayHost = window.location.hostname.includes(':')
+      ? `[${window.location.hostname}]`
+      : window.location.hostname
+    return `ws://${relayHost}:8787`
   }
 
   return DEFAULT_RAID_RELAY_URL
