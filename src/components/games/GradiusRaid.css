@@ -2058,7 +2058,7 @@
   transform: translateX(-50%);
   background:
     radial-gradient(ellipse at 50% 18%, rgba(224, 242, 254, 0.36), transparent 44%),
-    url('/assets/others/planet_1.png') center / contain no-repeat;
+    url('/assets/others/planet_1.webp') center / contain no-repeat;
   filter: drop-shadow(0 -24px 70px rgba(56, 189, 248, 0.38));
   animation: endingEarthRise 6.8s ease-out both;
 }

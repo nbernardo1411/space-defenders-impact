@@ -817,10 +817,10 @@ const BADGE_ASSETS = {
   finalBoss: 'assets/aliens/final_boss.png',
   devil: 'assets/GundamEnemy/devil-rage.png',
   masterGundam: 'assets/GundamEnemy/master-gundam.png',
-  asteroid: 'assets/others/asteroid.png',
-  comet: 'assets/others/comet.png',
-  galaxy: 'assets/others/galaxy.png',
-  planet: 'assets/others/planet_1.png',
+  asteroid: 'assets/others/asteroid.webp',
+  comet: 'assets/others/comet.webp',
+  galaxy: 'assets/others/galaxy.webp',
+  planet: 'assets/others/planet_1.webp',
 } as const
 
 const UNLOCK_BADGE_MARKS: Record<UnlockBadgeMark, string> = {

@@ -954,27 +954,36 @@ let raidPixiAssetWarmPromise: Promise<void> | null = null
 let raidPixiAssetWarmComplete = false
 
 const RAID_OTHER_ASSET_PATHS = {
-  asteroid: 'assets/others/asteroid.png',
-  comet: 'assets/others/comet.png',
-  galaxy: 'assets/others/galaxy.png',
-  galaxy2: 'assets/others/galaxy_2.png',
-  planet1: 'assets/others/planet_1.png',
+  asteroid: 'assets/others/asteroid.webp',
+  comet: 'assets/others/comet.webp',
+  galaxy: 'assets/others/galaxy.webp',
+  galaxy2: 'assets/others/galaxy_2.webp',
+  galaxy3: 'assets/others/galaxy_3.webp',
+  galaxy4: 'assets/others/galaxy_4.webp',
+  planet1: 'assets/others/planet_1.webp',
   planet2: 'assets/others/planet_2.webp',
   planet3: 'assets/others/planet_3.webp',
+  planet4: 'assets/others/planet_4.webp',
+  planet5: 'assets/others/planet_5.webp',
+  planetNebula: 'assets/others/planet__3.webp',
+  spaceStation: 'assets/others/space_station.webp',
+  sun: 'assets/others/sun.webp',
 } as const
 
-const RAID_DERELICT_WRECK_ASSET_PATH = 'assets/others/derelict.png'
+const RAID_DERELICT_WRECK_ASSET_PATH = 'assets/others/space_station.webp'
 const RAID_DERELICT_WRECK_FILTER = 'brightness(0.9) contrast(1.14) saturate(0.94)'
+const RAID_DERELICT_WRECK_BASE_WIDTH = 18
+const RAID_DERELICT_WRECK_BASE_HEIGHT = RAID_DERELICT_WRECK_BASE_WIDTH * (528 / 454)
 const RAID_DERELICT_WRECK_VARIANTS = [
-  { crop: { x: 0.02, y: 0.03, width: 0.39, height: 0.28 }, width: 42, height: 15, rotation: -6 * DEG },
-  { crop: { x: 0.36, y: 0.04, width: 0.29, height: 0.24 }, width: 31, height: 13, rotation: 2 * DEG },
-  { crop: { x: 0.65, y: 0.05, width: 0.31, height: 0.29 }, width: 35, height: 15, rotation: -4 * DEG },
-  { crop: { x: 0.05, y: 0.31, width: 0.30, height: 0.38 }, width: 35, height: 16, rotation: 7 * DEG },
-  { crop: { x: 0.32, y: 0.32, width: 0.37, height: 0.29 }, width: 40, height: 15, rotation: -2 * DEG },
-  { crop: { x: 0.69, y: 0.34, width: 0.27, height: 0.22 }, width: 29, height: 12, rotation: 3 * DEG },
-  { crop: { x: 0.03, y: 0.66, width: 0.26, height: 0.28 }, width: 31, height: 14, rotation: -3 * DEG },
-  { crop: { x: 0.32, y: 0.72, width: 0.20, height: 0.18 }, width: 24, height: 11, rotation: 0 },
-  { crop: { x: 0.57, y: 0.64, width: 0.39, height: 0.28 }, width: 42, height: 14, rotation: 4 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: -6 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: 2 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: -4 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: 7 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: -2 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: 3 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: -3 * DEG },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: 0 },
+  { width: RAID_DERELICT_WRECK_BASE_WIDTH, height: RAID_DERELICT_WRECK_BASE_HEIGHT, rotation: 4 * DEG },
 ] as const
 
 const RAID_FINAL_BOSS_ASSET_PATH = 'assets/aliens/final_boss.png'
@@ -1194,9 +1203,22 @@ const RAID_OTHER_STATIC_FILTERS: Partial<Record<RaidOtherAssetKey, readonly stri
     'brightness(0.58) contrast(1.06) saturate(0.82)',
     'brightness(0.42) contrast(1.08) saturate(0.72)',
   ],
+  galaxy3: [
+    'brightness(0.64) contrast(1.12) saturate(0.88)',
+    'brightness(0.46) contrast(1.08) saturate(0.68)',
+  ],
+  galaxy4: [
+    'brightness(0.62) contrast(1.1) saturate(0.78)',
+    'brightness(0.42) contrast(1.08) saturate(0.62)',
+  ],
   planet1: ['brightness(0.78) contrast(1.08) saturate(0.86)'],
   planet2: ['brightness(0.8) contrast(1.08) saturate(0.86)'],
   planet3: ['brightness(0.66) contrast(1.12) saturate(0.9)'],
+  planet4: ['brightness(0.76) contrast(1.1) saturate(0.82)'],
+  planet5: ['brightness(0.72) contrast(1.12) saturate(0.92)'],
+  planetNebula: ['brightness(0.62) contrast(1.12) saturate(0.86)'],
+  spaceStation: ['brightness(0.78) contrast(1.16) saturate(0.82)'],
+  sun: ['brightness(0.9) contrast(1.14) saturate(1.08)'],
 }
 
 const DEFAULT_RAID_PALETTE: RaidPalette = {
@@ -1256,9 +1278,303 @@ const RAID_PLANET_DEPTH_SCALES = [
   [0.64, 1.06, 0.82],
 ] as const
 
+type RaidBackgroundGalaxyLayer = {
+  asset: RaidOtherAssetKey
+  x: number
+  y: number
+  width: number
+  height: number
+  alpha: number
+  rotation: number
+  driftX: number
+  driftY: number
+  filter: string
+}
+
+type RaidBackgroundPlanetLayer = {
+  asset: RaidOtherAssetKey
+  x: number
+  yOffset: number
+  speed: number
+  radius: number
+  alpha: number
+  rotation: number
+  spin: number
+  filter: string
+  color: 'planetA' | 'planetB' | 'planetC'
+}
+
+type RaidBackgroundScenicLayer = {
+  asset: RaidOtherAssetKey
+  layer?: 'far' | 'mid' | 'front'
+  x: number
+  yOffset: number
+  speed: number
+  width: number
+  height: number
+  alpha: number
+  rotation: number
+  spin: number
+  driftX: number
+  driftY: number
+  filter: string
+}
+
+type RaidBackgroundWreckLayer = {
+  x: number
+  yOffset: number
+  speed: number
+  width: number
+  height: number
+  alpha: number
+  rotation: number
+  spin: number
+  variant: number
+}
+
+type RaidBackgroundScene = {
+  nebulaShiftX: number
+  nebulaShiftY: number
+  nebulaScale: number
+  galaxyScale: number
+  planetScale: number
+  asteroidBias: number
+  debrisBias: number
+  galaxies: RaidBackgroundGalaxyLayer[]
+  planets: RaidBackgroundPlanetLayer[]
+  wrecks: RaidBackgroundWreckLayer[]
+  scenic: RaidBackgroundScenicLayer[]
+}
+
+const RAID_BACKGROUND_SCENES: RaidBackgroundScene[] = [
+  {
+    nebulaShiftX: -0.08,
+    nebulaShiftY: 0.05,
+    nebulaScale: 1.08,
+    galaxyScale: 1.14,
+    planetScale: 1,
+    asteroidBias: 1,
+    debrisBias: 1,
+    galaxies: [
+      { asset: 'galaxy', x: 0.22, y: 0.64, width: 0.76, height: 0.46, alpha: 0.36, rotation: -16 * DEG, driftX: 0.014, driftY: 0.01, filter: 'brightness(0.72) contrast(1.12) saturate(1.04)' },
+      { asset: 'galaxy4', x: 0.84, y: 0.2, width: 0.5, height: 0.3, alpha: 0.16, rotation: 11 * DEG, driftX: -0.01, driftY: 0.006, filter: 'brightness(0.42) contrast(1.08) saturate(0.62)' },
+    ],
+    planets: [
+      { asset: 'planet4', x: 0.94, yOffset: 0.88, speed: 36, radius: 0.13, alpha: 0.78, rotation: 0, spin: 0.006, filter: 'brightness(0.76) contrast(1.1) saturate(0.82)', color: 'planetA' },
+      { asset: 'planet2', x: 0.06, yOffset: 0.62, speed: 43, radius: 0.05, alpha: 0.68, rotation: -18 * DEG, spin: 0.002, filter: 'brightness(0.8) contrast(1.08) saturate(0.86)', color: 'planetB' },
+      { asset: 'planet3', x: 0.28, yOffset: 0.38, speed: 59, radius: 0.032, alpha: 0.52, rotation: 0, spin: -0.011, filter: 'brightness(0.66) contrast(1.12) saturate(0.9)', color: 'planetC' },
+    ],
+    wrecks: [],
+    scenic: [
+      { asset: 'spaceStation', layer: 'front', x: 0.18, yOffset: 0.24, speed: 86, width: 0.17, height: 0.27, alpha: 0.44, rotation: 0, spin: 0.0004, driftX: 0.012, driftY: 0.008, filter: 'brightness(0.78) contrast(1.16) saturate(0.82)' },
+    ],
+  },
+  {
+    nebulaShiftX: 0.1,
+    nebulaShiftY: -0.08,
+    nebulaScale: 1.22,
+    galaxyScale: 1.46,
+    planetScale: 1.1,
+    asteroidBias: 0.86,
+    debrisBias: 0.95,
+    galaxies: [
+      { asset: 'galaxy3', x: 0.58, y: 0.34, width: 1.02, height: 0.56, alpha: 0.3, rotation: 7 * DEG, driftX: 0.006, driftY: 0.012, filter: 'brightness(0.64) contrast(1.12) saturate(0.88)' },
+      { asset: 'galaxy', x: 0.18, y: 0.78, width: 0.44, height: 0.28, alpha: 0.14, rotation: -19 * DEG, driftX: 0.014, driftY: -0.008, filter: 'brightness(0.42) contrast(1.08) saturate(0.72)' },
+    ],
+    planets: [
+      { asset: 'planet5', x: 0.88, yOffset: 0.56, speed: 41, radius: 0.13, alpha: 0.72, rotation: -8 * DEG, spin: 0.002, filter: 'brightness(0.72) contrast(1.12) saturate(0.92)', color: 'planetB' },
+      { asset: 'planet1', x: -0.12, yOffset: 0.84, speed: 52, radius: 0.28, alpha: 0.52, rotation: 0, spin: 0.004, filter: 'brightness(0.62) contrast(1.08) saturate(0.72)', color: 'planetA' },
+      { asset: 'planet3', x: 0.42, yOffset: 0.23, speed: 64, radius: 0.04, alpha: 0.42, rotation: 11 * DEG, spin: -0.007, filter: 'brightness(0.74) contrast(1.1) saturate(1)', color: 'planetC' },
+    ],
+    wrecks: [],
+    scenic: [
+      { asset: 'sun', layer: 'far', x: 0.03, yOffset: 0.1, speed: 180, width: 0.42, height: 0.42, alpha: 0.06, rotation: 0, spin: 0.0008, driftX: 0.006, driftY: 0.004, filter: 'brightness(0.9) contrast(1.14) saturate(1.08)' },
+    ],
+  },
+  {
+    nebulaShiftX: -0.16,
+    nebulaShiftY: -0.03,
+    nebulaScale: 1.32,
+    galaxyScale: 1.06,
+    planetScale: 1.18,
+    asteroidBias: 1.08,
+    debrisBias: 1.18,
+    galaxies: [
+      { asset: 'galaxy4', x: 0.72, y: 0.28, width: 0.72, height: 0.42, alpha: 0.27, rotation: 12 * DEG, driftX: -0.012, driftY: 0.008, filter: 'brightness(0.62) contrast(1.1) saturate(0.78)' },
+      { asset: 'galaxy3', x: 0.24, y: 0.18, width: 0.46, height: 0.26, alpha: 0.18, rotation: -8 * DEG, driftX: 0.009, driftY: 0.014, filter: 'brightness(0.46) contrast(1.08) saturate(0.68)' },
+    ],
+    planets: [
+      { asset: 'planetNebula', x: 1.1, yOffset: 0.72, speed: 58, radius: 0.34, alpha: 0.58, rotation: -9 * DEG, spin: -0.002, filter: 'brightness(0.62) contrast(1.12) saturate(0.86)', color: 'planetC' },
+      { asset: 'planet1', x: 0.12, yOffset: 0.18, speed: 35, radius: 0.065, alpha: 0.7, rotation: 6 * DEG, spin: 0.008, filter: 'brightness(0.82) contrast(1.1) saturate(0.86)', color: 'planetA' },
+      { asset: 'planet2', x: 0.64, yOffset: 0.42, speed: 69, radius: 0.036, alpha: 0.5, rotation: 18 * DEG, spin: 0.002, filter: 'brightness(0.72) contrast(1.08) saturate(0.8)', color: 'planetB' },
+    ],
+    wrecks: [
+      { x: 0.2, yOffset: 0.18, speed: 72, width: 0.09, height: 0.04, alpha: 0.08, rotation: -13 * DEG, spin: 0.002, variant: 4 },
+    ],
+    scenic: [],
+  },
+  {
+    nebulaShiftX: 0.02,
+    nebulaShiftY: 0.12,
+    nebulaScale: 0.96,
+    galaxyScale: 0.88,
+    planetScale: 0.72,
+    asteroidBias: 1.22,
+    debrisBias: 1.9,
+    galaxies: [
+      { asset: 'galaxy2', x: 0.12, y: 0.32, width: 0.5, height: 0.3, alpha: 0.19, rotation: -24 * DEG, driftX: 0.018, driftY: 0.004, filter: 'brightness(0.46) contrast(1.08) saturate(0.66)' },
+      { asset: 'galaxy4', x: 0.86, y: 0.76, width: 0.48, height: 0.3, alpha: 0.13, rotation: 18 * DEG, driftX: -0.012, driftY: -0.006, filter: 'brightness(0.42) contrast(1.08) saturate(0.62)' },
+    ],
+    planets: [
+      { asset: 'planet4', x: 0.76, yOffset: 0.46, speed: 48, radius: 0.06, alpha: 0.5, rotation: -4 * DEG, spin: 0.006, filter: 'brightness(0.56) contrast(1.08) saturate(0.62)', color: 'planetA' },
+      { asset: 'planet3', x: 0.3, yOffset: 0.72, speed: 62, radius: 0.045, alpha: 0.44, rotation: 10 * DEG, spin: -0.006, filter: 'brightness(0.58) contrast(1.12) saturate(0.74)', color: 'planetC' },
+    ],
+    wrecks: [
+      { x: 0.18, yOffset: 0.28, speed: 54, width: 0.13, height: 0.06, alpha: 0.09, rotation: -16 * DEG, spin: 0.0015, variant: 0 },
+      { x: 0.74, yOffset: 0.58, speed: 68, width: 0.09, height: 0.045, alpha: 0.08, rotation: 9 * DEG, spin: -0.0018, variant: 5 },
+      { x: 0.48, yOffset: 0.88, speed: 82, width: 0.11, height: 0.05, alpha: 0.07, rotation: 24 * DEG, spin: 0.0011, variant: 8 },
+    ],
+    scenic: [
+      { asset: 'spaceStation', layer: 'front', x: 0.68, yOffset: 0.3, speed: 92, width: 0.24, height: 0.37, alpha: 0.46, rotation: 0, spin: -0.0004, driftX: -0.01, driftY: 0.006, filter: 'brightness(0.78) contrast(1.16) saturate(0.82)' },
+    ],
+  },
+  {
+    nebulaShiftX: 0.15,
+    nebulaShiftY: 0.04,
+    nebulaScale: 1.18,
+    galaxyScale: 1.52,
+    planetScale: 0.94,
+    asteroidBias: 0.92,
+    debrisBias: 1.1,
+    galaxies: [
+      { asset: 'galaxy3', x: 0.5, y: 0.42, width: 1.2, height: 0.64, alpha: 0.28, rotation: -3 * DEG, driftX: 0.004, driftY: 0.01, filter: 'brightness(0.6) contrast(1.1) saturate(0.86)' },
+      { asset: 'galaxy4', x: 0.04, y: 0.16, width: 0.42, height: 0.24, alpha: 0.15, rotation: 28 * DEG, driftX: 0.01, driftY: 0.008, filter: 'brightness(0.42) contrast(1.08) saturate(0.72)' },
+    ],
+    planets: [
+      { asset: 'planet5', x: 0.12, yOffset: 0.34, speed: 42, radius: 0.14, alpha: 0.7, rotation: 13 * DEG, spin: 0.0018, filter: 'brightness(0.72) contrast(1.12) saturate(0.92)', color: 'planetB' },
+      { asset: 'planet1', x: 0.92, yOffset: 0.78, speed: 58, radius: 0.09, alpha: 0.62, rotation: -10 * DEG, spin: 0.006, filter: 'brightness(0.74) contrast(1.1) saturate(0.82)', color: 'planetA' },
+      { asset: 'planet3', x: 0.58, yOffset: 0.12, speed: 71, radius: 0.034, alpha: 0.48, rotation: -18 * DEG, spin: -0.009, filter: 'brightness(0.7) contrast(1.1) saturate(0.9)', color: 'planetC' },
+    ],
+    wrecks: [],
+    scenic: [
+      { asset: 'sun', layer: 'far', x: 0.88, yOffset: 0.82, speed: 170, width: 0.46, height: 0.46, alpha: 0.055, rotation: 0, spin: 0.0007, driftX: -0.004, driftY: 0.004, filter: 'brightness(0.9) contrast(1.14) saturate(1.08)' },
+    ],
+  },
+  {
+    nebulaShiftX: -0.04,
+    nebulaShiftY: -0.16,
+    nebulaScale: 1.38,
+    galaxyScale: 0.78,
+    planetScale: 1.35,
+    asteroidBias: 1,
+    debrisBias: 1.25,
+    galaxies: [
+      { asset: 'galaxy4', x: 0.78, y: 0.18, width: 0.54, height: 0.3, alpha: 0.2, rotation: 16 * DEG, driftX: -0.012, driftY: 0.012, filter: 'brightness(0.5) contrast(1.06) saturate(0.76)' },
+      { asset: 'galaxy', x: 0.34, y: 0.82, width: 0.42, height: 0.25, alpha: 0.13, rotation: -15 * DEG, driftX: 0.012, driftY: -0.006, filter: 'brightness(0.4) contrast(1.08) saturate(0.62)' },
+    ],
+    planets: [
+      { asset: 'planetNebula', x: 0.5, yOffset: 0.62, speed: 58, radius: 0.24, alpha: 0.48, rotation: 0, spin: 0.002, filter: 'brightness(0.52) contrast(1.14) saturate(0.74)', color: 'planetA' },
+      { asset: 'planet3', x: 0.18, yOffset: 0.2, speed: 64, radius: 0.07, alpha: 0.58, rotation: -18 * DEG, spin: -0.006, filter: 'brightness(0.72) contrast(1.12) saturate(0.96)', color: 'planetC' },
+      { asset: 'planet4', x: 0.96, yOffset: 0.94, speed: 73, radius: 0.045, alpha: 0.48, rotation: 22 * DEG, spin: 0.004, filter: 'brightness(0.68) contrast(1.08) saturate(0.78)', color: 'planetB' },
+    ],
+    wrecks: [
+      { x: 0.82, yOffset: 0.32, speed: 78, width: 0.09, height: 0.04, alpha: 0.07, rotation: 18 * DEG, spin: -0.0014, variant: 2 },
+    ],
+    scenic: [
+      { asset: 'spaceStation', layer: 'front', x: 0.28, yOffset: 0.72, speed: 102, width: 0.18, height: 0.29, alpha: 0.4, rotation: 0, spin: 0.0004, driftX: 0.008, driftY: -0.008, filter: 'brightness(0.78) contrast(1.16) saturate(0.82)' },
+    ],
+  },
+  {
+    nebulaShiftX: 0.08,
+    nebulaShiftY: 0.16,
+    nebulaScale: 1.24,
+    galaxyScale: 1.26,
+    planetScale: 1.04,
+    asteroidBias: 1.12,
+    debrisBias: 1.36,
+    galaxies: [
+      { asset: 'galaxy3', x: 0.82, y: 0.58, width: 0.82, height: 0.5, alpha: 0.24, rotation: -21 * DEG, driftX: -0.012, driftY: 0.006, filter: 'brightness(0.58) contrast(1.12) saturate(0.84)' },
+      { asset: 'galaxy2', x: 0.22, y: 0.28, width: 0.62, height: 0.34, alpha: 0.19, rotation: 12 * DEG, driftX: 0.014, driftY: 0.01, filter: 'brightness(0.54) contrast(1.08) saturate(0.78)' },
+    ],
+    planets: [
+      { asset: 'planet5', x: 1.08, yOffset: 0.52, speed: 46, radius: 0.26, alpha: 0.52, rotation: -4 * DEG, spin: 0.0014, filter: 'brightness(0.58) contrast(1.12) saturate(0.66)', color: 'planetB' },
+      { asset: 'planet1', x: 0.22, yOffset: 0.86, speed: 53, radius: 0.075, alpha: 0.62, rotation: 8 * DEG, spin: 0.007, filter: 'brightness(0.78) contrast(1.1) saturate(0.86)', color: 'planetA' },
+      { asset: 'planetNebula', x: 0.66, yOffset: 0.16, speed: 67, radius: 0.045, alpha: 0.46, rotation: -14 * DEG, spin: -0.004, filter: 'brightness(0.66) contrast(1.1) saturate(0.88)', color: 'planetC' },
+    ],
+    wrecks: [
+      { x: 0.1, yOffset: 0.64, speed: 74, width: 0.11, height: 0.05, alpha: 0.075, rotation: -26 * DEG, spin: 0.0012, variant: 7 },
+      { x: 0.62, yOffset: 0.08, speed: 96, width: 0.08, height: 0.04, alpha: 0.065, rotation: 14 * DEG, spin: -0.0011, variant: 1 },
+    ],
+    scenic: [
+      { asset: 'sun', layer: 'far', x: 0.12, yOffset: 0.48, speed: 190, width: 0.34, height: 0.34, alpha: 0.045, rotation: 0, spin: 0.0006, driftX: 0.004, driftY: 0.004, filter: 'brightness(0.84) contrast(1.12) saturate(1)' },
+    ],
+  },
+]
+
+const RAID_BACKGROUND_MAX_WRECKS = RAID_BACKGROUND_SCENES.reduce((max, scene) => Math.max(max, scene.wrecks.length), 0)
+
 function getRaidPlanetDepthScale(stageTheme: number, planetIndex: number) {
   const stageIndex = (((Math.floor(stageTheme) - 1) % RAID_PLANET_DEPTH_SCALES.length) + RAID_PLANET_DEPTH_SCALES.length) % RAID_PLANET_DEPTH_SCALES.length
   return RAID_PLANET_DEPTH_SCALES[stageIndex][planetIndex] ?? 1
+}
+
+function getRaidBackgroundScene(stageTheme: number) {
+  const index = (((Math.floor(stageTheme) - 1) % RAID_BACKGROUND_SCENES.length) + RAID_BACKGROUND_SCENES.length) % RAID_BACKGROUND_SCENES.length
+  return RAID_BACKGROUND_SCENES[index]
+}
+
+function getRaidScenePlanetY(layer: RaidBackgroundPlanetLayer, height: number, seconds: number) {
+  return ((seconds / layer.speed + layer.yOffset) % 1) * height * 1.34 - height * 0.16
+}
+
+function getRaidSceneScrollableY(seconds: number, height: number, speed: number, yOffset: number, objectHeight: number) {
+  const padding = Math.max(1, objectHeight)
+  return ((seconds / speed + yOffset) % 1) * (height + padding * 2) - padding
+}
+
+function getRaidScenePlanetRadius(baseSize: number, scene: RaidBackgroundScene, layer: RaidBackgroundPlanetLayer, stageTheme: number, index: number) {
+  return Math.max(14, baseSize * layer.radius * scene.planetScale * getRaidPlanetDepthScale(stageTheme, index))
+}
+
+function getRaidScenePlanetDrawScale(asset: RaidOtherAssetKey) {
+  if (asset === 'planet2') return 2.8
+  if (asset === 'planet1') return 2.45
+  return 2.25
+}
+
+function getRaidScenePlanetAlpha(layer: RaidBackgroundPlanetLayer) {
+  const floor = layer.asset === 'planetNebula' ? 0.82 : 0.88
+  return clamp(Math.max(layer.alpha, floor), 0, 0.96)
+}
+
+function getRaidSceneObjectSize(width: number, height: number, layer: RaidBackgroundScenicLayer | RaidBackgroundWreckLayer) {
+  return {
+    width: Math.max(42, width * layer.width),
+    height: Math.max(42, height * layer.height),
+  }
+}
+
+function getRaidSceneScenicPosition(width: number, height: number, seconds: number, layer: RaidBackgroundScenicLayer, index: number) {
+  const size = getRaidSceneObjectSize(width, height, layer)
+  const x = width * layer.x + Math.sin(seconds / 31 + index * 1.7) * width * layer.driftX
+  const y = getRaidSceneScrollableY(seconds, height, layer.speed, layer.yOffset, size.height * 0.62 + height * 0.05) +
+    Math.cos(seconds / 37 + index * 1.3) * height * layer.driftY
+  return { ...size, x, y }
+}
+
+function getRaidSceneWreckPosition(width: number, height: number, seconds: number, layer: RaidBackgroundWreckLayer) {
+  const size = getRaidSceneObjectSize(width, height, layer)
+  return {
+    ...size,
+    x: width * layer.x,
+    y: getRaidSceneScrollableY(seconds, height, layer.speed, layer.yOffset, size.height * 0.62 + height * 0.05),
+  }
+}
+
+function getRaidScenePlanetFallbackColor(palette: RaidPalette, layer: RaidBackgroundPlanetLayer) {
+  if (layer.color === 'planetB') return palette.planetB
+  if (layer.color === 'planetC') return palette.planetC
+  return palette.planetA
 }
 
 function shouldDrawRaidStarTrail(star: typeof BACKGROUND_STARS[number], index: number, quality: GraphicsQuality) {
@@ -1762,15 +2078,65 @@ function applyAlphaKey(canvas: HTMLCanvasElement, getAlphaScale: (red: number, g
   return canvas
 }
 
+function removeConnectedCanvasMatte(canvas: HTMLCanvasElement, isMattePixel: (red: number, green: number, blue: number, alpha: number, x: number, y: number) => boolean) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+  const { width, height } = canvas
+  const imageData = ctx.getImageData(0, 0, width, height)
+  const data = imageData.data
+  const seen = new Uint8Array(width * height)
+  const stack: number[] = []
+
+  const pushIfMatte = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return
+    const pixel = y * width + x
+    if (seen[pixel]) return
+    seen[pixel] = 1
+    const index = pixel * 4
+    if (data[index + 3] <= 0) return
+    if (isMattePixel(data[index], data[index + 1], data[index + 2], data[index + 3], x, y)) stack.push(pixel)
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    pushIfMatte(x, 0)
+    pushIfMatte(x, height - 1)
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    pushIfMatte(0, y)
+    pushIfMatte(width - 1, y)
+  }
+
+  while (stack.length > 0) {
+    const pixel = stack.pop() ?? 0
+    const x = pixel % width
+    const y = Math.floor(pixel / width)
+    data[pixel * 4 + 3] = 0
+    pushIfMatte(x + 1, y)
+    pushIfMatte(x - 1, y)
+    pushIfMatte(x, y + 1)
+    pushIfMatte(x, y - 1)
+  }
+
+  ctx.putImageData(imageData, 0, 0)
+  return canvas
+}
+
 function processAsteroidAsset(image: HTMLImageElement) {
   const canvas = makeSpriteProcessingCanvas(image, 620)
   if (!canvas) return null
-  return applyAlphaKey(canvas, (red, green, blue) => {
+  const keyedCanvas = applyAlphaKey(canvas, (red, green, blue) => {
     const min = Math.min(red, green, blue)
     const max = Math.max(red, green, blue)
     if (min > 244 && max - min < 18) return 0
     if (min > 220 && max - min < 24) return (244 - min) / 24
     return 1
+  })
+  return removeConnectedCanvasMatte(keyedCanvas, (red, green, blue) => {
+    const min = Math.min(red, green, blue)
+    const max = Math.max(red, green, blue)
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    const chroma = max - min
+    return (luma > 138 && chroma < 38) || (luma > 190 && chroma < 70)
   })
 }
 
@@ -1787,15 +2153,8 @@ function processCometAsset(image: HTMLImageElement) {
   })
 }
 
-function processDerelictWreckAsset(image: HTMLImageElement, variant: number) {
-  const data = getDerelictWreckVariantData(variant)
-  const crop = {
-    x: Math.round(image.naturalWidth * data.crop.x),
-    y: Math.round(image.naturalHeight * data.crop.y),
-    width: Math.round(image.naturalWidth * data.crop.width),
-    height: Math.round(image.naturalHeight * data.crop.height),
-  }
-  const canvas = makeSpriteProcessingCanvas(image, 640, crop)
+function processDerelictWreckAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 680)
   if (!canvas) return null
   return trimTransparentCanvas(canvas, 3)
 }
@@ -1831,31 +2190,35 @@ function processGalaxy2Asset(image: HTMLImageElement) {
 function processPlanetAsset(image: HTMLImageElement) {
   const canvas = makeSpriteProcessingCanvas(image, 900)
   if (!canvas) return null
-  const centerX = canvas.width * 0.51
-  const centerY = canvas.height * 0.5
-  const radius = Math.min(canvas.width, canvas.height) * 0.43
-  const feather = Math.max(8, radius * 0.045)
-  return applyAlphaKey(canvas, (_red, _green, _blue, _alpha, x, y) => {
-    const distance = Math.hypot(x - centerX, y - centerY)
-    if (distance >= radius) return 0
-    if (distance > radius - feather) return (radius - distance) / feather
-    return 1
-  })
+  return trimTransparentCanvas(canvas, 4)
 }
 
-function processPurplePlanetAsset(image: HTMLImageElement) {
+function processPlanet3Asset(image: HTMLImageElement) {
   const canvas = makeSpriteProcessingCanvas(image, 620)
   if (!canvas) return null
-  const centerX = canvas.width * 0.44
-  const centerY = canvas.height * 0.54
-  const radius = Math.min(canvas.width, canvas.height) * 0.44
-  const feather = Math.max(8, radius * 0.06)
+  return trimTransparentCanvas(canvas, 4)
+}
+
+function processPlanetNebulaAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 820)
+  if (!canvas) return null
+  return trimTransparentCanvas(canvas, 4)
+}
+
+function processSunAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 760)
+  if (!canvas) return null
+  const centerX = canvas.width * 0.43
+  const centerY = canvas.height * 0.51
+  const radius = Math.min(canvas.width, canvas.height) * 0.39
+  const feather = Math.max(10, radius * 0.055)
   return applyAlphaKey(canvas, (red, green, blue, _alpha, x, y) => {
     const distance = Math.hypot(x - centerX, y - centerY)
     if (distance >= radius) return 0
     if (distance > radius - feather) return (radius - distance) / feather
     const luma = red * 0.299 + green * 0.587 + blue * 0.114
-    if (luma < 8) return 0
+    if (luma < 12) return 0
+    if (luma < 44) return (luma - 12) / 32
     return 1
   })
 }
@@ -1863,12 +2226,19 @@ function processPurplePlanetAsset(image: HTMLImageElement) {
 function processRingedPlanetAsset(image: HTMLImageElement) {
   const canvas = makeSpriteProcessingCanvas(image, 720)
   if (!canvas) return null
-  return applyAlphaKey(canvas, (red, green, blue) => {
+  return trimTransparentCanvas(canvas, 4)
+}
+
+function processSpaceStationAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 760)
+  if (!canvas) return null
+  const keyedCanvas = applyAlphaKey(canvas, (red, green, blue) => {
     const luma = red * 0.299 + green * 0.587 + blue * 0.114
-    if (luma < 10) return 0
-    if (luma < 42) return (luma - 10) / 32
+    if (luma < 4) return 0
+    if (luma < 20) return (luma - 4) / 16
     return 1
   })
+  return trimTransparentCanvas(keyedCanvas, 3)
 }
 
 function processSquidBossAsset(image: HTMLImageElement) {
@@ -2014,9 +2384,16 @@ function getOtherAssetProcessor(key: RaidOtherAssetKey): CanvasSpriteProcessor |
   if (key === 'comet') return processCometAsset
   if (key === 'galaxy') return processGalaxyAsset
   if (key === 'galaxy2') return processGalaxy2Asset
+  if (key === 'galaxy3') return processGalaxyAsset
+  if (key === 'galaxy4') return processGalaxyAsset
   if (key === 'planet1') return processPlanetAsset
   if (key === 'planet2') return processRingedPlanetAsset
-  if (key === 'planet3') return processPurplePlanetAsset
+  if (key === 'planet3') return processPlanet3Asset
+  if (key === 'planet4') return processPlanetAsset
+  if (key === 'planet5') return processPlanetAsset
+  if (key === 'planetNebula') return processPlanetNebulaAsset
+  if (key === 'spaceStation') return processSpaceStationAsset
+  if (key === 'sun') return processSunAsset
   return undefined
 }
 
@@ -2180,12 +2557,11 @@ function getDerelictWreckVariantData(variant: number) {
   return RAID_DERELICT_WRECK_VARIANTS[getDerelictWreckVariantIndex(variant)]
 }
 
-function getDerelictWreckCanvasSprite(variant: number) {
-  const index = getDerelictWreckVariantIndex(variant)
-  const cacheKey = `other-image:derelict-wreck-${index}`
+function getDerelictWreckCanvasSprite(_variant: number) {
+  const cacheKey = 'other-image:derelict-space-station-full'
   const existing = canvasSpriteCache.get(cacheKey)
   if (existing) return existing
-  return makeImageCanvasSprite(cacheKey, getPublicAssetUrl(RAID_DERELICT_WRECK_ASSET_PATH), (image) => processDerelictWreckAsset(image, index))
+  return makeImageCanvasSprite(cacheKey, getPublicAssetUrl(RAID_DERELICT_WRECK_ASSET_PATH), processDerelictWreckAsset)
 }
 
 function getShipCanvasSprite(shipKey: string) {
@@ -4236,200 +4612,20 @@ function extendLoadoutForSuperBoss(player: Player) {
   }
 }
 
-function drawAsteroidShape(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  rotation: number,
-  alpha: number,
-) {
-  const asteroidSprite = getRaidOtherCanvasSprite('asteroid')
-  if (drawCanvasImageContain(ctx, asteroidSprite, x, y, width * 1.18, height * 1.18, 'brightness(0.86) contrast(1.16) saturate(0.9)', alpha, rotation)) return
-
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.rotate(rotation)
-  ctx.globalAlpha *= alpha
-  const gradient = ctx.createLinearGradient(-width / 2, -height / 2, width / 2, height / 2)
-  gradient.addColorStop(0, '#78716c')
-  gradient.addColorStop(0.52, '#292524')
-  gradient.addColorStop(1, '#1c1917')
-  ctx.fillStyle = gradient
-  ctx.strokeStyle = 'rgba(0,0,0,0.46)'
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.moveTo(-width * 0.42, -height * 0.16)
-  ctx.quadraticCurveTo(-width * 0.28, -height * 0.58, width * 0.1, -height * 0.48)
-  ctx.quadraticCurveTo(width * 0.54, -height * 0.36, width * 0.44, height * 0.08)
-  ctx.quadraticCurveTo(width * 0.32, height * 0.58, -width * 0.12, height * 0.44)
-  ctx.quadraticCurveTo(-width * 0.56, height * 0.28, -width * 0.42, -height * 0.16)
-  ctx.fill()
-  ctx.stroke()
-  ctx.restore()
-}
-
-function drawDebrisShape(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  rotation: number,
-  alpha: number,
-) {
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.rotate(rotation)
-  ctx.globalAlpha *= alpha
-  ctx.fillStyle = '#475569'
-  ctx.strokeStyle = 'rgba(239,35,60,0.46)'
-  ctx.lineWidth = 1.2
-  ctx.beginPath()
-  ctx.moveTo(-width * 0.5, -height * 0.12)
-  ctx.lineTo(-width * 0.12, -height * 0.48)
-  ctx.lineTo(width * 0.5, height * 0.08)
-  ctx.lineTo(width * 0.12, height * 0.48)
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
-  ctx.strokeStyle = 'rgba(125,211,252,0.36)'
-  ctx.beginPath()
-  ctx.moveTo(-width * 0.26, -height * 0.24)
-  ctx.lineTo(width * 0.24, height * 0.28)
-  ctx.stroke()
-  ctx.restore()
-}
-
 function drawPlanetSurface(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, seconds: number, quality: GraphicsQuality) {
   if (quality === 'low') return
 
-  const scroll = (seconds * (quality === 'medium' ? 34 : 48)) % height
-  const featureCount = quality === 'medium' ? 7 : 11
-  const { surfaceMode, surfaceA, surfaceB, surfaceC } = palette
+  const pulse = 0.9 + Math.sin(seconds / 9) * 0.1
   ctx.save()
-
-  const ground = ctx.createLinearGradient(0, 0, width, height)
-  if (surfaceMode === 'sea') {
-    ground.addColorStop(0, 'rgba(3, 57, 70, 0.96)')
-    ground.addColorStop(0.48, 'rgba(8, 96, 116, 0.9)')
-    ground.addColorStop(1, 'rgba(2, 16, 28, 0.98)')
-  } else if (surfaceMode === 'lava') {
-    ground.addColorStop(0, 'rgba(43, 14, 7, 0.98)')
-    ground.addColorStop(0.5, 'rgba(94, 25, 13, 0.92)')
-    ground.addColorStop(1, 'rgba(9, 4, 3, 0.98)')
-  } else if (surfaceMode === 'ice') {
-    ground.addColorStop(0, 'rgba(8, 47, 73, 0.98)')
-    ground.addColorStop(0.48, 'rgba(69, 146, 170, 0.84)')
-    ground.addColorStop(1, 'rgba(3, 13, 24, 0.98)')
-  } else if (surfaceMode === 'alien') {
-    ground.addColorStop(0, 'rgba(19, 5, 45, 0.98)')
-    ground.addColorStop(0.52, 'rgba(60, 18, 105, 0.9)')
-    ground.addColorStop(1, 'rgba(5, 2, 15, 0.98)')
-  } else {
-    ground.addColorStop(0, 'rgba(12, 18, 28, 0.96)')
-    ground.addColorStop(0.52, 'rgba(34, 42, 57, 0.86)')
-    ground.addColorStop(1, 'rgba(5, 8, 14, 0.98)')
-  }
-  ctx.fillStyle = ground
-  ctx.globalAlpha = 0.92
-  ctx.fillRect(0, 0, width, height)
-
   ctx.globalCompositeOperation = 'screen'
-  const glow = ctx.createRadialGradient(width * 0.5, height * 0.46, 0, width * 0.5, height * 0.46, Math.max(width, height) * 0.62)
-  glow.addColorStop(0, surfaceA)
-  glow.addColorStop(0.5, surfaceB)
-  glow.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.globalAlpha = 0.28
-  ctx.fillStyle = glow
+  ctx.globalAlpha = quality === 'medium' ? 0.08 : 0.12
+  const wash = ctx.createLinearGradient(0, 0, width, height)
+  wash.addColorStop(0, palette.surfaceA)
+  wash.addColorStop(0.55, palette.surfaceB)
+  wash.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = wash
   ctx.fillRect(0, 0, width, height)
-  ctx.globalCompositeOperation = 'source-over'
-
-  const tileHeight = height / (quality === 'medium' ? 3.4 : 4.2)
-  for (let index = -1; index < featureCount; index += 1) {
-    const seed = index + Math.floor(seconds * 0.18) * 19
-    const y = ((index * tileHeight + scroll) % (height + tileHeight)) - tileHeight
-    const x = seededNoise(seed, 2) * width
-    const w = width * (0.12 + seededNoise(seed, 3) * 0.22)
-    const h = height * (0.055 + seededNoise(seed, 4) * 0.12)
-
-    if (surfaceMode === 'sea') {
-      ctx.globalCompositeOperation = 'screen'
-      ctx.globalAlpha = 0.12 + seededNoise(seed, 5) * 0.08
-      ctx.strokeStyle = seededNoise(seed, 6) > 0.45 ? 'rgba(125,211,252,0.72)' : 'rgba(255,255,255,0.34)'
-      ctx.lineWidth = Math.max(1, width * 0.0014)
-      ctx.beginPath()
-      ctx.ellipse(x, y, w, h * 0.32, seededNoise(seed, 7) * 0.6 - 0.3, 0, Math.PI * 2)
-      ctx.stroke()
-      if (seededNoise(seed, 8) > 0.62) {
-        ctx.globalCompositeOperation = 'source-over'
-        ctx.globalAlpha = 0.18
-        ctx.fillStyle = 'rgba(11, 70, 64, 0.72)'
-        ctx.beginPath()
-        ctx.ellipse(x + w * 0.15, y + h * 0.12, w * 0.28, h * 0.42, 0.4, 0, Math.PI * 2)
-        ctx.fill()
-      }
-    } else if (surfaceMode === 'lava') {
-      ctx.globalCompositeOperation = seededNoise(seed, 8) > 0.42 ? 'lighter' : 'source-over'
-      ctx.globalAlpha = seededNoise(seed, 8) > 0.42 ? 0.38 : 0.26
-      ctx.fillStyle = seededNoise(seed, 8) > 0.42 ? 'rgba(249, 115, 22, 0.86)' : 'rgba(24, 10, 8, 0.72)'
-      ctx.beginPath()
-      ctx.moveTo(x - w * 0.5, y - h * 0.15)
-      ctx.lineTo(x - w * 0.12, y - h * 0.48)
-      ctx.lineTo(x + w * 0.48, y - h * 0.18)
-      ctx.lineTo(x + w * 0.28, y + h * 0.44)
-      ctx.lineTo(x - w * 0.34, y + h * 0.36)
-      ctx.closePath()
-      ctx.fill()
-    } else if (surfaceMode === 'ice') {
-      ctx.globalCompositeOperation = 'screen'
-      ctx.globalAlpha = 0.16 + seededNoise(seed, 8) * 0.12
-      ctx.fillStyle = 'rgba(224,242,254,0.62)'
-      ctx.beginPath()
-      ctx.moveTo(x, y - h)
-      ctx.lineTo(x + w * 0.42, y - h * 0.08)
-      ctx.lineTo(x + w * 0.18, y + h * 0.62)
-      ctx.lineTo(x - w * 0.46, y + h * 0.12)
-      ctx.closePath()
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(186,230,253,0.36)'
-      ctx.lineWidth = Math.max(1, width * 0.001)
-      ctx.beginPath()
-      ctx.moveTo(x - w * 0.24, y + h * 0.12)
-      ctx.lineTo(x + w * 0.2, y - h * 0.18)
-      ctx.lineTo(x + w * 0.34, y + h * 0.22)
-      ctx.stroke()
-    } else {
-      ctx.globalCompositeOperation = 'source-over'
-      ctx.globalAlpha = surfaceMode === 'alien' ? 0.24 : 0.18
-      ctx.fillStyle = surfaceMode === 'alien' ? 'rgba(31, 9, 62, 0.72)' : 'rgba(15, 23, 42, 0.72)'
-      ctx.beginPath()
-      ctx.moveTo(x - w * 0.56, y - h * 0.18)
-      ctx.lineTo(x - w * 0.2, y - h * 0.5)
-      ctx.lineTo(x + w * 0.52, y - h * 0.2)
-      ctx.lineTo(x + w * 0.22, y + h * 0.48)
-      ctx.lineTo(x - w * 0.44, y + h * 0.36)
-      ctx.closePath()
-      ctx.fill()
-      if (surfaceMode === 'alien') {
-        ctx.globalCompositeOperation = 'screen'
-        ctx.globalAlpha = 0.16
-        ctx.strokeStyle = surfaceC
-        ctx.lineWidth = Math.max(1, width * 0.001)
-        ctx.beginPath()
-        ctx.moveTo(x - w * 0.28, y)
-        ctx.lineTo(x + w * 0.24, y - h * 0.1)
-        ctx.stroke()
-      }
-    }
-  }
-
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.globalAlpha = 0.18
-  ctx.fillStyle = 'rgba(0,0,0,0.42)'
-  ctx.fillRect(0, 0, width, height)
-
+  drawRadialEllipse2Stop(ctx, width * 0.5, height * 0.46, Math.max(width, height) * 0.62 * pulse, Math.max(width, height) * 0.62, palette.surfaceA, 'rgba(0,0,0,0)')
   ctx.restore()
 }
 
@@ -4593,21 +4789,23 @@ function drawRaidStarfield(ctx: CanvasRenderingContext2D, width: number, height:
 
 function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max', stageTheme = 1, dpr = 1) {
   const seconds = time / 1000
-  const { baseTop, baseMid, baseBottom, nebulaA, nebulaB, starTint, streak, planetA, planetB, planetC } = palette
+  const { baseMid, nebulaA, nebulaB, starTint, streak } = palette
   const isLow = quality === 'low'
   const isMedium = quality === 'medium'
   const isHigh = quality === 'high'
   const isSurfaceStage = stageTheme % 2 === 0
+  const scene = getRaidBackgroundScene(stageTheme)
 
   drawRaidBackgroundBaseLayer(ctx, palette, width, height, quality, dpr)
 
   if (!isLow) {
     ctx.save()
     const nebulaDrift = Math.sin(seconds / 10)
+    const nebulaScaleX = scene.nebulaScale * (1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5))
+    const nebulaScaleY = scene.nebulaScale * (1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
     ctx.translate(width * 0.012 * nebulaDrift, height * 0.006 * Math.cos(seconds / 8))
-    ctx.scale(1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5), 1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
-    drawRadialEllipse2Stop(ctx, width * 0.2, height * 0.72, width * 0.36, height * 0.24, nebulaA, 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, width * 0.82, height * 0.24, width * 0.32, height * 0.22, nebulaB, 'rgba(0,0,0,0)')
+    drawRadialEllipse2Stop(ctx, width * (0.2 + scene.nebulaShiftX * 0.42), height * (0.72 + scene.nebulaShiftY * 0.38), width * 0.36 * nebulaScaleX, height * 0.24 * nebulaScaleY, nebulaA, 'rgba(0,0,0,0)')
+    drawRadialEllipse2Stop(ctx, width * (0.82 - scene.nebulaShiftX * 0.28), height * (0.24 - scene.nebulaShiftY * 0.24), width * 0.32 * nebulaScaleX, height * 0.22 * nebulaScaleY, nebulaB, 'rgba(0,0,0,0)')
     ctx.restore()
   }
 
@@ -4627,31 +4825,21 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   if (!isLow) {
     ctx.save()
     ctx.globalCompositeOperation = 'screen'
-    const galaxySprite = getRaidOtherCanvasSprite(stageTheme % 3 === 0 ? 'galaxy2' : 'galaxy')
     const galaxyDrift = Math.sin(seconds / 18)
-    drawCanvasImageContain(
-      ctx,
-      galaxySprite,
-      width * (stageTheme % 3 === 0 ? 0.72 : 0.28) + galaxyDrift * width * 0.012,
-      height * (stageTheme % 3 === 0 ? 0.28 : 0.64) + Math.cos(seconds / 22) * height * 0.01,
-      width * (isMedium ? 0.46 : 0.62),
-      height * (isMedium ? 0.28 : 0.38),
-      stageTheme % 3 === 0 ? 'brightness(0.58) contrast(1.06) saturate(0.82)' : 'brightness(0.72) contrast(1.12) saturate(1.04)',
-      isMedium ? 0.24 : 0.34,
-      (stageTheme % 3 === 0 ? 8 : -12) * DEG,
-    )
-    if (!isMedium) {
-      const secondGalaxySprite = getRaidOtherCanvasSprite(stageTheme % 3 === 0 ? 'galaxy' : 'galaxy2')
+    const galaxyLimit = isMedium ? 1 : scene.galaxies.length
+    for (let index = 0; index < galaxyLimit; index += 1) {
+      const galaxy = scene.galaxies[index]
+      const galaxySprite = getRaidOtherCanvasSprite(galaxy.asset)
       drawCanvasImageContain(
         ctx,
-        secondGalaxySprite,
-        width * (stageTheme % 3 === 0 ? 0.22 : 0.8) - galaxyDrift * width * 0.01,
-        height * (stageTheme % 3 === 0 ? 0.68 : 0.22),
-        width * 0.34,
-        height * 0.22,
-        'brightness(0.42) contrast(1.08) saturate(0.72)',
-        0.16,
-        (stageTheme % 3 === 0 ? -16 : 10) * DEG,
+        galaxySprite,
+        width * galaxy.x + galaxyDrift * width * galaxy.driftX,
+        height * galaxy.y + Math.cos(seconds / 22) * height * galaxy.driftY,
+        width * galaxy.width * scene.galaxyScale * (isMedium ? 0.82 : 1),
+        height * galaxy.height * scene.galaxyScale * (isMedium ? 0.82 : 1),
+        galaxy.filter,
+        galaxy.alpha * (isMedium ? 0.78 : 1),
+        galaxy.rotation,
       )
     }
     ctx.restore()
@@ -4724,34 +4912,58 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
     ctx.restore()
   }
 
-  const planetBase = height * 1.3
-  const planet1Y = ((seconds / 28 + 0.9) % 1) * planetBase - height * 0.1
-  const planet2Y = ((seconds / 42 + 0.64) % 1) * planetBase - height * 0.08
-  const planet3Y = ((seconds / 58 + 0.42) % 1) * planetBase - height * 0.06
-  const planet1R = Math.min(width * 0.105, 96) * getRaidPlanetDepthScale(stageTheme, 0)
-  const planet2R = Math.min(width * 0.045, 36) * getRaidPlanetDepthScale(stageTheme, 1)
-  const planet3R = Math.min(width * 0.03, 26) * getRaidPlanetDepthScale(stageTheme, 2)
-
   if (!isLow) {
     if (isSurfaceStage) {
       drawPlanetSurface(ctx, palette, width, height, seconds, quality)
     }
     ctx.save()
     ctx.globalAlpha = 1
-    const planet1Sprite = getRaidOtherCanvasSprite('planet1')
-    if (!drawCanvasImageContain(ctx, planet1Sprite, width * 0.92, planet1Y, planet1R * 2.45, planet1R * 2.45, 'brightness(0.78) contrast(1.08) saturate(0.86)', 0.86, seconds * 0.01)) {
-      drawRadialEllipse(ctx, width * 0.92, planet1Y, planet1R, planet1R, [[0, '#f9fafb'], [0.5, planetA], [1, baseTop]])
-    }
-    ctx.globalAlpha = 0.82
-    const planet2Sprite = getRaidOtherCanvasSprite('planet2')
-    if (!drawCanvasImageContain(ctx, planet2Sprite, width * 0.05, planet2Y, planet2R * 2.8, planet2R * 2.8, 'brightness(0.8) contrast(1.08) saturate(0.86)', 0.7, -18 * DEG)) {
-      drawRadialEllipse(ctx, width * 0.05, planet2Y, planet2R, planet2R, [[0, '#f8fafc'], [0.55, planetB], [1, baseBottom]])
-    }
-    if (!isMedium) {
-      const planet3Sprite = getRaidOtherCanvasSprite('planet3')
-      if (!drawCanvasImageContain(ctx, planet3Sprite, width * 0.24, planet3Y, planet3R * 2.25, planet3R * 2.25, 'brightness(0.66) contrast(1.12) saturate(0.9)', 0.56, -seconds * 0.012)) {
-        drawRadialEllipse(ctx, width * 0.24, planet3Y, planet3R, planet3R, [[0, '#e0f2fe'], [0.55, planetC], [1, baseMid]])
+    const planetLimit = isMedium ? Math.min(2, scene.planets.length) : scene.planets.length
+    for (let index = 0; index < planetLimit; index += 1) {
+      const planet = scene.planets[index]
+      const planetSprite = getRaidOtherCanvasSprite(planet.asset)
+      const planetY = getRaidScenePlanetY(planet, height, seconds)
+      const radius = getRaidScenePlanetRadius(Math.min(width, height), scene, planet, stageTheme, Math.min(index, 2))
+      const size = radius * getRaidScenePlanetDrawScale(planet.asset)
+      const rotation = planet.rotation + seconds * planet.spin
+      if (!drawCanvasImageContain(ctx, planetSprite, width * planet.x, planetY, size, size, planet.filter, getRaidScenePlanetAlpha(planet), rotation)) {
+        const color = getRaidScenePlanetFallbackColor(palette, planet)
+        drawRadialEllipse(ctx, width * planet.x, planetY, radius, radius, [[0, '#f9fafb'], [0.55, color], [1, baseMid]])
       }
+    }
+    const wreckLimit = isMedium ? Math.min(1, scene.wrecks.length) : scene.wrecks.length
+    for (let index = 0; index < wreckLimit; index += 1) {
+      const wreck = scene.wrecks[index]
+      const wreckSprite = getDerelictWreckCanvasSprite(wreck.variant)
+      const position = getRaidSceneWreckPosition(width, height, seconds, wreck)
+      drawCanvasImageContain(
+        ctx,
+        wreckSprite,
+        position.x,
+        position.y,
+        position.width,
+        position.height,
+        RAID_DERELICT_WRECK_FILTER,
+        wreck.alpha,
+        wreck.rotation + seconds * wreck.spin,
+      )
+    }
+    const scenicLimit = isMedium ? Math.min(1, scene.scenic.length) : scene.scenic.length
+    for (let index = 0; index < scenicLimit; index += 1) {
+      const scenic = scene.scenic[index]
+      const scenicSprite = getRaidOtherCanvasSprite(scenic.asset)
+      const position = getRaidSceneScenicPosition(width, height, seconds, scenic, index)
+      drawCanvasImageContain(
+        ctx,
+        scenicSprite,
+        position.x,
+        position.y,
+        position.width,
+        position.height,
+        scenic.filter,
+        scenic.alpha,
+        scenic.rotation + seconds * scenic.spin,
+      )
     }
     ctx.restore()
   }
@@ -4759,24 +4971,25 @@ function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette,
   if (!isLow) {
     const asteroidLimit = isMedium ? 3 : BACKGROUND_ASTEROIDS.length
     const debrisLimit = isMedium ? 3 : BACKGROUND_DEBRIS.length
+    const asteroidSprite = getRaidOtherCanvasSprite('asteroid')
     for (let index = 0; index < asteroidLimit; index += 1) {
       const asteroid = BACKGROUND_ASTEROIDS[index]
       const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
-      drawAsteroidShape(ctx, width * asteroid.x, y, asteroid.width, asteroid.height, seconds * asteroid.spin * DEG / 10, asteroid.alpha)
+      drawCanvasImageContain(ctx, asteroidSprite, width * asteroid.x, y, asteroid.width * 1.5 * scene.asteroidBias, asteroid.height * 1.5 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', asteroid.alpha, seconds * asteroid.spin * DEG / 10)
     }
     for (let index = 0; index < debrisLimit; index += 1) {
       const debris = BACKGROUND_DEBRIS[index]
       const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
-      drawDebrisShape(ctx, width * debris.x, y, debris.width, debris.height, seconds * debris.spin * DEG / 12, debris.alpha)
+      drawCanvasImageContain(ctx, asteroidSprite, width * debris.x, y, debris.width * 1.35 * scene.debrisBias, debris.height * 1.35 * scene.debrisBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', debris.alpha, seconds * debris.spin * DEG / 12)
     }
 
     if (!isMedium) {
       const clusterY1 = ((seconds / 16 + 0.56) % 1) * height * 1.15 - height * 0.04
       const clusterY2 = ((seconds / 24 + 0.25) % 1) * height * 1.15 - height * 0.04
-      drawAsteroidShape(ctx, width * 0.44, clusterY1, 16, 12, seconds * 0.3, 0.24)
-      drawAsteroidShape(ctx, width * 0.44 + 22, clusterY1 + 14, 10, 8, -seconds * 0.2, 0.2)
-      drawAsteroidShape(ctx, width * 0.72, clusterY2, 20, 16, -seconds * 0.18, 0.22)
-      drawAsteroidShape(ctx, width * 0.72 + 24, clusterY2 + 18, 12, 9, seconds * 0.18, 0.18)
+      drawCanvasImageContain(ctx, asteroidSprite, width * 0.44, clusterY1, 24 * scene.asteroidBias, 18 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.24, seconds * 0.3)
+      drawCanvasImageContain(ctx, asteroidSprite, width * 0.44 + 22, clusterY1 + 14, 15 * scene.asteroidBias, 12 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.2, -seconds * 0.2)
+      drawCanvasImageContain(ctx, asteroidSprite, width * 0.72, clusterY2, 30 * scene.asteroidBias, 24 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.22, -seconds * 0.18)
+      drawCanvasImageContain(ctx, asteroidSprite, width * 0.72 + 24, clusterY2 + 18, 18 * scene.asteroidBias, 13.5 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.18, seconds * 0.18)
     }
   }
 
@@ -4895,6 +5108,8 @@ class PixiRaidBackground {
   private readonly ambientGlowGraphics = new Graphics()
   private readonly galaxySprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
   private readonly planetSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
+  private readonly wreckSprites = Array.from({ length: RAID_BACKGROUND_MAX_WRECKS }, () => new Sprite(Texture.WHITE))
+  private readonly scenicSprites = [new Sprite(Texture.WHITE), new Sprite(Texture.WHITE)]
   private readonly farStarLayers = [new Graphics(), new Graphics(), new Graphics()]
   private readonly nearStarLayers = [new Graphics(), new Graphics(), new Graphics()]
   private readonly speedLineGraphics = new Graphics()
@@ -4937,6 +5152,8 @@ class PixiRaidBackground {
       this.scene.addChild(this.speedLineGraphics)
       this.scene.addChild(this.surfaceGraphics)
       this.planetSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.wreckSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.scenicSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.scene.addChild(this.cometFlybySprite)
       this.asteroidSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.debrisSprites.forEach((sprite) => this.scene.addChild(sprite))
@@ -4984,7 +5201,7 @@ class PixiRaidBackground {
       }
 
       this.updateBaseGraphics(palette, width, height, quality, dpr)
-      this.updateNebula(width, height, seconds, palette, isLow)
+      this.updateNebula(width, height, seconds, palette, stageTheme, isLow)
       this.updateBossTint(width, height, seconds, palette, bossIntensity, devilCorruption, isLow)
       this.updateAmbientGlows(width, height, isLow, isMedium, palette)
       this.updateGalaxies(width, height, seconds, stageTheme, isLow, isMedium)
@@ -4992,8 +5209,10 @@ class PixiRaidBackground {
       this.updateSpeedLines(width, height, seconds, palette.streak, isLow, isMedium)
       this.updateSurface(width, height, seconds, palette, quality, stageTheme)
       this.updatePlanets(width, height, seconds, palette, stageTheme, isLow, isMedium)
+      this.updateWrecks(width, height, seconds, stageTheme, isLow, isMedium)
+      this.updateScenic(width, height, seconds, stageTheme, isLow, isMedium)
       this.updateRareCometFlyby(width, height, seconds, isLow, isMedium)
-      this.updateBackgroundObjects(width, height, seconds, isLow, isMedium)
+      this.updateBackgroundObjects(width, height, seconds, stageTheme, isLow, isMedium)
       this.updateAmbientExplosions(width, height, seconds, isLow, isMedium)
       app.render()
       return true
@@ -5063,19 +5282,20 @@ class PixiRaidBackground {
     }
   }
 
-  private updateNebula(width: number, height: number, seconds: number, palette: RaidPalette, isLow: boolean) {
+  private updateNebula(width: number, height: number, seconds: number, palette: RaidPalette, stageTheme: number, isLow: boolean) {
     const graphics = this.nebulaGraphics
     graphics.clear()
     graphics.visible = !isLow
     if (isLow) return
 
+    const scene = getRaidBackgroundScene(stageTheme)
     const drift = Math.sin(seconds / 10)
-    const scaleX = 1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5)
-    const scaleY = 1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5)
+    const scaleX = scene.nebulaScale * (1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5))
+    const scaleY = scene.nebulaScale * (1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
     this.fillRadial(
       graphics,
-      width * 0.2 + width * 0.012 * drift,
-      height * 0.72 + height * 0.006 * Math.cos(seconds / 8),
+      width * (0.2 + scene.nebulaShiftX * 0.42) + width * 0.012 * drift,
+      height * (0.72 + scene.nebulaShiftY * 0.38) + height * 0.006 * Math.cos(seconds / 8),
       width * 0.36 * scaleX,
       height * 0.24 * scaleY,
       palette.nebulaA,
@@ -5083,8 +5303,8 @@ class PixiRaidBackground {
     )
     this.fillRadial(
       graphics,
-      width * 0.82 + width * 0.012 * drift,
-      height * 0.24 + height * 0.006 * Math.cos(seconds / 8),
+      width * (0.82 - scene.nebulaShiftX * 0.28) + width * 0.012 * drift,
+      height * (0.24 - scene.nebulaShiftY * 0.24) + height * 0.006 * Math.cos(seconds / 8),
       width * 0.32 * scaleX,
       height * 0.22 * scaleY,
       palette.nebulaB,
@@ -5130,35 +5350,24 @@ class PixiRaidBackground {
   }
 
   private updateGalaxies(width: number, height: number, seconds: number, stageTheme: number, isLow: boolean, isMedium: boolean) {
-    const primary = this.assetTextures.get(stageTheme % 3 === 0 ? 'galaxy2' : 'galaxy')
-    const secondary = this.assetTextures.get(stageTheme % 3 === 0 ? 'galaxy' : 'galaxy2')
+    const scene = getRaidBackgroundScene(stageTheme)
     const drift = Math.sin(seconds / 18)
-    const primarySprite = this.galaxySprites[0]
-    const secondarySprite = this.galaxySprites[1]
-    primarySprite.visible = Boolean(primary && !isLow)
-    secondarySprite.visible = Boolean(secondary && !isLow && !isMedium)
-    if (primary && !isLow) {
+    const visibleCount = isLow ? 0 : isMedium ? 1 : scene.galaxies.length
+    for (let index = 0; index < this.galaxySprites.length; index += 1) {
+      const sprite = this.galaxySprites[index]
+      const galaxy = scene.galaxies[index]
+      const texture = galaxy ? this.assetTextures.get(galaxy.asset) : undefined
+      sprite.visible = Boolean(texture && index < visibleCount)
+      if (!texture || !galaxy || index >= visibleCount) continue
       setPixiSpriteContain(
-        primarySprite,
-        primary,
-        width * (stageTheme % 3 === 0 ? 0.72 : 0.28) + drift * width * 0.012,
-        height * (stageTheme % 3 === 0 ? 0.28 : 0.64) + Math.cos(seconds / 22) * height * 0.01,
-        width * (isMedium ? 0.46 : 0.62),
-        height * (isMedium ? 0.28 : 0.38),
-        isMedium ? 0.24 : 0.34,
-        (stageTheme % 3 === 0 ? 8 : -12) * DEG,
-      )
-    }
-    if (secondary && !isLow && !isMedium) {
-      setPixiSpriteContain(
-        secondarySprite,
-        secondary,
-        width * (stageTheme % 3 === 0 ? 0.22 : 0.8) - drift * width * 0.01,
-        height * (stageTheme % 3 === 0 ? 0.68 : 0.22),
-        width * 0.34,
-        height * 0.22,
-        0.16,
-        (stageTheme % 3 === 0 ? -16 : 10) * DEG,
+        sprite,
+        texture,
+        width * galaxy.x + drift * width * galaxy.driftX,
+        height * galaxy.y + Math.cos(seconds / 22) * height * galaxy.driftY,
+        width * galaxy.width * scene.galaxyScale * (isMedium ? 0.82 : 1),
+        height * galaxy.height * scene.galaxyScale * (isMedium ? 0.82 : 1),
+        galaxy.alpha * (isMedium ? 0.78 : 1),
+        galaxy.rotation,
       )
     }
   }
@@ -5252,95 +5461,84 @@ class PixiRaidBackground {
     graphics.visible = visible
     if (!visible) return
 
-    const { surfaceMode, surfaceA, surfaceC } = palette
-    const groundStops =
-      surfaceMode === 'sea' ? ['rgba(3, 57, 70, 0.96)', 'rgba(8, 96, 116, 0.9)', 'rgba(2, 16, 28, 0.98)'] :
-        surfaceMode === 'lava' ? ['rgba(43, 14, 7, 0.98)', 'rgba(94, 25, 13, 0.92)', 'rgba(9, 4, 3, 0.98)'] :
-          surfaceMode === 'ice' ? ['rgba(8, 47, 73, 0.98)', 'rgba(69, 146, 170, 0.84)', 'rgba(3, 13, 24, 0.98)'] :
-            surfaceMode === 'alien' ? ['rgba(19, 5, 45, 0.98)', 'rgba(60, 18, 105, 0.9)', 'rgba(5, 2, 15, 0.98)'] :
-              ['rgba(12, 18, 28, 0.96)', 'rgba(34, 42, 57, 0.86)', 'rgba(5, 8, 14, 0.98)']
-    const ground = this.getGradient(`surface-ground|${groundStops.join('|')}`, {
+    const { surfaceA, surfaceB } = palette
+    const surfaceWash = this.getGradient(`surface-wash|${surfaceA}|${surfaceB}`, {
       type: 'linear',
       start: { x: 0, y: 0 },
       end: { x: 1, y: 1 },
       colorStops: [
-        { offset: 0, color: parsePixiCssColor(groundStops[0]).source },
-        { offset: 0.5, color: parsePixiCssColor(groundStops[1]).source },
-        { offset: 1, color: parsePixiCssColor(groundStops[2]).source },
+        { offset: 0, color: parsePixiCssColor(surfaceA).source },
+        { offset: 0.55, color: parsePixiCssColor(surfaceB).source },
+        { offset: 1, color: parsePixiCssColor('rgba(0,0,0,0)').source },
       ],
     })
-    graphics.rect(0, 0, width, height).fill({ fill: ground, alpha: 0.92 })
-    this.fillRadial(graphics, width * 0.5, height * 0.46, Math.max(width, height) * 0.62, Math.max(width, height) * 0.62, surfaceA, 'rgba(0,0,0,0)', 0.28)
-
-    const scroll = (seconds * (quality === 'medium' ? 34 : 48)) % height
-    const featureCount = quality === 'medium' ? 7 : 11
-    const tileHeight = height / (quality === 'medium' ? 3.4 : 4.2)
-    for (let index = -1; index < featureCount; index += 1) {
-      const seed = index + Math.floor(seconds * 0.18) * 19
-      const y = ((index * tileHeight + scroll) % (height + tileHeight)) - tileHeight
-      const x = seededNoise(seed, 2) * width
-      const w = width * (0.12 + seededNoise(seed, 3) * 0.22)
-      const h = height * (0.055 + seededNoise(seed, 4) * 0.12)
-      if (surfaceMode === 'sea') {
-        const stroke = getPixiFill(seededNoise(seed, 6) > 0.45 ? 'rgba(125,211,252,0.72)' : 'rgba(255,255,255,0.34)', 0.12 + seededNoise(seed, 5) * 0.08)
-        graphics.ellipse(x, y, w, h * 0.32).stroke({
-          color: stroke.color,
-          alpha: stroke.alpha,
-          width: Math.max(1, width * 0.0014),
-        })
-      } else if (surfaceMode === 'lava') {
-        graphics.moveTo(x - w * 0.5, y - h * 0.15)
-        graphics.lineTo(x - w * 0.12, y - h * 0.48)
-        graphics.lineTo(x + w * 0.48, y - h * 0.18)
-        graphics.lineTo(x + w * 0.28, y + h * 0.44)
-        graphics.lineTo(x - w * 0.34, y + h * 0.36)
-        graphics.closePath()
-        graphics.fill(getPixiFill(seededNoise(seed, 8) > 0.42 ? 'rgba(249,115,22,0.86)' : 'rgba(24,10,8,0.72)', seededNoise(seed, 8) > 0.42 ? 0.38 : 0.26))
-      } else if (surfaceMode === 'ice') {
-        graphics.moveTo(x, y - h)
-        graphics.lineTo(x + w * 0.42, y - h * 0.08)
-        graphics.lineTo(x + w * 0.18, y + h * 0.62)
-        graphics.lineTo(x - w * 0.46, y + h * 0.12)
-        graphics.closePath()
-        graphics.fill(getPixiFill('rgba(224,242,254,0.62)', 0.16 + seededNoise(seed, 8) * 0.12))
-      } else {
-        graphics.moveTo(x - w * 0.56, y - h * 0.18)
-        graphics.lineTo(x - w * 0.2, y - h * 0.5)
-        graphics.lineTo(x + w * 0.52, y - h * 0.2)
-        graphics.lineTo(x + w * 0.22, y + h * 0.48)
-        graphics.lineTo(x - w * 0.44, y + h * 0.36)
-        graphics.closePath()
-        graphics.fill(getPixiFill(surfaceMode === 'alien' ? 'rgba(31,9,62,0.72)' : 'rgba(15,23,42,0.72)', surfaceMode === 'alien' ? 0.24 : 0.18))
-        if (surfaceMode === 'alien') {
-          graphics.moveTo(x - w * 0.28, y)
-          graphics.lineTo(x + w * 0.24, y - h * 0.1)
-          const stroke = getPixiFill(surfaceC, 0.16)
-          graphics.stroke({ color: stroke.color, alpha: stroke.alpha, width: Math.max(1, width * 0.001) })
-        }
-      }
-    }
-    graphics.rect(0, 0, width, height).fill(getPixiFill('rgba(0,0,0,0.42)', 0.18))
+    graphics.rect(0, 0, width, height).fill({ fill: surfaceWash, alpha: quality === 'medium' ? 0.08 : 0.12 })
+    const pulse = 0.9 + Math.sin(seconds / 9) * 0.1
+    this.fillRadial(graphics, width * 0.5, height * 0.46, Math.max(width, height) * 0.62 * pulse, Math.max(width, height) * 0.62, surfaceA, 'rgba(0,0,0,0)', 0.16)
   }
 
   private updatePlanets(width: number, height: number, seconds: number, palette: RaidPalette, stageTheme: number, isLow: boolean, isMedium: boolean) {
-    const planetBase = height * 1.3
-    const planet1Y = ((seconds / 28 + 0.9) % 1) * planetBase - height * 0.1
-    const planet2Y = ((seconds / 42 + 0.64) % 1) * planetBase - height * 0.08
-    const planet3Y = ((seconds / 58 + 0.42) % 1) * planetBase - height * 0.06
-    const planet1R = Math.min(width * 0.105, 96) * getRaidPlanetDepthScale(stageTheme, 0)
-    const planet2R = Math.min(width * 0.045, 36) * getRaidPlanetDepthScale(stageTheme, 1)
-    const planet3R = Math.min(width * 0.03, 26) * getRaidPlanetDepthScale(stageTheme, 2)
-    const planet1 = this.assetTextures.get('planet1')
-    const planet2 = this.assetTextures.get('planet2')
-    const planet3 = this.assetTextures.get('planet3')
+    const scene = getRaidBackgroundScene(stageTheme)
     const fallbackAlpha = palette.planetA ? 1 : 1
+    const visibleCount = isLow ? 0 : isMedium ? Math.min(2, scene.planets.length) : scene.planets.length
 
-    this.planetSprites[0].visible = Boolean(planet1 && !isLow)
-    this.planetSprites[1].visible = Boolean(planet2 && !isLow)
-    this.planetSprites[2].visible = Boolean(planet3 && !isLow && !isMedium)
-    if (planet1 && !isLow) setPixiSpriteContain(this.planetSprites[0], planet1, width * 0.92, planet1Y, planet1R * 2.45, planet1R * 2.45, 0.86 * fallbackAlpha, seconds * 0.01)
-    if (planet2 && !isLow) setPixiSpriteContain(this.planetSprites[1], planet2, width * 0.05, planet2Y, planet2R * 2.8, planet2R * 2.8, 0.7, -18 * DEG)
-    if (planet3 && !isLow && !isMedium) setPixiSpriteContain(this.planetSprites[2], planet3, width * 0.24, planet3Y, planet3R * 2.25, planet3R * 2.25, 0.56, -seconds * 0.012)
+    for (let index = 0; index < this.planetSprites.length; index += 1) {
+      const sprite = this.planetSprites[index]
+      const planet = scene.planets[index]
+      const texture = planet ? this.assetTextures.get(planet.asset) : undefined
+      sprite.visible = Boolean(texture && index < visibleCount)
+      if (!texture || !planet || index >= visibleCount) continue
+      const y = getRaidScenePlanetY(planet, height, seconds)
+      const radius = getRaidScenePlanetRadius(Math.min(width, height), scene, planet, stageTheme, Math.min(index, 2))
+      const size = radius * getRaidScenePlanetDrawScale(planet.asset)
+      setPixiSpriteContain(sprite, texture, width * planet.x, y, size, size, getRaidScenePlanetAlpha(planet) * fallbackAlpha, planet.rotation + seconds * planet.spin)
+    }
+  }
+
+  private updateWrecks(width: number, height: number, seconds: number, stageTheme: number, isLow: boolean, isMedium: boolean) {
+    const scene = getRaidBackgroundScene(stageTheme)
+    const texture = this.assetTextures.get('spaceStation')
+    const visibleCount = !texture || isLow ? 0 : isMedium ? Math.min(1, scene.wrecks.length) : scene.wrecks.length
+    for (let index = 0; index < this.wreckSprites.length; index += 1) {
+      const sprite = this.wreckSprites[index]
+      const wreck = scene.wrecks[index]
+      sprite.visible = Boolean(texture && wreck && index < visibleCount)
+      if (!texture || !wreck || index >= visibleCount) continue
+      const position = getRaidSceneWreckPosition(width, height, seconds, wreck)
+      setPixiSpriteContain(
+        sprite,
+        texture,
+        position.x,
+        position.y,
+        position.width,
+        position.height,
+        wreck.alpha,
+        wreck.rotation + seconds * wreck.spin,
+      )
+    }
+  }
+
+  private updateScenic(width: number, height: number, seconds: number, stageTheme: number, isLow: boolean, isMedium: boolean) {
+    const scene = getRaidBackgroundScene(stageTheme)
+    const visibleCount = isLow ? 0 : isMedium ? Math.min(1, scene.scenic.length) : scene.scenic.length
+    for (let index = 0; index < this.scenicSprites.length; index += 1) {
+      const sprite = this.scenicSprites[index]
+      const scenic = scene.scenic[index]
+      const texture = scenic ? this.assetTextures.get(scenic.asset) : undefined
+      sprite.visible = Boolean(texture && index < visibleCount)
+      if (!texture || !scenic || index >= visibleCount) continue
+      const position = getRaidSceneScenicPosition(width, height, seconds, scenic, index)
+      setPixiSpriteContain(
+        sprite,
+        texture,
+        position.x,
+        position.y,
+        position.width,
+        position.height,
+        scenic.alpha,
+        scenic.rotation + seconds * scenic.spin,
+      )
+    }
   }
 
   private updateRareCometFlyby(width: number, height: number, seconds: number, isLow: boolean, isMedium: boolean) {
@@ -5360,7 +5558,8 @@ class PixiRaidBackground {
     setPixiSpriteContain(sprite, texture, x, y, size * 2.2, size, alpha, travelAngle - COMET_ASSET_HEAD_ANGLE)
   }
 
-  private updateBackgroundObjects(width: number, height: number, seconds: number, isLow: boolean, isMedium: boolean) {
+  private updateBackgroundObjects(width: number, height: number, seconds: number, stageTheme: number, isLow: boolean, isMedium: boolean) {
+    const scene = getRaidBackgroundScene(stageTheme)
     const asteroidTexture = this.assetTextures.get('asteroid')
     const asteroidLimit = !asteroidTexture || isLow ? 0 : isMedium ? 3 : BACKGROUND_ASTEROIDS.length
     const debrisLimit = !asteroidTexture || isLow ? 0 : isMedium ? 3 : BACKGROUND_DEBRIS.length
@@ -5370,7 +5569,7 @@ class PixiRaidBackground {
       if (!asteroidTexture || index >= asteroidLimit) continue
       const asteroid = BACKGROUND_ASTEROIDS[index]
       const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
-      setPixiSpriteContain(sprite, asteroidTexture, width * asteroid.x, y, asteroid.width * 1.5, asteroid.height * 1.5, asteroid.alpha, seconds * asteroid.spin * DEG / 10)
+      setPixiSpriteContain(sprite, asteroidTexture, width * asteroid.x, y, asteroid.width * 1.5 * scene.asteroidBias, asteroid.height * 1.5 * scene.asteroidBias, asteroid.alpha, seconds * asteroid.spin * DEG / 10)
     }
     for (let index = 0; index < this.debrisSprites.length; index += 1) {
       const sprite = this.debrisSprites[index]
@@ -5378,7 +5577,7 @@ class PixiRaidBackground {
       if (!asteroidTexture || index >= debrisLimit) continue
       const debris = BACKGROUND_DEBRIS[index]
       const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
-      setPixiSpriteContain(sprite, asteroidTexture, width * debris.x, y, debris.width * 1.35, debris.height * 1.35, debris.alpha, seconds * debris.spin * DEG / 12)
+      setPixiSpriteContain(sprite, asteroidTexture, width * debris.x, y, debris.width * 1.35 * scene.debrisBias, debris.height * 1.35 * scene.debrisBias, debris.alpha, seconds * debris.spin * DEG / 12)
     }
   }
 
@@ -10102,8 +10301,6 @@ function drawAsteroidHazard(
   const y = toY(asteroid.y)
   const baseSize = asteroid.tier === 2 ? 280 : asteroid.tier === 1 ? 150 : 78
   const size = Math.max(30, Math.min(viewportWidth * (asteroid.tier === 2 ? 0.29 : asteroid.tier === 1 ? 0.16 : 0.085), baseSize))
-  const healthGlow = clamp(asteroid.hp / asteroid.maxHp, 0, 1)
-  const points = asteroid.tier === 2 ? 12 : 9
 
   const asteroidSprite = getRaidOtherCanvasSprite('asteroid')
   if (asteroidSprite.loaded && asteroidSprite.image.complete) {
@@ -10114,17 +10311,6 @@ function drawAsteroidHazard(
     ctx.shadowColor = 'rgba(251,146,60,0.22)'
     const drewAsteroidImage = drawCanvasImageContain(ctx, asteroidSprite, 0, 0, size, size * 0.9, 'brightness(0.84) contrast(1.2) saturate(0.92)', 1)
     ctx.shadowBlur = 0
-    if (drewAsteroidImage && healthGlow < 0.6) {
-      ctx.globalCompositeOperation = 'lighter'
-      ctx.globalAlpha = (0.62 - healthGlow) * 1.1
-      ctx.strokeStyle = asteroid.tier === 2 ? 'rgba(251,146,60,0.9)' : 'rgba(251,191,36,0.74)'
-      ctx.lineWidth = Math.max(1, size * 0.024)
-      ctx.beginPath()
-      ctx.moveTo(-size * 0.24, -size * 0.18)
-      ctx.lineTo(size * 0.08, size * 0.02)
-      ctx.lineTo(size * 0.28, -size * 0.12)
-      ctx.stroke()
-    }
     ctx.restore()
     if (drewAsteroidImage) return
   }
@@ -10134,110 +10320,12 @@ function drawAsteroidHazard(
   ctx.rotate((asteroid.spin + time * 0.012) * DEG)
   ctx.shadowBlur = asteroid.tier === 2 ? 18 : 9
   ctx.shadowColor = 'rgba(251,146,60,0.22)'
-
-  const gradient = ctx.createLinearGradient(-size * 0.5, -size * 0.55, size * 0.48, size * 0.5)
-  gradient.addColorStop(0, '#a8a29e')
-  gradient.addColorStop(0.32, '#57534e')
-  gradient.addColorStop(0.72, '#292524')
-  gradient.addColorStop(1, '#120f0d')
-  ctx.fillStyle = gradient
-  ctx.strokeStyle = asteroid.tier === 2 ? 'rgba(251,191,36,0.62)' : 'rgba(214,211,209,0.34)'
-  ctx.lineWidth = Math.max(1, size * 0.035)
-  ctx.beginPath()
-  for (let index = 0; index < points; index += 1) {
-    const angle = (index / points) * Math.PI * 2
-    const wobble = 0.78 + seededNoise(asteroid.id + index * 13, asteroid.phase) * 0.34
-    const rx = Math.cos(angle) * size * 0.5 * wobble
-    const ry = Math.sin(angle) * size * 0.42 * (0.86 + seededNoise(asteroid.id, index + 4) * 0.25)
-    if (index === 0) ctx.moveTo(rx, ry)
-    else ctx.lineTo(rx, ry)
-  }
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
-
+  drawRadialEllipse(ctx, 0, 0, size * 0.46, size * 0.38, [
+    [0, '#a8a29e'],
+    [0.5, '#57534e'],
+    [1, '#120f0d'],
+  ])
   ctx.shadowBlur = 0
-  const innerShade = ctx.createRadialGradient(-size * 0.2, -size * 0.24, size * 0.08, size * 0.1, size * 0.1, size * 0.64)
-  innerShade.addColorStop(0, 'rgba(255,255,255,0.18)')
-  innerShade.addColorStop(0.46, 'rgba(68,64,60,0)')
-  innerShade.addColorStop(1, 'rgba(0,0,0,0.42)')
-  ctx.fillStyle = innerShade
-  ctx.globalAlpha = 0.78
-  ctx.beginPath()
-  for (let index = 0; index < points; index += 1) {
-    const angle = (index / points) * Math.PI * 2
-    const wobble = 0.74 + seededNoise(asteroid.id + index * 17, asteroid.phase + 3) * 0.28
-    const rx = Math.cos(angle) * size * 0.46 * wobble
-    const ry = Math.sin(angle) * size * 0.39 * (0.88 + seededNoise(asteroid.id + 6, index) * 0.18)
-    if (index === 0) ctx.moveTo(rx, ry)
-    else ctx.lineTo(rx, ry)
-  }
-  ctx.closePath()
-  ctx.fill()
-
-  const craterCount = asteroid.tier === 2 ? 6 : asteroid.tier === 1 ? 4 : 2
-  for (let index = 0; index < craterCount; index += 1) {
-    const seed = asteroid.id * 11 + index * 19
-    const angle = seededNoise(seed, 1) * Math.PI * 2
-    const distance = size * (0.1 + seededNoise(seed, 2) * 0.28)
-    const craterX = Math.cos(angle) * distance
-    const craterY = Math.sin(angle) * distance * 0.78
-    const craterW = size * (0.055 + seededNoise(seed, 3) * 0.07)
-    const craterH = craterW * (0.55 + seededNoise(seed, 4) * 0.35)
-    ctx.save()
-    ctx.translate(craterX, craterY)
-    ctx.rotate((seededNoise(seed, 5) - 0.5) * 1.2)
-    ctx.globalAlpha = 0.45
-    ctx.fillStyle = 'rgba(12,10,9,0.72)'
-    ctx.beginPath()
-    ctx.ellipse(0, 0, craterW, craterH, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.globalAlpha = 0.28
-    ctx.strokeStyle = 'rgba(214,211,209,0.72)'
-    ctx.lineWidth = Math.max(1, size * 0.012)
-    ctx.beginPath()
-    ctx.ellipse(-craterW * 0.08, -craterH * 0.12, craterW, craterH, 0, Math.PI * 0.95, Math.PI * 1.85)
-    ctx.stroke()
-    ctx.restore()
-  }
-
-  ctx.globalAlpha = 0.52
-  ctx.strokeStyle = 'rgba(15,23,42,0.72)'
-  ctx.lineWidth = Math.max(1, size * 0.018)
-  for (let index = 0; index < (asteroid.tier === 2 ? 7 : 4); index += 1) {
-    const offset = (index - 1.5) * size * 0.12
-    ctx.beginPath()
-    ctx.moveTo(-size * (0.3 - index * 0.018), offset)
-    ctx.lineTo(-size * 0.05 + seededNoise(asteroid.id, index) * size * 0.18, -offset * 0.2)
-    ctx.lineTo(size * (0.18 + index * 0.025), -offset * 0.48)
-    ctx.stroke()
-  }
-
-  ctx.globalCompositeOperation = 'screen'
-  ctx.globalAlpha = asteroid.tier === 2 ? 0.2 : 0.12
-  ctx.fillStyle = asteroid.tier === 2 ? 'rgba(251,146,60,0.8)' : 'rgba(214,211,209,0.52)'
-  const fleckCount = asteroid.tier === 2 ? 10 : asteroid.tier === 1 ? 6 : 3
-  for (let index = 0; index < fleckCount; index += 1) {
-    const seed = asteroid.id * 23 + index * 7
-    const fx = (seededNoise(seed, 6) - 0.5) * size * 0.62
-    const fy = (seededNoise(seed, 7) - 0.5) * size * 0.46
-    ctx.beginPath()
-    ctx.arc(fx, fy, Math.max(0.8, size * (0.008 + seededNoise(seed, 8) * 0.01)), 0, Math.PI * 2)
-    ctx.fill()
-  }
-  ctx.globalCompositeOperation = 'source-over'
-
-  if (healthGlow < 0.6) {
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = (0.62 - healthGlow) * 1.1
-    ctx.strokeStyle = asteroid.tier === 2 ? 'rgba(251,146,60,0.9)' : 'rgba(251,191,36,0.74)'
-    ctx.lineWidth = Math.max(1, size * 0.024)
-    ctx.beginPath()
-    ctx.moveTo(-size * 0.24, -size * 0.18)
-    ctx.lineTo(size * 0.08, size * 0.02)
-    ctx.lineTo(size * 0.28, -size * 0.12)
-    ctx.stroke()
-  }
 
   ctx.restore()
 }
@@ -10372,7 +10460,6 @@ function drawDerelictWreck(
   const mobileScale = viewportWidth <= 640 ? 1.28 : 1
   const w = Math.max(viewportWidth <= 640 ? 132 : 90, (wreck.width / WIDTH) * viewportWidth * mobileScale)
   const h = Math.max(viewportWidth <= 640 ? 76 : 54, (wreck.height / WIDTH) * viewportWidth * mobileScale)
-  const damage = clamp(1 - wreck.hp / Math.max(1, wreck.maxHp), 0, 1)
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate((wreck.rotation ?? 0) + Math.sin(time / 1300 + wreck.phase) * 0.08)
@@ -10385,30 +10472,9 @@ function drawDerelictWreck(
     hull.addColorStop(0.42, '#334155')
     hull.addColorStop(1, '#020617')
     ctx.fillStyle = hull
-    ctx.strokeStyle = 'rgba(226,232,240,0.52)'
-    ctx.lineWidth = Math.max(1, w * 0.01)
     ctx.beginPath()
-    ctx.moveTo(-w * 0.52, -h * 0.12)
-    ctx.lineTo(-w * 0.2, -h * 0.42)
-    ctx.lineTo(w * 0.46, -h * 0.2)
-    ctx.lineTo(w * 0.36, h * 0.22)
-    ctx.lineTo(-w * 0.36, h * 0.42)
-    ctx.closePath()
+    ctx.ellipse(0, 0, w * 0.48, h * 0.36, 0, 0, Math.PI * 2)
     ctx.fill()
-    ctx.stroke()
-  }
-  ctx.shadowBlur = 0
-  ctx.globalCompositeOperation = 'lighter'
-  ctx.globalAlpha = 0.14 + damage * 0.32
-  ctx.strokeStyle = 'rgba(251,113,133,0.9)'
-  ctx.lineWidth = Math.max(1, w * 0.008)
-  for (let index = 0; index < 4; index += 1) {
-    const ox = -w * 0.32 + index * w * 0.19
-    const jitter = Math.sin(wreck.phase + index * 1.7) * h * 0.1
-    ctx.beginPath()
-    ctx.moveTo(ox, -h * 0.18 + jitter)
-    ctx.lineTo(ox + w * 0.08, h * 0.14 - jitter)
-    ctx.stroke()
   }
   ctx.restore()
 }
