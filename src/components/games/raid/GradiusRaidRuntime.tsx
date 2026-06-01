@@ -11,7 +11,7 @@ import type { CSSProperties } from 'react'
 import { RAID_DERELICT_WRECK_VARIANTS, RAID_DEVIL_MASTER_PROJECTILE_FILTER, RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS, RAID_PLAYER_LASER_HEAD_STOPS, RAID_SNAKE_FANG_GLOW_STOPS, RAID_SQUID_BUBBLE_STOPS, RAID_SQUID_INK_STOPS, RAID_VENOM_SPIT_STOPS, drawCanvasSpriteContain, getDerelictWreckVariantData, getDevilMasterProjectileCanvasSprite } from './assets'
 import type { CanvasSpriteEntry } from './assets'
 import { playCoreLanderPhysicalAttackSound, playPickupVoiceLine, warmPickupVoiceSamples } from './audio'
-import { DEFAULT_RAID_PALETTE, PixiRaidBackground, RAID_BOSS_BACKGROUND_THEME_FINAL, RAID_BOSS_BACKGROUND_THEME_SNAKE, RAID_BOSS_BACKGROUND_THEME_SQUID, drawWateryWorldForegroundClouds, getRaidCameraShakeOffset, isWateryWorldTheme } from './background'
+import { DEFAULT_RAID_PALETTE, PixiRaidBackground, RAID_BOSS_BACKGROUND_THEME_FINAL, RAID_BOSS_BACKGROUND_THEME_SNAKE, RAID_BOSS_BACKGROUND_THEME_SQUID, drawVolcanicWorldForegroundClouds, drawWateryWorldForegroundClouds, getRaidCameraShakeOffset, isVolcanicWorldTheme, isWateryWorldTheme } from './background'
 import type { RaidPalette } from './background'
 import { forEachDevilBossBeamLane, forEachFinalBossBeamLane, getDevilBossBeamRadius, getDevilBossChargeDuration, getFinalBossBeamLaneCount, getFinalBossBeamRadius } from './bossAttacks'
 import { drawRaidEnemy, getNormalEnemyFilter } from './bossRender'
@@ -1418,6 +1418,11 @@ export function GradiusRaid({
     const activeBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp > 0)
     const bossIntensity = activeBoss ? 1 : bossAlertRef.current > 0 ? clamp(bossAlertRef.current / 2.4, 0, 1) : 0
     const devilCorruption = activeBoss?.bossKind === 'devil' ? clamp(0.45 + (1 - activeBoss.hp / Math.max(1, activeBoss.maxHp)) * 0.75, 0, 1) : 0
+    const finalBattleIntensity = activeBoss?.bossKind === 'final'
+      ? clamp(0.78 + (1 - activeBoss.hp / Math.max(1, activeBoss.maxHp)) * 0.22, 0, 1)
+      : raidModeRef.current !== 'endless' && stageRef.current >= MAX_RAID_STAGE
+        ? 0.68
+        : 0
     const campaignBackgroundStageTheme =
       raidModeRef.current !== 'endless'
         ? stageRef.current === 5
@@ -1445,6 +1450,7 @@ export function GradiusRaid({
       stageRush,
       bossIntensity,
       devilCorruption,
+      finalBattleIntensity,
     })
 
     const drawTrail = (shot: Shot, color: string, length: number, widthPx: number) => {
@@ -2149,6 +2155,8 @@ export function GradiusRaid({
 
     if (isWateryWorldTheme(backgroundStageTheme)) {
       drawWateryWorldForegroundClouds(ctx, cssWidth, cssHeight, time, gfxQuality)
+    } else if (isVolcanicWorldTheme(backgroundStageTheme)) {
+      drawVolcanicWorldForegroundClouds(ctx, cssWidth, cssHeight, time, gfxQuality)
     }
 
     for (const powerUp of powerUpsRef.current) {

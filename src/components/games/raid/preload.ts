@@ -261,11 +261,27 @@ export function preloadRaidCanvasAssets(onProgress?: (loaded: number, total: num
 }
 
 export function getRaidPixiBackgroundAssetCount() {
-  return Object.keys(RAID_OTHER_ASSET_PATHS).length
+  return getRaidPixiBackgroundAssetUrls().length
+}
+
+export function getRaidPixiBackgroundAssetUrls() {
+  return [...new Set([
+    ...Object.values(RAID_OTHER_ASSET_PATHS).map((path) => getPublicAssetUrl(path)),
+    getRaidShipSpriteUrl('rocket'),
+    getRaidShipSpriteUrl('laser'),
+    getRaidShipSpriteUrl('xwing'),
+    getRaidShipSpriteUrl('spaceEt'),
+    getRaidShipSpriteUrl('dreadnought'),
+    getRaidShipSpriteUrl('mesiah'),
+    getRaidAlienSpriteUrl(0),
+    getRaidAlienSpriteUrl(2),
+    getRaidEliteSpriteUrl(1),
+    getRaidEliteSpriteUrl(4),
+  ])]
 }
 
 export function preloadRaidPixiBackgroundAssets(onProgress?: (loaded: number, total: number) => void) {
-  const entries = Object.values(RAID_OTHER_ASSET_PATHS)
+  const entries = getRaidPixiBackgroundAssetUrls()
   const total = entries.length
 
   if (typeof window === 'undefined') {
@@ -282,11 +298,11 @@ export function preloadRaidPixiBackgroundAssets(onProgress?: (loaded: number, to
 
   let loaded = 0
   onProgress?.(loaded, total)
-  const warmPromise = Promise.all(entries.map(async (path) => {
+  const warmPromise = Promise.all(entries.map(async (url) => {
     try {
-      await Assets.load(getPublicAssetUrl(path))
+      await Assets.load(url)
     } catch {
-      // Pixi background assets are optional because the canvas fallback can still draw.
+      // Keep preload progress moving; missing Pixi textures simply do not render.
     } finally {
       loaded += 1
       onProgress?.(Math.min(loaded, total), total)

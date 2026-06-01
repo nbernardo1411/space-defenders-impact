@@ -1,28 +1,12 @@
 import { getPublicAssetUrl } from '../sound'
 import type { GraphicsQuality } from '../sound'
+import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl } from '../RaidShipSprite'
 import { Application, Assets, Container, FillGradient, Graphics, Sprite, Texture } from 'pixi.js'
-import { RAID_DERELICT_WRECK_FILTER, RAID_OTHER_ASSET_PATHS, drawCanvasImageContain, getDerelictWreckCanvasSprite, getRaidOtherCanvasSprite } from './assets'
+import { RAID_OTHER_ASSET_PATHS, drawCanvasImageContain, getRaidOtherCanvasSprite } from './assets'
 import type { RaidOtherAssetKey } from './assets'
 import { COMET_ASSET_HEAD_ANGLE, DEG } from './constants'
 import type { CameraShakeState } from './types'
-import { clamp, drawRadialEllipse, drawRadialEllipse2Stop, getCachedSpeedLineSprite, seededNoise } from './utils'
-
-export type RaidBackgroundBaseCacheEntry = {
-  key: string
-  canvas: HTMLCanvasElement
-}
-
-export type RaidStarfieldCacheEntry = {
-  key: string
-  farCanvas: HTMLCanvasElement
-  farLayerHeight: number
-  nearTrailCanvas: HTMLCanvasElement | null
-  nearLayerHeight: number
-}
-
-export let raidBackgroundBaseCache: RaidBackgroundBaseCacheEntry | null = null
-
-export let raidStarfieldCache: RaidStarfieldCacheEntry | null = null
+import { clamp, seededNoise } from './utils'
 
 export type RaidPalette = {
   baseTop: string
@@ -84,8 +68,61 @@ export const BACKGROUND_DEBRIS = [
   { x: 0.82, width: 18, height: 14, speed: 0.03, delay: -8, alpha: 0.12, spin: 140 },
 ]
 
-const WATERY_WORLD_CLOUD_LAYERS: Array<{
+const FINAL_BATTLE_FIGHTERS: Array<{
+  side: 'ally' | 'enemy'
+  asset: string
+  assetKind: 'ship' | 'alien' | 'elite'
+  weapon: 'laser' | 'spread' | 'scatter' | 'rocket' | 'homing'
+  x: number
+  ySeed: number
+  speed: number
+  drift: number
+  size: number
+  phase: number
+}> = [
+  { side: 'ally', asset: 'rocket', assetKind: 'ship', weapon: 'rocket', x: 0.18, ySeed: 0.08, speed: 0.035, drift: 0.038, size: 0.05, phase: 0.4 },
+  { side: 'ally', asset: 'laser', assetKind: 'ship', weapon: 'laser', x: 0.32, ySeed: 0.62, speed: 0.032, drift: 0.05, size: 0.044, phase: 1.8 },
+  { side: 'ally', asset: 'xwing', assetKind: 'ship', weapon: 'spread', x: 0.68, ySeed: 0.18, speed: 0.036, drift: 0.045, size: 0.046, phase: 3.1 },
+  { side: 'ally', asset: 'spaceEt', assetKind: 'ship', weapon: 'homing', x: 0.84, ySeed: 0.72, speed: 0.03, drift: 0.035, size: 0.043, phase: 4.6 },
+  { side: 'enemy', asset: '0', assetKind: 'alien', weapon: 'scatter', x: 0.24, ySeed: 0.34, speed: 0.031, drift: 0.045, size: 0.05, phase: 2.2 },
+  { side: 'enemy', asset: '2', assetKind: 'alien', weapon: 'spread', x: 0.44, ySeed: 0.02, speed: 0.037, drift: 0.038, size: 0.046, phase: 5.4 },
+  { side: 'enemy', asset: '1', assetKind: 'elite', weapon: 'laser', x: 0.62, ySeed: 0.52, speed: 0.033, drift: 0.052, size: 0.052, phase: 0.9 },
+  { side: 'enemy', asset: '4', assetKind: 'elite', weapon: 'rocket', x: 0.78, ySeed: 0.28, speed: 0.029, drift: 0.04, size: 0.055, phase: 3.7 },
+]
+
+const FINAL_BATTLE_EXPLOSIONS = [
+  { x: 0.16, ySeed: 0.16, speed: 0.026, period: 5.2, offset: 0.6, radius: 0.044 },
+  { x: 0.38, ySeed: 0.74, speed: 0.021, period: 6.8, offset: 2.1, radius: 0.036 },
+  { x: 0.66, ySeed: 0.38, speed: 0.024, period: 5.8, offset: 3.2, radius: 0.04 },
+  { x: 0.9, ySeed: 0.7, speed: 0.019, period: 7.4, offset: 1.4, radius: 0.05 },
+]
+
+const FINAL_BATTLE_CRUISERS = [
+  { asset: 'dreadnought', x: 0.14, ySeed: 0.1, speed: 0.027, drift: 0.028, size: 0.096, phase: 0.8, alpha: 0.62 },
+  { asset: 'mesiah', x: 0.76, ySeed: 0.42, speed: 0.021, drift: -0.018, size: 0.108, phase: 2.6, alpha: 0.54 },
+  { asset: 'rocket', x: 0.42, ySeed: 0.72, speed: 0.048, drift: 0.036, size: 0.074, phase: 4.1, alpha: 0.66 },
+  { asset: 'xwing', x: 0.9, ySeed: 0.86, speed: 0.056, drift: -0.032, size: 0.07, phase: 5.3, alpha: 0.62 },
+] as const
+
+function getFinalBattleTextureKey(fighter: typeof FINAL_BATTLE_FIGHTERS[number]) {
+  return `final-battle:${fighter.assetKind}:${fighter.asset}`
+}
+
+function getFinalBattleTextureUrl(fighter: typeof FINAL_BATTLE_FIGHTERS[number]) {
+  if (fighter.assetKind === 'ship') return getRaidShipSpriteUrl(fighter.asset)
+  const variant = Number(fighter.asset) || 0
+  return fighter.assetKind === 'elite' ? getRaidEliteSpriteUrl(variant) : getRaidAlienSpriteUrl(variant)
+}
+
+function getFinalBattleCruiserTextureKey(cruiser: typeof FINAL_BATTLE_CRUISERS[number]) {
+  return `final-battle:cruiser:${cruiser.asset}`
+}
+
+const WORLD_SURFACE_TILE_OFFSETS = [-1, 0, 1] as const
+
+type WorldCloudLayer = {
   asset: RaidOtherAssetKey
+  band: 'low' | 'mid' | 'high'
   x: number
   ySeed: number
   speed: number
@@ -94,10 +131,14 @@ const WATERY_WORLD_CLOUD_LAYERS: Array<{
   alpha: number
   rotation: number
   drift: number
-}> = [
-  { asset: 'clouds', x: 0.18, ySeed: 0.08, speed: 0.024, width: 0.82, height: 0.28, alpha: 0.28, rotation: -6 * DEG, drift: 0.035 },
-  { asset: 'clouds2', x: 0.78, ySeed: 0.32, speed: 0.021, width: 0.72, height: 0.32, alpha: 0.25, rotation: 8 * DEG, drift: 0.028 },
-  { asset: 'clouds', x: 0.44, ySeed: 0.68, speed: 0.019, width: 0.92, height: 0.3, alpha: 0.2, rotation: 3 * DEG, drift: 0.024 },
+}
+
+const WATERY_WORLD_CLOUD_LAYERS: WorldCloudLayer[] = [
+  { asset: 'clouds2', band: 'low', x: 0.2, ySeed: 0.08, speed: 0.027, width: 0.88, height: 0.34, alpha: 0.68, rotation: -6 * DEG, drift: 0.038 },
+  { asset: 'clouds', band: 'low', x: 0.78, ySeed: 0.3, speed: 0.024, width: 0.76, height: 0.3, alpha: 0.62, rotation: 8 * DEG, drift: 0.03 },
+  { asset: 'clouds2', band: 'mid', x: 0.45, ySeed: 0.52, speed: 0.02, width: 1.04, height: 0.36, alpha: 0.48, rotation: 3 * DEG, drift: 0.024 },
+  { asset: 'clouds', band: 'mid', x: 0.12, ySeed: 0.73, speed: 0.017, width: 0.7, height: 0.25, alpha: 0.38, rotation: -11 * DEG, drift: 0.018 },
+  { asset: 'clouds2', band: 'high', x: 0.86, ySeed: 0.9, speed: 0.014, width: 0.64, height: 0.24, alpha: 0.28, rotation: 10 * DEG, drift: 0.014 },
 ]
 
 const WATERY_WORLD_ISLAND_SCROLL_SPEED = 0.024
@@ -118,20 +159,12 @@ const WATERY_WORLD_ISLAND_LAYERS: Array<{
   { asset: 'island2', x: 0.14, ySeed: 0.9, size: 0.19, alpha: 0.42, rotation: -18 * DEG, drift: 0.016 },
 ]
 
-const VOLCANIC_WORLD_CLOUD_LAYERS: Array<{
-  asset: RaidOtherAssetKey
-  x: number
-  ySeed: number
-  speed: number
-  width: number
-  height: number
-  alpha: number
-  rotation: number
-  drift: number
-}> = [
-  { asset: 'volcanicClouds', x: 0.22, ySeed: 0.1, speed: 0.026, width: 0.86, height: 0.28, alpha: 0.25, rotation: -5 * DEG, drift: 0.032 },
-  { asset: 'volcanicClouds2', x: 0.78, ySeed: 0.36, speed: 0.02, width: 0.74, height: 0.32, alpha: 0.22, rotation: 7 * DEG, drift: 0.026 },
-  { asset: 'volcanicClouds', x: 0.46, ySeed: 0.7, speed: 0.017, width: 0.96, height: 0.3, alpha: 0.18, rotation: 3 * DEG, drift: 0.022 },
+const VOLCANIC_WORLD_CLOUD_LAYERS: WorldCloudLayer[] = [
+  { asset: 'volcanicClouds2', band: 'low', x: 0.22, ySeed: 0.1, speed: 0.028, width: 0.9, height: 0.34, alpha: 0.64, rotation: -5 * DEG, drift: 0.034 },
+  { asset: 'volcanicClouds', band: 'low', x: 0.78, ySeed: 0.34, speed: 0.023, width: 0.76, height: 0.31, alpha: 0.58, rotation: 7 * DEG, drift: 0.027 },
+  { asset: 'volcanicClouds2', band: 'mid', x: 0.46, ySeed: 0.56, speed: 0.019, width: 1, height: 0.34, alpha: 0.45, rotation: 3 * DEG, drift: 0.022 },
+  { asset: 'volcanicClouds', band: 'mid', x: 0.13, ySeed: 0.76, speed: 0.016, width: 0.72, height: 0.26, alpha: 0.35, rotation: -10 * DEG, drift: 0.017 },
+  { asset: 'volcanicClouds2', band: 'high', x: 0.86, ySeed: 0.92, speed: 0.013, width: 0.66, height: 0.24, alpha: 0.26, rotation: 9 * DEG, drift: 0.014 },
 ]
 
 const VOLCANIC_WORLD_ISLAND_SCROLL_SPEED = 0.024
@@ -536,6 +569,27 @@ export function shouldDrawRaidBattleOverlay(stageTheme: number) {
   return roundedTheme !== RAID_BOSS_BACKGROUND_THEME_SQUID && roundedTheme !== RAID_BOSS_BACKGROUND_THEME_SNAKE
 }
 
+function shouldDrawRaidSpeedLines(stageTheme: number) {
+  return shouldDrawRaidBattleOverlay(stageTheme) || isWateryWorldTheme(stageTheme) || isVolcanicWorldTheme(stageTheme)
+}
+
+function getRaidSpeedLineColor(line: typeof BACKGROUND_SPEED_LINES[number], streak: string, stageTheme: number) {
+  if (isWateryWorldTheme(stageTheme)) {
+    if (line.color === 'red') return 'rgba(170,90,255,0.28)'
+    if (line.color === 'cyan') return 'rgba(132,230,255,0.32)'
+    return 'rgba(190,210,255,0.34)'
+  }
+  if (isVolcanicWorldTheme(stageTheme)) {
+    if (line.color === 'red') return 'rgba(255,96,38,0.42)'
+    if (line.color === 'cyan') return 'rgba(255,190,95,0.28)'
+    return 'rgba(255,150,72,0.34)'
+  }
+  if (line.color === 'streak') return streak
+  if (line.color === 'red') return 'rgba(239,35,60,0.42)'
+  if (line.color === 'cyan') return 'rgba(125,211,252,0.28)'
+  return 'rgba(255,255,255,0.26)'
+}
+
 export function getRaidStarfieldSpeedScale(stageTheme: number) {
   const roundedTheme = Math.floor(stageTheme)
   if (roundedTheme === RAID_BOSS_BACKGROUND_THEME_SQUID) return 0.36
@@ -614,152 +668,52 @@ export function shouldDrawRaidStarTrail(star: typeof BACKGROUND_STARS[number], i
   return star.tint > 0.74 && index % 3 === 0
 }
 
-export function drawPlanetSurface(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, seconds: number, quality: GraphicsQuality) {
-  if (quality === 'low') return
-
-  const pulse = 0.9 + Math.sin(seconds / 9) * 0.1
-  ctx.save()
-  ctx.globalCompositeOperation = 'screen'
-  ctx.globalAlpha = quality === 'medium' ? 0.08 : 0.12
-  const wash = ctx.createLinearGradient(0, 0, width, height)
-  wash.addColorStop(0, palette.surfaceA)
-  wash.addColorStop(0.55, palette.surfaceB)
-  wash.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = wash
-  ctx.fillRect(0, 0, width, height)
-  drawRadialEllipse2Stop(ctx, width * 0.5, height * 0.46, Math.max(width, height) * 0.62 * pulse, Math.max(width, height) * 0.62, palette.surfaceA, 'rgba(0,0,0,0)')
-  ctx.restore()
-}
-
-function getTopDownBlobPoints(cx: number, cy: number, rx: number, ry: number, rotation: number, seed: number, segments: number) {
-  const points: number[] = []
-  const cos = Math.cos(rotation)
-  const sin = Math.sin(rotation)
-  for (let i = 0; i < segments; i += 1) {
-    const angle = (i / segments) * Math.PI * 2
-    const wobble = 0.9 + Math.sin(angle * 3.2 + seed * 9.1) * 0.08 + Math.sin(angle * 7.1 + seed * 4.4) * 0.045
-    const localX = Math.cos(angle) * rx * wobble
-    const localY = Math.sin(angle) * ry * (0.94 + Math.cos(angle * 2.3 + seed * 5.3) * 0.05)
-    points.push(cx + localX * cos - localY * sin, cy + localX * sin + localY * cos)
-  }
-  return points
-}
-
-function drawCanvasBlob(ctx: CanvasRenderingContext2D, points: number[]) {
-  if (points.length < 4) return
-  ctx.beginPath()
-  ctx.moveTo(points[0], points[1])
-  for (let i = 2; i < points.length; i += 2) {
-    ctx.lineTo(points[i], points[i + 1])
-  }
-  ctx.closePath()
-}
-
 function getWaterySurfaceLayerY(seconds: number, height: number, speed: number, ySeed: number, layerHeight: number) {
-  const padding = Math.max(height * 0.18, layerHeight * 0.72)
-  return ((seconds * speed + ySeed) % 1) * (height + padding * 2) - padding
+  const span = getWaterySurfaceLayerSpan(height, layerHeight)
+  return ((seconds * speed + ySeed) % 1) * span - getWaterySurfaceLayerPadding(height, layerHeight)
 }
 
-function drawWateryWorldCanvasAssetLayers(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality) {
-  const islandCount = quality === 'medium' ? 3 : WATERY_WORLD_ISLAND_LAYERS.length
-  for (let index = 0; index < islandCount; index += 1) {
-    const layer = WATERY_WORLD_ISLAND_LAYERS[index]
-    const drawSize = Math.min(width, height) * layer.size
-    const x = width * layer.x + Math.sin(seconds * 0.16 + index * 2.2) * width * layer.drift
-    const y = getWaterySurfaceLayerY(seconds, height, WATERY_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
-    drawRadialEllipse2Stop(ctx, x, y + drawSize * 0.08, drawSize * 0.56, drawSize * 0.34, 'rgba(2,0,10,0.52)', 'rgba(0,0,0,0)')
-    drawCanvasImageContain(
-      ctx,
-      getRaidOtherCanvasSprite(layer.asset),
-      x,
-      y,
-      drawSize,
-      drawSize,
-      'brightness(0.64) contrast(1.1) saturate(0.95)',
-      layer.alpha,
-      layer.rotation + Math.sin(seconds * 0.05 + index) * 2 * DEG,
-    )
-  }
+function getWaterySurfaceLayerPadding(height: number, layerHeight: number) {
+  const padding = Math.max(height * 0.18, layerHeight * 0.72)
+  return padding
+}
 
-  if (quality !== 'low') {
-    const cloudCount = quality === 'medium' ? 2 : WATERY_WORLD_CLOUD_LAYERS.length
-    for (let index = 0; index < cloudCount; index += 1) {
-      const layer = WATERY_WORLD_CLOUD_LAYERS[index]
-      const drawWidth = width * layer.width
-      const drawHeight = height * layer.height
-      const x = width * layer.x + Math.sin(seconds * 0.18 + index * 1.9) * width * layer.drift
-      const y = getWaterySurfaceLayerY(seconds, height, layer.speed, layer.ySeed, drawHeight)
-      drawCanvasImageContain(
-        ctx,
-        getRaidOtherCanvasSprite(layer.asset),
-        x,
-        y,
-        drawWidth,
-        drawHeight,
-        'brightness(0.86) contrast(1.1) saturate(1.06)',
-        layer.alpha,
-        layer.rotation + Math.sin(seconds * 0.08 + index) * 1.5 * DEG,
-      )
-    }
-  }
+function getWaterySurfaceLayerSpan(height: number, layerHeight: number) {
+  const padding = getWaterySurfaceLayerPadding(height, layerHeight)
+  return height + padding * 2
+}
+
+function getWorldSurfaceCopyY(baseY: number, height: number, layerHeight: number, tileIndex: number) {
+  return baseY + WORLD_SURFACE_TILE_OFFSETS[tileIndex] * getWaterySurfaceLayerSpan(height, layerHeight)
+}
+
+function isWorldSurfaceCopyVisible(y: number, height: number, layerHeight: number) {
+  return y > -layerHeight && y < height + layerHeight
+}
+
+function getWorldSurfaceSpriteIndex(layerIndex: number, tileIndex: number) {
+  return layerIndex * WORLD_SURFACE_TILE_OFFSETS.length + tileIndex
+}
+
+function createWorldSurfaceSprites(layerCount: number) {
+  return Array.from({ length: layerCount * WORLD_SURFACE_TILE_OFFSETS.length }, () => new Sprite(Texture.WHITE))
 }
 
 export function drawWateryWorldForegroundClouds(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, quality: GraphicsQuality) {
   if (quality === 'low') return
   const seconds = time / 1000
-  const cloudCount = quality === 'medium' ? 1 : 2
+  const cloudCount = quality === 'medium' ? 2 : 3
   ctx.save()
-  ctx.globalCompositeOperation = 'screen'
+  ctx.globalCompositeOperation = 'source-over'
   for (let index = 0; index < cloudCount; index += 1) {
-    const layer = WATERY_WORLD_CLOUD_LAYERS[index === 0 ? 1 : 2]
-    const drawWidth = width * (index === 0 ? 0.9 : 0.76)
-    const drawHeight = height * (index === 0 ? 0.34 : 0.26)
-    const x = width * (index === 0 ? 0.58 : 0.26) + Math.sin(seconds * (0.12 + index * 0.07) + index * 2.4) * width * 0.045
-    const y = getWaterySurfaceLayerY(seconds, height, index === 0 ? 0.031 : 0.017, index === 0 ? 0.72 : 0.18, drawHeight)
-    drawCanvasImageContain(
-      ctx,
-      getRaidOtherCanvasSprite(layer.asset),
-      x,
-      y,
-      drawWidth,
-      drawHeight,
-      'brightness(0.9) contrast(1.08) saturate(1.05)',
-      index === 0 ? 0.105 : 0.075,
-      layer.rotation * 0.55 + Math.sin(seconds * 0.07 + index) * 1.2 * DEG,
-    )
-  }
-  ctx.restore()
-}
-
-function drawVolcanicWorldCanvasAssetLayers(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality) {
-  const islandCount = quality === 'medium' ? 3 : VOLCANIC_WORLD_ISLAND_LAYERS.length
-  for (let index = 0; index < islandCount; index += 1) {
-    const layer = VOLCANIC_WORLD_ISLAND_LAYERS[index]
-    const drawSize = Math.min(width, height) * layer.size
-    const x = width * layer.x + Math.sin(seconds * 0.15 + index * 2.1) * width * layer.drift
-    const y = getWaterySurfaceLayerY(seconds, height, VOLCANIC_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
-    drawRadialEllipse2Stop(ctx, x, y + drawSize * 0.08, drawSize * 0.58, drawSize * 0.32, 'rgba(6,0,0,0.62)', 'rgba(0,0,0,0)')
-    drawCanvasImageContain(
-      ctx,
-      getRaidOtherCanvasSprite(layer.asset),
-      x,
-      y,
-      drawSize,
-      drawSize,
-      'brightness(0.72) contrast(1.12) saturate(1.05)',
-      layer.alpha,
-      layer.rotation + Math.sin(seconds * 0.05 + index) * 1.6 * DEG,
-    )
-  }
-
-  if (quality !== 'low') {
-    const cloudCount = quality === 'medium' ? 2 : VOLCANIC_WORLD_CLOUD_LAYERS.length
-    for (let index = 0; index < cloudCount; index += 1) {
-      const layer = VOLCANIC_WORLD_CLOUD_LAYERS[index]
-      const drawWidth = width * layer.width
-      const drawHeight = height * layer.height
-      const x = width * layer.x + Math.sin(seconds * 0.17 + index * 1.8) * width * layer.drift
-      const y = getWaterySurfaceLayerY(seconds, height, layer.speed, layer.ySeed, drawHeight)
+    const layer = WATERY_WORLD_CLOUD_LAYERS[index + 1]
+    const drawWidth = width * (index === 0 ? 0.98 : index === 1 ? 0.82 : 0.66)
+    const drawHeight = height * (index === 0 ? 0.36 : index === 1 ? 0.3 : 0.24)
+    const x = width * (index === 0 ? 0.58 : index === 1 ? 0.28 : 0.82) + Math.sin(seconds * (0.12 + index * 0.07) + index * 2.4) * width * 0.045
+    const baseY = getWaterySurfaceLayerY(seconds, height, index === 0 ? 0.031 : index === 1 ? 0.021 : 0.015, index === 0 ? 0.72 : index === 1 ? 0.18 : 0.44, drawHeight)
+    for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
+      const y = getWorldSurfaceCopyY(baseY, height, drawHeight, tileIndex)
+      if (!isWorldSurfaceCopyVisible(y, height, drawHeight)) continue
       drawCanvasImageContain(
         ctx,
         getRaidOtherCanvasSprite(layer.asset),
@@ -767,397 +721,44 @@ function drawVolcanicWorldCanvasAssetLayers(ctx: CanvasRenderingContext2D, width
         y,
         drawWidth,
         drawHeight,
-        'brightness(0.9) contrast(1.12) saturate(1.06)',
-        layer.alpha,
-        layer.rotation + Math.sin(seconds * 0.07 + index) * 1.4 * DEG,
+        'brightness(1.04) contrast(1.08) saturate(1.08)',
+        index === 0 ? 0.24 : index === 1 ? 0.18 : 0.12,
+        layer.rotation * 0.55 + Math.sin(seconds * 0.07 + index) * 1.2 * DEG,
       )
     }
   }
-}
-
-function drawTopDownWateryWorldSurface(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality) {
-  const waterGrad = ctx.createLinearGradient(0, 0, 0, height)
-  waterGrad.addColorStop(0, 'rgba(2,1,10,0.98)')
-  waterGrad.addColorStop(0.34, 'rgba(9,5,35,0.97)')
-  waterGrad.addColorStop(0.68, 'rgba(13,5,43,0.98)')
-  waterGrad.addColorStop(1, 'rgba(4,1,14,0.99)')
-  ctx.fillStyle = waterGrad
-  ctx.fillRect(0, 0, width, height)
-
-  ctx.save()
-  ctx.globalCompositeOperation = 'screen'
-  drawRadialEllipse2Stop(ctx, width * 0.52, height * 0.42, width * 0.72, height * 0.42, 'rgba(70,30,130,0.16)', 'rgba(0,0,0,0)')
-  drawRadialEllipse2Stop(ctx, width * 0.2, height * 0.72, width * 0.46, height * 0.22, 'rgba(42,120,160,0.08)', 'rgba(0,0,0,0)')
   ctx.restore()
-
-  if (quality !== 'low') {
-    const currentCount = quality === 'medium' ? 9 : 15
-    ctx.save()
-    ctx.globalCompositeOperation = 'screen'
-    for (let i = 0; i < currentCount; i += 1) {
-      const seed = seededNoise(i + 41, 18)
-      const x = width * (0.08 + seededNoise(i + 17, 22) * 0.84)
-      const y = ((seconds * (0.018 + seed * 0.018) + seed) % 1) * (height * 1.24) - height * 0.12
-      const drift = Math.sin(seconds * 0.45 + i * 1.7) * width * 0.025
-      const lineH = height * (0.08 + seededNoise(i + 8, 3) * 0.09)
-      ctx.globalAlpha = 0.035 + seededNoise(i + 12, 5) * 0.045
-      ctx.strokeStyle = i % 3 === 0 ? 'rgba(160,90,230,0.9)' : 'rgba(90,210,230,0.68)'
-      ctx.lineWidth = 1 + seededNoise(i + 3, 11) * 1.4
-      ctx.beginPath()
-      ctx.moveTo(x, y)
-      ctx.bezierCurveTo(x + drift, y + lineH * 0.28, x - drift * 0.5, y + lineH * 0.72, x + drift * 0.24, y + lineH)
-      ctx.stroke()
-    }
-    ctx.restore()
-  }
-
-  drawWateryWorldCanvasAssetLayers(ctx, width, height, seconds, quality)
-
-  if (quality !== 'low') {
-    const glowCount = quality === 'medium' ? 3 : 5
-    for (let i = 0; i < glowCount; i += 1) {
-      const gx = width * (0.12 + i * 0.19)
-      const gy = ((seconds * (0.02 + i * 0.003) + i * 0.18) % 1) * height
-      drawRadialEllipse2Stop(ctx, gx, gy, width * 0.13, height * 0.045, 'rgba(80,28,180,0.10)', 'rgba(0,0,0,0)')
-    }
-  }
-  return
-
-  const reefDefs = [
-    { seed: 0.08, x: 0.18, ySeed: 0.04, speed: 0.034, w: 0.34, h: 0.12, rot: -8 * DEG, alpha: 0.46 },
-    { seed: 0.55, x: 0.78, ySeed: 0.22, speed: 0.04, w: 0.26, h: 0.1, rot: 12 * DEG, alpha: 0.38 },
-    { seed: 0.29, x: 0.48, ySeed: 0.46, speed: 0.03, w: 0.44, h: 0.14, rot: 3 * DEG, alpha: 0.34 },
-    { seed: 0.72, x: 0.08, ySeed: 0.72, speed: 0.026, w: 0.3, h: 0.1, rot: 16 * DEG, alpha: 0.36 },
-    { seed: 0.16, x: 0.68, ySeed: 0.86, speed: 0.032, w: 0.38, h: 0.13, rot: -14 * DEG, alpha: 0.42 },
-  ]
-  const reefCount = quality === 'medium' ? 3 : reefDefs.length
-  for (let i = 0; i < reefCount; i += 1) {
-    const reef = reefDefs[i]
-    const reefW = width * reef.w
-    const reefH = height * reef.h
-    const x = width * reef.x + Math.sin(seconds * 0.22 + reef.seed * 10) * width * 0.035
-    const y = ((seconds * reef.speed + reef.ySeed) % 1) * (height + reefH * 2) - reefH
-    const points = getTopDownBlobPoints(x, y, reefW * 0.5, reefH * 0.5, reef.rot, reef.seed, 18)
-    drawRadialEllipse2Stop(ctx, x, y + reefH * 0.12, reefW * 0.46, reefH * 0.32, 'rgba(2,0,10,0.58)', 'rgba(0,0,0,0)')
-    ctx.save()
-    ctx.globalAlpha = reef.alpha
-    ctx.fillStyle = 'rgba(5,2,15,0.96)'
-    drawCanvasBlob(ctx, points)
-    ctx.fill()
-    ctx.globalCompositeOperation = 'screen'
-    ctx.strokeStyle = 'rgba(130,88,210,0.28)'
-    ctx.lineWidth = 1.5
-    drawCanvasBlob(ctx, points)
-    ctx.stroke()
-    ctx.restore()
-    drawRadialEllipse2Stop(ctx, x, y, reefW * 0.24, reefH * 0.3, 'rgba(96,40,160,0.12)', 'rgba(0,0,0,0)')
-  }
-
-  if (quality !== 'low') {
-    const glowCount = quality === 'medium' ? 3 : 5
-    for (let i = 0; i < glowCount; i += 1) {
-      const gx = width * (0.12 + i * 0.19)
-      const gy = ((seconds * (0.02 + i * 0.003) + i * 0.18) % 1) * height
-      drawRadialEllipse2Stop(ctx, gx, gy, width * 0.13, height * 0.045, 'rgba(80,28,180,0.10)', 'rgba(0,0,0,0)')
-    }
-  }
 }
 
-function drawTopDownVolcanicWorldSurface(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality) {
-  const groundGrad = ctx.createLinearGradient(0, 0, 0, height)
-  groundGrad.addColorStop(0, 'rgba(5,1,1,0.98)')
-  groundGrad.addColorStop(0.36, 'rgba(24,6,3,0.98)')
-  groundGrad.addColorStop(0.72, 'rgba(47,10,5,0.97)')
-  groundGrad.addColorStop(1, 'rgba(12,2,1,0.99)')
-  ctx.fillStyle = groundGrad
-  ctx.fillRect(0, 0, width, height)
-
-  const eruptPulse = 0.68 + Math.sin(seconds * 1.2) * 0.32
-  drawRadialEllipse2Stop(ctx, width * 0.48, height * 0.38, width * 0.74, height * 0.34, `rgba(200,58,14,${0.14 * eruptPulse})`, 'rgba(0,0,0,0)')
-  drawRadialEllipse2Stop(ctx, width * 0.5, height * 0.78, width * 0.88, height * 0.18, `rgba(255,96,26,${0.12 * eruptPulse})`, 'rgba(0,0,0,0)')
-
-  drawVolcanicWorldCanvasAssetLayers(ctx, width, height, seconds, quality)
-
-  if (quality !== 'low') {
-    const emberCount = quality === 'medium' ? 10 : 20
-    ctx.save()
-    ctx.fillStyle = 'rgba(255,128,38,0.7)'
-    for (let i = 0; i < emberCount; i += 1) {
-      const px = ((i * 0.17 + i * i * 0.031) % 1) * width
-      const py = ((seconds * (0.035 + i * 0.004) + i * 0.09) % 1) * height
-      ctx.globalAlpha = 0.16 + (i % 4) * 0.045
-      ctx.beginPath()
-      ctx.arc(px, py, 1 + (i % 3) * 0.6, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.restore()
-  }
-}
-
-export function drawWateryWorldSurface(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality) {
-  drawTopDownWateryWorldSurface(ctx, width, height, seconds, quality)
-  return
-
-  const horizonY = height * 0.58
-
-  // Full-screen eerie violet atmosphere sky
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, height)
-  skyGrad.addColorStop(0, 'rgba(2,1,8,0.97)')
-  skyGrad.addColorStop(0.38, 'rgba(10,4,28,0.96)')
-  skyGrad.addColorStop(0.64, 'rgba(22,8,58,0.94)')
-  skyGrad.addColorStop(1, 'rgba(6,2,18,0.97)')
-  ctx.fillStyle = skyGrad
-  ctx.fillRect(0, 0, width, height)
-
-  // Alien orb / moon with glow halo
-  if (quality !== 'low') {
-    const orbX = width * 0.78
-    const orbY = height * 0.13
-    const orbR = Math.min(width, height) * 0.055
-    drawRadialEllipse2Stop(ctx, orbX, orbY, orbR * 5.5, orbR * 5.5, 'rgba(90,32,170,0.10)', 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, orbX, orbY, orbR * 2.6, orbR * 2.6, 'rgba(138,68,214,0.20)', 'rgba(0,0,0,0)')
-    ctx.save()
-    ctx.globalAlpha = 0.88
-    ctx.fillStyle = 'rgba(168,108,232,0.90)'
-    ctx.beginPath()
-    ctx.arc(orbX, orbY, orbR, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
-  }
-
-  // Atmospheric mist / fog layers drifting at different speeds
-  const mistLayers = quality === 'low' ? 2 : quality === 'medium' ? 4 : 7
-  for (let i = 0; i < mistLayers; i++) {
-    const layerY = horizonY - height * (0.06 + i * 0.07)
-    const speed = 0.0014 + i * 0.0004
-    const offsetX = (((seconds * speed + i * 0.22) % 1) * (width * 2.6)) - width * 0.8
-    const mistW = width * (0.58 + i * 0.10)
-    const mistH = height * (0.10 + i * 0.016)
-    const alpha = Math.max(0.04, 0.20 - i * 0.022)
-    drawRadialEllipse2Stop(ctx, offsetX, layerY, mistW, mistH, `rgba(70,30,130,${alpha})`, 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, offsetX + mistW * 0.55, layerY + mistH * 0.08, mistW * 0.68, mistH * 0.62, `rgba(50,20,100,${alpha * 0.68})`, 'rgba(0,0,0,0)')
-  }
-
-  // Horizon atmospheric glow
-  drawRadialEllipse2Stop(ctx, width * 0.5, horizonY, width * 1.3, height * 0.14, 'rgba(52,16,108,0.30)', 'rgba(0,0,0,0)')
-
-  // Dark violet water surface
-  const waterGrad = ctx.createLinearGradient(0, horizonY, 0, height)
-  waterGrad.addColorStop(0, 'rgba(16,4,40,0.97)')
-  waterGrad.addColorStop(0.5, 'rgba(8,2,22,0.98)')
-  waterGrad.addColorStop(1, 'rgba(3,1,10,0.99)')
-  ctx.fillStyle = waterGrad
-  ctx.fillRect(0, horizonY, width, height - horizonY)
-
-  // Animated water shimmer lines
-  if (quality !== 'low') {
-    const shimmerCount = quality === 'medium' ? 4 : 8
-    ctx.save()
-    ctx.globalCompositeOperation = 'screen'
-    for (let i = 0; i < shimmerCount; i++) {
-      const shimY = horizonY + height * (0.04 + i * 0.04)
-      const phase = seconds * (0.08 + i * 0.015) + i * 0.38
-      const shimX = width * 0.5 + Math.sin(phase) * width * 0.22
-      const shimW = width * (0.26 + Math.cos(phase * 0.7) * 0.08)
-      ctx.globalAlpha = 0.055 + Math.abs(Math.sin(phase)) * 0.04
-      const shimmer = ctx.createLinearGradient(shimX - shimW, shimY, shimX + shimW, shimY)
-      shimmer.addColorStop(0, 'rgba(0,0,0,0)')
-      shimmer.addColorStop(0.5, 'rgba(120,60,200,0.9)')
-      shimmer.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.strokeStyle = shimmer
-      ctx.lineWidth = 1.5
-      ctx.beginPath()
-      ctx.moveTo(shimX - shimW, shimY)
-      ctx.lineTo(shimX + shimW, shimY)
-      ctx.stroke()
-    }
-    ctx.restore()
-  }
-
-  // Island silhouettes in parallax layers (back → front)
-  const islandDefs = [
-    { seed: 0.08, speed: 0.0028, laneY: 0.05,  wScale: 0.52, hScale: 0.09,  alpha: 0.62 },
-    { seed: 0.55, speed: 0.0034, laneY: 0.065, wScale: 0.44, hScale: 0.075, alpha: 0.56 },
-    { seed: 0.29, speed: 0.0052, laneY: 0.12,  wScale: 0.68, hScale: 0.15,  alpha: 0.76 },
-    { seed: 0.72, speed: 0.0048, laneY: 0.10,  wScale: 0.56, hScale: 0.13,  alpha: 0.70 },
-    { seed: 0.16, speed: 0.0075, laneY: 0.21,  wScale: 0.88, hScale: 0.24,  alpha: 0.86 },
-    { seed: 0.61, speed: 0.0068, laneY: 0.18,  wScale: 0.72, hScale: 0.20,  alpha: 0.80 },
-  ]
-  const islandCount = quality === 'low' ? 2 : quality === 'medium' ? 3 : islandDefs.length
-  for (let i = 0; i < islandCount; i++) {
-    const isl = islandDefs[i]
-    const islW = width * isl.wScale
-    const rawX = (((seconds * isl.speed + isl.seed) % 1) * (width + islW * 1.4)) - islW * 0.7
-    const islY = horizonY + height * isl.laneY
-    const islH = height * isl.hScale
-    const dark = i < 2 ? 'rgba(12,6,24,0.93)' : 'rgba(6,2,14,0.96)'
-    ctx.save()
-    ctx.globalAlpha = isl.alpha
-    ctx.fillStyle = dark
-    ctx.beginPath()
-    ctx.moveTo(rawX - islW * 0.5, islY)
-    const numSeg = 10
-    for (let p = 0; p <= numSeg; p++) {
-      const t = p / numSeg
-      const px = rawX - islW * 0.5 + islW * t
-      const bump = Math.sin(t * Math.PI * 3.5 + isl.seed * 11) * 0.38 + Math.sin(t * Math.PI * 7.2 + isl.seed * 6.4) * 0.20
-      ctx.lineTo(px, islY - islH * (0.5 + bump * 0.5))
-    }
-    ctx.lineTo(rawX + islW * 0.5, islY)
-    ctx.closePath()
-    ctx.fill()
-    ctx.restore()
-    // Water shadow below island
-    drawRadialEllipse2Stop(ctx, rawX, islY + islH * 0.65, islW * 0.46, islH * 0.18, 'rgba(2,0,8,0.88)', 'rgba(0,0,0,0)')
-  }
-
-  // Deep-water bioluminescent glow
-  if (quality !== 'low') {
-    const glowCount = quality === 'medium' ? 2 : 4
-    for (let i = 0; i < glowCount; i++) {
-      const gx = width * (0.16 + i * 0.23)
-      const gy = horizonY + height * (0.34 + Math.sin(seconds * 0.4 + i * 1.2) * 0.06)
-      drawRadialEllipse2Stop(ctx, gx, gy, width * 0.14, height * 0.05, 'rgba(72,18,158,0.11)', 'rgba(0,0,0,0)')
+export function drawVolcanicWorldForegroundClouds(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, quality: GraphicsQuality) {
+  if (quality === 'low') return
+  const seconds = time / 1000
+  const cloudCount = quality === 'medium' ? 2 : 3
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  for (let index = 0; index < cloudCount; index += 1) {
+    const layer = VOLCANIC_WORLD_CLOUD_LAYERS[index + 1]
+    const drawWidth = width * (index === 0 ? 0.96 : index === 1 ? 0.8 : 0.64)
+    const drawHeight = height * (index === 0 ? 0.34 : index === 1 ? 0.28 : 0.23)
+    const x = width * (index === 0 ? 0.6 : index === 1 ? 0.28 : 0.82) + Math.sin(seconds * (0.11 + index * 0.065) + index * 2.1) * width * 0.04
+    const baseY = getWaterySurfaceLayerY(seconds, height, index === 0 ? 0.03 : index === 1 ? 0.02 : 0.014, index === 0 ? 0.7 : index === 1 ? 0.16 : 0.42, drawHeight)
+    for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
+      const y = getWorldSurfaceCopyY(baseY, height, drawHeight, tileIndex)
+      if (!isWorldSurfaceCopyVisible(y, height, drawHeight)) continue
+      drawCanvasImageContain(
+        ctx,
+        getRaidOtherCanvasSprite(layer.asset),
+        x,
+        y,
+        drawWidth,
+        drawHeight,
+        'brightness(1.02) contrast(1.08) saturate(1.1)',
+        index === 0 ? 0.22 : index === 1 ? 0.16 : 0.1,
+        layer.rotation * 0.55 + Math.sin(seconds * 0.065 + index) * 1.1 * DEG,
+      )
     }
   }
-}
-
-export function drawVolcanicWorldSurface(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality) {
-  drawTopDownVolcanicWorldSurface(ctx, width, height, seconds, quality)
-  return
-
-  const horizonY = height * 0.55
-
-  // Full-screen smoggy dark red-amber atmosphere
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, height)
-  skyGrad.addColorStop(0, 'rgba(3,1,1,0.97)')
-  skyGrad.addColorStop(0.28, 'rgba(18,5,3,0.96)')
-  skyGrad.addColorStop(0.64, 'rgba(56,14,8,0.94)')
-  skyGrad.addColorStop(1, 'rgba(30,6,4,0.95)')
-  ctx.fillStyle = skyGrad
-  ctx.fillRect(0, 0, width, height)
-
-  // Rolling ash cloud layers drifting across sky
-  const ashCount = quality === 'low' ? 3 : quality === 'medium' ? 5 : 9
-  for (let i = 0; i < ashCount; i++) {
-    const speed = 0.0016 + i * 0.0006
-    const ashX = (((seconds * speed + i * 0.13) % 1) * (width * 2.4)) - width * 0.7
-    const ashY = height * (0.07 + i * 0.065)
-    const ashW = width * (0.36 + (i % 3) * 0.14)
-    const ashH = height * (0.10 + (i % 2) * 0.04)
-    const ashAlpha = Math.max(0.05, 0.24 - i * 0.018)
-    drawRadialEllipse2Stop(ctx, ashX, ashY, ashW, ashH, `rgba(38,16,10,${ashAlpha})`, 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, ashX + ashW * 0.32, ashY + ashH * 0.1, ashW * 0.62, ashH * 0.62, `rgba(26,10,6,${ashAlpha * 0.65})`, 'rgba(0,0,0,0)')
-  }
-
-  // Horizon eruption ambient glow (pulsing)
-  const eruptPulse = 0.68 + Math.sin(seconds * 1.4) * 0.32
-  drawRadialEllipse2Stop(ctx, width * 0.5, horizonY, width * 1.4, height * 0.20, `rgba(200,58,14,${0.24 * eruptPulse})`, 'rgba(0,0,0,0)')
-  drawRadialEllipse2Stop(ctx, width * 0.5, horizonY, width * 0.85, height * 0.11, `rgba(255,96,26,${0.20 * eruptPulse})`, 'rgba(0,0,0,0)')
-
-  // Dark rocky ground
-  const groundGrad = ctx.createLinearGradient(0, horizonY, 0, height)
-  groundGrad.addColorStop(0, 'rgba(22,6,4,0.97)')
-  groundGrad.addColorStop(0.5, 'rgba(12,3,2,0.98)')
-  groundGrad.addColorStop(1, 'rgba(5,1,1,0.99)')
-  ctx.fillStyle = groundGrad
-  ctx.fillRect(0, horizonY, width, height - horizonY)
-
-  // Distant background volcanoes
-  const bgVolcDefs = [
-    { x: 0.24, w: 0.18, h: 0.18 },
-    { x: 0.66, w: 0.16, h: 0.15 },
-    { x: 0.88, w: 0.13, h: 0.14 },
-  ]
-  for (const v of bgVolcDefs) {
-    const bx = width * v.x
-    const baseY = horizonY + height * 0.02
-    const vw = width * v.w
-    const vh = height * v.h
-    ctx.save()
-    ctx.globalAlpha = 0.56
-    ctx.fillStyle = 'rgba(16,5,3,0.92)'
-    ctx.beginPath()
-    ctx.moveTo(bx - vw * 0.5, baseY)
-    ctx.lineTo(bx - vw * 0.06, baseY - vh)
-    ctx.lineTo(bx + vw * 0.06, baseY - vh)
-    ctx.lineTo(bx + vw * 0.5, baseY)
-    ctx.closePath()
-    ctx.fill()
-    ctx.restore()
-    const pkPulse = 0.60 + Math.sin(seconds * 1.8 + v.x * 6.2) * 0.40
-    drawRadialEllipse2Stop(ctx, bx, baseY - vh, vw * 0.32, height * 0.04, `rgba(255,88,18,${0.18 * pkPulse})`, 'rgba(0,0,0,0)')
-  }
-
-  // Large foreground volcanoes with smooth silhouette, crater glow, and lava flow
-  const fgVolcDefs = [
-    { x: 0.12, w: 0.32, h: 0.38, seed: 0.22 },
-    { x: 0.54, w: 0.40, h: 0.46, seed: 0.68 },
-    { x: 0.90, w: 0.26, h: 0.30, seed: 0.44 },
-  ]
-  const numSeg = 14
-  for (const v of fgVolcDefs) {
-    const bx = width * v.x
-    const baseY = horizonY + height * 0.06
-    const vw = width * v.w
-    const vh = height * v.h
-    ctx.save()
-    ctx.globalAlpha = 0.90
-    ctx.fillStyle = 'rgba(10,3,2,0.96)'
-    ctx.beginPath()
-    for (let p = 0; p <= numSeg; p++) {
-      const t = p / numSeg
-      const xOff = -vw * 0.5 * Math.pow(1 - t, 0.72)
-      if (p === 0) ctx.moveTo(bx + xOff, baseY - vh * t)
-      else ctx.lineTo(bx + xOff, baseY - vh * t)
-    }
-    for (let p = numSeg; p >= 0; p--) {
-      const t = p / numSeg
-      ctx.lineTo(bx + vw * 0.5 * Math.pow(1 - t, 0.72), baseY - vh * t)
-    }
-    ctx.closePath()
-    ctx.fill()
-    ctx.restore()
-    // Crater peak glow
-    const pkPulse = 0.55 + Math.sin(seconds * 1.6 + v.seed * 9.4) * 0.45
-    drawRadialEllipse2Stop(ctx, bx, baseY - vh, vw * 0.42, height * 0.07, `rgba(255,128,28,${0.28 * pkPulse})`, 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, bx, baseY - vh + height * 0.008, vw * 0.16, height * 0.035, `rgba(255,200,60,${0.42 * pkPulse})`, 'rgba(0,0,0,0)')
-    // Lava flow - glowing chain down the slope
-    const flowSteps = 6
-    for (let s = 0; s < flowSteps; s++) {
-      const t = s / (flowSteps - 1)
-      const fx = bx + vw * 0.5 * Math.pow(1 - t, 0.72) * 0.32
-      const fy = baseY - vh * (1 - t * 0.92)
-      const fa = (1 - t * 0.7) * 0.30 * pkPulse
-      const fc = t < 0.35 ? `rgba(255,190,55,${fa * 2.2})` : t < 0.65 ? `rgba(255,90,22,${fa * 2.0})` : `rgba(180,32,10,${fa * 1.5})`
-      drawRadialEllipse2Stop(ctx, fx, fy, vw * 0.04, height * 0.025, fc, 'rgba(0,0,0,0)')
-    }
-  }
-
-  // Lava rivers / glowing pools across ground
-  const lavaRiverCount = quality === 'low' ? 1 : quality === 'medium' ? 2 : 3
-  for (let i = 0; i < lavaRiverCount; i++) {
-    const riverY = horizonY + height * (0.16 + i * 0.13)
-    const pulse = 0.72 + Math.sin(seconds * (0.6 + i * 0.2) + i * 2.1) * 0.28
-    drawRadialEllipse2Stop(ctx, width * (0.5 + Math.sin(seconds * 0.18 + i * 0.9) * 0.06), riverY, width * 0.78, height * 0.065, `rgba(255,78,16,${0.20 * pulse})`, 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, width * (0.5 + Math.sin(seconds * 0.24 + i * 1.1) * 0.04), riverY, width * 0.44, height * 0.028, `rgba(255,162,38,${0.24 * pulse})`, 'rgba(0,0,0,0)')
-  }
-
-  // Falling ash particles
-  if (quality !== 'low') {
-    const ashPCount = quality === 'medium' ? 7 : 16
-    ctx.save()
-    ctx.fillStyle = 'rgba(58,22,14,0.6)'
-    for (let i = 0; i < ashPCount; i++) {
-      const px = ((i * 0.17 + i * i * 0.031) % 1) * width
-      const py = ((seconds * (0.04 + i * 0.008) + i * 0.09) % 1) * horizonY
-      ctx.globalAlpha = 0.28 + (i % 4) * 0.07
-      ctx.beginPath()
-      ctx.arc(px, py, 1.2 + (i % 3), 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.restore()
-  }
+  ctx.restore()
 }
 
 export function getRaidBackgroundBaseCacheKey(palette: RaidPalette, width: number, height: number, quality: GraphicsQuality, dpr: number) {
@@ -1174,57 +775,6 @@ export function getRaidBackgroundBaseCacheKey(palette: RaidPalette, width: numbe
   ].join('|')
 }
 
-export function makeRaidLayerCanvas(width: number, height: number, dpr: number) {
-  if (typeof document === 'undefined') return null
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.ceil(width * dpr))
-  canvas.height = Math.max(1, Math.ceil(height * dpr))
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  return { canvas, ctx }
-}
-
-export function drawRaidBackgroundBase(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, quality: GraphicsQuality) {
-  const { baseTop, baseMid, baseBottom, bgA, bgB } = palette
-  const isLow = quality === 'low'
-  const base = ctx.createLinearGradient(0, 0, 0, height)
-  base.addColorStop(0, baseTop)
-  base.addColorStop(0.45, baseMid)
-  base.addColorStop(1, baseBottom)
-  ctx.fillStyle = base
-  ctx.fillRect(0, 0, width, height)
-
-  if (!isLow) {
-    drawRadialEllipse2Stop(ctx, width * 0.18, height * 0.16, width * 0.24, height * 0.24, bgA, 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, width * 0.76, height * 0.38, width * 0.26, height * 0.26, bgB, 'rgba(0,0,0,0)')
-  }
-}
-
-export function drawRaidBackgroundBaseLayer(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, quality: GraphicsQuality, dpr: number) {
-  if (typeof document === 'undefined') {
-    drawRaidBackgroundBase(ctx, palette, width, height, quality)
-    return
-  }
-
-  const key = getRaidBackgroundBaseCacheKey(palette, width, height, quality, dpr)
-  if (!raidBackgroundBaseCache || raidBackgroundBaseCache.key !== key) {
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.floor(width * dpr))
-    canvas.height = Math.max(1, Math.floor(height * dpr))
-    const baseCtx = canvas.getContext('2d')
-    if (!baseCtx) {
-      drawRaidBackgroundBase(ctx, palette, width, height, quality)
-      return
-    }
-    baseCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    drawRaidBackgroundBase(baseCtx, palette, width, height, quality)
-    raidBackgroundBaseCache = { key, canvas }
-  }
-
-  ctx.drawImage(raidBackgroundBaseCache.canvas, 0, 0, width, height)
-}
-
 export function getRaidStarfieldCacheKey(width: number, height: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
   return [
     Math.round(width),
@@ -1234,358 +784,6 @@ export function getRaidStarfieldCacheKey(width: number, height: number, quality:
     starTint,
     streak,
   ].join('|')
-}
-
-export function drawScrollingBackgroundLayer(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, width: number, height: number, layerHeight: number, offset: number) {
-  if (layerHeight <= 0) return
-  const y = ((offset % layerHeight) + layerHeight) % layerHeight
-  ctx.drawImage(canvas, 0, y, width, layerHeight)
-  ctx.drawImage(canvas, 0, y - layerHeight, width, layerHeight)
-  if (y < height) ctx.drawImage(canvas, 0, y + layerHeight, width, layerHeight)
-}
-
-export function getRaidStarfieldCache(width: number, height: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string) {
-  const key = getRaidStarfieldCacheKey(width, height, quality, dpr, starTint, streak)
-  if (raidStarfieldCache?.key === key) return raidStarfieldCache
-  if (typeof document === 'undefined') return null
-
-  const isLow = quality === 'low'
-  const isMedium = quality === 'medium'
-  const isHigh = quality === 'high'
-  const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
-  const farLayerHeight = height * 1.26
-  const nearLayerHeight = height * 1.38
-  const farLayer = makeRaidLayerCanvas(width, farLayerHeight, dpr)
-  if (!farLayer) return null
-
-  for (let index = 0; index < starLimit; index += 1) {
-    const star = BACKGROUND_STARS[index]
-    const x = star.x * width
-    const y = star.y * farLayerHeight
-    farLayer.ctx.globalAlpha = star.alpha * 0.52
-    farLayer.ctx.fillStyle = star.tint > 0.66 ? starTint : star.tint > 0.33 ? 'rgba(125,211,252,0.55)' : 'rgba(255,255,255,0.76)'
-    farLayer.ctx.beginPath()
-    farLayer.ctx.arc(x, y, star.size * 0.62, 0, Math.PI * 2)
-    farLayer.ctx.fill()
-  }
-
-  let nearTrailCanvas: HTMLCanvasElement | null = null
-  if (!isLow && !isMedium) {
-    const nearLayer = makeRaidLayerCanvas(width, nearLayerHeight, dpr)
-    if (nearLayer) {
-      for (let index = 0; index < starLimit; index += 1) {
-        const star = BACKGROUND_STARS[index]
-        if (!shouldDrawRaidStarTrail(star, index, quality)) continue
-        const x = star.x * width
-        const y = star.y * nearLayerHeight
-        nearLayer.ctx.globalAlpha = star.alpha * 0.26
-        const trail = nearLayer.ctx.createLinearGradient(x, y - 14, x, y + 22)
-        trail.addColorStop(0, 'rgba(255,255,255,0)')
-        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.36)')
-        trail.addColorStop(1, 'rgba(255,255,255,0)')
-        nearLayer.ctx.strokeStyle = trail
-        nearLayer.ctx.lineWidth = Math.max(1, star.size * 0.65)
-        nearLayer.ctx.beginPath()
-        nearLayer.ctx.moveTo(x, y - 14)
-        nearLayer.ctx.lineTo(x, y + 22)
-        nearLayer.ctx.stroke()
-      }
-      nearTrailCanvas = nearLayer.canvas
-    }
-  }
-
-  raidStarfieldCache = {
-    key,
-    farCanvas: farLayer.canvas,
-    farLayerHeight,
-    nearTrailCanvas,
-    nearLayerHeight,
-  }
-  return raidStarfieldCache
-}
-
-export function drawRaidStarfield(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, quality: GraphicsQuality, dpr: number, starTint: string, streak: string, stageTheme: number) {
-  const cache = getRaidStarfieldCache(width, height, quality, dpr, starTint, streak)
-  if (!cache) return false
-  const drawTrails = shouldDrawRaidStarTrails(stageTheme)
-  const starSpeedScale = getRaidStarfieldSpeedScale(stageTheme)
-
-  ctx.save()
-  ctx.globalCompositeOperation = 'lighter'
-  drawScrollingBackgroundLayer(ctx, cache.farCanvas, width, height, cache.farLayerHeight, seconds * (15 * starSpeedScale) - height * 0.13)
-  if (drawTrails && cache.nearTrailCanvas) {
-    drawScrollingBackgroundLayer(ctx, cache.nearTrailCanvas, width, height, cache.nearLayerHeight, seconds * (72 * starSpeedScale) - height * 0.19)
-  }
-  ctx.restore()
-  return true
-}
-
-export function drawRaidBackground(ctx: CanvasRenderingContext2D, palette: RaidPalette, width: number, height: number, time: number, quality: GraphicsQuality = 'max', stageTheme = 1, dpr = 1) {
-  const seconds = time / 1000
-  const { baseMid, nebulaA, nebulaB, starTint, streak } = palette
-  const isLow = quality === 'low'
-  const isMedium = quality === 'medium'
-  const isHigh = quality === 'high'
-  const isSurfaceStage = shouldDrawRaidSurfaceStage(stageTheme)
-  const drawStars = shouldDrawRaidStars(stageTheme)
-  const drawGalaxies = shouldDrawRaidGalaxies(stageTheme)
-  const scene = getRaidBackgroundScene(stageTheme)
-
-  drawRaidBackgroundBaseLayer(ctx, palette, width, height, quality, dpr)
-
-  if (!isLow && drawGalaxies) {
-    ctx.save()
-    const nebulaDrift = Math.sin(seconds / 10)
-    const nebulaScaleX = scene.nebulaScale * (1 + 0.035 * (0.5 + Math.sin(seconds / 7) * 0.5))
-    const nebulaScaleY = scene.nebulaScale * (1 + 0.025 * (0.5 + Math.cos(seconds / 9) * 0.5))
-    ctx.translate(width * 0.012 * nebulaDrift, height * 0.006 * Math.cos(seconds / 8))
-    drawRadialEllipse2Stop(ctx, width * (0.2 + scene.nebulaShiftX * 0.42), height * (0.72 + scene.nebulaShiftY * 0.38), width * 0.36 * nebulaScaleX, height * 0.24 * nebulaScaleY, nebulaA, 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, width * (0.82 - scene.nebulaShiftX * 0.28), height * (0.24 - scene.nebulaShiftY * 0.24), width * 0.32 * nebulaScaleX, height * 0.22 * nebulaScaleY, nebulaB, 'rgba(0,0,0,0)')
-    ctx.restore()
-  }
-
-  ctx.save()
-  ctx.globalCompositeOperation = 'screen'
-  if (!isLow) {
-    drawRadialEllipse2Stop(ctx, width * 0.78, height * 0.18, width * 0.48, height * 0.25, 'rgba(139,92,246,0.2)', 'rgba(0,0,0,0)')
-    drawRadialEllipse2Stop(ctx, width * 0.14, height * 0.68, width * 0.36, height * 0.42, 'rgba(59,130,246,0.16)', 'rgba(0,0,0,0)')
-    if (!isMedium) {
-      drawRadialEllipse2Stop(ctx, width * 0.48, height * 0.42, width * 0.22, height * 0.18, 'rgba(236,72,153,0.11)', 'rgba(0,0,0,0)')
-      drawRadialEllipse2Stop(ctx, width * 0.22, height * 0.22, width * 0.26, height * 0.15, 'rgba(251,191,36,0.05)', 'rgba(0,0,0,0)')
-      drawRadialEllipse2Stop(ctx, width * 0.88, height * 0.72, width * 0.18, height * 0.32, 'rgba(34,211,238,0.06)', 'rgba(0,0,0,0)')
-    }
-  }
-  ctx.restore()
-
-  if (!isLow) {
-    ctx.save()
-    ctx.globalCompositeOperation = 'screen'
-    const galaxyDrift = Math.sin(seconds / 18)
-    const galaxyLimit = isMedium ? 1 : scene.galaxies.length
-    for (let index = 0; index < galaxyLimit; index += 1) {
-      const galaxy = scene.galaxies[index]
-      const galaxySprite = getRaidOtherCanvasSprite(galaxy.asset)
-      drawCanvasImageContain(
-        ctx,
-        galaxySprite,
-        width * galaxy.x + galaxyDrift * width * galaxy.driftX,
-        height * galaxy.y + Math.cos(seconds / 22) * height * galaxy.driftY,
-        width * galaxy.width * scene.galaxyScale * (isMedium ? 0.82 : 1),
-        height * galaxy.height * scene.galaxyScale * (isMedium ? 0.82 : 1),
-        galaxy.filter,
-        galaxy.alpha * (isMedium ? 0.78 : 1),
-        galaxy.rotation,
-      )
-    }
-    ctx.restore()
-  }
-
-  const drewCachedStarfield = drawStars
-    ? drawRaidStarfield(ctx, width, height, seconds, quality, dpr, starTint, streak, stageTheme)
-    : false
-
-  if (!isLow && shouldDrawRaidBattleOverlay(stageTheme)) {
-    ctx.save()
-    ctx.globalCompositeOperation = 'lighter'
-    const speedLineLimit = isMedium ? 2 : BACKGROUND_SPEED_LINES.length
-    for (let index = 0; index < speedLineLimit; index += 1) {
-      const line = BACKGROUND_SPEED_LINES[index]
-      const lineColor =
-        line.color === 'streak' ? streak :
-          line.color === 'red' ? 'rgba(239,35,60,0.42)' :
-            line.color === 'cyan' ? 'rgba(125,211,252,0.28)' :
-              'rgba(255,255,255,0.26)'
-      const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
-      const x = line.x * width
-      const sprite = getCachedSpeedLineSprite(lineColor, line.length, line.width)
-      ctx.globalAlpha = 0.36
-      if (sprite) {
-        ctx.drawImage(sprite.canvas, x - sprite.originX, y - sprite.originY, sprite.width, sprite.height)
-      } else {
-        const gradient = ctx.createLinearGradient(x, y, x, y + line.length)
-        gradient.addColorStop(0, 'rgba(255,255,255,0)')
-        gradient.addColorStop(0.46, lineColor)
-        gradient.addColorStop(1, 'rgba(255,255,255,0)')
-        ctx.strokeStyle = gradient
-        ctx.lineWidth = line.width
-        ctx.beginPath()
-        ctx.moveTo(x, y)
-        ctx.lineTo(x, y + line.length)
-        ctx.stroke()
-      }
-    }
-    ctx.restore()
-  }
-
-  if (drawStars && !drewCachedStarfield) {
-    ctx.save()
-    ctx.globalCompositeOperation = 'lighter'
-    const starSpeedScale = getRaidStarfieldSpeedScale(stageTheme)
-    const starLimit = isLow ? 40 : isMedium ? 100 : isHigh ? 160 : BACKGROUND_STARS.length
-    for (let index = 0; index < starLimit; index += 1) {
-      const star = BACKGROUND_STARS[index]
-      const farY = ((star.y * height * 1.26 + seconds * (15 * starSpeedScale)) % (height * 1.26)) - height * 0.13
-      const nearY = ((star.y * height * 1.38 + seconds * (72 * starSpeedScale)) % (height * 1.38)) - height * 0.19
-      const x = star.x * width
-      ctx.globalAlpha = star.alpha * 0.52
-      ctx.fillStyle = star.tint > 0.66 ? starTint : star.tint > 0.33 ? 'rgba(125,211,252,0.55)' : 'rgba(255,255,255,0.76)'
-      ctx.beginPath()
-      ctx.arc(x, farY, star.size * 0.62, 0, Math.PI * 2)
-      ctx.fill()
-
-      if (shouldDrawRaidStarTrails(stageTheme) && shouldDrawRaidStarTrail(star, index, quality)) {
-        ctx.globalAlpha = star.alpha * 0.26
-        const trail = ctx.createLinearGradient(x, nearY - 14, x, nearY + 22)
-        trail.addColorStop(0, 'rgba(255,255,255,0)')
-        trail.addColorStop(0.46, star.tint > 0.78 ? streak : 'rgba(255,255,255,0.36)')
-        trail.addColorStop(1, 'rgba(255,255,255,0)')
-        ctx.strokeStyle = trail
-        ctx.lineWidth = Math.max(1, star.size * 0.65)
-        ctx.beginPath()
-        ctx.moveTo(x, nearY - 14)
-        ctx.lineTo(x, nearY + 22)
-        ctx.stroke()
-      }
-    }
-    ctx.restore()
-  }
-
-  if (!isLow) {
-    if (isSurfaceStage) {
-      if (isWateryWorldTheme(stageTheme)) {
-        drawWateryWorldSurface(ctx, width, height, seconds, quality)
-      } else if (isVolcanicWorldTheme(stageTheme)) {
-        drawVolcanicWorldSurface(ctx, width, height, seconds, quality)
-      } else {
-        drawPlanetSurface(ctx, palette, width, height, seconds, quality)
-      }
-    }
-    ctx.save()
-    ctx.globalAlpha = 1
-    const planetLimit = isWateryWorldTheme(stageTheme) || isVolcanicWorldTheme(stageTheme)
-      ? 0
-      : isMedium
-        ? Math.min(2, scene.planets.length)
-        : scene.planets.length
-    for (let index = 0; index < planetLimit; index += 1) {
-      const planet = scene.planets[index]
-      const planetSprite = getRaidOtherCanvasSprite(planet.asset)
-      const radius = getRaidScenePlanetRadius(Math.min(width, height), scene, planet, stageTheme, Math.min(index, 2))
-      const planetY = getRaidScenePlanetY(planet, height, seconds, radius * 2)
-      const size = radius * getRaidScenePlanetDrawScale(planet.asset)
-      const rotation = planet.rotation + seconds * planet.spin
-      if (!drawCanvasImageContain(ctx, planetSprite, width * planet.x, planetY, size, size, planet.filter, getRaidScenePlanetAlpha(planet), rotation)) {
-        const color = getRaidScenePlanetFallbackColor(palette, planet)
-        drawRadialEllipse(ctx, width * planet.x, planetY, radius, radius, [[0, '#f9fafb'], [0.55, color], [1, baseMid]])
-      }
-    }
-    const suppressSpaceDebris = isWateryWorldTheme(stageTheme) || isVolcanicWorldTheme(stageTheme)
-    const wreckLimit = suppressSpaceDebris ? 0 : isMedium ? Math.min(1, scene.wrecks.length) : scene.wrecks.length
-    for (let index = 0; index < wreckLimit; index += 1) {
-      const wreck = scene.wrecks[index]
-      const wreckSprite = getDerelictWreckCanvasSprite(wreck.variant)
-      const position = getRaidSceneWreckPosition(width, height, seconds, wreck)
-      drawCanvasImageContain(
-        ctx,
-        wreckSprite,
-        position.x,
-        position.y,
-        position.width,
-        position.height,
-        RAID_DERELICT_WRECK_FILTER,
-        wreck.alpha,
-        wreck.rotation + seconds * wreck.spin,
-      )
-    }
-    const scenicLimit = isMedium ? Math.min(1, scene.scenic.length) : scene.scenic.length
-    for (let index = 0; index < scenicLimit; index += 1) {
-      const scenic = scene.scenic[index]
-      const scenicSprite = getRaidOtherCanvasSprite(scenic.asset)
-      const position = getRaidSceneScenicPosition(width, height, seconds, scenic, index)
-      drawCanvasImageContain(
-        ctx,
-        scenicSprite,
-        position.x,
-        position.y,
-        position.width,
-        position.height,
-        scenic.filter,
-        scenic.alpha,
-        scenic.rotation + seconds * scenic.spin,
-      )
-    }
-    ctx.restore()
-  }
-
-  if (!isLow) {
-    const density = (isWateryWorldTheme(stageTheme) || isVolcanicWorldTheme(stageTheme)) ? 0 : getRaidBackgroundObjectDensity(stageTheme)
-    const asteroidCap = isMedium ? 3 : BACKGROUND_ASTEROIDS.length
-    const debrisCap = isMedium ? 3 : BACKGROUND_DEBRIS.length
-    const asteroidLimit = Math.max(0, Math.min(asteroidCap, Math.round(asteroidCap * density)))
-    const debrisLimit = Math.max(0, Math.min(debrisCap, Math.round(debrisCap * density)))
-    const asteroidSprite = getRaidOtherCanvasSprite('asteroid')
-    for (let index = 0; index < asteroidLimit; index += 1) {
-      const asteroid = BACKGROUND_ASTEROIDS[index]
-      const y = ((seconds * asteroid.speed + asteroid.delay / 22 + 1) % 1) * height * 1.15 - height * 0.05
-      drawCanvasImageContain(ctx, asteroidSprite, width * asteroid.x, y, asteroid.width * 1.5 * scene.asteroidBias, asteroid.height * 1.5 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', asteroid.alpha, seconds * asteroid.spin * DEG / 10)
-    }
-    for (let index = 0; index < debrisLimit; index += 1) {
-      const debris = BACKGROUND_DEBRIS[index]
-      const y = ((seconds * debris.speed + debris.delay / 48 + 1) % 1) * height * 1.2 - height * 0.05
-      drawCanvasImageContain(ctx, asteroidSprite, width * debris.x, y, debris.width * 1.35 * scene.debrisBias, debris.height * 1.35 * scene.debrisBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', debris.alpha, seconds * debris.spin * DEG / 12)
-    }
-
-    if (!isMedium && density >= 0.95) {
-      const clusterY1 = ((seconds / 16 + 0.56) % 1) * height * 1.15 - height * 0.04
-      const clusterY2 = ((seconds / 24 + 0.25) % 1) * height * 1.15 - height * 0.04
-      drawCanvasImageContain(ctx, asteroidSprite, width * 0.44, clusterY1, 24 * scene.asteroidBias, 18 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.24, seconds * 0.3)
-      drawCanvasImageContain(ctx, asteroidSprite, width * 0.44 + 22, clusterY1 + 14, 15 * scene.asteroidBias, 12 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.2, -seconds * 0.2)
-      drawCanvasImageContain(ctx, asteroidSprite, width * 0.72, clusterY2, 30 * scene.asteroidBias, 24 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.22, -seconds * 0.18)
-      drawCanvasImageContain(ctx, asteroidSprite, width * 0.72 + 24, clusterY2 + 18, 18 * scene.asteroidBias, 13.5 * scene.asteroidBias, 'brightness(0.86) contrast(1.16) saturate(0.9)', 0.18, seconds * 0.18)
-    }
-  }
-
-  ctx.save()
-  ctx.globalCompositeOperation = 'lighter'
-  if (!isLow && !isMedium && shouldDrawRaidBattleOverlay(stageTheme)) {
-    const laserY1 = ((seconds / 6 + 0.67) % 1) * height * 1.15 - height * 0.08
-    const laserY2 = ((seconds / 9 + 0.32) % 1) * height * 1.15 - height * 0.06
-    const drawLaser = (x: number, y: number, length: number, rotation: number, color: string, widthPx: number) => {
-      ctx.save()
-      ctx.translate(x, y)
-      ctx.rotate(rotation)
-      const gradient = ctx.createLinearGradient(0, -length / 2, 0, length / 2)
-      gradient.addColorStop(0, 'rgba(255,255,255,0)')
-      gradient.addColorStop(0.5, color)
-      gradient.addColorStop(1, 'rgba(255,255,255,0)')
-      ctx.strokeStyle = gradient
-      ctx.lineWidth = widthPx
-      ctx.shadowBlur = 10
-      ctx.shadowColor = color
-      ctx.beginPath()
-      ctx.moveTo(0, -length / 2)
-      ctx.lineTo(0, length / 2)
-      ctx.stroke()
-      ctx.restore()
-    }
-    drawLaser(width * 0.38, laserY1, 80, -4 * DEG, 'rgba(239,35,60,0.72)', 2)
-    drawLaser(width * 0.66, laserY2, 56, 12 * DEG, 'rgba(34,211,238,0.52)', 1.5)
-
-    const drawExplosion = (x: number, y: number, period: number, offset: number, radius: number, alpha: number) => {
-      const cycle = ((seconds + offset) % period) / period
-      const pulse = cycle < 0.42 ? Math.sin((cycle / 0.42) * Math.PI) : 0
-      if (pulse <= 0) return
-      drawRadialEllipse(ctx, x, y, radius * (0.6 + pulse * 1.4), radius * (0.6 + pulse * 1.4), [
-        [0, `rgba(255,255,255,${0.45 * pulse * alpha})`],
-        [0.32, `rgba(251,191,36,${0.48 * pulse * alpha})`],
-        [0.64, `rgba(239,35,60,${0.32 * pulse * alpha})`],
-        [1, 'rgba(0,0,0,0)'],
-      ])
-    }
-    drawExplosion(width * 0.08, height * 0.18, 7, 4, 32, 0.9)
-    drawExplosion(width * 0.9, height * 0.44, 11, 2, 24, 0.75)
-  }
-  ctx.restore()
 }
 
 export type PixiRaidAssetKey = RaidOtherAssetKey
@@ -1601,6 +799,7 @@ export type PixiRaidBackgroundFrame = {
   stageRush: number
   bossIntensity: number
   devilCorruption: number
+  finalBattleIntensity?: number
 }
 
 export function setPixiSpriteContain(sprite: Sprite, texture: Texture, x: number, y: number, width: number, height: number, alpha: number, rotation = 0) {
@@ -1666,15 +865,20 @@ export class PixiRaidBackground {
   private readonly nearStarLayers = [new Graphics(), new Graphics(), new Graphics()]
   private readonly speedLineGraphics = new Graphics()
   private readonly surfaceGraphics = new Graphics()
-  private readonly wateryIslandSprites = WATERY_WORLD_ISLAND_LAYERS.map(() => new Sprite(Texture.WHITE))
-  private readonly wateryCloudSprites = WATERY_WORLD_CLOUD_LAYERS.map(() => new Sprite(Texture.WHITE))
-  private readonly volcanicIslandSprites = VOLCANIC_WORLD_ISLAND_LAYERS.map(() => new Sprite(Texture.WHITE))
-  private readonly volcanicCloudSprites = VOLCANIC_WORLD_CLOUD_LAYERS.map(() => new Sprite(Texture.WHITE))
+  private readonly wateryIslandSprites = createWorldSurfaceSprites(WATERY_WORLD_ISLAND_LAYERS.length)
+  private readonly wateryCloudSprites = createWorldSurfaceSprites(WATERY_WORLD_CLOUD_LAYERS.length)
+  private readonly volcanicIslandSprites = createWorldSurfaceSprites(VOLCANIC_WORLD_ISLAND_LAYERS.length)
+  private readonly volcanicCloudSprites = createWorldSurfaceSprites(VOLCANIC_WORLD_CLOUD_LAYERS.length)
   private readonly cometFlybySprite = new Sprite(Texture.WHITE)
   private readonly asteroidSprites = BACKGROUND_ASTEROIDS.map(() => new Sprite(Texture.WHITE))
   private readonly debrisSprites = BACKGROUND_DEBRIS.map(() => new Sprite(Texture.WHITE))
+  private readonly finalBattleBackdropGraphics = new Graphics()
+  private readonly finalBattleSprites = FINAL_BATTLE_FIGHTERS.map(() => new Sprite(Texture.WHITE))
+  private readonly finalBattleGraphics = new Graphics()
+  private readonly finalBattleCruiserSprites = FINAL_BATTLE_CRUISERS.map(() => new Sprite(Texture.WHITE))
   private readonly explosionGraphics = new Graphics()
   private readonly assetTextures = new Map<PixiRaidAssetKey, Texture>()
+  private readonly finalBattleTextures = new Map<string, Texture>()
   private readonly gradientCache = new Map<string, FillGradient>()
   private baseKey = ''
   private starfieldKey = ''
@@ -1705,8 +909,8 @@ export class PixiRaidBackground {
       this.galaxySprites.forEach((sprite) => this.scene.addChild(sprite))
       this.farStarLayers.forEach((layer) => this.scene.addChild(layer))
       this.nearStarLayers.forEach((layer) => this.scene.addChild(layer))
-      this.scene.addChild(this.speedLineGraphics)
       this.scene.addChild(this.surfaceGraphics)
+      this.scene.addChild(this.speedLineGraphics)
       this.wateryIslandSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.wateryCloudSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.volcanicIslandSprites.forEach((sprite) => this.scene.addChild(sprite))
@@ -1714,6 +918,10 @@ export class PixiRaidBackground {
       this.planetSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.wreckSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.scenicSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.scene.addChild(this.finalBattleBackdropGraphics)
+      this.finalBattleSprites.forEach((sprite) => this.scene.addChild(sprite))
+      this.scene.addChild(this.finalBattleGraphics)
+      this.finalBattleCruiserSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.scene.addChild(this.cometFlybySprite)
       this.asteroidSprites.forEach((sprite) => this.scene.addChild(sprite))
       this.debrisSprites.forEach((sprite) => this.scene.addChild(sprite))
@@ -1743,7 +951,7 @@ export class PixiRaidBackground {
     if (!app) return false
 
     try {
-      const { width, height, dpr, palette, quality, stageTheme, time, stageRush, bossIntensity, devilCorruption } = frame
+      const { width, height, dpr, palette, quality, stageTheme, time, stageRush, bossIntensity, devilCorruption, finalBattleIntensity = 0 } = frame
       const seconds = time / 1000
       const isLow = quality === 'low'
       const isMedium = quality === 'medium'
@@ -1771,6 +979,8 @@ export class PixiRaidBackground {
       this.updatePlanets(width, height, seconds, palette, stageTheme, isLow, isMedium)
       this.updateWrecks(width, height, seconds, stageTheme, isLow, isMedium)
       this.updateScenic(width, height, seconds, stageTheme, isLow, isMedium)
+      this.updateFinalBattleBackdrop(width, height, seconds, stageTheme, quality, finalBattleIntensity)
+      this.updateFinalBattleLayer(width, height, seconds, stageTheme, quality, finalBattleIntensity)
       this.updateRareCometFlyby(width, height, seconds, isLow, isMedium, stageTheme)
       this.updateBackgroundObjects(width, height, seconds, stageTheme, isLow, isMedium)
       this.updateAmbientExplosions(width, height, seconds, isLow, isMedium, stageTheme)
@@ -1797,6 +1007,26 @@ export class PixiRaidBackground {
         this.assetTextures.set(key, texture as Texture)
       } catch {
         this.assetTextures.delete(key)
+      }
+    }))
+    await Promise.all(FINAL_BATTLE_FIGHTERS.map(async (fighter) => {
+      const key = getFinalBattleTextureKey(fighter)
+      if (this.finalBattleTextures.has(key)) return
+      try {
+        const texture = await Assets.load(getFinalBattleTextureUrl(fighter))
+        this.finalBattleTextures.set(key, texture as Texture)
+      } catch {
+        this.finalBattleTextures.delete(key)
+      }
+    }))
+    await Promise.all(FINAL_BATTLE_CRUISERS.map(async (cruiser) => {
+      const key = getFinalBattleCruiserTextureKey(cruiser)
+      if (this.finalBattleTextures.has(key)) return
+      try {
+        const texture = await Assets.load(getRaidShipSpriteUrl(cruiser.asset))
+        this.finalBattleTextures.set(key, texture as Texture)
+      } catch {
+        this.finalBattleTextures.delete(key)
       }
     }))
   }
@@ -2010,19 +1240,15 @@ export class PixiRaidBackground {
   private updateSpeedLines(width: number, height: number, seconds: number, streak: string, isLow: boolean, isMedium: boolean, stageTheme: number) {
     const graphics = this.speedLineGraphics
     graphics.clear()
-    const allowBattleOverlay = shouldDrawRaidBattleOverlay(stageTheme)
-    graphics.visible = !isLow && allowBattleOverlay
-    if (isLow || !allowBattleOverlay) return
+    const allowSpeedLines = shouldDrawRaidSpeedLines(stageTheme)
+    graphics.visible = !isLow && allowSpeedLines
+    if (isLow || !allowSpeedLines) return
 
     const speedLineLimit = isMedium ? 2 : BACKGROUND_SPEED_LINES.length
     for (let index = 0; index < speedLineLimit; index += 1) {
       const line = BACKGROUND_SPEED_LINES[index]
       const y = (((seconds + line.delay) / 0.75) % 1) * height * 1.5 - height * 0.2
-      const lineColor =
-        line.color === 'streak' ? streak :
-          line.color === 'red' ? 'rgba(239,35,60,0.42)' :
-            line.color === 'cyan' ? 'rgba(125,211,252,0.28)' :
-              'rgba(255,255,255,0.26)'
+      const lineColor = getRaidSpeedLineColor(line, streak, stageTheme)
       const x = line.x * width
       graphics.moveTo(x, y)
       graphics.lineTo(x, y + line.length)
@@ -2047,19 +1273,13 @@ export class PixiRaidBackground {
     this.fillRadial(graphics, width * 0.52, height * 0.42, width * 0.72, height * 0.42, 'rgba(70,30,130,0.16)', 'rgba(0,0,0,0)')
     this.fillRadial(graphics, width * 0.2, height * 0.72, width * 0.46, height * 0.22, 'rgba(42,120,160,0.08)', 'rgba(0,0,0,0)')
 
-    const currentCount = isMedium ? 9 : 15
-    for (let i = 0; i < currentCount; i += 1) {
-      const seed = seededNoise(i + 41, 18)
-      const x = width * (0.08 + seededNoise(i + 17, 22) * 0.84)
-      const y = ((seconds * (0.018 + seed * 0.018) + seed) % 1) * (height * 1.24) - height * 0.12
-      const drift = Math.sin(seconds * 0.45 + i * 1.7) * width * 0.025
-      const lineH = height * (0.08 + seededNoise(i + 8, 3) * 0.09)
-      const stroke = getPixiFill(i % 3 === 0 ? 'rgba(160,90,230,0.9)' : 'rgba(90,210,230,0.68)', 0.035 + seededNoise(i + 12, 5) * 0.045)
-      graphics.moveTo(x, y)
-      graphics.lineTo(x + drift * 0.6, y + lineH * 0.35)
-      graphics.lineTo(x - drift * 0.28, y + lineH * 0.72)
-      graphics.lineTo(x + drift * 0.24, y + lineH)
-      graphics.stroke({ color: stroke.color, alpha: stroke.alpha, width: 1 + seededNoise(i + 3, 11) * 1.4, cap: 'round', join: 'round' })
+    const shimmerCount = isMedium ? 5 : 8
+    for (let i = 0; i < shimmerCount; i += 1) {
+      const y = ((seconds * (0.012 + i * 0.0018) + i * 0.17) % 1) * (height * 1.2) - height * 0.1
+      const x = width * (0.2 + seededNoise(i + 13, 29) * 0.62)
+      const pulse = 0.72 + Math.sin(seconds * 0.5 + i * 1.3) * 0.28
+      this.fillRadial(graphics, x, y, width * (0.36 + seededNoise(i + 3, 7) * 0.22), height * (0.018 + seededNoise(i + 5, 11) * 0.018), 'rgba(92,170,220,1)', 'rgba(0,0,0,0)', 0.055 * pulse)
+      this.fillRadial(graphics, width - x * 0.74, y + height * 0.09, width * 0.28, height * 0.012, 'rgba(180,110,245,1)', 'rgba(0,0,0,0)', 0.035 * pulse)
     }
 
     this.updateWateryWorldAssetSprites(width, height, seconds, quality)
@@ -2091,66 +1311,102 @@ export class PixiRaidBackground {
   private updateWateryWorldAssetSprites(width: number, height: number, seconds: number, quality: GraphicsQuality) {
     const islandCount = quality === 'medium' ? 3 : WATERY_WORLD_ISLAND_LAYERS.length
     for (let index = 0; index < WATERY_WORLD_ISLAND_LAYERS.length; index += 1) {
-      const sprite = this.wateryIslandSprites[index]
       const layer = WATERY_WORLD_ISLAND_LAYERS[index]
       const texture = this.assetTextures.get(layer.asset)
       const visible = Boolean(texture && index < islandCount)
-      sprite.visible = visible
-      if (!texture || !visible) continue
       const drawSize = Math.min(width, height) * layer.size
       const x = width * layer.x + Math.sin(seconds * 0.16 + index * 2.2) * width * layer.drift
-      const y = getWaterySurfaceLayerY(seconds, height, WATERY_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
-      setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation + Math.sin(seconds * 0.05 + index) * 2 * DEG)
-      sprite.tint = 0xd8c8ff
+      const baseY = getWaterySurfaceLayerY(seconds, height, WATERY_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
+      for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
+        const sprite = this.wateryIslandSprites[getWorldSurfaceSpriteIndex(index, tileIndex)]
+        if (!texture || !visible) {
+          sprite.visible = false
+          continue
+        }
+        const y = getWorldSurfaceCopyY(baseY, height, drawSize, tileIndex)
+        if (!isWorldSurfaceCopyVisible(y, height, drawSize)) {
+          sprite.visible = false
+          continue
+        }
+        setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation + Math.sin(seconds * 0.05 + index) * 2 * DEG)
+        sprite.tint = 0xd8c8ff
+      }
     }
 
-    const cloudCount = quality === 'medium' ? 2 : WATERY_WORLD_CLOUD_LAYERS.length
+    const cloudCount = quality === 'medium' ? 3 : WATERY_WORLD_CLOUD_LAYERS.length
     for (let index = 0; index < WATERY_WORLD_CLOUD_LAYERS.length; index += 1) {
-      const sprite = this.wateryCloudSprites[index]
       const layer = WATERY_WORLD_CLOUD_LAYERS[index]
       const texture = this.assetTextures.get(layer.asset)
       const visible = Boolean(texture && index < cloudCount)
-      sprite.visible = visible
-      if (!texture || !visible) continue
       const drawWidth = width * layer.width
       const drawHeight = height * layer.height
       const x = width * layer.x + Math.sin(seconds * 0.18 + index * 1.9) * width * layer.drift
-      const y = getWaterySurfaceLayerY(seconds, height, layer.speed, layer.ySeed, drawHeight)
-      setPixiSpriteContain(sprite, texture, x, y, drawWidth, drawHeight, layer.alpha, layer.rotation + Math.sin(seconds * 0.08 + index) * 1.5 * DEG)
-      sprite.tint = 0xffffff
+      const baseY = getWaterySurfaceLayerY(seconds, height, layer.speed, layer.ySeed, drawHeight)
+      for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
+        const sprite = this.wateryCloudSprites[getWorldSurfaceSpriteIndex(index, tileIndex)]
+        if (!texture || !visible) {
+          sprite.visible = false
+          continue
+        }
+        const y = getWorldSurfaceCopyY(baseY, height, drawHeight, tileIndex)
+        if (!isWorldSurfaceCopyVisible(y, height, drawHeight)) {
+          sprite.visible = false
+          continue
+        }
+        setPixiSpriteContain(sprite, texture, x, y, drawWidth, drawHeight, layer.alpha, layer.rotation + Math.sin(seconds * 0.08 + index) * 1.5 * DEG)
+        sprite.tint = 0xffffff
+      }
     }
   }
 
   private updateVolcanicWorldAssetSprites(width: number, height: number, seconds: number, quality: GraphicsQuality) {
     const islandCount = quality === 'medium' ? 3 : VOLCANIC_WORLD_ISLAND_LAYERS.length
     for (let index = 0; index < VOLCANIC_WORLD_ISLAND_LAYERS.length; index += 1) {
-      const sprite = this.volcanicIslandSprites[index]
       const layer = VOLCANIC_WORLD_ISLAND_LAYERS[index]
       const texture = this.assetTextures.get(layer.asset)
       const visible = Boolean(texture && index < islandCount)
-      sprite.visible = visible
-      if (!texture || !visible) continue
       const drawSize = Math.min(width, height) * layer.size
       const x = width * layer.x + Math.sin(seconds * 0.15 + index * 2.1) * width * layer.drift
-      const y = getWaterySurfaceLayerY(seconds, height, VOLCANIC_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
-      setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation + Math.sin(seconds * 0.05 + index) * 1.6 * DEG)
-      sprite.tint = 0xffd6c0
+      const baseY = getWaterySurfaceLayerY(seconds, height, VOLCANIC_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
+      for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
+        const sprite = this.volcanicIslandSprites[getWorldSurfaceSpriteIndex(index, tileIndex)]
+        if (!texture || !visible) {
+          sprite.visible = false
+          continue
+        }
+        const y = getWorldSurfaceCopyY(baseY, height, drawSize, tileIndex)
+        if (!isWorldSurfaceCopyVisible(y, height, drawSize)) {
+          sprite.visible = false
+          continue
+        }
+        setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation + Math.sin(seconds * 0.05 + index) * 1.6 * DEG)
+        sprite.tint = 0xffd6c0
+      }
     }
 
-    const cloudCount = quality === 'medium' ? 2 : VOLCANIC_WORLD_CLOUD_LAYERS.length
+    const cloudCount = quality === 'medium' ? 3 : VOLCANIC_WORLD_CLOUD_LAYERS.length
     for (let index = 0; index < VOLCANIC_WORLD_CLOUD_LAYERS.length; index += 1) {
-      const sprite = this.volcanicCloudSprites[index]
       const layer = VOLCANIC_WORLD_CLOUD_LAYERS[index]
       const texture = this.assetTextures.get(layer.asset)
       const visible = Boolean(texture && index < cloudCount)
-      sprite.visible = visible
-      if (!texture || !visible) continue
       const drawWidth = width * layer.width
       const drawHeight = height * layer.height
       const x = width * layer.x + Math.sin(seconds * 0.17 + index * 1.8) * width * layer.drift
-      const y = getWaterySurfaceLayerY(seconds, height, layer.speed, layer.ySeed, drawHeight)
-      setPixiSpriteContain(sprite, texture, x, y, drawWidth, drawHeight, layer.alpha, layer.rotation + Math.sin(seconds * 0.07 + index) * 1.4 * DEG)
-      sprite.tint = 0xffffff
+      const baseY = getWaterySurfaceLayerY(seconds, height, layer.speed, layer.ySeed, drawHeight)
+      for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
+        const sprite = this.volcanicCloudSprites[getWorldSurfaceSpriteIndex(index, tileIndex)]
+        if (!texture || !visible) {
+          sprite.visible = false
+          continue
+        }
+        const y = getWorldSurfaceCopyY(baseY, height, drawHeight, tileIndex)
+        if (!isWorldSurfaceCopyVisible(y, height, drawHeight)) {
+          sprite.visible = false
+          continue
+        }
+        setPixiSpriteContain(sprite, texture, x, y, drawWidth, drawHeight, layer.alpha, layer.rotation + Math.sin(seconds * 0.07 + index) * 1.4 * DEG)
+        sprite.tint = 0xffffff
+      }
     }
   }
 
@@ -2159,17 +1415,27 @@ export class PixiRaidBackground {
     const groundGrad = this.getGradient('topdown-volcanic-ground', {
       type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 },
       colorStops: [
-        { offset: 0, color: parsePixiCssColor('rgba(5,1,1,0.98)').source },
-        { offset: 0.36, color: parsePixiCssColor('rgba(24,6,3,0.98)').source },
-        { offset: 0.72, color: parsePixiCssColor('rgba(47,10,5,0.97)').source },
-        { offset: 1, color: parsePixiCssColor('rgba(12,2,1,0.99)').source },
+        { offset: 0, color: parsePixiCssColor('rgba(4,1,1,0.99)').source },
+        { offset: 0.28, color: parsePixiCssColor('rgba(31,6,3,0.98)').source },
+        { offset: 0.58, color: parsePixiCssColor('rgba(68,14,5,0.98)').source },
+        { offset: 0.82, color: parsePixiCssColor('rgba(33,6,3,0.99)').source },
+        { offset: 1, color: parsePixiCssColor('rgba(8,1,1,1)').source },
       ],
     })
     graphics.rect(0, 0, width, height).fill({ fill: groundGrad, alpha: 1 })
 
     const eruptPulse = 0.68 + Math.sin(seconds * 1.2) * 0.32
-    this.fillRadial(graphics, width * 0.48, height * 0.38, width * 0.74, height * 0.34, `rgba(200,58,14,${0.14 * eruptPulse})`, 'rgba(0,0,0,0)')
-    this.fillRadial(graphics, width * 0.5, height * 0.78, width * 0.88, height * 0.18, `rgba(255,96,26,${0.12 * eruptPulse})`, 'rgba(0,0,0,0)')
+    this.fillRadial(graphics, width * 0.48, height * 0.38, width * 0.74, height * 0.34, 'rgba(200,58,14,1)', 'rgba(0,0,0,0)', 0.14 * eruptPulse)
+    this.fillRadial(graphics, width * 0.5, height * 0.78, width * 0.88, height * 0.18, 'rgba(255,96,26,1)', 'rgba(0,0,0,0)', 0.12 * eruptPulse)
+
+    const lavaFlowCount = isMedium ? 5 : 8
+    for (let i = 0; i < lavaFlowCount; i += 1) {
+      const y = ((seconds * (0.018 + i * 0.002) + i * 0.14) % 1) * (height * 1.18) - height * 0.09
+      const x = width * (0.18 + seededNoise(i + 21, 15) * 0.66)
+      const pulse = 0.62 + Math.sin(seconds * 0.9 + i * 1.6) * 0.38
+      this.fillRadial(graphics, x, y, width * (0.34 + seededNoise(i + 4, 18) * 0.24), height * (0.024 + seededNoise(i + 2, 9) * 0.026), 'rgba(255,96,24,1)', 'rgba(0,0,0,0)', 0.08 * pulse)
+      this.fillRadial(graphics, x + width * 0.08, y + height * 0.05, width * 0.16, height * 0.012, 'rgba(255,206,84,1)', 'rgba(0,0,0,0)', 0.06 * pulse)
+    }
 
     this.updateVolcanicWorldAssetSprites(width, height, seconds, quality)
 
@@ -2197,7 +1463,7 @@ export class PixiRaidBackground {
 
       const horizonY = height * 0.58
 
-      // Full-screen eerie violet atmosphere sky — covers all layers below
+      // Full-screen eerie violet atmosphere sky â€” covers all layers below
       const skyGrad = this.getGradient('watery-sky', {
         type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 },
         colorStops: [
@@ -2228,8 +1494,8 @@ export class PixiRaidBackground {
         const mistW = width * (0.58 + i * 0.10)
         const mistH = height * (0.10 + i * 0.016)
         const alpha = Math.max(0.04, 0.20 - i * 0.022)
-        this.fillRadial(graphics, offsetX, layerY, mistW, mistH, `rgba(70,30,130,${alpha})`, 'rgba(0,0,0,0)')
-        this.fillRadial(graphics, offsetX + mistW * 0.55, layerY + mistH * 0.08, mistW * 0.68, mistH * 0.62, `rgba(50,20,100,${alpha * 0.68})`, 'rgba(0,0,0,0)')
+        this.fillRadial(graphics, offsetX, layerY, mistW, mistH, 'rgba(70,30,130,1)', 'rgba(0,0,0,0)', alpha)
+        this.fillRadial(graphics, offsetX + mistW * 0.55, layerY + mistH * 0.08, mistW * 0.68, mistH * 0.62, 'rgba(50,20,100,1)', 'rgba(0,0,0,0)', alpha * 0.68)
       }
 
       // Horizon atmospheric glow
@@ -2261,7 +1527,7 @@ export class PixiRaidBackground {
         }
       }
 
-      // Island silhouettes — parallax layers (back → front, larger and jagged)
+      // Island silhouettes â€” parallax layers (back â†’ front, larger and jagged)
       const islandDefs = [
         { seed: 0.08, speed: 0.0028, laneY: 0.05,  wScale: 0.52, hScale: 0.09,  alpha: 0.62 },
         { seed: 0.55, speed: 0.0034, laneY: 0.065, wScale: 0.44, hScale: 0.075, alpha: 0.56 },
@@ -2278,7 +1544,7 @@ export class PixiRaidBackground {
         const islY = horizonY + height * isl.laneY
         const islH = height * isl.hScale
         const dark = i < 2 ? 'rgba(12,6,24,0.93)' : 'rgba(6,2,14,0.96)'
-        // Bumpy ridgeline using poly — shape is deterministic (seed-only, not time-based)
+        // Bumpy ridgeline using poly â€” shape is deterministic (seed-only, not time-based)
         const numSeg = 10
         const pts: number[] = [rawX - islW * 0.5, islY]
         for (let p = 0; p <= numSeg; p++) {
@@ -2329,14 +1595,14 @@ export class PixiRaidBackground {
         const ashW = width * (0.36 + (i % 3) * 0.14)
         const ashH = height * (0.10 + (i % 2) * 0.04)
         const ashAlpha = Math.max(0.05, 0.24 - i * 0.018)
-        this.fillRadial(graphics, ashX, ashY, ashW, ashH, `rgba(38,16,10,${ashAlpha})`, 'rgba(0,0,0,0)')
-        this.fillRadial(graphics, ashX + ashW * 0.32, ashY + ashH * 0.1, ashW * 0.62, ashH * 0.62, `rgba(26,10,6,${ashAlpha * 0.65})`, 'rgba(0,0,0,0)')
+        this.fillRadial(graphics, ashX, ashY, ashW, ashH, 'rgba(38,16,10,1)', 'rgba(0,0,0,0)', ashAlpha)
+        this.fillRadial(graphics, ashX + ashW * 0.32, ashY + ashH * 0.1, ashW * 0.62, ashH * 0.62, 'rgba(26,10,6,1)', 'rgba(0,0,0,0)', ashAlpha * 0.65)
       }
 
       // Horizon eruption ambient glow (pulsing)
       const eruptPulse = 0.68 + Math.sin(seconds * 1.4) * 0.32
-      this.fillRadial(graphics, width * 0.5, horizonY, width * 1.4, height * 0.20, `rgba(200,58,14,${0.24 * eruptPulse})`, 'rgba(0,0,0,0)')
-      this.fillRadial(graphics, width * 0.5, horizonY, width * 0.85, height * 0.11, `rgba(255,96,26,${0.20 * eruptPulse})`, 'rgba(0,0,0,0)')
+      this.fillRadial(graphics, width * 0.5, horizonY, width * 1.4, height * 0.20, 'rgba(200,58,14,1)', 'rgba(0,0,0,0)', 0.24 * eruptPulse)
+      this.fillRadial(graphics, width * 0.5, horizonY, width * 0.85, height * 0.11, 'rgba(255,96,26,1)', 'rgba(0,0,0,0)', 0.20 * eruptPulse)
 
       // Dark rocky ground (below horizon)
       const groundGrad = this.getGradient('volcanic-ground', {
@@ -2363,10 +1629,10 @@ export class PixiRaidBackground {
         graphics.poly([bx - vw * 0.5, baseY, bx - vw * 0.06, baseY - vh, bx + vw * 0.06, baseY - vh, bx + vw * 0.5, baseY])
           .fill(getPixiFill('rgba(16,5,3,0.92)', 0.56))
         const pkPulse = 0.60 + Math.sin(seconds * 1.8 + v.x * 6.2) * 0.40
-        this.fillRadial(graphics, bx, baseY - vh, vw * 0.32, height * 0.04, `rgba(255,88,18,${0.18 * pkPulse})`, 'rgba(0,0,0,0)')
+        this.fillRadial(graphics, bx, baseY - vh, vw * 0.32, height * 0.04, 'rgba(255,88,18,1)', 'rgba(0,0,0,0)', 0.18 * pkPulse)
       }
 
-      // Large foreground volcanoes — smooth convex profile, crater glow, lava flow
+      // Large foreground volcanoes â€” smooth convex profile, crater glow, lava flow
       const fgVolcDefs = [
         { x: 0.12, w: 0.32, h: 0.38, seed: 0.22 },
         { x: 0.54, w: 0.40, h: 0.46, seed: 0.68 },
@@ -2391,17 +1657,18 @@ export class PixiRaidBackground {
         graphics.poly(volcPts).fill(getPixiFill('rgba(10,3,2,0.96)', 0.90))
         // Crater peak glow
         const pkPulse = 0.55 + Math.sin(seconds * 1.6 + v.seed * 9.4) * 0.45
-        this.fillRadial(graphics, bx, baseY - vh, vw * 0.42, height * 0.07, `rgba(255,128,28,${0.28 * pkPulse})`, 'rgba(0,0,0,0)')
-        this.fillRadial(graphics, bx, baseY - vh + height * 0.008, vw * 0.16, height * 0.035, `rgba(255,200,60,${0.42 * pkPulse})`, 'rgba(0,0,0,0)')
-        // Lava flow — glowing chain of radial glows down slope
+        this.fillRadial(graphics, bx, baseY - vh, vw * 0.42, height * 0.07, 'rgba(255,128,28,1)', 'rgba(0,0,0,0)', 0.28 * pkPulse)
+        this.fillRadial(graphics, bx, baseY - vh + height * 0.008, vw * 0.16, height * 0.035, 'rgba(255,200,60,1)', 'rgba(0,0,0,0)', 0.42 * pkPulse)
+        // Lava flow â€” glowing chain of radial glows down slope
         const flowSteps = 6
         for (let s = 0; s < flowSteps; s++) {
           const t = s / (flowSteps - 1)
           const fx = bx + vw * 0.5 * Math.pow(1 - t, 0.72) * 0.32
           const fy = baseY - vh * (1 - t * 0.92)
           const fa = (1 - t * 0.7) * 0.30 * pkPulse
-          const fc = t < 0.35 ? `rgba(255,190,55,${fa * 2.2})` : t < 0.65 ? `rgba(255,90,22,${fa * 2.0})` : `rgba(180,32,10,${fa * 1.5})`
-          this.fillRadial(graphics, fx, fy, vw * 0.04, height * 0.025, fc, 'rgba(0,0,0,0)')
+          const fc = t < 0.35 ? 'rgba(255,190,55,1)' : t < 0.65 ? 'rgba(255,90,22,1)' : 'rgba(180,32,10,1)'
+          const fcAlpha = t < 0.35 ? fa * 2.2 : t < 0.65 ? fa * 2.0 : fa * 1.5
+          this.fillRadial(graphics, fx, fy, vw * 0.04, height * 0.025, fc, 'rgba(0,0,0,0)', fcAlpha)
         }
       }
 
@@ -2410,8 +1677,8 @@ export class PixiRaidBackground {
       for (let i = 0; i < lavaRiverCount; i++) {
         const riverY = horizonY + height * (0.16 + i * 0.13)
         const pulse = 0.72 + Math.sin(seconds * (0.6 + i * 0.2) + i * 2.1) * 0.28
-        this.fillRadial(graphics, width * (0.5 + Math.sin(seconds * 0.18 + i * 0.9) * 0.06), riverY, width * 0.78, height * 0.065, `rgba(255,78,16,${0.20 * pulse})`, 'rgba(0,0,0,0)')
-        this.fillRadial(graphics, width * (0.5 + Math.sin(seconds * 0.24 + i * 1.1) * 0.04), riverY, width * 0.44, height * 0.028, `rgba(255,162,38,${0.24 * pulse})`, 'rgba(0,0,0,0)')
+        this.fillRadial(graphics, width * (0.5 + Math.sin(seconds * 0.18 + i * 0.9) * 0.06), riverY, width * 0.78, height * 0.065, 'rgba(255,78,16,1)', 'rgba(0,0,0,0)', 0.20 * pulse)
+        this.fillRadial(graphics, width * (0.5 + Math.sin(seconds * 0.24 + i * 1.1) * 0.04), riverY, width * 0.44, height * 0.028, 'rgba(255,162,38,1)', 'rgba(0,0,0,0)', 0.24 * pulse)
       }
 
       // Falling ash particles
@@ -2509,6 +1776,323 @@ export class PixiRaidBackground {
         scenic.alpha,
         scenic.rotation + seconds * scenic.spin,
       )
+    }
+  }
+
+  private updateFinalBattleBackdrop(width: number, height: number, seconds: number, stageTheme: number, quality: GraphicsQuality, intensity: number) {
+    const graphics = this.finalBattleBackdropGraphics
+    graphics.clear()
+
+    const isFinalTheme = Math.floor(stageTheme) === RAID_BOSS_BACKGROUND_THEME_FINAL
+    const alpha = clamp(intensity, 0, 1)
+    graphics.visible = isFinalTheme && quality !== 'low' && alpha > 0.01
+    if (!graphics.visible) return
+
+    const baseSize = Math.min(width, height)
+    const pulse = 0.78 + Math.sin(seconds * 0.64) * 0.14
+    const isMedium = quality === 'medium'
+
+    this.fillRadial(graphics, width * 0.5, height * 0.34, width * 0.92, height * 0.46, 'rgba(190,24,93,1)', 'rgba(0,0,0,0)', 0.064 * alpha * pulse)
+    this.fillRadial(graphics, width * 0.62, height * 0.62, width * 0.78, height * 0.38, 'rgba(14,165,233,1)', 'rgba(0,0,0,0)', 0.046 * alpha)
+    this.fillRadial(graphics, width * 0.48, height * 0.47, width * 0.44, height * 0.22, 'rgba(250,204,21,1)', 'rgba(0,0,0,0)', 0.034 * alpha * pulse)
+    this.fillRadial(graphics, width * 0.52, height * 0.42, width * 0.64, height * 0.18, 'rgba(125,249,255,1)', 'rgba(0,0,0,0)', 0.021 * alpha)
+
+    const bloomCount = isMedium ? 4 : 7
+    for (let index = 0; index < bloomCount; index += 1) {
+      const bloom = 0.72 + Math.sin(seconds * (0.22 + index * 0.018) + index * 1.7) * 0.28
+      const bx = width * (0.14 + seededNoise(index + 57, 19) * 0.72)
+      const by = height * (0.14 + seededNoise(index + 83, 23) * 0.62)
+      const radiusX = baseSize * (0.052 + seededNoise(index + 11, 31) * 0.048)
+      const radiusY = baseSize * (0.028 + seededNoise(index + 29, 37) * 0.026)
+      const color = index % 3 === 0 ? 'rgba(251,146,60,1)' : index % 3 === 1 ? 'rgba(56,189,248,1)' : 'rgba(244,114,182,1)'
+      this.fillRadial(graphics, bx, by, radiusX, radiusY, color, 'rgba(0,0,0,0)', 0.064 * bloom * alpha)
+      this.fillRadial(graphics, bx, by, radiusX * 0.32, radiusY * 0.5, 'rgba(255,255,255,1)', 'rgba(0,0,0,0)', 0.026 * bloom * alpha)
+    }
+
+    const burstCount = isMedium ? 3 : 5
+    for (let index = 0; index < burstCount; index += 1) {
+      const cycle = (seconds * (0.12 + index * 0.01) + index * 0.19) % 1
+      const burst = cycle < 0.36 ? Math.sin((cycle / 0.36) * Math.PI) : 0
+      if (burst <= 0) continue
+      const bx = width * (0.18 + seededNoise(index + 91, 17) * 0.64)
+      const by = height * (0.2 + seededNoise(index + 41, 29) * 0.52)
+      const radius = baseSize * (0.024 + seededNoise(index + 13, 31) * 0.024) * (0.8 + burst * 1.1)
+      this.fillRadial(graphics, bx, by, radius * 1.35, radius * 1.35, 'rgba(255,255,255,1)', 'rgba(0,0,0,0)', 0.105 * burst * alpha)
+      this.fillRadial(graphics, bx, by, radius, radius, index % 2 === 0 ? 'rgba(251,146,60,1)' : 'rgba(56,189,248,1)', 'rgba(0,0,0,0)', 0.16 * burst * alpha)
+    }
+  }
+
+  private updateFinalBattleLayer(width: number, height: number, seconds: number, stageTheme: number, quality: GraphicsQuality, intensity: number) {
+    const graphics = this.finalBattleGraphics
+    graphics.clear()
+    const isFinalTheme = Math.floor(stageTheme) === RAID_BOSS_BACKGROUND_THEME_FINAL
+    const alpha = clamp(intensity, 0, 1)
+    graphics.visible = isFinalTheme && quality !== 'low' && alpha > 0.01
+    if (!graphics.visible) {
+      for (const sprite of this.finalBattleSprites) sprite.visible = false
+      for (const sprite of this.finalBattleCruiserSprites) sprite.visible = false
+      return
+    }
+
+    const isMedium = quality === 'medium'
+    const fighterLimit = isMedium ? 5 : FINAL_BATTLE_FIGHTERS.length
+    const explosionLimit = isMedium ? 2 : FINAL_BATTLE_EXPLOSIONS.length
+    const baseSize = Math.min(width, height)
+
+    this.fillRadial(graphics, width * 0.5, height * 0.42, width * 0.58, height * 0.32, 'rgba(239,35,60,1)', 'rgba(0,0,0,0)', 0.08 * alpha)
+    this.fillRadial(graphics, width * 0.38, height * 0.68, width * 0.48, height * 0.2, 'rgba(56,189,248,1)', 'rgba(0,0,0,0)', 0.055 * alpha)
+
+    for (let index = 0; index < explosionLimit; index += 1) {
+      const explosion = FINAL_BATTLE_EXPLOSIONS[index]
+      const y = ((seconds * explosion.speed + explosion.ySeed) % 1) * height
+      const x = width * (explosion.x + Math.sin(seconds * 0.18 + index * 1.7) * 0.032)
+      const cycle = ((seconds + explosion.offset) % explosion.period) / explosion.period
+      const pulse = cycle < 0.4 ? Math.sin((cycle / 0.4) * Math.PI) : 0
+      if (pulse <= 0) continue
+      const radius = baseSize * explosion.radius * (0.7 + pulse * 1.45)
+      this.fillRadial(graphics, x, y, radius, radius, 'rgba(255,255,255,1)', 'rgba(0,0,0,0)', 0.18 * pulse * alpha)
+      this.fillRadial(graphics, x, y, radius * 0.9, radius * 0.9, 'rgba(251,191,36,1)', 'rgba(0,0,0,0)', 0.28 * pulse * alpha)
+      this.fillRadial(graphics, x, y, radius * 0.72, radius * 0.72, 'rgba(239,35,60,1)', 'rgba(0,0,0,0)', 0.16 * pulse * alpha)
+    }
+
+    for (let index = 0; index < fighterLimit; index += 1) {
+      const fighter = FINAL_BATTLE_FIGHTERS[index]
+      const sprite = this.finalBattleSprites[index]
+      const texture = this.finalBattleTextures.get(getFinalBattleTextureKey(fighter))
+      const progress = (seconds * fighter.speed + fighter.ySeed) % 1
+      const laneDrift = Math.sin(fighter.phase) * fighter.drift * 0.52
+      const y = fighter.side === 'ally'
+        ? height * (1.1 - progress * 1.22)
+        : height * (-0.1 + progress * 1.22)
+      const x = width * (fighter.x + (progress - 0.5) * laneDrift)
+      const travelDy = fighter.side === 'ally' ? -height * 1.22 : height * 1.22
+      const angle = Math.atan2(width * laneDrift, -travelDy)
+      const size = baseSize * fighter.size * (isMedium ? 0.92 : 1)
+      const shipAlpha = alpha * (fighter.assetKind === 'ship' ? 0.48 : 0.52)
+      if (texture) {
+        const drawSize = fighter.assetKind === 'ship' ? size : size * 1.08
+        setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, shipAlpha, fighter.side === 'ally' ? angle : angle - Math.PI)
+      } else {
+        sprite.visible = false
+      }
+
+      const fireCycle = ((seconds * (0.72 + index * 0.045) + fighter.phase) % 1)
+      if (fireCycle < 0.92) {
+        this.drawFinalBattleWeaponProfile(graphics, fighter.weapon, fighter.side, x, y, size, angle, baseSize, fireCycle / 0.92, alpha)
+      }
+    }
+    for (let index = fighterLimit; index < this.finalBattleSprites.length; index += 1) {
+      this.finalBattleSprites[index].visible = false
+    }
+
+    const cruiserLimit = isMedium ? 2 : FINAL_BATTLE_CRUISERS.length
+    for (let index = 0; index < cruiserLimit; index += 1) {
+      const cruiser = FINAL_BATTLE_CRUISERS[index]
+      const sprite = this.finalBattleCruiserSprites[index]
+      const texture = this.finalBattleTextures.get(getFinalBattleCruiserTextureKey(cruiser))
+      const progress = (seconds * cruiser.speed + cruiser.ySeed) % 1
+      const y = height * (1.16 - progress * 1.34)
+      const laneDrift = cruiser.drift * (0.65 + Math.sin(cruiser.phase) * 0.18)
+      const x = width * (cruiser.x + (progress - 0.5) * laneDrift)
+      const angle = Math.atan2(width * laneDrift, height * 1.34)
+      const size = baseSize * cruiser.size
+      const edgeFade = clamp(Math.min(progress / 0.12, (1 - progress) / 0.16, 1), 0, 1)
+      const cruiserAlpha = alpha * cruiser.alpha * edgeFade
+      if (texture) {
+        this.drawFinalBattleCruiserTrail(graphics, x, y, size, angle, cruiserAlpha)
+        setPixiSpriteContain(sprite, texture, x, y, size, size, cruiserAlpha, angle)
+      } else {
+        sprite.visible = false
+      }
+    }
+    for (let index = cruiserLimit; index < this.finalBattleCruiserSprites.length; index += 1) {
+      this.finalBattleCruiserSprites[index].visible = false
+    }
+  }
+
+  private drawFinalBattleCruiserTrail(graphics: Graphics, x: number, y: number, size: number, angle: number, alpha: number) {
+    const outerLeft = this.getBattleLocalPoint(x, y, -size * 0.09, size * 0.34, angle)
+    const outerRight = this.getBattleLocalPoint(x, y, size * 0.09, size * 0.34, angle)
+    const outerTip = this.getBattleLocalPoint(x, y, 0, size * 0.88, angle)
+    const outerFill = getPixiFill('rgba(96,221,255,1)', 0.12 * alpha)
+    graphics.poly([outerLeft.x, outerLeft.y, outerRight.x, outerRight.y, outerTip.x, outerTip.y]).fill(outerFill)
+
+    const innerLeft = this.getBattleLocalPoint(x, y, -size * 0.035, size * 0.38, angle)
+    const innerRight = this.getBattleLocalPoint(x, y, size * 0.035, size * 0.38, angle)
+    const innerTip = this.getBattleLocalPoint(x, y, 0, size * 0.7, angle)
+    const innerFill = getPixiFill('rgba(235,255,255,1)', 0.18 * alpha)
+    graphics.poly([innerLeft.x, innerLeft.y, innerRight.x, innerRight.y, innerTip.x, innerTip.y]).fill(innerFill)
+  }
+
+  private drawFinalBattleWeaponProfile(
+    graphics: Graphics,
+    weapon: typeof FINAL_BATTLE_FIGHTERS[number]['weapon'],
+    side: 'ally' | 'enemy',
+    x: number,
+    y: number,
+    size: number,
+    angle: number,
+    baseSize: number,
+    progress: number,
+    alpha: number,
+  ) {
+    const beamColor = side === 'ally' ? 'rgba(125,249,255,1)' : 'rgba(255,86,116,1)'
+    const coreColor = side === 'ally' ? 'rgba(235,255,255,1)' : 'rgba(255,220,170,1)'
+    const rocketColor = side === 'ally' ? 'rgba(251,146,60,1)' : 'rgba(244,63,94,1)'
+    const scatterColor = side === 'ally' ? 'rgba(244,114,182,1)' : 'rgba(192,132,252,1)'
+    const muzzle = this.getBattleLocalPoint(x, y, 0, -size * 0.58, angle)
+
+    const strokeLine = (sx: number, sy: number, ex: number, ey: number, color: string, strokeAlpha: number, widthPx: number) => {
+      const stroke = getPixiFill(color, strokeAlpha)
+      graphics.moveTo(sx, sy)
+      graphics.lineTo(ex, ey)
+      graphics.stroke({ color: stroke.color, alpha: stroke.alpha, width: Math.max(1, widthPx), cap: 'round' })
+    }
+
+    const drawTravelingBolt = (
+      sx: number,
+      sy: number,
+      shotAngle: number,
+      pathLength: number,
+      shotProgress: number,
+      color: string,
+      core: string,
+      widthPx: number,
+      headRadius: number,
+      curve = 0,
+      trailPortion = 0.22,
+    ) => {
+      if (shotProgress <= 0 || shotProgress >= 1) return
+      const dirX = Math.sin(shotAngle)
+      const dirY = -Math.cos(shotAngle)
+      const sideX = Math.cos(shotAngle)
+      const sideY = Math.sin(shotAngle)
+      const travel = pathLength * shotProgress
+      const tailTravel = Math.max(0, travel - pathLength * trailPortion)
+      const tailProgress = tailTravel / Math.max(1, pathLength)
+      const headCurve = Math.sin(shotProgress * Math.PI) * curve
+      const tailCurve = Math.sin(tailProgress * Math.PI) * curve
+      const hx = sx + dirX * travel + sideX * headCurve
+      const hy = sy + dirY * travel + sideY * headCurve
+      const tx = sx + dirX * tailTravel + sideX * tailCurve
+      const ty = sy + dirY * tailTravel + sideY * tailCurve
+      const edgeFade = clamp(Math.min(shotProgress / 0.08, (1 - shotProgress) / 0.12, 1), 0, 1)
+      const shotAlpha = alpha * edgeFade
+      strokeLine(tx, ty, hx, hy, color, 0.26 * shotAlpha, widthPx)
+      strokeLine(tx, ty, hx, hy, core, 0.52 * shotAlpha, Math.max(1, widthPx * 0.32))
+      this.fillRadial(graphics, hx, hy, headRadius * 1.35, headRadius * 1.35, color, 'rgba(0,0,0,0)', 0.22 * shotAlpha)
+      this.fillRadial(graphics, hx, hy, headRadius * 0.72, headRadius * 0.72, core, 'rgba(0,0,0,0)', 0.38 * shotAlpha)
+    }
+
+    const drawTravelingOrb = (
+      sx: number,
+      sy: number,
+      shotAngle: number,
+      pathLength: number,
+      shotProgress: number,
+      color: string,
+      core: string,
+      radius: number,
+      curve = 0,
+    ) => {
+      if (shotProgress <= 0 || shotProgress >= 1) return
+      const dirX = Math.sin(shotAngle)
+      const dirY = -Math.cos(shotAngle)
+      const sideX = Math.cos(shotAngle)
+      const sideY = Math.sin(shotAngle)
+      const travel = pathLength * shotProgress
+      const bend = Math.sin(shotProgress * Math.PI) * curve
+      const hx = sx + dirX * travel + sideX * bend
+      const hy = sy + dirY * travel + sideY * bend
+      const edgeFade = clamp(Math.min(shotProgress / 0.1, (1 - shotProgress) / 0.14, 1), 0, 1)
+      const shotAlpha = alpha * edgeFade
+      const tailX = hx - dirX * radius * 1.9
+      const tailY = hy - dirY * radius * 1.9
+      strokeLine(tailX, tailY, hx, hy, color, 0.16 * shotAlpha, radius * 0.72)
+      this.fillRadial(graphics, hx, hy, radius * 1.9, radius * 1.9, color, 'rgba(0,0,0,0)', 0.24 * shotAlpha)
+      this.fillRadial(graphics, hx, hy, radius, radius, core, 'rgba(0,0,0,0)', 0.5 * shotAlpha)
+    }
+
+    if (side === 'enemy') {
+      const enemyColor = weapon === 'rocket' ? 'rgba(255,88,38,1)' : weapon === 'scatter' ? 'rgba(192,132,252,1)' : 'rgba(255,86,116,1)'
+      const enemyCore = weapon === 'rocket' ? 'rgba(255,224,138,1)' : 'rgba(255,190,230,1)'
+      const pathLength = baseSize * (weapon === 'rocket' ? 0.24 : 0.28)
+      const orbRadius = size * (weapon === 'rocket' ? 0.22 : 0.18)
+      if (weapon === 'spread') {
+        for (const fan of [-0.24, 0, 0.24]) drawTravelingOrb(muzzle.x, muzzle.y, angle + fan, pathLength, progress, enemyColor, enemyCore, orbRadius)
+        return
+      }
+      if (weapon === 'scatter') {
+        for (let shard = 0; shard < 5; shard += 1) {
+          const stagger = shard * 0.055
+          const shardProgress = (progress - stagger) / Math.max(0.1, 1 - stagger)
+          drawTravelingOrb(muzzle.x, muzzle.y, angle - 0.42 + shard * 0.21, baseSize * 0.22, shardProgress, enemyColor, enemyCore, size * 0.14)
+        }
+        return
+      }
+      if (weapon === 'rocket') {
+        for (const offset of [-0.2, 0.2]) {
+          const start = this.getBattleLocalPoint(x, y, size * offset, -size * 0.2, angle)
+          drawTravelingOrb(start.x, start.y, angle + offset * 0.1, pathLength, Math.pow(progress, 0.9), enemyColor, enemyCore, orbRadius, offset * size * 0.18)
+        }
+        return
+      }
+      drawTravelingOrb(muzzle.x, muzzle.y, angle, pathLength, progress, enemyColor, enemyCore, orbRadius)
+      return
+    }
+
+    if (weapon === 'laser') {
+      const length = baseSize * 0.32
+      for (const offset of [-0.18, 0.18]) {
+        const start = this.getBattleLocalPoint(x, y, size * offset, -size * 0.62, angle)
+        drawTravelingBolt(start.x, start.y, angle, length, progress, beamColor, coreColor, size * 0.1, size * 0.12, 0, 0.22)
+      }
+      return
+    }
+
+    if (weapon === 'spread') {
+      const length = baseSize * 0.28
+      for (const fan of [-0.34, 0, 0.34]) {
+        drawTravelingBolt(muzzle.x, muzzle.y, angle + fan, length, progress, beamColor, coreColor, size * 0.09, size * 0.12, 0, 0.16)
+      }
+      return
+    }
+
+    if (weapon === 'scatter') {
+      const shardCount = 6
+      for (let shard = 0; shard < shardCount; shard += 1) {
+        const shardAngle = angle - 0.58 + (shard / Math.max(1, shardCount - 1)) * 1.16
+        const start = this.getBattleLocalPoint(x, y, (shard - 2.5) * size * 0.04, -size * 0.38, angle)
+        const stagger = shard * 0.045
+        const shardProgress = (progress - stagger) / Math.max(0.1, 1 - stagger)
+        const length = baseSize * (0.18 + (shard % 3) * 0.024)
+        drawTravelingBolt(start.x, start.y, shardAngle, length, shardProgress, scatterColor, coreColor, size * 0.075, size * 0.1, 0, 0.12)
+      }
+      return
+    }
+
+    if (weapon === 'rocket') {
+      const length = baseSize * 0.24
+      for (const offset of [-0.22, 0.22]) {
+        const start = this.getBattleLocalPoint(x, y, size * offset, -size * 0.2, angle)
+        drawTravelingOrb(start.x, start.y, angle + offset * 0.08, length, Math.pow(progress, 0.88), rocketColor, 'rgba(255,246,210,1)', size * 0.17, offset * size * 0.14)
+      }
+      return
+    }
+
+    const length = baseSize * 0.3
+    for (const offset of [-0.28, 0.28]) {
+      const start = this.getBattleLocalPoint(x, y, size * offset, -size * 0.16, angle)
+      drawTravelingOrb(start.x, start.y, angle + offset * 0.16, length, progress, beamColor, coreColor, size * 0.13, offset * baseSize * 0.04)
+    }
+  }
+
+  private getBattleLocalPoint(x: number, y: number, localX: number, localY: number, angle: number) {
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    return {
+      x: x + localX * cos - localY * sin,
+      y: y + localX * sin + localY * cos,
     }
   }
 

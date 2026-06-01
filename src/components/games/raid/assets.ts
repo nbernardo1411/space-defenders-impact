@@ -637,7 +637,7 @@ export function processVioletCloudAsset(image: HTMLImageElement) {
     const green = data[index + 1]
     const blue = data[index + 2]
     const luma = red * 0.299 + green * 0.587 + blue * 0.114
-    const alphaScale = luma < 82 && blue > red + 8 ? 0.18 : 0.78
+    const alphaScale = luma < 82 && blue > red + 8 ? 0.52 : 0.96
     data[index] = Math.round(luma * 0.42 + 44)
     data[index + 1] = Math.round(luma * 0.24 + 18)
     data[index + 2] = Math.round(luma * 0.58 + 78)
@@ -667,7 +667,7 @@ export function processVolcanicCloudAsset(image: HTMLImageElement) {
     const green = data[index + 1]
     const blue = data[index + 2]
     const luma = red * 0.299 + green * 0.587 + blue * 0.114
-    const alphaScale = luma < 76 && red > blue + 8 ? 0.18 : 0.76
+    const alphaScale = luma < 76 && red > blue + 8 ? 0.5 : 0.94
     data[index] = Math.round(luma * 0.7 + 58)
     data[index + 1] = Math.round(luma * 0.24 + 18)
     data[index + 2] = Math.round(luma * 0.18 + 12)
