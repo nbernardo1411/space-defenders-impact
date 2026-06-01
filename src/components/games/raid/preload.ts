@@ -4,7 +4,7 @@ import { Assets } from 'pixi.js'
 import { RAID_COBRA_BOSS_ASSET_PATH, RAID_CORE_LANDER_BARRAGE_ASSET_PATHS, RAID_CORE_LANDER_COMBAT_MODELS, RAID_DERELICT_WRECK_ASSET_PATH, RAID_DERELICT_WRECK_VARIANTS, RAID_DEVIL_BOSS_ASSET_PATHS, RAID_DEVIL_BOSS_POSES, RAID_DEVIL_MASTER_PROJECTILE_ASSET_PATH, RAID_FINAL_BOSS_ASSET_PATH, RAID_OTHER_ASSET_PATHS, RAID_SQUID_BOSS_ASSET_PATH, getCobraBossCanvasSprite, getDerelictWreckCanvasSprite, getDevilBossCanvasSprite, getDevilMasterProjectileCanvasSprite, getEliteAlienCanvasSprite, getFinalBossCanvasSprite, getGodGundamBarrageCanvasSprite, getNormalAlienCanvasSprite, getRaidOtherCanvasSprite, getShipCanvasSprite, getSquidBossCanvasSprite, warmRaidCanvasFilterVariants } from './assets'
 import type { CanvasSpriteEntry, GodGundamBarragePose, RaidOtherAssetKey } from './assets'
 import { DEFAULT_PICKUP_VOICE_SAMPLE_URL, PICKUP_VOICE_SAMPLE_URLS } from './audio'
-import { RAID_BOSS_BGM_TRACK, RAID_DEFAULT_BGM_TRACK, RAID_ENDING_BGM_TRACK, SHIP_OPTIONS } from './constants'
+import { RAID_BOSS_BGM_TRACK, RAID_BOSS_FINAL_BGM_TRACK, RAID_BOSS_SNAKE_BGM_TRACK, RAID_BOSS_SQUID_BGM_TRACK, RAID_DEFAULT_BGM_TRACK, RAID_ENDING_BGM_TRACK, SHIP_OPTIONS } from './constants'
 import { getHomingMissileSprite, warmPowerPickupSpriteCache } from './effectsRender'
 import { getCoreBlastSprite, getHoneycombShieldSprite } from './playerRender'
 import type { RaidAssetPreloadState } from './types'
@@ -86,6 +86,9 @@ export function getRaidPersistentAudioUrls() {
   return [
     RAID_DEFAULT_BGM_TRACK,
     RAID_BOSS_BGM_TRACK,
+    RAID_BOSS_SQUID_BGM_TRACK,
+    RAID_BOSS_SNAKE_BGM_TRACK,
+    RAID_BOSS_FINAL_BGM_TRACK,
     RAID_ENDING_BGM_TRACK,
     DEFAULT_PICKUP_VOICE_SAMPLE_URL,
     ...Object.values(PICKUP_VOICE_SAMPLE_URLS),

@@ -48,6 +48,22 @@ export const RAID_OTHER_ASSET_PATHS = {
   planetNebula: 'assets/others/planet__3.webp',
   spaceStation: 'assets/others/space_station.webp',
   sun: 'assets/others/sun.webp',
+  clouds: 'assets/others/clouds.png',
+  clouds2: 'assets/others/clouds_2.png',
+  volcanicClouds: 'assets/others/clouds.png',
+  volcanicClouds2: 'assets/others/clouds_2.png',
+  island: 'assets/others/island.png',
+  island2: 'assets/others/island_2.png',
+  island3: 'assets/others/island_3.png',
+  volcano: 'assets/others/volcano.png',
+  volcano2: 'assets/others/volcano_2.png',
+  volcano3: 'assets/others/volcano_3.png',
+  bgShipMesiahBlack: 'assets/ships/mesiah-black.png',
+  bgShipMesiahWhite: 'assets/ships/mesiah-white.png',
+  bgShipRaptorWhite: 'assets/ships/mesiah-raptor-white.png',
+  bgEnemyScout: 'assets/aliens/alien_v2.png',
+  bgEnemySwarm: 'assets/aliens/alien_v5.png',
+  bgEnemyElite: 'assets/aliens/elite_2.png',
 } as const
 
 export const RAID_DERELICT_WRECK_ASSET_PATH = 'assets/others/space_station.webp'
@@ -342,6 +358,16 @@ export const RAID_OTHER_STATIC_FILTERS: Partial<Record<RaidOtherAssetKey, readon
   planetNebula: ['brightness(0.62) contrast(1.12) saturate(0.86)'],
   spaceStation: ['brightness(0.78) contrast(1.16) saturate(0.82)'],
   sun: ['brightness(0.9) contrast(1.14) saturate(1.08)'],
+  clouds: ['brightness(0.86) contrast(1.1) saturate(1.06)'],
+  clouds2: ['brightness(0.86) contrast(1.1) saturate(1.06)'],
+  volcanicClouds: ['brightness(0.9) contrast(1.12) saturate(1.06)'],
+  volcanicClouds2: ['brightness(0.9) contrast(1.12) saturate(1.06)'],
+  island: ['brightness(0.64) contrast(1.1) saturate(0.95)'],
+  island2: ['brightness(0.64) contrast(1.1) saturate(0.95)'],
+  island3: ['brightness(0.64) contrast(1.1) saturate(0.95)'],
+  volcano: ['brightness(0.72) contrast(1.12) saturate(1.05)'],
+  volcano2: ['brightness(0.72) contrast(1.12) saturate(1.05)'],
+  volcano3: ['brightness(0.72) contrast(1.12) saturate(1.05)'],
 }
 
 export function makeSpriteProcessingCanvas(image: HTMLImageElement, maxSize: number, crop?: { x: number; y: number; width: number; height: number }) {
@@ -591,6 +617,78 @@ export function processSpaceStationAsset(image: HTMLImageElement) {
   return trimTransparentCanvas(keyedCanvas, 3)
 }
 
+export function processVioletCloudAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 820)
+  const ctx = canvas?.getContext('2d')
+  if (!canvas || !ctx) return canvas
+  removeConnectedCanvasMatte(canvas, (red, green, blue, alpha) => {
+    if (alpha <= 0) return false
+    const min = Math.min(red, green, blue)
+    const max = Math.max(red, green, blue)
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    return luma < 158 && max - min < 76 && green > red + 5 && blue > red + 10
+  })
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3]
+    if (alpha <= 0) continue
+    const red = data[index]
+    const green = data[index + 1]
+    const blue = data[index + 2]
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    const alphaScale = luma < 82 && blue > red + 8 ? 0.18 : 0.78
+    data[index] = Math.round(luma * 0.42 + 44)
+    data[index + 1] = Math.round(luma * 0.24 + 18)
+    data[index + 2] = Math.round(luma * 0.58 + 78)
+    data[index + 3] = Math.round(alpha * alphaScale)
+  }
+  ctx.putImageData(imageData, 0, 0)
+  return trimTransparentCanvas(canvas, 2)
+}
+
+export function processVolcanicCloudAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 820)
+  const ctx = canvas?.getContext('2d')
+  if (!canvas || !ctx) return canvas
+  removeConnectedCanvasMatte(canvas, (red, green, blue, alpha) => {
+    if (alpha <= 0) return false
+    const min = Math.min(red, green, blue)
+    const max = Math.max(red, green, blue)
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    return luma < 158 && max - min < 76 && green > red + 5 && blue > red + 10
+  })
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3]
+    if (alpha <= 0) continue
+    const red = data[index]
+    const green = data[index + 1]
+    const blue = data[index + 2]
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114
+    const alphaScale = luma < 76 && red > blue + 8 ? 0.18 : 0.76
+    data[index] = Math.round(luma * 0.7 + 58)
+    data[index + 1] = Math.round(luma * 0.24 + 18)
+    data[index + 2] = Math.round(luma * 0.18 + 12)
+    data[index + 3] = Math.round(alpha * alphaScale)
+  }
+  ctx.putImageData(imageData, 0, 0)
+  return trimTransparentCanvas(canvas, 2)
+}
+
+export function processWateryIslandAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 760)
+  if (!canvas) return null
+  return trimTransparentCanvas(canvas, 3)
+}
+
+export function processVolcanicIslandAsset(image: HTMLImageElement) {
+  const canvas = makeSpriteProcessingCanvas(image, 780)
+  if (!canvas) return null
+  return trimTransparentCanvas(canvas, 3)
+}
+
 export function processSquidBossAsset(image: HTMLImageElement) {
   const alphaCanvas = makeSpriteProcessingCanvas(image, Math.max(image.naturalWidth, image.naturalHeight))
   const ctx = alphaCanvas?.getContext('2d')
@@ -744,6 +842,16 @@ export function getOtherAssetProcessor(key: RaidOtherAssetKey): CanvasSpriteProc
   if (key === 'planetNebula') return processPlanetNebulaAsset
   if (key === 'spaceStation') return processSpaceStationAsset
   if (key === 'sun') return processSunAsset
+  if (key === 'clouds') return processVioletCloudAsset
+  if (key === 'clouds2') return processVioletCloudAsset
+  if (key === 'volcanicClouds') return processVolcanicCloudAsset
+  if (key === 'volcanicClouds2') return processVolcanicCloudAsset
+  if (key === 'island') return processWateryIslandAsset
+  if (key === 'island2') return processWateryIslandAsset
+  if (key === 'island3') return processWateryIslandAsset
+  if (key === 'volcano') return processVolcanicIslandAsset
+  if (key === 'volcano2') return processVolcanicIslandAsset
+  if (key === 'volcano3') return processVolcanicIslandAsset
   return undefined
 }
 

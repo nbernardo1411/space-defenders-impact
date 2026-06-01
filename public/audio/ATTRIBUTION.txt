@@ -28,6 +28,20 @@ Source page: https://opengameart.org/content/sunless
 Downloaded file: https://opengameart.org/sites/default/files/sunless_0.ogg
 Used for: bgm_scifi_loop.ogg
 
+6) Space Boss Battle Theme ("Orbital Colossus") by Matthew Pablo (CC-BY 3.0)
+Source page: https://opengameart.org/content/space-boss-battle-theme
+Used for: bgm_boss_squid.mp3
+Required credit: "Music by Matthew Pablo / www.matthewpablo.com"
+
+7) Colossal Boss Battle Theme ("Blackmoor Colossus") by Matthew Pablo (CC-BY 3.0)
+Source page: https://opengameart.org/content/colossal-boss-battle-theme
+Used for: bgm_boss_snake.mp3
+Required credit: "Music by Matthew Pablo / www.matthewpablo.com"
+
+8) Boss Battle #2 [Symphonic Metal] by nene (CC0)
+Source page: https://opengameart.org/content/boss-battle-2-symphonic-metal
+Used for: bgm_boss_final.wav
+
 Publisher note:
 - Verify each asset's exact license text on its OpenGameArt page before final release.
 - If attribution is required, include credits in-game and/or in your game credits page.

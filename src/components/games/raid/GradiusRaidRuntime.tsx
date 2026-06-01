@@ -11,12 +11,12 @@ import type { CSSProperties } from 'react'
 import { RAID_DERELICT_WRECK_VARIANTS, RAID_DEVIL_MASTER_PROJECTILE_FILTER, RAID_DEVIL_MASTER_PROJECTILE_GLOW_STOPS, RAID_PLAYER_LASER_HEAD_STOPS, RAID_SNAKE_FANG_GLOW_STOPS, RAID_SQUID_BUBBLE_STOPS, RAID_SQUID_INK_STOPS, RAID_VENOM_SPIT_STOPS, drawCanvasSpriteContain, getDerelictWreckVariantData, getDevilMasterProjectileCanvasSprite } from './assets'
 import type { CanvasSpriteEntry } from './assets'
 import { playCoreLanderPhysicalAttackSound, playPickupVoiceLine, warmPickupVoiceSamples } from './audio'
-import { DEFAULT_RAID_PALETTE, PixiRaidBackground, drawRaidBackground, getRaidCameraShakeOffset } from './background'
+import { DEFAULT_RAID_PALETTE, PixiRaidBackground, RAID_BOSS_BACKGROUND_THEME_FINAL, RAID_BOSS_BACKGROUND_THEME_SNAKE, RAID_BOSS_BACKGROUND_THEME_SQUID, drawWateryWorldForegroundClouds, getRaidCameraShakeOffset, isWateryWorldTheme } from './background'
 import type { RaidPalette } from './background'
 import { forEachDevilBossBeamLane, forEachFinalBossBeamLane, getDevilBossBeamRadius, getDevilBossChargeDuration, getFinalBossBeamLaneCount, getFinalBossBeamRadius } from './bossAttacks'
 import { drawRaidEnemy, getNormalEnemyFilter } from './bossRender'
 import { PickupPreviewCanvas, getBriefingPickupType } from './briefing'
-import { ALLY_PLAYER_COLOR, ASTEROID_CLUSTER_SPAWN_DELAY_SECONDS, ASTEROID_CLUSTER_WARNING_SECONDS, BOSS_COLORS, BOSS_ENTRANCE_SLAM_SECONDS, BOSS_ENTRANCE_SLOWMO_SCALE, BOSS_RESPAWN_SECONDS, CORE_LANDER_AOE_RADIUS, DARK_ENEMY_COLORS, DEG, DEVIL_BOSS_MAX_STAGE_GAP, DEVIL_BOSS_MIN_STAGE_GAP, DIFFICULTY_CONFIGS, EMPTY_WEAPON_FLAGS, EMPTY_WEAPON_TIMERS, FINAL_BOSS_BEAM_CHARGE_SECONDS, FINAL_BOSS_BEAM_LIFE_SECONDS, FORCE_FIELD_ARMOR, GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS, GAMEPLAY_SNAPSHOT_INTERVAL_MS, GOD_GUNDAM_BARRAGE_DURATION_SECONDS, GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS, GOD_GUNDAM_DEFEAT_HOLD_SECONDS, GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND, GOD_GUNDAM_MELEE_EXHAUST_COOLDOWN_SECONDS, GOD_GUNDAM_MELEE_EXHAUST_LIMIT_SECONDS, GOD_GUNDAM_MELEE_HEAT_RECOVERY_PER_SECOND, GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS, GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS, HEIGHT, HOMING_RETARGET_SECONDS, HOMING_RETARGET_STAGGER_SECONDS, IDLE_SNAPSHOT_INTERVAL_MS, MAX_ASTEROIDS, MAX_ION_STRIKES, MAX_METEORS, MAX_RAID_STAGE, MAX_WRECKS, MESIAH_DRONE_FIRE_INTERVAL_SECONDS, MESIAH_ROCKET_FIRE_INTERVAL_SECONDS, MINI_BOSS_COLORS, MULTIPLAYER_BOSS_HP_MULTIPLIER, MULTIPLAYER_CONNECTION_CHECK_MS, MULTIPLAYER_CORRECTION_DRAIN_RATE, MULTIPLAYER_ENTITY_MARGIN, MULTIPLAYER_GUEST_SNAP_DISTANCE_SQ, MULTIPLAYER_GUEST_STALE_MS, MULTIPLAYER_HEARTBEAT_INTERVAL_MS, MULTIPLAYER_HEARTBEAT_TIMEOUT_MS, MULTIPLAYER_INPUT_INTERVAL_MS, MULTIPLAYER_MAX_ASTEROIDS, MULTIPLAYER_MAX_BUFFERED_BYTES, MULTIPLAYER_MAX_ENEMIES, MULTIPLAYER_MAX_ENEMY_SHOTS, MULTIPLAYER_MAX_GUEST_CORRECTION, MULTIPLAYER_MAX_ION_STRIKES, MULTIPLAYER_MAX_METEORS, MULTIPLAYER_MAX_POWERUPS, MULTIPLAYER_MAX_RIPPLES, MULTIPLAYER_MAX_SHOTS, MULTIPLAYER_MAX_SPARKS, MULTIPLAYER_MAX_WRECKS, MULTIPLAYER_REMOTE_BUFFER_MAX, MULTIPLAYER_REMOTE_CORRECTION_BLEND, MULTIPLAYER_REMOTE_INPUT_BLEND, MULTIPLAYER_REMOTE_INPUT_SNAP_DISTANCE_SQ, MULTIPLAYER_STATE_INTERVAL_MS, MULTIPLAYER_STATE_LOST_MS, MULTIPLAYER_STATE_STALE_MS, NORMAL_POWER_DROP_COOLDOWN, NUKE_FLASH_SECONDS, NUKE_MISSILE_SECONDS, PLAYER_COLOR, PLAYER_MAX_RANK, PLAYER_RADIUS, POWER_PITY_KILLS, RAID_BACKGROUND_THEME_COUNT, RAID_BGM_STAGE_RATES, RAID_BOSS_APPROACH_SILENCE_SECONDS, RAID_BOSS_BGM_TRACK, RAID_CHECKPOINTS, RAID_DEFAULT_BGM_TRACK, RAID_ENDING_BGM_TRACK, RANDOM_EVENT_WARNING_SECONDS, SHIP_OPTIONS, SIDE_VALUES, SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES, SPIEGEL_KUNAI_DAMAGE_MULTIPLIER, SPIEGEL_KUNAI_SPLASH_DAMAGE_MULTIPLIER, SPIEGEL_SHADOW_CLONE_OFFSET, STAGE_CLEAR_SECONDS, STAGE_ENTRY_SECONDS, VICTORY_BLACKOUT_SECONDS, WEAPON_FIRE_INTERVALS, WEAPON_KEYS, WEAPON_STACK_CAPS, WIDTH, getShipSpriteSize, pickEndlessBossKind, shouldForceLocalDerelictWreckTest, shouldForceLocalDevilBossTest } from './constants'
+import { ALLY_PLAYER_COLOR, ASTEROID_CLUSTER_SPAWN_DELAY_SECONDS, ASTEROID_CLUSTER_WARNING_SECONDS, BOSS_COLORS, BOSS_ENTRANCE_SLAM_SECONDS, BOSS_ENTRANCE_SLOWMO_SCALE, BOSS_RESPAWN_SECONDS, CORE_LANDER_AOE_RADIUS, DARK_ENEMY_COLORS, DEG, DEVIL_BOSS_MAX_STAGE_GAP, DEVIL_BOSS_MIN_STAGE_GAP, DIFFICULTY_CONFIGS, EMPTY_WEAPON_FLAGS, EMPTY_WEAPON_TIMERS, FINAL_BOSS_BEAM_CHARGE_SECONDS, FINAL_BOSS_BEAM_LIFE_SECONDS, FORCE_FIELD_ARMOR, GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS, GAMEPLAY_SNAPSHOT_INTERVAL_MS, GOD_GUNDAM_BARRAGE_DURATION_SECONDS, GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS, GOD_GUNDAM_DEFEAT_HOLD_SECONDS, GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND, GOD_GUNDAM_MELEE_EXHAUST_COOLDOWN_SECONDS, GOD_GUNDAM_MELEE_EXHAUST_LIMIT_SECONDS, GOD_GUNDAM_MELEE_HEAT_RECOVERY_PER_SECOND, GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS, GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS, HEIGHT, HOMING_RETARGET_SECONDS, HOMING_RETARGET_STAGGER_SECONDS, IDLE_SNAPSHOT_INTERVAL_MS, MAX_ASTEROIDS, MAX_ION_STRIKES, MAX_METEORS, MAX_RAID_STAGE, MAX_WRECKS, MESIAH_DRONE_FIRE_INTERVAL_SECONDS, MESIAH_ROCKET_FIRE_INTERVAL_SECONDS, MINI_BOSS_COLORS, MULTIPLAYER_BOSS_HP_MULTIPLIER, MULTIPLAYER_CONNECTION_CHECK_MS, MULTIPLAYER_CORRECTION_DRAIN_RATE, MULTIPLAYER_ENTITY_MARGIN, MULTIPLAYER_GUEST_SNAP_DISTANCE_SQ, MULTIPLAYER_GUEST_STALE_MS, MULTIPLAYER_HEARTBEAT_INTERVAL_MS, MULTIPLAYER_HEARTBEAT_TIMEOUT_MS, MULTIPLAYER_INPUT_INTERVAL_MS, MULTIPLAYER_MAX_ASTEROIDS, MULTIPLAYER_MAX_BUFFERED_BYTES, MULTIPLAYER_MAX_ENEMIES, MULTIPLAYER_MAX_ENEMY_SHOTS, MULTIPLAYER_MAX_GUEST_CORRECTION, MULTIPLAYER_MAX_ION_STRIKES, MULTIPLAYER_MAX_METEORS, MULTIPLAYER_MAX_POWERUPS, MULTIPLAYER_MAX_RIPPLES, MULTIPLAYER_MAX_SHOTS, MULTIPLAYER_MAX_SPARKS, MULTIPLAYER_MAX_WRECKS, MULTIPLAYER_REMOTE_BUFFER_MAX, MULTIPLAYER_REMOTE_CORRECTION_BLEND, MULTIPLAYER_REMOTE_INPUT_BLEND, MULTIPLAYER_REMOTE_INPUT_SNAP_DISTANCE_SQ, MULTIPLAYER_STATE_INTERVAL_MS, MULTIPLAYER_STATE_LOST_MS, MULTIPLAYER_STATE_STALE_MS, NORMAL_POWER_DROP_COOLDOWN, NUKE_FLASH_SECONDS, NUKE_MISSILE_SECONDS, PLAYER_COLOR, PLAYER_MAX_RANK, PLAYER_RADIUS, POWER_PITY_KILLS, RAID_BACKGROUND_THEME_COUNT, RAID_BGM_STAGE_RATES, RAID_BOSS_APPROACH_SILENCE_SECONDS, RAID_BOSS_BGM_TRACK, RAID_BOSS_FINAL_BGM_TRACK, RAID_BOSS_SNAKE_BGM_TRACK, RAID_BOSS_SQUID_BGM_TRACK, RAID_CHECKPOINTS, RAID_DEFAULT_BGM_TRACK, RAID_ENDING_BGM_TRACK, RANDOM_EVENT_WARNING_SECONDS, SHIP_OPTIONS, SIDE_VALUES, SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES, SPIEGEL_KUNAI_DAMAGE_MULTIPLIER, SPIEGEL_KUNAI_SPLASH_DAMAGE_MULTIPLIER, SPIEGEL_SHADOW_CLONE_OFFSET, STAGE_CLEAR_SECONDS, STAGE_ENTRY_SECONDS, VICTORY_BLACKOUT_SECONDS, WEAPON_FIRE_INTERVALS, WEAPON_KEYS, WEAPON_STACK_CAPS, WIDTH, getShipSpriteSize, pickEndlessBossKind, shouldForceLocalDerelictWreckTest, shouldForceLocalDevilBossTest } from './constants'
 import { drawAsteroidHazard, drawAsteroidWarning, drawDerelictWreck, drawDevilChargeWarnings, drawFinalChargeLines, drawGodGundamBarrage, drawGodGundamPassiveStrikes, drawIonStrike, drawMeteorHazard, drawNukeBlast, drawNukeMissile, drawPowerUpCanvas, drawRandomEventOverlay, drawRandomEventWarning, getHomingMissileSprite, godBarrageDamageTargetsScratch } from './effectsRender'
 import { createAsteroidHazard, getAsteroidClusterInterval, getRandomEventDuration, getRandomEventInterval, pickNextRandomRaidEventKind, splitAsteroidHazard } from './events'
 import { RAID_FX_CANVAS_CONTEXT_SETTINGS, getRaidGraphicsProfile, makeRaidViewportMetrics } from './graphics'
@@ -206,9 +206,11 @@ export function GradiusRaid({
   const raidBgmModeRef = useRef<RaidBgmMode | null>(null)
   const raidBgmStageRef = useRef(0)
   const raidBgmTrackRef = useRef<string | null>(null)
+  const raidBgmBossKindRef = useRef<BossKind | null>(null)
   const raidBgmRequestedModeRef = useRef<RaidBgmMode | null>(null)
   const raidBgmRequestedStageRef = useRef(0)
-  const startRaidBgmRef = useRef<(stage: number, mode?: RaidBgmMode) => void>(() => {})
+  const raidBgmRequestedBossKindRef = useRef<BossKind | null>(null)
+  const startRaidBgmRef = useRef<(stage: number, mode?: RaidBgmMode, bossKind?: BossKind | null) => void>(() => {})
   const stopRaidBgmRef = useRef<() => void>(() => {})
   const [selectedShipKey, setSelectedShipKey] = useState(SHIP_OPTIONS[0].key)
   const [briefingStep, setBriefingStep] = useState(0)
@@ -612,7 +614,8 @@ export function GradiusRaid({
     remotePointerVisualRef.current = cloneVec(state.guestPointer)
 
     if (session && !session.isHost) {
-      const bossActive = state.enemies.some((enemy) => enemy.isBoss) || state.bossMessage === 'incoming'
+      const bossEnemy = state.enemies.find((enemy) => enemy.isBoss) ?? null
+      const bossActive = !!bossEnemy || state.bossMessage === 'incoming'
       const nextBgmMode: RaidBgmMode | null = state.phase === 'victory'
         ? 'ending'
         : state.phase !== 'playing'
@@ -624,7 +627,7 @@ export function GradiusRaid({
               : 'cruise'
 
       if (nextBgmMode) {
-        startRaidBgmRef.current(state.stageTheme, nextBgmMode)
+        startRaidBgmRef.current(state.stageTheme, nextBgmMode, bossEnemy?.bossKind ?? null)
       } else {
         stopRaidBgmRef.current()
       }
@@ -1192,25 +1195,33 @@ export function GradiusRaid({
     raidBgmModeRef.current = null
     raidBgmStageRef.current = 0
     raidBgmTrackRef.current = null
+    raidBgmBossKindRef.current = null
     raidBgmRequestedModeRef.current = null
     raidBgmRequestedStageRef.current = 0
+    raidBgmRequestedBossKindRef.current = null
   }, [])
 
-  const startRaidBgm = useCallback((stage: number, mode: RaidBgmMode = 'cruise') => {
+  const startRaidBgm = useCallback((stage: number, mode: RaidBgmMode = 'cruise', bossKind: BossKind | null = null) => {
     if (typeof window === 'undefined') return
     raidBgmRequestedModeRef.current = mode
     raidBgmRequestedStageRef.current = stage
+    raidBgmRequestedBossKindRef.current = bossKind
     if (!getGameSoundEnabled()) {
       stopRaidBgm()
       return
     }
 
+    const bossTrack =
+      bossKind === 'squid' ? RAID_BOSS_SQUID_BGM_TRACK :
+        bossKind === 'snake' ? RAID_BOSS_SNAKE_BGM_TRACK :
+          bossKind === 'final' || bossKind === 'devil' ? RAID_BOSS_FINAL_BGM_TRACK :
+            RAID_BOSS_BGM_TRACK
     const track =
       mode === 'ending' ? RAID_ENDING_BGM_TRACK :
-        mode === 'boss' ? RAID_BOSS_BGM_TRACK :
+        mode === 'boss' ? bossTrack :
           RAID_DEFAULT_BGM_TRACK
     const trackChanged = raidBgmTrackRef.current !== track
-    if (raidBgmModeRef.current === mode && raidBgmStageRef.current === stage && raidBgmElementRef.current && !trackChanged) {
+    if (raidBgmModeRef.current === mode && raidBgmStageRef.current === stage && raidBgmBossKindRef.current === bossKind && raidBgmElementRef.current && !trackChanged) {
       if (raidBgmElementRef.current.paused) {
         void raidBgmElementRef.current.play().catch(() => {})
       }
@@ -1249,11 +1260,13 @@ export function GradiusRaid({
     raidBgmModeRef.current = mode
     raidBgmStageRef.current = stage
     raidBgmTrackRef.current = track
+    raidBgmBossKindRef.current = bossKind
 
     void audio.play().catch(() => {
       raidBgmModeRef.current = null
       raidBgmStageRef.current = 0
       raidBgmTrackRef.current = null
+      raidBgmBossKindRef.current = null
       raidBgmElementRef.current = null
     })
   }, [stopRaidBgm])
@@ -1268,8 +1281,9 @@ export function GradiusRaid({
       if (!getGameSoundEnabled()) return
       const requestedMode = raidBgmRequestedModeRef.current
       const requestedStage = raidBgmRequestedStageRef.current
+      const requestedBossKind = raidBgmRequestedBossKindRef.current
       if (requestedMode) {
-        startRaidBgmRef.current(requestedStage || stageRef.current, requestedMode)
+        startRaidBgmRef.current(requestedStage || stageRef.current, requestedMode, requestedBossKind)
       }
     }
 
@@ -1404,22 +1418,34 @@ export function GradiusRaid({
     const activeBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.hp > 0)
     const bossIntensity = activeBoss ? 1 : bossAlertRef.current > 0 ? clamp(bossAlertRef.current / 2.4, 0, 1) : 0
     const devilCorruption = activeBoss?.bossKind === 'devil' ? clamp(0.45 + (1 - activeBoss.hp / Math.max(1, activeBoss.maxHp)) * 0.75, 0, 1) : 0
+    const campaignBackgroundStageTheme =
+      raidModeRef.current !== 'endless'
+        ? stageRef.current === 5
+          ? RAID_BOSS_BACKGROUND_THEME_SQUID
+          : stageRef.current === 10
+            ? RAID_BOSS_BACKGROUND_THEME_SNAKE
+            : stageRef.current >= MAX_RAID_STAGE
+              ? RAID_BOSS_BACKGROUND_THEME_FINAL
+              : stageRef.current
+        : stageRef.current
+    const backgroundStageTheme =
+      activeBoss?.bossKind === 'squid' ? RAID_BOSS_BACKGROUND_THEME_SQUID :
+        activeBoss?.bossKind === 'snake' ? RAID_BOSS_BACKGROUND_THEME_SNAKE :
+          activeBoss?.bossKind === 'final' || activeBoss?.bossKind === 'devil' ? RAID_BOSS_BACKGROUND_THEME_FINAL :
+            campaignBackgroundStageTheme
 
-    const pixiDrewBackground = pixiBackgroundRef.current?.render({
+    pixiBackgroundRef.current?.render({
       palette: paletteRef.current,
       width: cssWidth,
       height: cssHeight,
       time,
       quality: gfxQuality,
-      stageTheme: stageRef.current,
+      stageTheme: backgroundStageTheme,
       dpr,
       stageRush,
       bossIntensity,
       devilCorruption,
-    }) ?? false
-    if (!pixiDrewBackground) {
-      drawRaidBackground(ctx, paletteRef.current, cssWidth, cssHeight, time, gfxQuality, stageRef.current, dpr)
-    }
+    })
 
     const drawTrail = (shot: Shot, color: string, length: number, widthPx: number) => {
       const x = toX(shot.x)
@@ -2121,6 +2147,10 @@ export function GradiusRaid({
     if (ownShipRef && !hideOwnShipForBarrage) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current), sameScreenIdentityAura ? PLAYER_COLOR : null)
     if (allyShipRef && !hideAllyShipForBarrage) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current), sameScreenIdentityAura ? ALLY_PLAYER_COLOR : null)
 
+    if (isWateryWorldTheme(backgroundStageTheme)) {
+      drawWateryWorldForegroundClouds(ctx, cssWidth, cssHeight, time, gfxQuality)
+    }
+
     for (const powerUp of powerUpsRef.current) {
       drawPowerUpCanvas(ctx, powerUp, toX, toY, cssWidth, time)
     }
@@ -2693,9 +2723,11 @@ export function GradiusRaid({
     if (phaseRef.current !== 'paused') return
     phaseRef.current = 'playing'
     lastTimeRef.current = performance.now()
+    const activeBoss = enemiesRef.current.find((enemy) => enemy.isBoss) ?? null
     startRaidBgm(
       stageRef.current,
-      enemiesRef.current.some((enemy) => enemy.isBoss) ? 'boss' : enemiesRef.current.length > 0 ? 'combat' : 'cruise',
+      activeBoss ? 'boss' : enemiesRef.current.length > 0 ? 'combat' : 'cruise',
+      activeBoss?.bossKind ?? null,
     )
     syncSnapshot()
   }, [startRaidBgm, syncSnapshot])
@@ -3500,7 +3532,7 @@ export function GradiusRaid({
     bossMessageRef.current = 'incoming'
     bossEntranceSlamRef.current = BOSS_ENTRANCE_SLAM_SECONDS
     triggerScreenShake(bossKind === 'devil' || bossKind === 'final' ? 4.8 : 3.6, 260)
-    startRaidBgm(stage, 'boss')
+    startRaidBgm(stage, 'boss', bossKind)
     playGameSound('stinger')
   }, [playerName, startRaidBgm, triggerScreenShake])
 
@@ -4121,6 +4153,7 @@ export function GradiusRaid({
     if (!bossActive) {
       bossTimerRef.current = Math.max(0, bossTimerRef.current - dt)
     }
+    const activeBossForBgm = bossActive ? enemiesRef.current.find((enemy) => enemy.isBoss) ?? null : null
     const desiredBgmMode: RaidBgmMode | null = bossActive
       ? 'boss'
       : bossTimerRef.current <= RAID_BOSS_APPROACH_SILENCE_SECONDS
@@ -4130,8 +4163,8 @@ export function GradiusRaid({
       if (raidBgmElementRef.current) stopRaidBgm()
     } else if (desiredBgmMode === null) {
       if (raidBgmElementRef.current) stopRaidBgm()
-    } else if (raidBgmModeRef.current !== desiredBgmMode || raidBgmStageRef.current !== stageRef.current) {
-      startRaidBgm(stageRef.current, desiredBgmMode)
+    } else if (raidBgmModeRef.current !== desiredBgmMode || raidBgmStageRef.current !== stageRef.current || raidBgmBossKindRef.current !== (activeBossForBgm?.bossKind ?? null)) {
+      startRaidBgm(stageRef.current, desiredBgmMode, activeBossForBgm?.bossKind ?? null)
     }
     powerDropCooldownRef.current = Math.max(0, powerDropCooldownRef.current - dt)
     const finalBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.bossKind === 'final' && enemy.hp > 0)
