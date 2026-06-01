@@ -648,9 +648,10 @@ export function drawDerelictWreck(
   const y = toY(wreck.y)
   const variant = getDerelictWreckVariantIndex(wreck.variant ?? wreck.id)
   const sprite = getDerelictWreckCanvasSprite(variant)
-  const mobileScale = viewportWidth <= 640 ? 1.28 : 1
-  const w = Math.max(viewportWidth <= 640 ? 132 : 90, (wreck.width / WIDTH) * viewportWidth * mobileScale)
-  const h = Math.max(viewportWidth <= 640 ? 76 : 54, (wreck.height / WIDTH) * viewportWidth * mobileScale)
+  const isMobile = viewportWidth <= 640
+  const mobileScale = isMobile ? 1.95 : 1
+  const w = Math.max(isMobile ? 200 : 90, (wreck.width / WIDTH) * viewportWidth * mobileScale)
+  const h = Math.max(isMobile ? 116 : 54, (wreck.height / WIDTH) * viewportWidth * mobileScale)
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate((wreck.rotation ?? 0) + Math.sin(time / 1300 + wreck.phase) * 0.08)
@@ -937,7 +938,7 @@ export function drawFinalChargeLines(
 
   const toViewportY = (value: number) => (value / HEIGHT) * viewportHeight
   const drawWarningBeam = (x: number, y: number, angle: number, width: number, alpha: number, pulse: number) => {
-    const length = Math.hypot(viewportWidth, viewportHeight) * 1.45
+    const length = Math.sqrt((viewportWidth) * (viewportWidth) + (viewportHeight) * (viewportHeight)) * 1.45
     ctx.save()
     ctx.translate(x, y)
     ctx.rotate(angle)
@@ -1023,7 +1024,7 @@ export function drawDevilChargeWarnings(
   if (!hasDevilCharge) return
 
   const drawWarningBeam = (x: number, y: number, angle: number, width: number, alpha: number, pulse: number) => {
-    const length = Math.hypot(viewportWidth, viewportHeight) * 1.45
+    const length = Math.sqrt((viewportWidth) * (viewportWidth) + (viewportHeight) * (viewportHeight)) * 1.45
     ctx.save()
     ctx.translate(x, y)
     ctx.rotate(angle)

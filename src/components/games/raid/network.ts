@@ -289,6 +289,17 @@ export function interpolateEnemyVisual(previous: Enemy, next: Enemy, t: number) 
   return visual
 }
 
+const enemyIdMapCache = new WeakMap<Enemy[], Map<number, Enemy>>()
+function getEnemyIdMap(list: Enemy[]) {
+  let map = enemyIdMapCache.get(list)
+  if (!map) {
+    map = new Map()
+    for (const enemy of list) map.set(enemy.id, enemy)
+    enemyIdMapCache.set(list, map)
+  }
+  return map
+}
+
 export function getBufferedEnemyVisuals(buffer: MultiplayerEnemySnapshot[], renderAt: number) {
   if (buffer.length === 0) return null
   if (buffer.length === 1) return buffer[0].enemies.map(cloneEnemy)
@@ -299,7 +310,7 @@ export function getBufferedEnemyVisuals(buffer: MultiplayerEnemySnapshot[], rend
   const latest = buffer[buffer.length - 1]
   if (renderAt >= latest.at) {
     const previous = buffer[buffer.length - 2]
-    const previousById = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]))
+    const previousById = getEnemyIdMap(previous.enemies)
     const packetMs = Math.max(16, latest.at - previous.at)
     const extrapolateMs = Math.min(renderAt - latest.at, MULTIPLAYER_REMOTE_EXTRAPOLATION_LIMIT_MS)
     const t = 1 + extrapolateMs / packetMs
@@ -314,7 +325,7 @@ export function getBufferedEnemyVisuals(buffer: MultiplayerEnemySnapshot[], rend
     if (next.at < renderAt) continue
 
     const previous = buffer[index - 1]
-    const previousById = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]))
+    const previousById = getEnemyIdMap(previous.enemies)
     const span = Math.max(1, next.at - previous.at)
     const t = clamp((renderAt - previous.at) / span, 0, 1)
     return next.enemies.map((enemy) => {
@@ -334,6 +345,17 @@ export function interpolateAsteroidVisual(previous: AsteroidHazard, next: Astero
   return visual
 }
 
+const asteroidIdMapCache = new WeakMap<AsteroidHazard[], Map<number, AsteroidHazard>>()
+function getAsteroidIdMap(list: AsteroidHazard[]) {
+  let map = asteroidIdMapCache.get(list)
+  if (!map) {
+    map = new Map()
+    for (const asteroid of list) map.set(asteroid.id, asteroid)
+    asteroidIdMapCache.set(list, map)
+  }
+  return map
+}
+
 export function getBufferedAsteroidVisuals(buffer: MultiplayerAsteroidSnapshot[], renderAt: number) {
   if (buffer.length === 0) return null
   if (buffer.length === 1) return buffer[0].asteroids.map(cloneAsteroid)
@@ -344,7 +366,7 @@ export function getBufferedAsteroidVisuals(buffer: MultiplayerAsteroidSnapshot[]
   const latest = buffer[buffer.length - 1]
   if (renderAt >= latest.at) {
     const previous = buffer[buffer.length - 2]
-    const previousById = new Map(previous.asteroids.map((asteroid) => [asteroid.id, asteroid]))
+    const previousById = getAsteroidIdMap(previous.asteroids)
     const packetMs = Math.max(16, latest.at - previous.at)
     const extrapolateMs = Math.min(renderAt - latest.at, MULTIPLAYER_REMOTE_EXTRAPOLATION_LIMIT_MS)
     const t = 1 + extrapolateMs / packetMs
@@ -359,7 +381,7 @@ export function getBufferedAsteroidVisuals(buffer: MultiplayerAsteroidSnapshot[]
     if (next.at < renderAt) continue
 
     const previous = buffer[index - 1]
-    const previousById = new Map(previous.asteroids.map((asteroid) => [asteroid.id, asteroid]))
+    const previousById = getAsteroidIdMap(previous.asteroids)
     const span = Math.max(1, next.at - previous.at)
     const t = clamp((renderAt - previous.at) / span, 0, 1)
     return next.asteroids.map((asteroid) => {

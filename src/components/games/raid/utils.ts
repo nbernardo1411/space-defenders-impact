@@ -440,3 +440,18 @@ export function distSq(a: Vec, b: Vec) {
   const dy = a.y - b.y
   return dx * dx + dy * dy
 }
+
+export function takeLastFilteredMapped<T, U>(
+  source: readonly T[],
+  limit: number,
+  predicate: (item: T) => boolean,
+  mapper: (item: T) => U,
+): U[] {
+  const out: U[] = []
+  for (let i = source.length - 1; i >= 0 && out.length < limit; i -= 1) {
+    const item = source[i]
+    if (predicate(item)) out.push(mapper(item))
+  }
+  out.reverse()
+  return out
+}

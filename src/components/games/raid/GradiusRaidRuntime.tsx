@@ -28,7 +28,7 @@ import { drawRaidOptions, drawRaidPlayer, getCoreBlastSprite } from './playerRen
 import { getRaidAssetPreloadInitialState, preloadGradiusRaidAssets, warmRaidGeneratedEffectSprites } from './preload'
 import { clonePlayer, getCheckpointStage, getDefaultPlayerVisualShipKey, getGodGundamGameplayRenderSize, getHighScore, getInitialPlayer, getMesiahVisualShipKeyFromProgress, getOptionSupportStacks, getPlayerCoreLanderCombatModel, getRaidPlayerVisualShipKey, getShipByKey, getUnlockedStage, isCoreLanderAoeShot, isGodGundamBarragePilot, normalizeMesiahDrones, normalizeMesiahScoutDrones, powerColor, sanitizePlayerVisualShipKey, saveCheckpointStage, saveHighScore, saveUnlockedStage } from './state'
 import type { AsteroidHazard, BossDefeatExplosionEvent, BossKind, BossMessage, CameraShakeState, DerelictWreck, Enemy, FormationStyle, GamePhase, GodGundamBarrage, GodGundamPassiveStrike, IonStrike, MeteorHazard, MiniBossKind, MirageBossKind, MultiplayerAsteroidSnapshot, MultiplayerConnectionQuality, MultiplayerEnemySnapshot, MultiplayerHostState, MultiplayerInput, MultiplayerPlayerSnapshot, NukeStrike, Player, PowerKind, PowerUp, RaidAssetPreloadState, RaidBgmMode, RaidDifficulty, RaidMode, RaidMultiplayerSession, RaidRandomEvent, RaidRandomEventKind, RelayGameMessage, Ripple, ShipOption, Shot, Snapshot, Spark, Vec, WeaponKey } from './types'
-import { acquireRipple, acquireSpark, buildEnemyCollisionBuckets, clamp, collectShotCollisionCandidates, compactInPlace, createEnemyCollisionBuckets, distSq, drawRadialEllipse, getCachedProjectileOrbSprite, getCachedProjectileTrailSprite, getEliteEnemyChance, getMaxActiveEliteEnemies, pickEliteEnemyKind, readRaidPalette, recycleRipple, recycleRippleList, recycleSpark, recycleSparkList, updateRipplesInPlace, updateSparksInPlace } from './utils'
+import { acquireRipple, acquireSpark, buildEnemyCollisionBuckets, clamp, collectShotCollisionCandidates, compactInPlace, createEnemyCollisionBuckets, distSq, drawRadialEllipse, getCachedProjectileOrbSprite, getCachedProjectileTrailSprite, getEliteEnemyChance, getMaxActiveEliteEnemies, pickEliteEnemyKind, readRaidPalette, recycleRipple, recycleRippleList, recycleSpark, recycleSparkList, takeLastFilteredMapped, updateRipplesInPlace, updateSparksInPlace } from './utils'
 import type { EnemyCollisionBuckets } from './utils'
 
 let shotId = 1
@@ -402,45 +402,18 @@ export function GradiusRaid({
     phase: phaseRef.current,
     hostPlayer: compactPlayer(playerRef.current),
     guestPlayer: remotePlayerRef.current ? compactPlayer(remotePlayerRef.current) : null,
-    shots: shotsRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_SHOTS)
-      .map((shot) => compactVec(shot)),
-    enemyShots: enemyShotsRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_ENEMY_SHOTS)
-      .map((shot) => compactVec(shot)),
-    enemies: enemiesRef.current
-      .filter((enemy) => enemy.isBoss || isNetworkVisible(enemy))
-      .slice(-MULTIPLAYER_MAX_ENEMIES)
-      .map((enemy) => compactVec(enemy)),
-    asteroids: asteroidsRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_ASTEROIDS)
-      .map((asteroid) => compactVec(asteroid)),
-    meteors: meteorsRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_METEORS)
-      .map((meteor) => compactVec(meteor)),
+    shots: takeLastFilteredMapped(shotsRef.current, MULTIPLAYER_MAX_SHOTS, isNetworkVisible, compactVec),
+    enemyShots: takeLastFilteredMapped(enemyShotsRef.current, MULTIPLAYER_MAX_ENEMY_SHOTS, isNetworkVisible, compactVec),
+    enemies: takeLastFilteredMapped(enemiesRef.current, MULTIPLAYER_MAX_ENEMIES, (enemy) => enemy.isBoss || isNetworkVisible(enemy), compactVec),
+    asteroids: takeLastFilteredMapped(asteroidsRef.current, MULTIPLAYER_MAX_ASTEROIDS, isNetworkVisible, compactVec),
+    meteors: takeLastFilteredMapped(meteorsRef.current, MULTIPLAYER_MAX_METEORS, isNetworkVisible, compactVec),
     ionStrikes: ionStrikesRef.current
       .slice(-MULTIPLAYER_MAX_ION_STRIKES)
       .map(cloneIonStrike),
-    wrecks: wrecksRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_WRECKS)
-      .map((wreck) => compactVec(wreck)),
-    powerUps: powerUpsRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_POWERUPS)
-      .map((powerUp) => compactVec(powerUp)),
-    sparks: sparksRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_SPARKS)
-      .map((spark) => compactVec(spark)),
-    ripples: ripplesRef.current
-      .filter(isNetworkVisible)
-      .slice(-MULTIPLAYER_MAX_RIPPLES)
-      .map((ripple) => compactVec(ripple)),
+    wrecks: takeLastFilteredMapped(wrecksRef.current, MULTIPLAYER_MAX_WRECKS, isNetworkVisible, compactVec),
+    powerUps: takeLastFilteredMapped(powerUpsRef.current, MULTIPLAYER_MAX_POWERUPS, isNetworkVisible, compactVec),
+    sparks: takeLastFilteredMapped(sparksRef.current, MULTIPLAYER_MAX_SPARKS, isNetworkVisible, compactVec),
+    ripples: takeLastFilteredMapped(ripplesRef.current, MULTIPLAYER_MAX_RIPPLES, isNetworkVisible, compactVec),
     wave: waveRef.current,
     stageTheme: stageRef.current,
     bossAlert: bossAlertRef.current,
@@ -1453,7 +1426,7 @@ export function GradiusRaid({
       const y = toY(shot.y)
       const scaledLength = length * visualScale
       const scaledWidth = widthPx * visualScale
-      const mag = Math.hypot(shot.vx, shot.vy) || 1
+      const mag = Math.sqrt((shot.vx) * (shot.vx) + (shot.vy) * (shot.vy)) || 1
       const ux = shot.vx / mag
       const uy = shot.vy / mag
       const sprite = getCachedProjectileTrailSprite(color, scaledLength, scaledWidth)
@@ -1504,7 +1477,7 @@ export function GradiusRaid({
     const drawPlayerLaserBeam = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
-      const mag = Math.hypot(shot.vx, shot.vy) || 1
+      const mag = Math.sqrt((shot.vx) * (shot.vx) + (shot.vy) * (shot.vy)) || 1
       const ux = shot.vx / mag
       const uy = shot.vy / mag
       const length = 76 * visualScale
@@ -1563,7 +1536,7 @@ export function GradiusRaid({
     const drawSpreadBolt = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
-      const mag = Math.hypot(shot.vx, shot.vy) || 1
+      const mag = Math.sqrt((shot.vx) * (shot.vx) + (shot.vy) * (shot.vy)) || 1
       const ux = shot.vx / mag
       const uy = shot.vy / mag
       const nx = -uy
@@ -1608,7 +1581,7 @@ export function GradiusRaid({
     const drawScatterShard = (shot: Shot) => {
       const x = toX(shot.x)
       const y = toY(shot.y)
-      const mag = Math.hypot(shot.vx, shot.vy) || 1
+      const mag = Math.sqrt((shot.vx) * (shot.vx) + (shot.vy) * (shot.vy)) || 1
       const ux = shot.vx / mag
       const uy = shot.vy / mag
       const nx = -uy
@@ -1826,7 +1799,7 @@ export function GradiusRaid({
       const alpha = Math.min(1, Math.sin(lifeRatio * Math.PI) * 1.25)
       const width = Math.max(42, (shot.radius / WIDTH) * cssWidth * 2.2)
       const coreWidth = Math.max(8, width * 0.22)
-      const length = Math.hypot(cssWidth, cssHeight) * 1.45
+      const length = Math.sqrt((cssWidth) * (cssWidth) + (cssHeight) * (cssHeight)) * 1.45
 
       ctx.save()
       ctx.globalCompositeOperation = 'lighter'
@@ -2825,7 +2798,7 @@ export function GradiusRaid({
     let mesiahRocketsFired = false
     const canFireMesiahRockets = shipKey === 'mesiah' && player.mesiahRocketCooldown <= 0
     const fireBlackCometPulse = (emitter: { x: number; y: number; scale: number }, aim: Vec, radiusScale = 1) => {
-      const mag = Math.hypot(aim.x, aim.y) || 1
+      const mag = Math.sqrt((aim.x) * (aim.x) + (aim.y) * (aim.y)) || 1
       pushShot({
         x: emitter.x,
         y: emitter.y - 3.6,
@@ -2849,7 +2822,7 @@ export function GradiusRaid({
         const target = emitter.target
         if (!target || !emitter.canFire) return
         const aim = { x: target.x - emitter.x, y: target.y - emitter.y }
-        const mag = Math.hypot(aim.x, aim.y) || 1
+        const mag = Math.sqrt((aim.x) * (aim.x) + (aim.y) * (aim.y)) || 1
         pushShot({
           x: emitter.x,
           y: emitter.y - 3.6,
@@ -3048,7 +3021,7 @@ export function GradiusRaid({
       else if (attackShipKey === 'gatling') {
         const target = emitter.target
         const aim = target ? { x: target.x - emitter.x, y: target.y - emitter.y } : { x: 0, y: -1 }
-        const mag = Math.hypot(aim.x, aim.y) || 1
+        const mag = Math.sqrt((aim.x) * (aim.x) + (aim.y) * (aim.y)) || 1
         const shotVx = (aim.x / mag) * 112
         const shotVy = (aim.y / mag) * 112
         const perpX = -(aim.y / mag) * 3.2 * emitter.scale
@@ -3776,7 +3749,7 @@ export function GradiusRaid({
         ;[-15, 15].forEach((offset) => {
           const aimX = player.x - (enemy.x + offset)
           const aimY = player.y - enemy.y
-          const mag = Math.hypot(aimX, aimY) || 1
+          const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset, y: enemy.y + 2, vx: (aimX / mag) * 34, vy: (aimY / mag) * 34, damage: 1, kind: 'squidInk', radius: 1.9 })
         })
       }
@@ -3785,7 +3758,7 @@ export function GradiusRaid({
         ;[-1, 0, 1].forEach((offset) => {
           const aimX = player.x + offset * 5 - enemy.x
           const aimY = player.y - enemy.y
-          const mag = Math.hypot(aimX, aimY) || 1
+          const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset * 4, y: enemy.y + 4, vx: (aimX / mag) * 42 + offset * fangSpread, vy: (aimY / mag) * 42, damage: 1, kind: 'snakeFang', radius: 1.55 })
         })
         ;[-18, 18].forEach((offset) => {
@@ -3824,7 +3797,7 @@ export function GradiusRaid({
         ;[-16, 0, 16].forEach((head, index) => {
           const aimX = player.x - (enemy.x + head)
           const aimY = player.y - enemy.y
-          const mag = Math.hypot(aimX, aimY) || 1
+          const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x + head, y: enemy.y + 8, vx: (aimX / mag) * (28 + index * 3), vy: (aimY / mag) * 30, damage: 1, kind: index === 1 ? 'voidShot' : 'orbShot', radius: index === 1 ? 2 : 1.55 })
         })
       }
@@ -3852,7 +3825,7 @@ export function GradiusRaid({
         ;[-16, 0, 16].forEach((offset, index) => {
           const aimX = player.x + (index - 1) * 3.5 - (enemy.x + offset)
           const aimY = player.y - (enemy.y + 8)
-          const mag = Math.hypot(aimX, aimY) || 1
+          const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
           enemyShotsRef.current.push({
             id: shotId++,
             x: enemy.x + offset,
@@ -3887,7 +3860,7 @@ export function GradiusRaid({
       }
       const aimX = player.x - enemy.x
       const aimY = player.y - enemy.y
-      const mag = Math.hypot(aimX, aimY) || 1
+      const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
       if (kind !== 'orb' && kind !== 'gate' && kind !== 'snake' && kind !== 'squid') {
         enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 38, vy: (aimY / mag) * 38, damage: 1, kind: kind === 'serpent' || kind === 'mantis' ? 'blade' : kind === 'super' ? 'superShot' : kind === 'hydra' ? 'voidShot' : 'boss', radius: 2 })
       }
@@ -3905,13 +3878,13 @@ export function GradiusRaid({
         ;[-7, 7].forEach((offset) => {
           const aimX = player.x - (enemy.x + offset)
           const aimY = player.y - enemy.y
-          const mag = Math.hypot(aimX, aimY) || 1
+          const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset, y: enemy.y + 8, vx: (aimX / mag) * 28, vy: (aimY / mag) * 28, damage: 1, kind: 'voidShot', radius: 1.55 })
         })
       } else if (kind === 'lancer') {
         const aimX = player.x - enemy.x
         const aimY = player.y - enemy.y
-        const mag = Math.hypot(aimX, aimY) || 1
+        const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
         ;[-4, 4].forEach((offset, index) => {
           enemyShotsRef.current.push({ id: shotId++, x: enemy.x + offset, y: enemy.y + 7, vx: (aimX / mag) * 39 + offset * 1.7, vy: (aimY / mag) * 39 + index * 2, damage: 1, kind: 'needle', radius: 1.25 })
         })
@@ -3932,7 +3905,7 @@ export function GradiusRaid({
     if (Math.random() < 0.76) {
       const aimX = player.x - enemy.x
       const aimY = player.y - enemy.y
-      const mag = Math.hypot(aimX, aimY) || 1
+      const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
       enemyShotsRef.current.push({ id: shotId++, x: enemy.x, y: enemy.y + 2, vx: (aimX / mag) * 29, vy: (aimY / mag) * 29, damage: 1, kind: 'enemy', radius: 1.25 })
     }
   }, [])
@@ -4370,8 +4343,8 @@ export function GradiusRaid({
         if (target) {
           const aimX = target.x - shot.x
           const aimY = target.y - shot.y
-          const mag = Math.hypot(aimX, aimY) || 1
-          const speed = Math.max(62, Math.hypot(shot.vx, shot.vy))
+          const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
+          const speed = Math.max(62, Math.sqrt((shot.vx) * (shot.vx) + (shot.vy) * (shot.vy)))
           const turn = Math.min(1, (shot.turn ?? 8) * dt)
           shot.vx += ((aimX / mag) * speed - shot.vx) * turn
           shot.vy += ((aimY / mag) * speed - shot.vy) * turn
@@ -4409,7 +4382,7 @@ export function GradiusRaid({
         const target = getNearestLivingPlayerThisTick(shot)
         const aimX = target.x - shot.x
         const aimY = target.y - shot.y
-        const mag = Math.hypot(aimX, aimY) || 1
+        const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
         const level = shot.splitLevel ?? 0
         const speed = 8.8 + level * 2.9
         const turn = Math.min(1, dt * (1.05 + level * 0.12))
@@ -4667,7 +4640,7 @@ export function GradiusRaid({
               const startY = enemy.y + 10
               const aimX = chargeLane - startX
               const aimY = chargeTargetY - startY
-              const mag = Math.hypot(aimX, aimY) || 1
+              const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
               enemyShotsRef.current.push({
                 id: shotId++,
                 x: startX,
@@ -4859,7 +4832,7 @@ export function GradiusRaid({
               const target = getNearestLivingPlayerThisTick(enemy)
               const aimX = target.x - enemy.x
               const aimY = target.y - (enemy.y + 14)
-              const mag = Math.hypot(aimX, aimY) || 1
+              const mag = Math.sqrt((aimX) * (aimX) + (aimY) * (aimY)) || 1
               enemyShotsRef.current.push({
                 id: shotId++,
                 x: enemy.x,

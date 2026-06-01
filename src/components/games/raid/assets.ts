@@ -563,7 +563,7 @@ export function processSunAsset(image: HTMLImageElement) {
   const radius = Math.min(canvas.width, canvas.height) * 0.39
   const feather = Math.max(10, radius * 0.055)
   return applyAlphaKey(canvas, (red, green, blue, _alpha, x, y) => {
-    const distance = Math.hypot(x - centerX, y - centerY)
+    const distance = Math.sqrt((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY))
     if (distance >= radius) return 0
     if (distance > radius - feather) return (radius - distance) / feather
     const luma = red * 0.299 + green * 0.587 + blue * 0.114
