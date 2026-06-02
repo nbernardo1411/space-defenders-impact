@@ -1220,10 +1220,10 @@ body {
   width: min(960px, 100%);
 }
 
-.mode-screen__back {
+.mode-screen__back,
+.mode-screen__utility {
   position: absolute;
   top: 16px;
-  right: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1237,6 +1237,14 @@ body {
   cursor: pointer;
   white-space: nowrap;
   z-index: 2;
+}
+
+.mode-screen__back {
+  right: 16px;
+}
+
+.mode-screen__utility {
+  left: 16px;
 }
 
 .mode-screen__eyebrow {
@@ -1361,7 +1369,33 @@ body {
   color: #eefcff;
 }
 
-.result-overlay__panel > span,
+.result-overlay--victory .result-overlay__panel {
+  border-color: rgba(110, 245, 203, 0.58);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.55),
+    0 0 42px rgba(110, 245, 203, 0.16);
+}
+
+.result-overlay--gameover .result-overlay__panel {
+  border-color: rgba(248, 113, 113, 0.5);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(248, 113, 113, 0.14), transparent 32%),
+    linear-gradient(145deg, rgba(22, 9, 18, 0.98), rgba(5, 10, 22, 0.98));
+}
+
+.result-overlay__hero {
+  display: grid;
+  gap: 5px;
+  padding: 4px 0 2px;
+}
+
+.result-overlay__hero p {
+  margin: 0;
+  color: #c7d9e6;
+  font-weight: 800;
+}
+
+.result-overlay__hero > span,
 .result-overlay__unlocks h3,
 .result-overlay__pilots h3 {
   margin: 0;
@@ -1372,11 +1406,12 @@ body {
   text-transform: uppercase;
 }
 
-.result-overlay__panel h2 {
+.result-overlay__hero h2 {
   margin: 0;
   font-size: clamp(2rem, 7vw, 4rem);
   line-height: 0.96;
   letter-spacing: 0;
+  text-shadow: 0 0 28px rgba(110, 245, 203, 0.2);
 }
 
 .result-overlay__stats {
@@ -1511,6 +1546,12 @@ body {
   font-weight: 800;
 }
 
+.result-overlay__missions span {
+  border-color: rgba(251, 191, 36, 0.36);
+  background: rgba(251, 191, 36, 0.12);
+  color: #fff7d6;
+}
+
 .result-overlay__unlocks p {
   margin: 0;
   color: #aebfd0;
@@ -1629,7 +1670,7 @@ body {
 
 .leaderboards-screen__modes {
   display: grid;
-  grid-template-columns: repeat(5, minmax(136px, 1fr));
+  grid-template-columns: repeat(6, minmax(132px, 1fr));
   gap: 7px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -1792,7 +1833,7 @@ body {
 }
 
 .mode-screen__actions--raid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .mode-screen__actions--coop {
@@ -1966,6 +2007,14 @@ body {
 .mode-screen__button--endless {
   border-color: rgba(248, 113, 113, 0.42);
   box-shadow: inset 0 0 22px rgba(239, 35, 60, 0.12), 0 0 26px rgba(239, 35, 60, 0.08);
+}
+
+.mode-screen__button--boss-rush {
+  border-color: rgba(251, 191, 36, 0.48);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(251, 191, 36, 0.14), transparent 42%),
+    rgba(15, 23, 42, 0.92);
+  box-shadow: inset 0 0 22px rgba(251, 191, 36, 0.12), 0 0 26px rgba(251, 191, 36, 0.08);
 }
 
 .raid-lobby__grid {
@@ -2258,13 +2307,21 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .mode-screen__back {
+  .mode-screen__back,
+  .mode-screen__utility {
     position: absolute;
     top: 14px;
-    right: 14px;
     margin-bottom: 0;
     min-width: 76px;
     padding: 9px 12px;
+  }
+
+  .mode-screen__back {
+    right: 14px;
+  }
+
+  .mode-screen__utility {
+    left: 14px;
   }
 
   .mode-screen__button,
@@ -2472,7 +2529,7 @@ body {
   }
 
   .leaderboards-screen__modes {
-    grid-template-columns: repeat(5, minmax(132px, 1fr));
+    grid-template-columns: repeat(6, minmax(128px, 1fr));
   }
 
   .leaderboards-screen__row {

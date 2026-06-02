@@ -89,6 +89,9 @@ export const TEXT = {
       endless: 'Endless Mode',
       startEndless: 'Start Endless Raid',
       endlessLocked: 'Clear Raid To Unlock',
+      bossRush: 'Boss Rush',
+      startBossRush: 'Start Boss Rush',
+      bossRushLocked: 'Clear Raid To Unlock',
       twoPlayers: 'Two Players',
       multiplayer: 'Multiplayer',
     },
@@ -110,6 +113,7 @@ export const TEXT = {
         ship_defense_endless: { title: 'Ship Defense', label: 'Endless', description: 'Highest survival scores.' },
         gradius_solo: { title: 'Gradius Raid', label: 'Solo', description: 'Top solo pilot assault runs.' },
         gradius_endless: { title: 'Gradius Raid', label: 'Endless Flight', description: 'Longest Endless Flight survival runs.' },
+        gradius_boss_rush: { title: 'Gradius Raid', label: 'Boss Rush', description: 'Boss-only chain assault scores.' },
         gradius_multiplayer: { title: 'Gradius Raid', label: 'Co-op', description: 'Top two-pilot raid scores.' },
       },
     },
@@ -767,6 +771,7 @@ export const RAID_TEXT = {
       loadingAssetsReady: 'Ready to launch',
 
       restartEndless: 'Restart Endless',
+      restartBossRush: 'Restart Boss Rush',
       mobileFollowsFinger: 'Mobile follows above finger',
       continueStage: 'Continue Stage',
       selectStage: 'Select Stage',
@@ -775,6 +780,7 @@ export const RAID_TEXT = {
       restartStage1: 'Restart Stage 1',
       startRaid: 'Start Raid',
       startEndlessRaid: 'Start Endless Raid',
+      startBossRushRaid: 'Start Boss Rush',
       exitCoop: 'Exit Co-op',
       difficulty: 'Difficulty',
       selectDifficulty: 'Select Difficulty',
@@ -1685,10 +1691,17 @@ export const RELEASE_TEXT = {
     complete: 'Complete',
     incomplete: 'Incomplete',
     profile: 'Profile',
+    missions: 'Missions',
     achievements: 'Achievements',
     codex: 'Codex',
     stageMap: 'Almanac',
     results: 'Run Results',
+    combatReport: 'Combat Report',
+    performance: 'Performance',
+    duration: 'Duration',
+    difficulty: 'Difficulty',
+    missionsCompleted: 'Missions Completed',
+    mvpPilot: 'MVP Pilot',
     continue: 'Continue',
     playAgain: 'Play Again',
     commander: 'Commander',
@@ -1763,6 +1776,32 @@ export const RELEASE_TEXT = {
       normalNames: ['Rift Skitter', 'Void Pincer', 'Glassback Drone', 'Ember Stinger', 'Azure Needler', 'Thorn Mantis', 'Spectral Leech', 'Obsidian Impaler'],
       eliteNames: ['Crimson Stalker', 'Brood Sentinel', 'Lance Reaver', 'Violet Harrier', 'Orbital Shard'],
     },
+    missionsBoard: {
+      kicker: 'Live Contracts',
+      title: 'Mission Board',
+      copy: 'Daily and weekly raid contracts reward clean runs, boss breaks, supply control, and high-risk sorties.',
+      daily: 'Daily Contracts',
+      weekly: 'Weekly Contracts',
+      dailyCallsign: 'Daily',
+      weeklyCallsign: 'Weekly',
+    },
+    missionsMap: {
+      daily_raid_sortie: { title: 'Launch Window', desc: 'Finish any Gradius Raid operation today.' },
+      daily_boss_break: { title: 'Boss Break Order', desc: 'Defeat at least one boss in a raid run today.' },
+      daily_supply_sweep: { title: 'Supply Sweep', desc: 'Collect six pickups in one raid operation.' },
+      daily_weapon_cache: { title: 'Weapon Cache', desc: 'Collect ten pickups before extraction today.' },
+      daily_clean_reactor: { title: 'Clean Reactor', desc: 'Reach the first boss checkpoint without using a nuke.' },
+      daily_no_nuke_sortie: { title: 'Cold Payload', desc: 'Finish a raid sortie without launching a nuke.' },
+      daily_nuke_strike: { title: 'Nuke Authorization', desc: 'Use at least one nuke in a raid operation today.' },
+      daily_coop_link: { title: 'Wingman Link', desc: 'Record any co-op Gradius Raid sortie.' },
+      daily_endless_probe: { title: 'Deep Probe', desc: 'Reach stage 8 in Endless Flight today.' },
+      daily_boss_rush_drill: { title: 'Rush Drill', desc: 'Record any Boss Rush operation today.' },
+      daily_score_push: { title: 'Score Surge', desc: 'Score 50,000 or more in one raid operation.' },
+      daily_stage_surge: { title: 'Forward Surge', desc: 'Reach stage 10 or deeper in any raid operation.' },
+      weekly_boss_rush_clear: { title: 'Rush Chain Clear', desc: 'Clear the Boss Rush protocol this week.' },
+      weekly_endless_push: { title: 'Deep Flight Push', desc: 'Reach stage 15 in Endless Flight this week.' },
+      weekly_expert_contract: { title: 'Ace Contract', desc: 'Win a Hard or Expert raid operation this week.' },
+    },
     achievementsMap: {
       first_sortie: { title: 'First Sortie', desc: 'Finish any run.' },
       defense_clear: { title: 'Earth Line Holder', desc: 'Clear Ship Defense normal campaign.' },
@@ -1796,6 +1835,10 @@ export const RELEASE_TEXT = {
       score_legend: { title: 'Score Legend', desc: 'Earn 500,000 total score.' },
       score_mythic: { title: 'Mythic Score Signal', desc: 'Earn 2,500,000 total score.' },
       score_transcendent: { title: 'Transcendent Score Core', desc: 'Earn 10,000,000 total score.' },
+      boss_rush_launch: { title: 'Boss Rush Initiate', desc: 'Record a Boss Rush score.' },
+      boss_rush_clear: { title: 'Checkpoint Reaper', desc: 'Clear the Boss Rush protocol.' },
+      boss_rush_no_nuke: { title: 'Clean Rush Reactor', desc: 'Clear Boss Rush without using a nuke.' },
+      boss_rush_expert: { title: 'Expert Rush Chain', desc: 'Clear Boss Rush on Hard or Expert.' },
       raid_hard_clear: { title: 'Hardline Fortress Clear', desc: 'Clear Gradius Raid on Hard or Expert.' },
       raid_expert_clear: { title: 'Expert Vector Clear', desc: 'Clear Gradius Raid on Expert.' },
       expert_clean_reactor: { title: 'Expert Clean Reactor', desc: 'Clear Expert Gradius Raid without using a nuke.' },
@@ -1888,6 +1931,8 @@ export const RELEASE_TEXT = {
       nuke_failsafe: { title: 'Nuke Failsafe', desc: 'Cooldown and safety rules for repeated strategic strikes.' },
       coop_link: { title: 'Co-op Link', desc: 'Networked wingman operations and shared Gradius Raid score records.' },
       raid_events: { title: 'Raid Events', desc: 'Asteroids, rifts, wrecks, and other hazards that interrupt deep-space routes.' },
+      boss_rush_protocol: { title: 'Boss Rush Protocol', desc: 'A condensed raid route that chains the stage 5, 10, and 15 boss threats.' },
+      mission_contracts: { title: 'Mission Contracts', desc: 'Daily and weekly command objectives used to push cleaner, riskier sorties.' },
     },
   },
   zh: {
@@ -2543,20 +2588,70 @@ export const RELEASE_TEXT = {
   },
 } as const
 
-export function getLanguageText(language: LanguageCode) {
-  return TEXT[language] ?? TEXT.en
+export function getLanguageText(language: LanguageCode): LanguageText {
+  const selected = TEXT[language] ?? TEXT.en
+  return {
+    ...TEXT.en,
+    ...selected,
+    rocketMode: {
+      ...TEXT.en.rocketMode,
+      ...selected.rocketMode,
+    },
+    leaderboards: {
+      ...TEXT.en.leaderboards,
+      ...selected.leaderboards,
+      modes: {
+        ...TEXT.en.leaderboards.modes,
+        ...selected.leaderboards.modes,
+      },
+    },
+  } as LanguageText
 }
 
-export function getRaidText(language: LanguageCode) {
-  return RAID_TEXT[language] ?? RAID_TEXT.en
+export function getRaidText(language: LanguageCode): typeof RAID_TEXT.en {
+  const selected = RAID_TEXT[language] ?? RAID_TEXT.en
+  return {
+    ...RAID_TEXT.en,
+    ...selected,
+    menu: {
+      ...RAID_TEXT.en.menu,
+      ...selected.menu,
+    },
+  } as typeof RAID_TEXT.en
 }
 
 export function getDefenseText(language: LanguageCode) {
   return DEFENSE_TEXT[language] ?? DEFENSE_TEXT.en
 }
 
-export function getReleaseText(language: LanguageCode) {
-  return RELEASE_TEXT[language] ?? RELEASE_TEXT.en
+export function getReleaseText(language: LanguageCode): typeof RELEASE_TEXT.en {
+  const selected = RELEASE_TEXT[language] ?? RELEASE_TEXT.en
+  const partial = selected as Partial<typeof RELEASE_TEXT.en>
+
+  return {
+    ...RELEASE_TEXT.en,
+    ...selected,
+    enemyAlmanac: {
+      ...RELEASE_TEXT.en.enemyAlmanac,
+      ...selected.enemyAlmanac,
+    },
+    missionsBoard: {
+      ...RELEASE_TEXT.en.missionsBoard,
+      ...(partial.missionsBoard ?? {}),
+    },
+    missionsMap: {
+      ...RELEASE_TEXT.en.missionsMap,
+      ...(partial.missionsMap ?? {}),
+    },
+    achievementsMap: {
+      ...RELEASE_TEXT.en.achievementsMap,
+      ...selected.achievementsMap,
+    },
+    codexMap: {
+      ...RELEASE_TEXT.en.codexMap,
+      ...selected.codexMap,
+    },
+  } as typeof RELEASE_TEXT.en
 }
 
 export function getInitialLanguage(): LanguageCode {

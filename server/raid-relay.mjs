@@ -4,7 +4,7 @@ import pg from 'pg'
 
 const PORT = Number(process.env.PORT || 8787)
 const MAX_PAYLOAD_BYTES = 256 * 1024
-const LEADERBOARD_MODES = ['ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_endless', 'gradius_multiplayer']
+const LEADERBOARD_MODES = ['ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_endless', 'gradius_boss_rush', 'gradius_multiplayer']
 const LEADERBOARD_MODE_SET = new Set(LEADERBOARD_MODES)
 const API_BODY_LIMIT_BYTES = 128 * 1024
 const DATABASE_URL = process.env.DATABASE_URL || ''
@@ -333,7 +333,7 @@ async function ensureLeaderboardSchema() {
     leaderboardSchemaPromise = leaderboardPool.query(`
       CREATE TABLE IF NOT EXISTS leaderboard_scores (
         id BIGSERIAL PRIMARY KEY,
-        mode TEXT NOT NULL CHECK (mode IN ('ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_endless', 'gradius_multiplayer')),
+        mode TEXT NOT NULL CHECK (mode IN ('ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_endless', 'gradius_boss_rush', 'gradius_multiplayer')),
         player_name TEXT NOT NULL,
         score INTEGER NOT NULL CHECK (score >= 0),
         ship_key TEXT,
@@ -342,7 +342,7 @@ async function ensureLeaderboardSchema() {
       );
       ALTER TABLE leaderboard_scores DROP CONSTRAINT IF EXISTS leaderboard_scores_mode_check;
       ALTER TABLE leaderboard_scores ADD CONSTRAINT leaderboard_scores_mode_check
-        CHECK (mode IN ('ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_endless', 'gradius_multiplayer'));
+        CHECK (mode IN ('ship_defense_normal', 'ship_defense_endless', 'gradius_solo', 'gradius_endless', 'gradius_boss_rush', 'gradius_multiplayer'));
       CREATE INDEX IF NOT EXISTS leaderboard_scores_mode_score_idx
         ON leaderboard_scores (mode, score DESC, created_at ASC);
       CREATE UNIQUE INDEX IF NOT EXISTS leaderboard_scores_mode_player_idx

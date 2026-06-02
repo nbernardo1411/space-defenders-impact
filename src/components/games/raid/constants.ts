@@ -20,6 +20,25 @@ export const MAX_RAID_STAGE = 15
 
 export const RAID_CHECKPOINTS = [5, 10, 14] as const
 
+export const BOSS_RUSH_STAGES = [5, 10, 15] as const
+
+export const BOSS_RUSH_ATTACK_COOLDOWN_SCALE = 0.72
+
+export const BOSS_RUSH_SPECIAL_RECHARGE_SCALE = 1.32
+
+export const BOSS_RUSH_MOTION_SCALE = 1.18
+
+export const BOSS_RUSH_ENTRY_SPEED_SCALE = 1.2
+
+export function getBossRushStage(startStage: number) {
+  const requestedStage = Math.floor(startStage)
+  return (BOSS_RUSH_STAGES as readonly number[]).includes(requestedStage) ? requestedStage : BOSS_RUSH_STAGES[0]
+}
+
+export function getNextBossRushStage(stage: number) {
+  return BOSS_RUSH_STAGES.find((bossStage) => bossStage > stage) ?? null
+}
+
 export const STORAGE_KEY = 'gradiusRaidHighScore'
 
 export const RAID_UNLOCK_STORAGE_KEY = 'gradiusRaidUnlockedStage'

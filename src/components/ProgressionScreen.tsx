@@ -12,10 +12,14 @@ import {
   setMesiahShipColor,
   setShipCosmeticEquipped,
   CORE_LANDER_GOD_GUNDAM_UNLOCK_SCORE,
+  getActiveMissionDefinitions,
   SHIP_COSMETIC_SINGLE_RUN_SCORE,
   SHIP_COSMETIC_TOTAL_SCORE,
+  isMissionComplete,
   type AchievementId,
   type CodexId,
+  type MissionDefinition,
+  type MissionId,
   type ProgressState,
   type ShipMasteryRecord,
   type ShipCosmeticEquipState,
@@ -29,7 +33,7 @@ import { getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, getRaidShipSpriteUrl, RAI
 import { getPublicAssetUrl } from './games/sound'
 import './ProgressionScreen.css'
 
-type ProgressionView = 'profile' | 'achievements' | 'codex' | 'stageMap'
+type ProgressionView = 'profile' | 'missions' | 'achievements' | 'codex' | 'stageMap'
 type UnlockTab = 'raid' | 'defense'
 type UnlockTabEntry = {
   key: UnlockTab
@@ -199,6 +203,10 @@ const RAID_ACHIEVEMENT_IDS: AchievementId[] = [
   'raid_endless_deep_space',
   'raid_endless_void_cartographer',
   'raid_endless_boss_hunter',
+  'boss_rush_launch',
+  'boss_rush_clear',
+  'boss_rush_no_nuke',
+  'boss_rush_expert',
   'devil_contact',
   'devil_breaker',
   'devil_clean_break',
@@ -284,6 +292,8 @@ const RAID_CODEX_IDS: CodexId[] = [
   'nuke_failsafe',
   'coop_link',
   'raid_events',
+  'boss_rush_protocol',
+  'mission_contracts',
 ]
 
 export function ProgressionScreen({
@@ -510,6 +520,10 @@ export function ProgressionScreen({
           />
         )}
 
+        {view === 'missions' && (
+          <MissionBoard text={text} progress={progress} />
+        )}
+
         {view === 'codex' && (
           <UnlockTabbedSections
             activeTab={activeUnlockTab}
@@ -722,6 +736,79 @@ function getUnlockedCount<TId extends AchievementId | CodexId>(ids: TId[], unloc
   return ids.filter((id) => unlockedMap[id]).length
 }
 
+function MissionBoard({ text, progress }: { text: ReturnType<typeof getReleaseText>; progress: ProgressState }) {
+  const activeMissions = getActiveMissionDefinitions()
+  const dailyMissions = activeMissions.filter((mission) => mission.cadence === 'daily')
+  const weeklyMissions = activeMissions.filter((mission) => mission.cadence === 'weekly')
+  const completedCount = activeMissions.filter((mission) => isMissionComplete(progress, mission.id)).length
+
+  return (
+    <section className="mission-board" aria-labelledby="mission-board-title">
+      <header className="mission-board__header">
+        <span>{text.missionsBoard.kicker}</span>
+        <h2 id="mission-board-title">{text.missionsBoard.title}</h2>
+        <p>{text.missionsBoard.copy}</p>
+        <b>{completedCount}/{activeMissions.length}</b>
+      </header>
+      <MissionGroup title={text.missionsBoard.daily} missions={dailyMissions} text={text} progress={progress} />
+      <MissionGroup title={text.missionsBoard.weekly} missions={weeklyMissions} text={text} progress={progress} />
+    </section>
+  )
+}
+
+function MissionGroup({
+  title,
+  missions,
+  text,
+  progress,
+}: {
+  title: string
+  missions: MissionDefinition[]
+  text: ReturnType<typeof getReleaseText>
+  progress: ProgressState
+}) {
+  return (
+    <section className="mission-board__group">
+      <header>
+        <span>{title}</span>
+      </header>
+      <div className="mission-board__grid">
+        {missions.map((mission) => {
+          const copy = text.missionsMap[mission.id]
+          const complete = isMissionComplete(progress, mission.id)
+          return (
+            <article key={mission.id} className={complete ? 'mission-card mission-card--complete' : 'mission-card'}>
+              <div className="mission-card__badge" aria-hidden="true">
+                <span>{getMissionBadgeLabel(mission.id)}</span>
+              </div>
+              <div className="mission-card__body">
+                <span>{mission.cadence === 'daily' ? text.missionsBoard.dailyCallsign : text.missionsBoard.weeklyCallsign}</span>
+                <strong>{copy.title}</strong>
+                <p>{copy.desc}</p>
+              </div>
+              <b>{complete ? text.complete : text.incomplete}</b>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function getMissionBadgeLabel(id: MissionId) {
+  if (id.includes('boss')) return 'B'
+  if (id.includes('supply')) return '+'
+  if (id.includes('weapon')) return 'W'
+  if (id.includes('clean')) return '0'
+  if (id.includes('nuke')) return 'N'
+  if (id.includes('coop')) return '2P'
+  if (id.includes('endless')) return 'E'
+  if (id.includes('expert')) return 'EX'
+  if (id.includes('score')) return 'S'
+  if (id.includes('stage')) return 'ST'
+  return 'R'
+}
+
 function UnlockSection<TId extends AchievementId | CodexId>({
   title,
   ids,
@@ -874,6 +961,10 @@ const UNLOCK_BADGE_OVERRIDES: Partial<Record<AchievementId | CodexId, UnlockBadg
   raid_score_vanguard: { tone: 'score', mark: 'trophy', label: '75K', asset: BADGE_ASSETS.redWraith, assetKind: 'ship' },
   raid_score_overlord: { tone: 'score', mark: 'trophy', label: '150K', asset: BADGE_ASSETS.finalBoss, assetKind: 'boss' },
   raid_expert_ace: { tone: 'score', mark: 'trophy', label: 'EX+', asset: BADGE_ASSETS.nightLance, assetKind: 'ship' },
+  boss_rush_launch: { tone: 'boss', mark: 'target', label: 'BR', asset: BADGE_ASSETS.squid, assetKind: 'boss' },
+  boss_rush_clear: { tone: 'boss', mark: 'target', label: 'BR3', asset: BADGE_ASSETS.finalBoss, assetKind: 'boss' },
+  boss_rush_no_nuke: { tone: 'nuke', mark: 'shield', label: 'BR0', asset: BADGE_ASSETS.cobra, assetKind: 'boss' },
+  boss_rush_expert: { tone: 'boss', mark: 'trophy', label: 'BRX', asset: BADGE_ASSETS.finalBoss, assetKind: 'boss' },
   devil_contact: { tone: 'boss', mark: 'cell', label: 'DG', asset: BADGE_ASSETS.devil, assetKind: 'boss' },
   devil_breaker: { tone: 'boss', mark: 'target', label: 'DGK', asset: BADGE_ASSETS.devil, assetKind: 'boss' },
   devil_clean_break: { tone: 'nuke', mark: 'shield', label: 'DG0', asset: BADGE_ASSETS.devil, assetKind: 'boss' },
@@ -967,6 +1058,8 @@ const UNLOCK_BADGE_OVERRIDES: Partial<Record<AchievementId | CodexId, UnlockBadg
   nuke_failsafe: { tone: 'nuke', mark: 'shield', label: 'SAFE' },
   coop_link: { tone: 'coop', mark: 'link', label: 'LINK' },
   raid_events: { tone: 'raid', mark: 'map', label: 'EVT' },
+  boss_rush_protocol: { tone: 'boss', mark: 'target', label: 'BR', asset: BADGE_ASSETS.finalBoss, assetKind: 'boss' },
+  mission_contracts: { tone: 'codex', mark: 'archive', label: 'CTR' },
 }
 
 const UNLOCK_BADGE_TIERS: Partial<Record<AchievementId | CodexId, UnlockBadgeTier>> = {
@@ -994,6 +1087,10 @@ const UNLOCK_BADGE_TIERS: Partial<Record<AchievementId | CodexId, UnlockBadgeTie
   raid_score_vanguard: 'advanced',
   raid_score_overlord: 'legendary',
   raid_expert_ace: 'legendary',
+  boss_rush_launch: 'advanced',
+  boss_rush_clear: 'elite',
+  boss_rush_no_nuke: 'legendary',
+  boss_rush_expert: 'mythic',
   devil_contact: 'elite',
   devil_breaker: 'legendary',
   devil_clean_break: 'mythic',
@@ -1046,6 +1143,8 @@ const UNLOCK_BADGE_TIERS: Partial<Record<AchievementId | CodexId, UnlockBadgeTie
   god_barrage_art: 'legendary',
   spiegel_mirage_system: 'legendary',
   deep_endless_chart: 'elite',
+  boss_rush_protocol: 'elite',
+  mission_contracts: 'advanced',
 }
 
 function UnlockBadge({ badge, unlocked }: { badge: UnlockBadgeDef; unlocked: boolean }) {
@@ -1300,6 +1399,7 @@ function getRaidBestStage(progress: ProgressState) {
 
 function getViewTitle(view: ProgressionView, text: ReturnType<typeof getReleaseText>) {
   if (view === 'profile') return text.profile
+  if (view === 'missions') return text.missions
   if (view === 'achievements') return text.achievements
   if (view === 'stageMap') return text.stageMap
   return text.codex

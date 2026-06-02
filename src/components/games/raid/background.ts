@@ -133,6 +133,17 @@ type WorldCloudLayer = {
   drift: number
 }
 
+type WorldIslandLayer = {
+  asset: RaidOtherAssetKey
+  x: number
+  ySeed: number
+  size: number
+  alpha: number
+  rotation: number
+  drift: number
+  singlePass?: boolean
+}
+
 const WATERY_WORLD_CLOUD_LAYERS: WorldCloudLayer[] = [
   { asset: 'clouds2', band: 'low', x: 0.2, ySeed: 0.08, speed: 0.027, width: 0.88, height: 0.34, alpha: 0.68, rotation: -6 * DEG, drift: 0.038 },
   { asset: 'clouds', band: 'low', x: 0.78, ySeed: 0.3, speed: 0.024, width: 0.76, height: 0.3, alpha: 0.62, rotation: 8 * DEG, drift: 0.03 },
@@ -143,21 +154,16 @@ const WATERY_WORLD_CLOUD_LAYERS: WorldCloudLayer[] = [
 
 const WATERY_WORLD_ISLAND_SCROLL_SPEED = 0.024
 
-const WATERY_WORLD_ISLAND_LAYERS: Array<{
-  asset: RaidOtherAssetKey
-  x: number
-  ySeed: number
-  size: number
-  alpha: number
-  rotation: number
-  drift: number
-}> = [
-  { asset: 'island', x: 0.28, ySeed: 0.1, size: 0.27, alpha: 0.58, rotation: -8 * DEG, drift: 0.024 },
-  { asset: 'island2', x: 0.73, ySeed: 0.35, size: 0.22, alpha: 0.5, rotation: 13 * DEG, drift: 0.018 },
-  { asset: 'island3', x: 0.48, ySeed: 0.58, size: 0.29, alpha: 0.5, rotation: 4 * DEG, drift: 0.02 },
-  { asset: 'island', x: 0.84, ySeed: 0.78, size: 0.24, alpha: 0.44, rotation: -12 * DEG, drift: 0.017 },
-  { asset: 'island2', x: 0.14, ySeed: 0.9, size: 0.19, alpha: 0.42, rotation: -18 * DEG, drift: 0.016 },
+const WATERY_WORLD_ISLAND_LAYERS: WorldIslandLayer[] = [
+  { asset: 'octiIsland', x: 0.55, ySeed: 0.08, size: 0.46, alpha: 0.56, rotation: 2 * DEG, drift: 0, singlePass: true },
+  { asset: 'island', x: 0.18, ySeed: 0.31, size: 0.24, alpha: 0.58, rotation: -8 * DEG, drift: 0 },
+  { asset: 'island2', x: 0.78, ySeed: 0.47, size: 0.2, alpha: 0.5, rotation: 13 * DEG, drift: 0 },
+  { asset: 'island3', x: 0.39, ySeed: 0.64, size: 0.27, alpha: 0.5, rotation: 4 * DEG, drift: 0 },
+  { asset: 'island', x: 0.86, ySeed: 0.79, size: 0.21, alpha: 0.44, rotation: -12 * DEG, drift: 0 },
+  { asset: 'island2', x: 0.12, ySeed: 0.92, size: 0.18, alpha: 0.42, rotation: -18 * DEG, drift: 0 },
 ]
+
+const WATERY_WORLD_ISLAND_TRAVEL_SIZE = Math.max(...WATERY_WORLD_ISLAND_LAYERS.map((layer) => layer.size))
 
 const VOLCANIC_WORLD_CLOUD_LAYERS: WorldCloudLayer[] = [
   { asset: 'volcanicClouds2', band: 'low', x: 0.22, ySeed: 0.1, speed: 0.028, width: 0.9, height: 0.34, alpha: 0.64, rotation: -5 * DEG, drift: 0.034 },
@@ -169,21 +175,16 @@ const VOLCANIC_WORLD_CLOUD_LAYERS: WorldCloudLayer[] = [
 
 const VOLCANIC_WORLD_ISLAND_SCROLL_SPEED = 0.024
 
-const VOLCANIC_WORLD_ISLAND_LAYERS: Array<{
-  asset: RaidOtherAssetKey
-  x: number
-  ySeed: number
-  size: number
-  alpha: number
-  rotation: number
-  drift: number
-}> = [
-  { asset: 'volcano', x: 0.3, ySeed: 0.08, size: 0.34, alpha: 0.68, rotation: -6 * DEG, drift: 0.022 },
-  { asset: 'volcano2', x: 0.74, ySeed: 0.34, size: 0.28, alpha: 0.58, rotation: 10 * DEG, drift: 0.018 },
-  { asset: 'volcano3', x: 0.48, ySeed: 0.6, size: 0.31, alpha: 0.62, rotation: 4 * DEG, drift: 0.02 },
-  { asset: 'volcano', x: 0.86, ySeed: 0.8, size: 0.24, alpha: 0.48, rotation: -13 * DEG, drift: 0.016 },
-  { asset: 'volcano2', x: 0.14, ySeed: 0.92, size: 0.2, alpha: 0.44, rotation: 16 * DEG, drift: 0.014 },
+const VOLCANIC_WORLD_ISLAND_LAYERS: WorldIslandLayer[] = [
+  { asset: 'snakeVolcano', x: 0.54, ySeed: 0.08, size: 0.5, alpha: 0.64, rotation: -2 * DEG, drift: 0, singlePass: true },
+  { asset: 'volcano', x: 0.2, ySeed: 0.32, size: 0.31, alpha: 0.68, rotation: -6 * DEG, drift: 0 },
+  { asset: 'volcano2', x: 0.8, ySeed: 0.47, size: 0.25, alpha: 0.58, rotation: 10 * DEG, drift: 0 },
+  { asset: 'volcano3', x: 0.4, ySeed: 0.64, size: 0.29, alpha: 0.62, rotation: 4 * DEG, drift: 0 },
+  { asset: 'volcano', x: 0.87, ySeed: 0.79, size: 0.22, alpha: 0.48, rotation: -13 * DEG, drift: 0 },
+  { asset: 'volcano2', x: 0.13, ySeed: 0.92, size: 0.18, alpha: 0.44, rotation: 16 * DEG, drift: 0 },
 ]
+
+const VOLCANIC_WORLD_ISLAND_TRAVEL_SIZE = Math.max(...VOLCANIC_WORLD_ISLAND_LAYERS.map((layer) => layer.size))
 
 export const BACKGROUND_SPEED_LINES = [
   { x: 0.11, length: 170, width: 2, delay: -0.2, color: 'streak' },
@@ -1310,25 +1311,26 @@ export class PixiRaidBackground {
 
   private updateWateryWorldAssetSprites(width: number, height: number, seconds: number, quality: GraphicsQuality) {
     const islandCount = quality === 'medium' ? 3 : WATERY_WORLD_ISLAND_LAYERS.length
+    const islandTravelSize = Math.min(width, height) * WATERY_WORLD_ISLAND_TRAVEL_SIZE
     for (let index = 0; index < WATERY_WORLD_ISLAND_LAYERS.length; index += 1) {
       const layer = WATERY_WORLD_ISLAND_LAYERS[index]
       const texture = this.assetTextures.get(layer.asset)
       const visible = Boolean(texture && index < islandCount)
       const drawSize = Math.min(width, height) * layer.size
-      const x = width * layer.x + Math.sin(seconds * 0.16 + index * 2.2) * width * layer.drift
-      const baseY = getWaterySurfaceLayerY(seconds, height, WATERY_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
+      const x = width * layer.x
+      const baseY = getWaterySurfaceLayerY(seconds, height, WATERY_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, islandTravelSize)
       for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
         const sprite = this.wateryIslandSprites[getWorldSurfaceSpriteIndex(index, tileIndex)]
-        if (!texture || !visible) {
+        if (!texture || !visible || (layer.singlePass && WORLD_SURFACE_TILE_OFFSETS[tileIndex] !== 0)) {
           sprite.visible = false
           continue
         }
-        const y = getWorldSurfaceCopyY(baseY, height, drawSize, tileIndex)
+        const y = getWorldSurfaceCopyY(baseY, height, islandTravelSize, tileIndex)
         if (!isWorldSurfaceCopyVisible(y, height, drawSize)) {
           sprite.visible = false
           continue
         }
-        setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation + Math.sin(seconds * 0.05 + index) * 2 * DEG)
+        setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation)
         sprite.tint = 0xd8c8ff
       }
     }
@@ -1361,25 +1363,26 @@ export class PixiRaidBackground {
 
   private updateVolcanicWorldAssetSprites(width: number, height: number, seconds: number, quality: GraphicsQuality) {
     const islandCount = quality === 'medium' ? 3 : VOLCANIC_WORLD_ISLAND_LAYERS.length
+    const islandTravelSize = Math.min(width, height) * VOLCANIC_WORLD_ISLAND_TRAVEL_SIZE
     for (let index = 0; index < VOLCANIC_WORLD_ISLAND_LAYERS.length; index += 1) {
       const layer = VOLCANIC_WORLD_ISLAND_LAYERS[index]
       const texture = this.assetTextures.get(layer.asset)
       const visible = Boolean(texture && index < islandCount)
       const drawSize = Math.min(width, height) * layer.size
-      const x = width * layer.x + Math.sin(seconds * 0.15 + index * 2.1) * width * layer.drift
-      const baseY = getWaterySurfaceLayerY(seconds, height, VOLCANIC_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, drawSize)
+      const x = width * layer.x
+      const baseY = getWaterySurfaceLayerY(seconds, height, VOLCANIC_WORLD_ISLAND_SCROLL_SPEED, layer.ySeed, islandTravelSize)
       for (let tileIndex = 0; tileIndex < WORLD_SURFACE_TILE_OFFSETS.length; tileIndex += 1) {
         const sprite = this.volcanicIslandSprites[getWorldSurfaceSpriteIndex(index, tileIndex)]
-        if (!texture || !visible) {
+        if (!texture || !visible || (layer.singlePass && WORLD_SURFACE_TILE_OFFSETS[tileIndex] !== 0)) {
           sprite.visible = false
           continue
         }
-        const y = getWorldSurfaceCopyY(baseY, height, drawSize, tileIndex)
+        const y = getWorldSurfaceCopyY(baseY, height, islandTravelSize, tileIndex)
         if (!isWorldSurfaceCopyVisible(y, height, drawSize)) {
           sprite.visible = false
           continue
         }
-        setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation + Math.sin(seconds * 0.05 + index) * 1.6 * DEG)
+        setPixiSpriteContain(sprite, texture, x, y, drawSize, drawSize, layer.alpha, layer.rotation)
         sprite.tint = 0xffd6c0
       }
     }

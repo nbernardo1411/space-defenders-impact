@@ -17,7 +17,7 @@ export type MiniBossKind = 'stalker' | 'brood' | 'lancer'
 
 export type RaidBgmMode = 'cruise' | 'combat' | 'boss' | 'ending'
 
-export type RaidMode = 'campaign' | 'endless'
+export type RaidMode = 'campaign' | 'endless' | 'bossRush'
 
 export type RaidDifficulty = 'easy' | 'normal' | 'hard' | 'expert'
 

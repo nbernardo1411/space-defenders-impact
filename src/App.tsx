@@ -48,13 +48,13 @@ const CUTSCENE_SCENES = [
   },
 ] as const
 
-type ProgressionView = 'profile' | 'achievements' | 'codex' | 'stageMap'
+type ProgressionView = 'profile' | 'missions' | 'achievements' | 'codex' | 'stageMap'
 type ScreenState = 'title' | 'cutscene' | 'game' | 'rocketMode' | 'raidCoopMode' | 'raidSameScreenBriefing' | 'raidMultiplayer' | 'leaderboards' | ProgressionView
 type GameMode = 'normal' | 'endless'
 type ActiveGame = 'towerDefense' | 'rocketRaid'
-type RaidLaunchMode = 'campaign' | 'endless'
+type RaidLaunchMode = 'campaign' | 'endless' | 'bossRush'
 
-const PROGRESSION_VIEWS: ProgressionView[] = ['profile', 'achievements', 'codex', 'stageMap']
+const PROGRESSION_VIEWS: ProgressionView[] = ['profile', 'missions', 'achievements', 'codex', 'stageMap']
 
 const RAID_COOP_SHIP_OPTIONS = [
   { key: 'rocket', name: 'Black Comet' },
@@ -350,7 +350,7 @@ function App() {
   }
 
   const startRocketRaidSingle = (mode: RaidLaunchMode = 'campaign') => {
-    if (mode === 'endless' && !canPlayGradiusEndless) return
+    if ((mode === 'endless' || mode === 'bossRush') && !canPlayGradiusEndless) return
     setRaidMultiplayerSession(null)
     setRaidSameScreenCoop(false)
     setRaidLaunchMode(mode)
@@ -688,6 +688,9 @@ function App() {
       <div className="mode-screen">
         <div className="mode-screen__stars" />
         <div className="mode-screen__panel">
+          <button className="mode-screen__utility" type="button" onClick={() => setScreen('missions')}>
+            {releaseText.missions}
+          </button>
           <button className="mode-screen__back" onClick={() => setScreen('title')}>
             {text.rocketMode.back}
           </button>
@@ -708,6 +711,14 @@ function App() {
             >
               <span>{text.rocketMode.endless}</span>
               <strong className="mode-screen__button-fit-text">{canPlayGradiusEndless ? text.rocketMode.startEndless : text.rocketMode.endlessLocked}</strong>
+            </button>
+            <button
+              className="mode-screen__button mode-screen__button--boss-rush"
+              disabled={!canPlayGradiusEndless}
+              onClick={() => startRocketRaidSingle('bossRush')}
+            >
+              <span>{text.rocketMode.bossRush}</span>
+              <strong className="mode-screen__button-fit-text">{canPlayGradiusEndless ? text.rocketMode.startBossRush : text.rocketMode.bossRushLocked}</strong>
             </button>
             <button className="mode-screen__button mode-screen__button--accent" onClick={() => setScreen('raidCoopMode')}>
               <span>{text.rocketMode.twoPlayers}</span>
@@ -864,7 +875,7 @@ function App() {
           language={language}
           playerName={playerName}
           recoveryCode={recoveryCode}
-          onBack={() => setScreen('title')}
+          onBack={() => setScreen(screen === 'missions' ? 'rocketMode' : 'title')}
           onProgressChange={(nextProgress) => {
             setProgress(nextProgress)
             syncCloudProgress(nextProgress)

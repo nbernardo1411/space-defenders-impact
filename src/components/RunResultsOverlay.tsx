@@ -15,6 +15,8 @@ export function RunResultsOverlay({ result, update, language, onClose }: RunResu
   const statusLabel = result.status === 'victory' ? text.victory : result.status === 'gameover' ? text.gameover : text.exit
   const shipName = result.shipKey ? raidText.ships[result.shipKey as keyof typeof raidText.ships]?.name : null
   const scoreDisplay = result.teamScore ?? result.score
+  const mvpPilot = result.pilots?.reduce((best, pilot) => (pilot.score > best.score ? pilot : best), result.pilots[0])
+  const completedMissions = update.completedMissions.map((id) => text.missionsMap[id].title)
   const unlocks = [
     ...update.unlockedAchievements.map((id) => text.achievementsMap[id].title),
     ...update.unlockedCodex.map((id) => text.codexMap[id].title),
@@ -22,16 +24,22 @@ export function RunResultsOverlay({ result, update, language, onClose }: RunResu
   ]
 
   return (
-    <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title">
+    <div className={`result-overlay result-overlay--${result.status}`} role="dialog" aria-modal="true" aria-labelledby="result-title">
       <div className="result-overlay__panel">
-        <span>{modeText.title} {modeText.label}</span>
-        <h2 id="result-title">{text.results}</h2>
+        <div className="result-overlay__hero">
+          <span>{modeText.title} {modeText.label}</span>
+          <h2 id="result-title">{statusLabel}</h2>
+          <p>{text.combatReport} - {scoreDisplay.toLocaleString()} {text.score}</p>
+        </div>
 
         <div className="result-overlay__stats">
           <div><b>{text.status}</b><strong>{statusLabel}</strong></div>
           <div><b>{result.teamScore ? text.teamScore : text.score}</b><strong>{scoreDisplay.toLocaleString()}</strong></div>
           <div><b>{text.stage}</b><strong>{result.stage}</strong></div>
           {typeof result.wave === 'number' ? <div><b>{text.wave}</b><strong>{result.wave}</strong></div> : null}
+          <div><b>{text.duration}</b><strong>{formatDuration(result.durationMs ?? 0)}</strong></div>
+          {result.difficulty ? <div><b>{text.difficulty}</b><strong>{formatDifficulty(result.difficulty)}</strong></div> : null}
+          {mvpPilot ? <div><b>{text.mvpPilot}</b><strong>{mvpPilot.label} - {mvpPilot.score.toLocaleString()}</strong></div> : null}
           {shipName ? <div><b>{text.shipMastery}</b><strong>{shipName}</strong></div> : null}
           <div><b>{text.enemies}</b><strong>{result.enemiesDestroyed ?? 0}</strong></div>
           <div><b>{text.bosses}</b><strong>{result.bossesDefeated ?? 0}</strong></div>
@@ -72,8 +80,30 @@ export function RunResultsOverlay({ result, update, language, onClose }: RunResu
           )}
         </section>
 
+        {completedMissions.length ? (
+          <section className="result-overlay__unlocks result-overlay__missions">
+            <h3>{text.missionsCompleted}</h3>
+            <div>
+              {completedMissions.map((mission) => <span key={mission}>{mission}</span>)}
+            </div>
+          </section>
+        ) : null}
+
         <button type="button" onClick={onClose}>{text.continue}</button>
       </div>
     </div>
   )
+}
+
+function formatDuration(durationMs: number) {
+  const seconds = Math.max(0, Math.round(durationMs / 1000))
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  if (minutes <= 0) return `${remainder}s`
+  return `${minutes}m ${remainder.toString().padStart(2, '0')}s`
+}
+
+function formatDifficulty(difficulty: RunResult['difficulty']) {
+  if (!difficulty) return ''
+  return difficulty.charAt(0).toUpperCase() + difficulty.slice(1)
 }

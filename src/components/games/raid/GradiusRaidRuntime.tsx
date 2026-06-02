@@ -16,7 +16,7 @@ import type { RaidPalette } from './background'
 import { forEachDevilBossBeamLane, forEachFinalBossBeamLane, getDevilBossBeamRadius, getDevilBossChargeDuration, getFinalBossBeamLaneCount, getFinalBossBeamRadius } from './bossAttacks'
 import { drawRaidEnemy, getNormalEnemyFilter } from './bossRender'
 import { PickupPreviewCanvas, getBriefingPickupType } from './briefing'
-import { ALLY_PLAYER_COLOR, ASTEROID_CLUSTER_SPAWN_DELAY_SECONDS, ASTEROID_CLUSTER_WARNING_SECONDS, BOSS_COLORS, BOSS_ENTRANCE_SLAM_SECONDS, BOSS_ENTRANCE_SLOWMO_SCALE, BOSS_RESPAWN_SECONDS, CORE_LANDER_AOE_RADIUS, DARK_ENEMY_COLORS, DEG, DEVIL_BOSS_MAX_STAGE_GAP, DEVIL_BOSS_MIN_STAGE_GAP, DIFFICULTY_CONFIGS, EMPTY_WEAPON_FLAGS, EMPTY_WEAPON_TIMERS, FINAL_BOSS_BEAM_CHARGE_SECONDS, FINAL_BOSS_BEAM_LIFE_SECONDS, FORCE_FIELD_ARMOR, GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS, GAMEPLAY_SNAPSHOT_INTERVAL_MS, GOD_GUNDAM_BARRAGE_DURATION_SECONDS, GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS, GOD_GUNDAM_DEFEAT_HOLD_SECONDS, GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND, GOD_GUNDAM_MELEE_EXHAUST_COOLDOWN_SECONDS, GOD_GUNDAM_MELEE_EXHAUST_LIMIT_SECONDS, GOD_GUNDAM_MELEE_HEAT_RECOVERY_PER_SECOND, GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS, GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS, HEIGHT, HOMING_RETARGET_SECONDS, HOMING_RETARGET_STAGGER_SECONDS, IDLE_SNAPSHOT_INTERVAL_MS, MAX_ASTEROIDS, MAX_ION_STRIKES, MAX_METEORS, MAX_RAID_STAGE, MAX_WRECKS, MESIAH_DRONE_FIRE_INTERVAL_SECONDS, MESIAH_ROCKET_FIRE_INTERVAL_SECONDS, MINI_BOSS_COLORS, MULTIPLAYER_BOSS_HP_MULTIPLIER, MULTIPLAYER_CONNECTION_CHECK_MS, MULTIPLAYER_CORRECTION_DRAIN_RATE, MULTIPLAYER_ENTITY_MARGIN, MULTIPLAYER_GUEST_SNAP_DISTANCE_SQ, MULTIPLAYER_GUEST_STALE_MS, MULTIPLAYER_HEARTBEAT_INTERVAL_MS, MULTIPLAYER_HEARTBEAT_TIMEOUT_MS, MULTIPLAYER_INPUT_INTERVAL_MS, MULTIPLAYER_MAX_ASTEROIDS, MULTIPLAYER_MAX_BUFFERED_BYTES, MULTIPLAYER_MAX_ENEMIES, MULTIPLAYER_MAX_ENEMY_SHOTS, MULTIPLAYER_MAX_GUEST_CORRECTION, MULTIPLAYER_MAX_ION_STRIKES, MULTIPLAYER_MAX_METEORS, MULTIPLAYER_MAX_POWERUPS, MULTIPLAYER_MAX_RIPPLES, MULTIPLAYER_MAX_SHOTS, MULTIPLAYER_MAX_SPARKS, MULTIPLAYER_MAX_WRECKS, MULTIPLAYER_REMOTE_BUFFER_MAX, MULTIPLAYER_REMOTE_CORRECTION_BLEND, MULTIPLAYER_REMOTE_INPUT_BLEND, MULTIPLAYER_REMOTE_INPUT_SNAP_DISTANCE_SQ, MULTIPLAYER_STATE_INTERVAL_MS, MULTIPLAYER_STATE_LOST_MS, MULTIPLAYER_STATE_STALE_MS, NORMAL_POWER_DROP_COOLDOWN, NUKE_FLASH_SECONDS, NUKE_MISSILE_SECONDS, PLAYER_COLOR, PLAYER_MAX_RANK, PLAYER_RADIUS, POWER_PITY_KILLS, RAID_BACKGROUND_THEME_COUNT, RAID_BGM_STAGE_RATES, RAID_BOSS_APPROACH_SILENCE_SECONDS, RAID_BOSS_BGM_TRACK, RAID_BOSS_FINAL_BGM_TRACK, RAID_BOSS_SNAKE_BGM_TRACK, RAID_BOSS_SQUID_BGM_TRACK, RAID_CHECKPOINTS, RAID_DEFAULT_BGM_TRACK, RAID_ENDING_BGM_TRACK, RANDOM_EVENT_WARNING_SECONDS, SHIP_OPTIONS, SIDE_VALUES, SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES, SPIEGEL_KUNAI_DAMAGE_MULTIPLIER, SPIEGEL_KUNAI_SPLASH_DAMAGE_MULTIPLIER, SPIEGEL_SHADOW_CLONE_OFFSET, STAGE_CLEAR_SECONDS, STAGE_ENTRY_SECONDS, VICTORY_BLACKOUT_SECONDS, WEAPON_FIRE_INTERVALS, WEAPON_KEYS, WEAPON_STACK_CAPS, WIDTH, getShipSpriteSize, pickEndlessBossKind, shouldForceLocalDerelictWreckTest, shouldForceLocalDevilBossTest } from './constants'
+import { ALLY_PLAYER_COLOR, ASTEROID_CLUSTER_SPAWN_DELAY_SECONDS, ASTEROID_CLUSTER_WARNING_SECONDS, BOSS_COLORS, BOSS_ENTRANCE_SLAM_SECONDS, BOSS_ENTRANCE_SLOWMO_SCALE, BOSS_RESPAWN_SECONDS, BOSS_RUSH_ATTACK_COOLDOWN_SCALE, BOSS_RUSH_ENTRY_SPEED_SCALE, BOSS_RUSH_MOTION_SCALE, BOSS_RUSH_SPECIAL_RECHARGE_SCALE, BOSS_RUSH_STAGES, CORE_LANDER_AOE_RADIUS, DARK_ENEMY_COLORS, DEG, DEVIL_BOSS_MAX_STAGE_GAP, DEVIL_BOSS_MIN_STAGE_GAP, DIFFICULTY_CONFIGS, EMPTY_WEAPON_FLAGS, EMPTY_WEAPON_TIMERS, FINAL_BOSS_BEAM_CHARGE_SECONDS, FINAL_BOSS_BEAM_LIFE_SECONDS, FORCE_FIELD_ARMOR, GAMEPLAY_ALERT_SNAPSHOT_INTERVAL_MS, GAMEPLAY_SNAPSHOT_INTERVAL_MS, GOD_GUNDAM_BARRAGE_DURATION_SECONDS, GOD_GUNDAM_BARRAGE_HIT_INTERVAL_SECONDS, GOD_GUNDAM_DEFEAT_HOLD_SECONDS, GOD_GUNDAM_MELEE_DAMAGE_PER_SECOND, GOD_GUNDAM_MELEE_EXHAUST_COOLDOWN_SECONDS, GOD_GUNDAM_MELEE_EXHAUST_LIMIT_SECONDS, GOD_GUNDAM_MELEE_HEAT_RECOVERY_PER_SECOND, GOD_GUNDAM_MELEE_VISUAL_DURATION_SECONDS, GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS, HEIGHT, HOMING_RETARGET_SECONDS, HOMING_RETARGET_STAGGER_SECONDS, IDLE_SNAPSHOT_INTERVAL_MS, MAX_ASTEROIDS, MAX_ION_STRIKES, MAX_METEORS, MAX_RAID_STAGE, MAX_WRECKS, MESIAH_DRONE_FIRE_INTERVAL_SECONDS, MESIAH_ROCKET_FIRE_INTERVAL_SECONDS, MINI_BOSS_COLORS, MULTIPLAYER_BOSS_HP_MULTIPLIER, MULTIPLAYER_CONNECTION_CHECK_MS, MULTIPLAYER_CORRECTION_DRAIN_RATE, MULTIPLAYER_ENTITY_MARGIN, MULTIPLAYER_GUEST_SNAP_DISTANCE_SQ, MULTIPLAYER_GUEST_STALE_MS, MULTIPLAYER_HEARTBEAT_INTERVAL_MS, MULTIPLAYER_HEARTBEAT_TIMEOUT_MS, MULTIPLAYER_INPUT_INTERVAL_MS, MULTIPLAYER_MAX_ASTEROIDS, MULTIPLAYER_MAX_BUFFERED_BYTES, MULTIPLAYER_MAX_ENEMIES, MULTIPLAYER_MAX_ENEMY_SHOTS, MULTIPLAYER_MAX_GUEST_CORRECTION, MULTIPLAYER_MAX_ION_STRIKES, MULTIPLAYER_MAX_METEORS, MULTIPLAYER_MAX_POWERUPS, MULTIPLAYER_MAX_RIPPLES, MULTIPLAYER_MAX_SHOTS, MULTIPLAYER_MAX_SPARKS, MULTIPLAYER_MAX_WRECKS, MULTIPLAYER_REMOTE_BUFFER_MAX, MULTIPLAYER_REMOTE_CORRECTION_BLEND, MULTIPLAYER_REMOTE_INPUT_BLEND, MULTIPLAYER_REMOTE_INPUT_SNAP_DISTANCE_SQ, MULTIPLAYER_STATE_INTERVAL_MS, MULTIPLAYER_STATE_LOST_MS, MULTIPLAYER_STATE_STALE_MS, NORMAL_POWER_DROP_COOLDOWN, NUKE_FLASH_SECONDS, NUKE_MISSILE_SECONDS, PLAYER_COLOR, PLAYER_MAX_RANK, PLAYER_RADIUS, POWER_PITY_KILLS, RAID_BACKGROUND_THEME_COUNT, RAID_BGM_STAGE_RATES, RAID_BOSS_APPROACH_SILENCE_SECONDS, RAID_BOSS_BGM_TRACK, RAID_BOSS_FINAL_BGM_TRACK, RAID_BOSS_SNAKE_BGM_TRACK, RAID_BOSS_SQUID_BGM_TRACK, RAID_CHECKPOINTS, RAID_DEFAULT_BGM_TRACK, RAID_ENDING_BGM_TRACK, RANDOM_EVENT_WARNING_SECONDS, SHIP_OPTIONS, SIDE_VALUES, SPACE_ET_PASSIVE_FORCE_FIELD_CHARGES, SPIEGEL_KUNAI_DAMAGE_MULTIPLIER, SPIEGEL_KUNAI_SPLASH_DAMAGE_MULTIPLIER, SPIEGEL_SHADOW_CLONE_OFFSET, STAGE_CLEAR_SECONDS, STAGE_ENTRY_SECONDS, VICTORY_BLACKOUT_SECONDS, WEAPON_FIRE_INTERVALS, WEAPON_KEYS, WEAPON_STACK_CAPS, WIDTH, getBossRushStage, getNextBossRushStage, getShipSpriteSize, pickEndlessBossKind, shouldForceLocalDerelictWreckTest, shouldForceLocalDevilBossTest } from './constants'
 import { drawAsteroidHazard, drawAsteroidWarning, drawDerelictWreck, drawDevilChargeWarnings, drawFinalChargeLines, drawGodGundamBarrage, drawGodGundamPassiveStrikes, drawIonStrike, drawMeteorHazard, drawNukeBlast, drawNukeMissile, drawPowerUpCanvas, drawRandomEventOverlay, drawRandomEventWarning, getHomingMissileSprite, godBarrageDamageTargetsScratch } from './effectsRender'
 import { createAsteroidHazard, getAsteroidClusterInterval, getRandomEventDuration, getRandomEventInterval, pickNextRandomRaidEventKind, splitAsteroidHazard } from './events'
 import { RAID_FX_CANVAS_CONTEXT_SETTINGS, getRaidGraphicsProfile, makeRaidViewportMetrics } from './graphics'
@@ -2529,7 +2529,8 @@ export function GradiusRaid({
     shipCosmeticsCacheRef.current.clear()
 
     const isEndless = mode === 'endless'
-    const stage = isEndless ? Math.max(1, Math.floor(startStage)) : clamp(startStage, 1, MAX_RAID_STAGE)
+    const isBossRush = mode === 'bossRush'
+    const stage = isEndless ? Math.max(1, Math.floor(startStage)) : isBossRush ? getBossRushStage(startStage) : clamp(startStage, 1, MAX_RAID_STAGE)
     const hostRoomPlayer = session?.players.find((roomPlayer) => roomPlayer.host)
     const guestRoomPlayer = session?.players.find((roomPlayer) => !roomPlayer.host)
     const hostShip = getShipByKey(hostRoomPlayer?.shipKey, selectedShipRef.current)
@@ -2560,7 +2561,7 @@ export function GradiusRaid({
       remotePlayerRef.current.y = 84
     }
     const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, mode, playerName)
-    if (fullyBuffed || forceLocalDevilTest) {
+    if (fullyBuffed || forceLocalDevilTest || isBossRush) {
       fullyBuffRaidPlayer(playerRef.current)
       if (remotePlayerRef.current) fullyBuffRaidPlayer(remotePlayerRef.current)
     }
@@ -2596,7 +2597,7 @@ export function GradiusRaid({
     waveRef.current = stage
     spawnTimerRef.current = 1.25
     formationTimerRef.current = 3.4
-    bossTimerRef.current = forceLocalDevilTest ? 3.2 : isEndless ? 28 + Math.random() * 18 : stage === MAX_RAID_STAGE ? 24 : 36
+    bossTimerRef.current = forceLocalDevilTest ? 3.2 : isBossRush ? 2.4 : isEndless ? 28 + Math.random() * 18 : stage === MAX_RAID_STAGE ? 24 : 36
     spawnLockRef.current = 0
     powerDropCooldownRef.current = 0
     killsSincePowerRef.current = 0
@@ -2606,12 +2607,12 @@ export function GradiusRaid({
     stageClearRef.current = 0
     stageEntryRef.current = 0
     pendingNextStageRef.current = null
-    asteroidClusterTimerRef.current = stage >= 2 ? 30 + Math.random() * 24 : getAsteroidClusterInterval()
+    asteroidClusterTimerRef.current = isBossRush ? 999 : stage >= 2 ? 30 + Math.random() * 24 : getAsteroidClusterInterval()
     asteroidSpawnDelayRef.current = 0
     asteroidWarningRef.current = 0
     randomEventRef.current = null
     localDerelictWreckTestTriggeredRef.current = false
-    randomEventTimerRef.current = shouldForceLocalDerelictWreckTest(stage, mode) ? 0.2 : 20 + Math.random() * 18
+    randomEventTimerRef.current = isBossRush ? 999 : shouldForceLocalDerelictWreckTest(stage, mode) ? 0.2 : 20 + Math.random() * 18
     randomEventSpawnTimerRef.current = 0
     lastRandomEventKindRef.current = null
     playerRef.current.specialCooldown = 0
@@ -3453,6 +3454,7 @@ export function GradiusRaid({
     const player = playerRef.current
     const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, raidModeRef.current, playerName)
     const powerScore = getPowerScore(playerRef.current)
+    const isBossRush = raidModeRef.current === 'bossRush'
     const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
     const bossKind: BossKind = raidModeRef.current === 'endless'
       ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current, isCreatorPlayerName(playerName))
@@ -3502,14 +3504,14 @@ export function GradiusRaid({
       x: 50,
       y: bossKind === 'devil' ? -28 : bossKind === 'final' ? -30 : bossKind === 'squid' || bossKind === 'snake' ? -27 : bossKind === 'super' || bossKind === 'gate' ? -24 : -16,
       vx: 0,
-      vy: bossKind === 'devil' ? 3.4 : bossKind === 'final' ? 4.4 : bossKind === 'squid' || bossKind === 'snake' ? 4.9 : bossKind === 'super' || bossKind === 'gate' ? 5.3 : 7,
+      vy: (bossKind === 'devil' ? 3.4 : bossKind === 'final' ? 4.4 : bossKind === 'squid' || bossKind === 'snake' ? 4.9 : bossKind === 'super' || bossKind === 'gate' ? 5.3 : 7) * (isBossRush ? BOSS_RUSH_ENTRY_SPEED_SCALE : 1),
       hp,
       maxHp: hp,
       radius,
       variant: bossKind === 'squid' ? 4 : bossKind === 'snake' ? 5 : stage % 4,
       isBoss: true,
       isMiniBoss: false,
-      fireCooldown: bossKind === 'devil' ? 1.35 : Math.max(0.75, 1 - stagePressure * 0.025),
+      fireCooldown: (bossKind === 'devil' ? 1.35 : Math.max(0.75, 1 - stagePressure * 0.025)) * (isBossRush ? BOSS_RUSH_ATTACK_COOLDOWN_SCALE : 1),
       phase: Math.random() * Math.PI * 2,
       color: BOSS_COLORS[bossKind],
       pattern: bossKind === 'devil' ? 10 : bossKind === 'final' ? 9 : bossKind === 'snake' ? 8 : bossKind === 'squid' ? 7 : bossKind === 'super' ? 6 : bossCycle.indexOf(bossKind),
@@ -3519,7 +3521,7 @@ export function GradiusRaid({
       originX: 50,
       amplitude: bossKind === 'devil' ? 0 : bossKind === 'final' ? 34 : bossKind === 'snake' ? 36 : bossKind === 'squid' ? 24 : bossKind === 'super' ? 30 : bossKind === 'serpent' ? 28 : bossKind === 'gate' ? 18 : 23,
       trainSlot: 0,
-      pathSpeed: bossKind === 'devil' ? 0.018 : 0.05,
+      pathSpeed: (bossKind === 'devil' ? 0.018 : 0.05) * (isBossRush ? BOSS_RUSH_MOTION_SCALE : 1),
       chargeCooldown: bossKind === 'devil' ? 2.2 : bossKind === 'final' ? 3.2 : bossKind === 'snake' ? 3.4 : bossKind === 'squid' ? 0.75 : 999,
       mirageKind: null,
       mirageTimer: 0,
@@ -3606,7 +3608,7 @@ export function GradiusRaid({
 
     leaderboardSubmittedRef.current = true
     void submitLeaderboardScore({
-      mode: coOpRun ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
+      mode: coOpRun ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : raidModeRef.current === 'bossRush' ? 'gradius_boss_rush' : 'gradius_solo',
       playerName: leaderboardName,
       score,
       shipKey: selectedShipRef.current.key,
@@ -3651,7 +3653,7 @@ export function GradiusRaid({
 
     runReportedRef.current = true
     onRunComplete?.({
-      mode: coOpRun ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : 'gradius_solo',
+      mode: coOpRun ? 'gradius_multiplayer' : raidModeRef.current === 'endless' ? 'gradius_endless' : raidModeRef.current === 'bossRush' ? 'gradius_boss_rush' : 'gradius_solo',
       status,
       playerName: commanderName,
       score,
@@ -4061,8 +4063,8 @@ export function GradiusRaid({
         shotsRef.current = []
         enemyShotsRef.current = []
         godBarrageRef.current = null
-        asteroidClusterTimerRef.current = getAsteroidClusterInterval()
-        randomEventTimerRef.current = getRandomEventInterval()
+        asteroidClusterTimerRef.current = raidModeRef.current === 'bossRush' ? 999 : getAsteroidClusterInterval()
+        randomEventTimerRef.current = raidModeRef.current === 'bossRush' ? 999 : getRandomEventInterval()
         spawnLockRef.current = 1.2
         spawnTimerRef.current = 1.1
         formationTimerRef.current = 2.2
@@ -4154,7 +4156,7 @@ export function GradiusRaid({
     }
 
     spawnLockRef.current = Math.max(0, spawnLockRef.current - dt)
-    const canSpawnStageEnemies = spawnLockRef.current <= 0 && stageClearRef.current <= 0
+    const canSpawnStageEnemies = raidModeRef.current !== 'bossRush' && spawnLockRef.current <= 0 && stageClearRef.current <= 0
     spawnTimerRef.current -= dt
     formationTimerRef.current -= dt
     let bossActive = enemiesRef.current.some((enemy) => enemy.isBoss)
@@ -4530,31 +4532,35 @@ export function GradiusRaid({
       }
       const t = nowSeconds + enemy.phase
       const bossKind = enemy.bossKind ?? 'carrier'
+      const bossRushAggressive = enemy.isBoss && raidModeRef.current === 'bossRush'
+      const bossMotionT = bossRushAggressive ? nowSeconds * BOSS_RUSH_MOTION_SCALE + enemy.phase : t
+      const bossFireDrain = bossRushAggressive ? BOSS_RUSH_SPECIAL_RECHARGE_SCALE : 1
+      const bossAttackCooldownScale = bossRushAggressive ? BOSS_RUSH_ATTACK_COOLDOWN_SCALE : 1
       if (enemy.isBoss && enemy.hp > 0) playBossCriticalStinger(enemy)
       const finalRage = bossKind === 'final' ? clamp((0.55 - enemy.hp / Math.max(1, enemy.maxHp)) / 0.55, 0, 1) : 0
       const bossX =
         bossKind === 'devil' ? 50 :
-          bossKind === 'carrier' ? 50 + Math.sin(t * 0.7) * 26 :
-            bossKind === 'orb' ? 50 + Math.sin(t * 1.4) * 18 :
-              bossKind === 'squid' ? 50 + Math.sin(t * 0.58) * 23 + Math.sin(t * 1.4) * 4 :
-                bossKind === 'snake' ? 50 + Math.sin(t * 1.05) * 34 + Math.sin(t * 2.1) * 6 :
-                  bossKind === 'serpent' ? 50 + Math.sin(t * 0.9) * 32 :
-                    bossKind === 'mantis' ? 50 + Math.sin(t * 1.7) * 24 :
-                      bossKind === 'hydra' ? 50 + Math.sin(t * 0.62) * 26 + Math.sin(t * 1.8) * 5 :
-                        bossKind === 'gate' ? 50 + Math.sin(t * 0.38) * 14 :
-                          bossKind === 'final' ? 50 + Math.sin(t * (0.26 + finalRage * 0.08)) * (24 + finalRage * 2.5) + Math.sin(t * (0.92 + finalRage * 0.18)) * (3.5 + finalRage * 1.5) :
-                            50 + Math.sin(t * 0.42) * 30
+          bossKind === 'carrier' ? 50 + Math.sin(bossMotionT * 0.7) * 26 :
+            bossKind === 'orb' ? 50 + Math.sin(bossMotionT * 1.4) * 18 :
+              bossKind === 'squid' ? 50 + Math.sin(bossMotionT * 0.58) * 23 + Math.sin(bossMotionT * 1.4) * 4 :
+                bossKind === 'snake' ? 50 + Math.sin(bossMotionT * 1.05) * 34 + Math.sin(bossMotionT * 2.1) * 6 :
+                  bossKind === 'serpent' ? 50 + Math.sin(bossMotionT * 0.9) * 32 :
+                    bossKind === 'mantis' ? 50 + Math.sin(bossMotionT * 1.7) * 24 :
+                      bossKind === 'hydra' ? 50 + Math.sin(bossMotionT * 0.62) * 26 + Math.sin(bossMotionT * 1.8) * 5 :
+                        bossKind === 'gate' ? 50 + Math.sin(bossMotionT * 0.38) * 14 :
+                          bossKind === 'final' ? 50 + Math.sin(bossMotionT * (0.26 + finalRage * 0.08)) * (24 + finalRage * 2.5) + Math.sin(bossMotionT * (0.92 + finalRage * 0.18)) * (3.5 + finalRage * 1.5) :
+                            50 + Math.sin(bossMotionT * 0.42) * 30
       const bossYTarget =
-        bossKind === 'devil' ? 21 + Math.sin(t * 0.42) * 1.8 :
-          bossKind === 'final' ? 17 + Math.sin(t * (0.52 + finalRage * 0.16)) * (2.2 + finalRage * 0.9) :
-            bossKind === 'squid' ? 18 + Math.sin(t * 0.75) * 3 :
-              bossKind === 'snake' ? 19 + Math.sin(t * 1.3) * 4 :
-                bossKind === 'super' ? 20 + Math.sin(t * 0.8) * 3 :
-                  bossKind === 'gate' ? 18 + Math.sin(t * 0.65) * 2 :
-                    bossKind === 'hydra' ? 19 + Math.cos(t * 0.9) * 4 :
-                      bossKind === 'mantis' ? 19 + Math.sin(t * 1.4) * 5 :
-                        bossKind === 'serpent' ? 20 + Math.cos(t * 1.1) * 5 :
-                          bossKind === 'orb' ? 17 + Math.sin(t * 1.8) * 4 :
+        bossKind === 'devil' ? 21 + Math.sin(bossMotionT * 0.42) * 1.8 :
+          bossKind === 'final' ? 17 + Math.sin(bossMotionT * (0.52 + finalRage * 0.16)) * (2.2 + finalRage * 0.9) :
+            bossKind === 'squid' ? 18 + Math.sin(bossMotionT * 0.75) * 3 :
+              bossKind === 'snake' ? 19 + Math.sin(bossMotionT * 1.3) * 4 :
+                bossKind === 'super' ? 20 + Math.sin(bossMotionT * 0.8) * 3 :
+                  bossKind === 'gate' ? 18 + Math.sin(bossMotionT * 0.65) * 2 :
+                    bossKind === 'hydra' ? 19 + Math.cos(bossMotionT * 0.9) * 4 :
+                      bossKind === 'mantis' ? 19 + Math.sin(bossMotionT * 1.4) * 5 :
+                        bossKind === 'serpent' ? 20 + Math.cos(bossMotionT * 1.1) * 5 :
+                          bossKind === 'orb' ? 17 + Math.sin(bossMotionT * 1.8) * 4 :
                             18
       const trainT = (enemy.y - enemy.trainSlot * 6.2) * enemy.pathSpeed + enemy.phase
       const trainX =
@@ -4579,12 +4585,12 @@ export function GradiusRaid({
       let chargePattern = enemy.chargePattern
       let rapidCharge = enemy.rapidCharge ?? false
       let beamVolleyLeft = enemy.beamVolleyLeft ?? 0
-      let beamVolleyRecovery = Math.max(0, (enemy.beamVolleyRecovery ?? 0) - dt)
+      let beamVolleyRecovery = Math.max(0, (enemy.beamVolleyRecovery ?? 0) - dt * bossFireDrain)
       let devilNormalAttackTimer = Math.max(0, (enemy.devilNormalAttackTimer ?? 0) - dt)
       let devilSnakeBurstLeft = Math.max(0, enemy.devilSnakeBurstLeft ?? 0)
       let mirageKind = enemy.mirageKind ?? null
       let mirageTimer = Math.max(0, enemy.mirageTimer ?? 0)
-      let mirageCooldown = Math.max(0, (enemy.mirageCooldown ?? 0) - dt)
+      let mirageCooldown = Math.max(0, (enemy.mirageCooldown ?? 0) - dt * bossFireDrain)
       let fireCooldown = enemy.fireCooldown
       let mirageActive = enemy.isBoss && bossKind === 'final' && mirageKind !== null && mirageTimer > 0
       if (mirageActive) {
@@ -4719,7 +4725,7 @@ export function GradiusRaid({
             fireCooldown = Math.max(fireCooldown, 1.45)
           }
         } else {
-          chargeCooldown = Math.max(0, chargeCooldown - dt)
+          chargeCooldown = Math.max(0, chargeCooldown - dt * bossFireDrain)
           if (chargeCooldown <= 0) {
             const target = getNearestLivingPlayerThisTick(enemy)
             const hpRatio = enemy.hp / Math.max(1, enemy.maxHp)
@@ -4824,7 +4830,7 @@ export function GradiusRaid({
             }
           }
         } else {
-          chargeCooldown = Math.max(0, chargeCooldown - dt)
+          chargeCooldown = Math.max(0, chargeCooldown - dt * bossFireDrain)
           if (chargeCooldown <= 0) {
             const hpRatio = enemy.hp / enemy.maxHp
             const roll = Math.random()
@@ -4913,7 +4919,7 @@ export function GradiusRaid({
             }
           }
         } else {
-          chargeCooldown = Math.max(0, chargeCooldown - dt)
+          chargeCooldown = Math.max(0, chargeCooldown - dt * bossFireDrain)
           let slapTarget: Player | null = null
           let slapTargetDistance = Infinity
           for (const target of livingPlayersThisTick) {
@@ -5046,7 +5052,7 @@ export function GradiusRaid({
             fireCooldown = Math.max(fireCooldown, 1.7)
           }
         } else {
-          chargeCooldown = Math.max(0, chargeCooldown - dt)
+          chargeCooldown = Math.max(0, chargeCooldown - dt * bossFireDrain)
           if (chargeCooldown <= 0) {
             const target = getNearestLivingPlayerThisTick(enemy)
             const hpRatio = enemy.hp / enemy.maxHp
@@ -5078,8 +5084,8 @@ export function GradiusRaid({
           }
         }
       }
-      const nextFire = fireCooldown - dt
-      const bossInPause = enemy.isBoss && bossKind !== 'devil' && nowSeconds % 6 > 3
+      const nextFire = fireCooldown - dt * (enemy.isBoss ? bossFireDrain : 1)
+      const bossInPause = enemy.isBoss && bossKind !== 'devil' && (bossRushAggressive ? nowSeconds % 5 > 4.25 : nowSeconds % 6 > 3)
       const biteRetracting = attackBossKind === 'snake' && chargePattern === 'cross' && beamVolleyRecovery > 0
       if (nextFire <= 0 && enemy.y > 0 && chargeTimer <= 0 && !biteRetracting && !bossInPause && (bossKind !== 'final' || mirageActive)) {
         fireEnemy(enemy, getNearestLivingPlayerThisTick(enemy), now)
@@ -5105,11 +5111,12 @@ export function GradiusRaid({
         }
       }
       enemy.shieldTime = Math.max(0, enemy.shieldTime - dt)
+      const nextBossFireCooldown = bossKind === 'devil'
+        ? Math.max(1.05, 1.55 - waveRef.current * 0.018 - stageRef.current * 0.02)
+        : Math.max(bossKind === 'final' ? 0.62 : bossKind === 'snake' ? 1.05 : bossKind === 'squid' ? 1.08 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035)
       enemy.fireCooldown = fireCooldown !== enemy.fireCooldown ? fireCooldown : nextFire <= 0
         ? (enemy.isBoss
-          ? bossKind === 'devil'
-            ? Math.max(1.05, 1.55 - waveRef.current * 0.018 - stageRef.current * 0.02)
-            : Math.max(bossKind === 'final' ? 0.62 : bossKind === 'snake' ? 1.05 : bossKind === 'squid' ? 1.08 : 0.85, 1.82 - waveRef.current * 0.028 - stageRef.current * 0.035)
+          ? Math.max(0.42, nextBossFireCooldown * bossAttackCooldownScale)
           : enemy.isMiniBoss
             ? Math.max(miniKind === 'lancer' ? 1.12 : 1.28, 1.84 - stageRef.current * 0.018 + Math.random() * 0.5)
             : Math.max(1.05, 2.4 + Math.random() * 1.9 - waveRef.current * 0.05))
@@ -5392,25 +5399,28 @@ export function GradiusRaid({
         playBossCriticalStinger(enemy, true)
         bossDefeatedThisFrame = true
         const clearedStage = stageRef.current
-        if (raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
+        const nextBossRushStage = raidModeRef.current === 'bossRush' ? getNextBossRushStage(clearedStage) : undefined
+        if (raidModeRef.current === 'bossRush' ? nextBossRushStage === null : raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
           completedRun = true
           victoryPendingRef.current = true
-          unlockedStageRef.current = MAX_RAID_STAGE
-          if (!coOpRunRef.current) {
+          if (raidModeRef.current === 'campaign') {
+            unlockedStageRef.current = MAX_RAID_STAGE
+          }
+          if (raidModeRef.current === 'campaign' && !coOpRunRef.current) {
             saveUnlockedStage(MAX_RAID_STAGE)
             saveCheckpointStage(14)
           }
           bossAlertRef.current = 2.4
           bossMessageRef.current = 'clear'
         } else {
-          const nextStage = clearedStage + 1
-          preserveLoadoutForSuperBoss = nextStage % 5 === 0
+          const nextStage = raidModeRef.current === 'bossRush' ? nextBossRushStage ?? BOSS_RUSH_STAGES[0] : clearedStage + 1
+          preserveLoadoutForSuperBoss = raidModeRef.current === 'bossRush' || nextStage % 5 === 0
           pendingNextStageRef.current = nextStage
-          if (raidModeRef.current !== 'endless') {
+          if (raidModeRef.current === 'campaign') {
             unlockedStageRef.current = Math.max(unlockedStageRef.current, Math.min(nextStage, MAX_RAID_STAGE))
             if (!coOpRunRef.current) saveUnlockedStage(unlockedStageRef.current)
           }
-          if (raidModeRef.current !== 'endless' && !coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
+          if (raidModeRef.current === 'campaign' && !coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
             saveCheckpointStage(nextStage)
           }
           bossAlertRef.current = 2.4
@@ -5856,25 +5866,28 @@ export function GradiusRaid({
               playBossCriticalStinger(enemy, true)
               bossDefeatedThisFrame = true
               const clearedStage = stageRef.current
-              if (raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
+              const nextBossRushStage = raidModeRef.current === 'bossRush' ? getNextBossRushStage(clearedStage) : undefined
+              if (raidModeRef.current === 'bossRush' ? nextBossRushStage === null : raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
                 completedRun = true
                 victoryPendingRef.current = true
-                unlockedStageRef.current = MAX_RAID_STAGE
-                if (!coOpRunRef.current) {
+                if (raidModeRef.current === 'campaign') {
+                  unlockedStageRef.current = MAX_RAID_STAGE
+                }
+                if (raidModeRef.current === 'campaign' && !coOpRunRef.current) {
                   saveUnlockedStage(MAX_RAID_STAGE)
                   saveCheckpointStage(14)
                 }
                 bossAlertRef.current = 2.4
                 bossMessageRef.current = 'clear'
               } else {
-                const nextStage = clearedStage + 1
-                preserveLoadoutForSuperBoss = nextStage % 5 === 0
+                const nextStage = raidModeRef.current === 'bossRush' ? nextBossRushStage ?? BOSS_RUSH_STAGES[0] : clearedStage + 1
+                preserveLoadoutForSuperBoss = raidModeRef.current === 'bossRush' || nextStage % 5 === 0
                 pendingNextStageRef.current = nextStage
-                if (raidModeRef.current !== 'endless') {
+                if (raidModeRef.current === 'campaign') {
                   unlockedStageRef.current = Math.max(unlockedStageRef.current, Math.min(nextStage, MAX_RAID_STAGE))
                   if (!coOpRunRef.current) saveUnlockedStage(unlockedStageRef.current)
                 }
-                if (raidModeRef.current !== 'endless' && !coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
+                if (raidModeRef.current === 'campaign' && !coOpRunRef.current && (RAID_CHECKPOINTS as readonly number[]).includes(nextStage)) {
                   saveCheckpointStage(nextStage)
                 }
                 bossAlertRef.current = 2.4
@@ -6382,15 +6395,20 @@ export function GradiusRaid({
   const isNetworkMultiplayer = Boolean(multiplayerSession)
   const isMultiplayer = isNetworkMultiplayer || sameScreenCoop
   const isEndlessRun = snapshot.raidMode === 'endless'
+  const isBossRushRun = snapshot.raidMode === 'bossRush'
   const canControlOverlay = !isNetworkMultiplayer || Boolean(multiplayerSession?.isHost)
-  const canUseCampaignStageTools = !isEndlessRun && !isMultiplayer && completedCampaign && canControlOverlay
-  const canContinueCampaignCheckpoint = !isEndlessRun && !isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1
+  const canUseCampaignStageTools = !isEndlessRun && !isBossRushRun && !isMultiplayer && completedCampaign && canControlOverlay
+  const canContinueCampaignCheckpoint = !isEndlessRun && !isBossRushRun && !isMultiplayer && (snapshot.phase === 'gameover' || snapshot.phase === 'select') && checkpointStage > 1
   const primaryRaidMenuLabel = snapshot.phase === 'gameover'
-    ? isMultiplayer ? menuText.restartCoop : isEndlessRun ? menuText.restartEndless : menuText.restartStage1
-    : isEndlessRun ? menuText.startEndlessRaid : menuText.startRaid
+    ? isMultiplayer ? menuText.restartCoop : isBossRushRun ? menuText.restartBossRush : isEndlessRun ? menuText.restartEndless : menuText.restartStage1
+    : isBossRushRun ? menuText.startBossRushRaid : isEndlessRun ? menuText.startEndlessRaid : menuText.startRaid
   const startCurrentRaidMode = () => {
     if (snapshot.phase === 'gameover') {
-      resetGame(1, false, isEndlessRun ? 'endless' : 'campaign')
+      resetGame(isBossRushRun ? BOSS_RUSH_STAGES[0] : 1, isBossRushRun, isBossRushRun ? 'bossRush' : isEndlessRun ? 'endless' : 'campaign')
+      return
+    }
+    if (isBossRushRun) {
+      resetGame(BOSS_RUSH_STAGES[0], true, 'bossRush')
       return
     }
     if (isEndlessRun) {
@@ -6929,7 +6947,7 @@ export function GradiusRaid({
         </div>
       )}
 
-      {stagePickerOpen && !isEndlessRun && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
+      {stagePickerOpen && !isEndlessRun && !isBossRushRun && snapshot.phase !== 'playing' && snapshot.phase !== 'paused' && snapshot.phase !== 'briefing' && snapshot.phase !== 'victory' && (
         <div className="raid__stage-modal" role="dialog" aria-modal="true" aria-label={menuText.selectStageTitle}>
           <div className="raid__stage-modal-panel">
             <div className="raid__kicker">{menuText.selectStageTitle}</div>

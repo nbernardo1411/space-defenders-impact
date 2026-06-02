@@ -55,9 +55,11 @@ export const RAID_OTHER_ASSET_PATHS = {
   island: 'assets/others/island.png',
   island2: 'assets/others/island_2.png',
   island3: 'assets/others/island_3.png',
+  octiIsland: 'assets/others/octi_island.png',
   volcano: 'assets/others/volcano.png',
   volcano2: 'assets/others/volcano_2.png',
   volcano3: 'assets/others/volcano_3.png',
+  snakeVolcano: 'assets/others/snake_volcano.png',
   bgShipMesiahBlack: 'assets/ships/mesiah-black.png',
   bgShipMesiahWhite: 'assets/ships/mesiah-white.png',
   bgShipRaptorWhite: 'assets/ships/mesiah-raptor-white.png',
@@ -365,9 +367,11 @@ export const RAID_OTHER_STATIC_FILTERS: Partial<Record<RaidOtherAssetKey, readon
   island: ['brightness(0.64) contrast(1.1) saturate(0.95)'],
   island2: ['brightness(0.64) contrast(1.1) saturate(0.95)'],
   island3: ['brightness(0.64) contrast(1.1) saturate(0.95)'],
+  octiIsland: ['brightness(0.64) contrast(1.1) saturate(0.95)'],
   volcano: ['brightness(0.72) contrast(1.12) saturate(1.05)'],
   volcano2: ['brightness(0.72) contrast(1.12) saturate(1.05)'],
   volcano3: ['brightness(0.72) contrast(1.12) saturate(1.05)'],
+  snakeVolcano: ['brightness(0.72) contrast(1.12) saturate(1.05)'],
 }
 
 export function makeSpriteProcessingCanvas(image: HTMLImageElement, maxSize: number, crop?: { x: number; y: number; width: number; height: number }) {
@@ -849,9 +853,11 @@ export function getOtherAssetProcessor(key: RaidOtherAssetKey): CanvasSpriteProc
   if (key === 'island') return processWateryIslandAsset
   if (key === 'island2') return processWateryIslandAsset
   if (key === 'island3') return processWateryIslandAsset
+  if (key === 'octiIsland') return processWateryIslandAsset
   if (key === 'volcano') return processVolcanicIslandAsset
   if (key === 'volcano2') return processVolcanicIslandAsset
   if (key === 'volcano3') return processVolcanicIslandAsset
+  if (key === 'snakeVolcano') return processVolcanicIslandAsset
   return undefined
 }
 
