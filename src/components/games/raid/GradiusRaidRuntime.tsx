@@ -27,7 +27,7 @@ import { clampNetworkVelocity, cloneAsteroid, cloneDerelictWreck, cloneEnemy, cl
 import { drawRaidOptions, drawRaidPlayer, getCoreBlastSprite } from './playerRender'
 import { getRaidAssetPreloadInitialState, preloadGradiusRaidAssets, warmRaidGeneratedEffectSprites } from './preload'
 import { clonePlayer, getCheckpointStage, getDefaultPlayerVisualShipKey, getGodGundamGameplayRenderSize, getHighScore, getInitialPlayer, getMesiahVisualShipKeyFromProgress, getOptionSupportStacks, getPlayerCoreLanderCombatModel, getRaidPlayerVisualShipKey, getShipByKey, getUnlockedStage, isCoreLanderAoeShot, isGodGundamBarragePilot, normalizeMesiahDrones, normalizeMesiahScoutDrones, powerColor, sanitizePlayerVisualShipKey, saveCheckpointStage, saveHighScore, saveUnlockedStage } from './state'
-import type { AsteroidHazard, BossDefeatExplosionEvent, BossKind, BossMessage, CameraShakeState, DerelictWreck, Enemy, FormationStyle, GamePhase, GodGundamBarrage, GodGundamPassiveStrike, IonStrike, MeteorHazard, MiniBossKind, MirageBossKind, MultiplayerAsteroidSnapshot, MultiplayerConnectionQuality, MultiplayerEnemySnapshot, MultiplayerHostState, MultiplayerInput, MultiplayerPlayerSnapshot, NukeStrike, Player, PowerKind, PowerUp, RaidAssetPreloadState, RaidBgmMode, RaidDifficulty, RaidMode, RaidMultiplayerSession, RaidRandomEvent, RaidRandomEventKind, RelayGameMessage, Ripple, ShipOption, Shot, Snapshot, Spark, Vec, WeaponKey } from './types'
+import type { AsteroidHazard, BossDefeatExplosionEvent, BossKind, BossMessage, CameraShakeState, CoreLanderCombatModel, DerelictWreck, Enemy, FormationStyle, GamePhase, GodGundamBarrage, GodGundamPassiveStrike, IonStrike, MeteorHazard, MiniBossKind, MirageBossKind, MultiplayerAsteroidSnapshot, MultiplayerConnectionQuality, MultiplayerEnemySnapshot, MultiplayerHostState, MultiplayerInput, MultiplayerPlayerSnapshot, NukeStrike, Player, PowerKind, PowerUp, RaidAssetPreloadState, RaidBgmMode, RaidDifficulty, RaidMode, RaidMultiplayerSession, RaidRandomEvent, RaidRandomEventKind, RelayGameMessage, Ripple, ShipOption, Shot, Snapshot, Spark, Vec, WeaponKey } from './types'
 import { acquireRipple, acquireSpark, buildEnemyCollisionBuckets, clamp, collectShotCollisionCandidates, compactInPlace, createEnemyCollisionBuckets, distSq, drawRadialEllipse, getCachedProjectileOrbSprite, getCachedProjectileTrailSprite, getEliteEnemyChance, getMaxActiveEliteEnemies, pickEliteEnemyKind, readRaidPalette, recycleRipple, recycleRippleList, recycleSpark, recycleSparkList, takeLastFilteredMapped, updateRipplesInPlace, updateSparksInPlace } from './utils'
 import type { EnemyCollisionBuckets } from './utils'
 
@@ -44,6 +44,38 @@ let wreckId = 1
 let powerId = 1
 
 let godMeleeStrikeId = 1
+
+const NORMAL_RAID_DEVIL_BONUS_STAGE = MAX_RAID_STAGE + 1
+
+const NORMAL_RAID_DEVIL_BONUS_CHANCE = 0.35
+
+const BOSS_RUSH_NEXT_BOSS_DELAY_SECONDS = 0.35
+
+const DEVIL_ASSIST_DAMAGE_SCALE = 0.28
+
+const DEVIL_ASSIST_KEYS = new Set<string>()
+
+function getRaidEnemyScoreValue(enemy: Enemy, wave: number) {
+  if (enemy.bossKind === 'devil') return 150000
+  if (enemy.bossKind === 'final') return 100000
+  if (enemy.bossKind === 'snake') return 65000
+  if (enemy.bossKind === 'squid') return 25000
+  if (enemy.isBoss) return 2800 + wave * 220
+  if (enemy.isMiniBoss) return 260 + wave * 32
+  return 95 + wave * 14
+}
+
+function isCoreLanderRaidPlayer(player: Player | null | undefined) {
+  return player?.ship.key === 'coreLander'
+}
+
+function getNormalRaidDevilAssistModel(player: Player, progress: ReturnType<typeof loadProgress>): CoreLanderCombatModel | null {
+  if (player.ship.key !== 'coreLander') return null
+  const model = getPlayerCoreLanderCombatModel(player, progress)
+  if (model === 'godGundam') return 'spiegel'
+  if (model === 'spiegel') return 'godGundam'
+  return 'godGundam'
+}
 
 export function GradiusRaid({
   onClose,
@@ -132,6 +164,9 @@ export function GradiusRaid({
   // Stable ref to firePlayer so predictGuestPlayer can call it without a forward-declaration issue
   const firePlayerRef = useRef<(player: Player) => void>((_p: Player) => {})
   const playerRef = useRef<Player>(getInitialPlayer())
+  const devilAssistPlayerRef = useRef<Player | null>(null)
+  const devilAssistMoveTargetRef = useRef<Vec | null>(null)
+  const devilAssistEntryRef = useRef(0)
   const leaderboardSubmittedRef = useRef(false)
   const runStartTimeRef = useRef(performance.now())
   const runReportedRef = useRef(false)
@@ -141,6 +176,8 @@ export function GradiusRaid({
   const devilBossDefeatedRef = useRef(false)
   const devilBossNextEligibleStageRef = useRef(1)
   const devilPreBuffRankRef = useRef(1)
+  const normalRaidDevilBonusEligibleRef = useRef(false)
+  const normalRaidDevilBonusTriggeredRef = useRef(false)
   const [selectedDifficulty, setSelectedDifficulty] = useState<RaidDifficulty>('normal')
   const raidDifficultyRef = useRef<RaidDifficulty>('normal')
   const scoreMultRef = useRef(1)
@@ -2144,14 +2181,18 @@ export function GradiusRaid({
     const isGuestView = Boolean(multiplayerSessionRef.current && !multiplayerSessionRef.current.isHost)
     const ownShipRef = isGuestView ? remotePlayerRef.current : playerRef.current
     const allyShipRef = isGuestView ? playerRef.current : remotePlayerRef.current
+    const devilAssistShipRef = devilAssistPlayerRef.current
     const stageClearActive = stageClearRef.current > 0
     const hideOwnShipForBarrage = Boolean(ownShipRef && !stageClearActive && isGodGundamBarragePilot(ownShipRef, progressRef.current) && (godBarrageRef.current || (ownShipRef.godMeleeCloak ?? 0) > 0))
     const hideAllyShipForBarrage = Boolean(allyShipRef && !stageClearActive && isGodGundamBarragePilot(allyShipRef, progressRef.current) && (godBarrageRef.current || (allyShipRef.godMeleeCloak ?? 0) > 0))
+    const hideDevilAssistForBarrage = Boolean(devilAssistShipRef && !stageClearActive && isGodGundamBarragePilot(devilAssistShipRef, progressRef.current) && (devilAssistShipRef.godMeleeCloak ?? 0) > 0)
     if (gfxProfile.drawOptionShips && ownShipRef && !hideOwnShipForBarrage) drawRaidOptions(ctx, ownShipRef, toX, toY, cssWidth, time, PLAYER_COLOR, getRaidPlayerVisualShipKey(ownShipRef, progressRef.current))
     if (gfxProfile.drawOptionShips && allyShipRef && !hideAllyShipForBarrage) drawRaidOptions(ctx, allyShipRef, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getRaidPlayerVisualShipKey(allyShipRef, progressRef.current))
+    if (gfxProfile.drawOptionShips && devilAssistShipRef && !hideDevilAssistForBarrage) drawRaidOptions(ctx, devilAssistShipRef, toX, toY, cssWidth, time, '#facc15', getRaidPlayerVisualShipKey(devilAssistShipRef, progressRef.current))
     const sameScreenIdentityAura = sameScreenCoopRef.current
     if (ownShipRef && !hideOwnShipForBarrage) drawRaidPlayer(ctx, ownShipRef, phaseRef.current, toX, toY, cssWidth, time, PLAYER_COLOR, getCachedEquippedCosmetics(ownShipRef.ship.key), getRaidPlayerVisualShipKey(ownShipRef, progressRef.current), sameScreenIdentityAura ? PLAYER_COLOR : null)
     if (allyShipRef && !hideAllyShipForBarrage) drawRaidPlayer(ctx, allyShipRef, phaseRef.current, toX, toY, cssWidth, time, ALLY_PLAYER_COLOR, getCachedEquippedCosmetics(allyShipRef.ship.key), getRaidPlayerVisualShipKey(allyShipRef, progressRef.current), sameScreenIdentityAura ? ALLY_PLAYER_COLOR : null)
+    if (devilAssistShipRef && !hideDevilAssistForBarrage) drawRaidPlayer(ctx, devilAssistShipRef, phaseRef.current, toX, toY, cssWidth, time, '#facc15', getCachedEquippedCosmetics(devilAssistShipRef.ship.key), getRaidPlayerVisualShipKey(devilAssistShipRef, progressRef.current), null)
 
     if (isWateryWorldTheme(backgroundStageTheme)) {
       drawWateryWorldForegroundClouds(ctx, cssWidth, cssHeight, time, gfxQuality)
@@ -2553,6 +2594,9 @@ export function GradiusRaid({
     }
 
     playerRef.current = getInitialPlayer(session?.isHost ? hostShip : selectedShipRef.current, session?.isHost ? hostVisualShipKey : localVisualShipKey)
+    devilAssistPlayerRef.current = null
+    devilAssistMoveTargetRef.current = null
+    devilAssistEntryRef.current = 0
     applyStartingStageLevel(playerRef.current, stage)
     if (session?.isHost || sameScreen) {
       remotePlayerRef.current = getInitialPlayer(guestShip, guestVisualShipKey)
@@ -2560,6 +2604,9 @@ export function GradiusRaid({
       remotePlayerRef.current.x = 58
       remotePlayerRef.current.y = 84
     }
+    const coreLanderDevilBonus = isCoreLanderRaidPlayer(playerRef.current) || isCoreLanderRaidPlayer(remotePlayerRef.current)
+    normalRaidDevilBonusEligibleRef.current = mode === 'campaign' && (coreLanderDevilBonus || Math.random() < NORMAL_RAID_DEVIL_BONUS_CHANCE)
+    normalRaidDevilBonusTriggeredRef.current = false
     const forceLocalDevilTest = shouldForceLocalDevilBossTest(stage, mode, playerName)
     if (fullyBuffed || forceLocalDevilTest || isBossRush) {
       fullyBuffRaidPlayer(playerRef.current)
@@ -2694,6 +2741,37 @@ export function GradiusRaid({
       })
     }
   }, [multiplayerSession, preloadRaidAssetsForMenu, resetGame, resetGuestPredictionState, syncSnapshot])
+
+  const spawnDevilEncounterAssist = useCallback((entryMode: 'stageEntry' | 'directEntry' = 'stageEntry') => {
+    const isNormalBonusDevil = raidModeRef.current === 'campaign' && stageRef.current === NORMAL_RAID_DEVIL_BONUS_STAGE
+    const isEndlessDevil = raidModeRef.current === 'endless'
+    if (coOpRunRef.current || (!isNormalBonusDevil && !isEndlessDevil)) {
+      devilAssistPlayerRef.current = null
+      devilAssistMoveTargetRef.current = null
+      devilAssistEntryRef.current = 0
+      return
+    }
+    const model = getNormalRaidDevilAssistModel(playerRef.current, progressRef.current)
+    if (!model) {
+      devilAssistPlayerRef.current = null
+      devilAssistMoveTargetRef.current = null
+      devilAssistEntryRef.current = 0
+      return
+    }
+    const assist = getInitialPlayer(getShipByKey('coreLander', selectedShipRef.current), model)
+    assist.x = model === 'spiegel' ? 62 : 38
+    assist.y = HEIGHT + 14
+    assist.rank = Math.max(3, Math.round(playerRef.current.rank * 0.34))
+    assist.invuln = STAGE_ENTRY_SECONDS + 1.25
+    assist.specialCooldown = 999
+    assist.fireCooldown = 0.35
+    assist.engineBoost = 1.15
+    assist.godMeleeChainX = assist.x
+    assist.godMeleeChainY = assist.y
+    devilAssistPlayerRef.current = assist
+    devilAssistMoveTargetRef.current = { x: assist.x, y: 84 }
+    devilAssistEntryRef.current = entryMode === 'directEntry' ? STAGE_ENTRY_SECONDS : 0
+  }, [])
 
   const openBriefing = useCallback(() => {
     const session = multiplayerSessionRef.current
@@ -3456,9 +3534,12 @@ export function GradiusRaid({
     const powerScore = getPowerScore(playerRef.current)
     const isBossRush = raidModeRef.current === 'bossRush'
     const bossCycle: BossKind[] = ['carrier', 'orb', 'mantis', 'serpent', 'hydra', 'gate']
-    const bossKind: BossKind = raidModeRef.current === 'endless'
-      ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current, isCreatorPlayerName(playerName))
-      : stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
+    const isNormalRaidDevilBonusStage = raidModeRef.current === 'campaign' && stage === NORMAL_RAID_DEVIL_BONUS_STAGE
+    const bossKind: BossKind = isNormalRaidDevilBonusStage
+      ? 'devil'
+      : raidModeRef.current === 'endless'
+        ? forceLocalDevilTest ? 'devil' : pickEndlessBossKind(stage, wave, devilBossNextEligibleStageRef.current, isCreatorPlayerName(playerName))
+        : stage === MAX_RAID_STAGE ? 'final' : stage === 10 ? 'snake' : stage === 5 ? 'squid' : stage % 5 === 0 ? 'super' : bossCycle[(stage - 1) % bossCycle.length]
     if (bossKind === 'devil') {
       devilPreBuffRankRef.current = player.rank
       fullyBuffRaidPlayer(player)
@@ -3534,6 +3615,9 @@ export function GradiusRaid({
     if (bossKind === 'devil') {
       devilBossEncounteredRef.current = true
       devilBossNextEligibleStageRef.current = stage + DEVIL_BOSS_MIN_STAGE_GAP + Math.floor(Math.random() * (DEVIL_BOSS_MAX_STAGE_GAP - DEVIL_BOSS_MIN_STAGE_GAP + 1))
+      if (!devilAssistPlayerRef.current) {
+        spawnDevilEncounterAssist(raidModeRef.current === 'endless' ? 'directEntry' : 'stageEntry')
+      }
     }
     if (player.forceField > 0) {
       player.forceField = Math.min(FORCE_FIELD_ARMOR, player.forceField + 1)
@@ -3544,7 +3628,7 @@ export function GradiusRaid({
     triggerScreenShake(bossKind === 'devil' || bossKind === 'final' ? 4.8 : 3.6, 260)
     startRaidBgm(stage, 'boss', bossKind)
     playGameSound('stinger')
-  }, [playerName, startRaidBgm, triggerScreenShake])
+  }, [playerName, spawnDevilEncounterAssist, startRaidBgm, triggerScreenShake])
 
   const spawnPowerUp = useCallback((x: number, y: number, guaranteed = false) => {
     const player = playerRef.current
@@ -4017,6 +4101,7 @@ export function GradiusRaid({
       const before = stageClearRef.current
       stageClearRef.current = Math.max(0, stageClearRef.current - dt)
       const remotePlayer = remotePlayerRef.current
+      const devilAssistPlayer = devilAssistPlayerRef.current
       pointerTargetRef.current = null
       pointerVisualRef.current = null
       asteroidWarningRef.current = 0
@@ -4026,6 +4111,9 @@ export function GradiusRaid({
       animateStageClearPlayer(player, dt, 50)
       if (remotePlayer) {
         animateStageClearPlayer(remotePlayer, dt, 58)
+      }
+      if (devilAssistPlayer) {
+        animateStageClearPlayer(devilAssistPlayer, dt, devilAssistPlayer.x < 50 ? 38 : 62)
       }
       updateSparksInPlace(sparksRef.current, dt)
       updateRipplesInPlace(ripplesRef.current, dt)
@@ -4050,6 +4138,13 @@ export function GradiusRaid({
           stageRef.current = pendingNextStage
           waveRef.current = pendingNextStage
           pendingNextStageRef.current = null
+          if (pendingNextStage === NORMAL_RAID_DEVIL_BONUS_STAGE) {
+            spawnDevilEncounterAssist('stageEntry')
+          } else {
+            devilAssistPlayerRef.current = null
+            devilAssistMoveTargetRef.current = null
+            devilAssistEntryRef.current = 0
+          }
           startRaidBgm(stageRef.current, 'cruise')
         }
         player.x = 50
@@ -4076,6 +4171,11 @@ export function GradiusRaid({
           remotePlayer.y = HEIGHT + 14
           remotePlayer.invuln = Math.max(remotePlayer.invuln, STAGE_ENTRY_SECONDS + 0.35)
         }
+        const nextDevilAssistPlayer = devilAssistPlayerRef.current
+        if (nextDevilAssistPlayer) {
+          nextDevilAssistPlayer.y = HEIGHT + 14
+          nextDevilAssistPlayer.invuln = Math.max(nextDevilAssistPlayer.invuln, STAGE_ENTRY_SECONDS + 0.35)
+        }
         remotePointerTargetRef.current = null
         remotePointerVisualRef.current = null
       }
@@ -4094,6 +4194,14 @@ export function GradiusRaid({
         remotePlayer.x += (58 - remotePlayer.x) * Math.min(1, dt * 6.4)
         remotePlayer.y = HEIGHT + 14 + (84 - (HEIGHT + 14)) * easedEntry
         remotePlayer.invuln = Math.max(remotePlayer.invuln, 0.4)
+      }
+      const devilAssistPlayer = devilAssistPlayerRef.current
+      if (devilAssistPlayer) {
+        const assistTargetX = devilAssistPlayer.visualShipKey === 'spiegel' ? 62 : 38
+        devilAssistPlayer.x += (assistTargetX - devilAssistPlayer.x) * Math.min(1, dt * 6.4)
+        devilAssistPlayer.y = HEIGHT + 14 + (84 - (HEIGHT + 14)) * easedEntry
+        devilAssistPlayer.invuln = Math.max(devilAssistPlayer.invuln, 0.4)
+        devilAssistPlayer.engineBoost = Math.max(devilAssistPlayer.engineBoost ?? 0, 1.1)
       }
       pointerTargetRef.current = null
       pointerVisualRef.current = null
@@ -4125,14 +4233,95 @@ export function GradiusRaid({
     if (remotePlayer && remotePlayer.hp > 0 && !remotePlayerInGodBarrage) {
       movePlayerWithInput(remotePlayer, dt, remotePointerTargetRef.current, remoteKeysRef.current, getPlayerCoreLanderCombatModel(remotePlayer, progressRef.current))
     }
+    const devilAssistPlayer = devilAssistPlayerRef.current
+    if (devilAssistPlayer && devilAssistPlayer.hp > 0) {
+      const assistModel = getPlayerCoreLanderCombatModel(devilAssistPlayer, progressRef.current)
+      if (devilAssistEntryRef.current > 0) {
+        devilAssistEntryRef.current = Math.max(0, devilAssistEntryRef.current - dt)
+        const entryProgress = 1 - devilAssistEntryRef.current / STAGE_ENTRY_SECONDS
+        const easedEntry = 1 - Math.pow(1 - clamp(entryProgress, 0, 1), 3)
+        const assistTargetX = devilAssistPlayer.visualShipKey === 'spiegel' ? 62 : 38
+        devilAssistPlayer.x += (assistTargetX - devilAssistPlayer.x) * Math.min(1, dt * 5.2)
+        devilAssistPlayer.y = HEIGHT + 14 + (84 - (HEIGHT + 14)) * easedEntry
+        devilAssistPlayer.invuln = Math.max(devilAssistPlayer.invuln, 0.4)
+        devilAssistPlayer.engineBoost = Math.max(devilAssistPlayer.engineBoost ?? 0, 1.12)
+        devilAssistMoveTargetRef.current = { x: devilAssistPlayer.x, y: 84 }
+      } else {
+        const devilBoss = enemiesRef.current.find((enemy) => enemy.isBoss && enemy.bossKind === 'devil' && enemy.hp > 0) ?? null
+        if (devilBoss) {
+        const assistTime = performance.now() / 1000
+        const exhausted = (devilAssistPlayer.godMeleeExhaust ?? 0) > 0
+        const sideBias = assistModel === 'spiegel' ? 1 : -1
+        const meleeRange = getGodGundamMeleeRange(devilAssistPlayer, assistModel)
+        const meleeStandOff = clamp(meleeRange + devilBoss.radius - 9, 28, 39)
+        const rangedStandOff = clamp(meleeRange + devilBoss.radius + 17, 48, 64)
+        let desiredX = clamp(
+          devilBoss.x +
+            sideBias * (15 + Math.sin(assistTime * 0.72 + devilBoss.id) * 3.5) +
+            Math.sin(assistTime * 0.48 + devilBoss.phase) * 8,
+          12,
+          88,
+        )
+        let desiredY = devilBoss.y > 0
+          ? clamp(devilBoss.y + (exhausted ? rangedStandOff : meleeStandOff) + Math.cos(assistTime * 0.62) * 2.8, exhausted ? 62 : 48, exhausted ? 86 : 72)
+          : 84
+        let dodgeUrgency = 0
+        if ((devilBoss.chargeTimer ?? 0) > 0) {
+          const lanes: number[] = []
+          forEachDevilBossBeamLane(devilBoss.chargeLane ?? 50, devilBoss.chargePattern ?? 'single', (lane) => lanes.push(lane))
+          for (const lane of lanes) {
+            if (Math.abs(desiredX - lane) < 11 || Math.abs(devilAssistPlayer.x - lane) < 12) {
+              desiredX = clamp(lane + (devilAssistPlayer.x <= lane ? -17 : 17), 10, 90)
+              desiredY = Math.max(desiredY, 62)
+              dodgeUrgency = Math.max(dodgeUrgency, 1)
+            }
+          }
+        }
+        for (const shot of enemyShotsRef.current) {
+          if ((shot.life ?? 1) <= 0) continue
+          const dangerRadius = shot.kind === 'beam' ? 18 : shot.kind === 'devilSnakeHead' ? 15 : 10
+          const dx = devilAssistPlayer.x - shot.x
+          const dy = devilAssistPlayer.y - shot.y
+          const dangerSq = dangerRadius * dangerRadius
+          if (dx * dx + dy * dy > dangerSq) continue
+          const mag = Math.hypot(dx, dy) || 1
+          desiredX = clamp(desiredX + (dx / mag) * (shot.kind === 'beam' ? 18 : 11), 9, 91)
+          desiredY = clamp(desiredY + (dy / mag) * 8, 34, 88)
+          dodgeUrgency = Math.max(dodgeUrgency, shot.kind === 'beam' ? 1 : 0.7)
+        }
+        const moveTarget = devilAssistMoveTargetRef.current ?? { x: devilAssistPlayer.x, y: devilAssistPlayer.y }
+        const targetEase = Math.min(1, dt * (dodgeUrgency > 0 ? 3.7 : 1.55))
+        moveTarget.x += (desiredX - moveTarget.x) * targetEase
+        moveTarget.y += (desiredY - moveTarget.y) * targetEase
+        devilAssistMoveTargetRef.current = moveTarget
+        const leadX = moveTarget.x - devilAssistPlayer.x
+        const leadY = moveTarget.y - devilAssistPlayer.y
+        const leadDistance = Math.hypot(leadX, leadY)
+        const maxLead = dodgeUrgency > 0 ? 8.5 : exhausted ? 5.8 : 5.2
+        const pointerTarget = leadDistance > maxLead
+          ? { x: devilAssistPlayer.x + (leadX / leadDistance) * maxLead, y: devilAssistPlayer.y + (leadY / leadDistance) * maxLead }
+          : moveTarget
+        movePlayerWithInput(devilAssistPlayer, dt, pointerTarget, DEVIL_ASSIST_KEYS, assistModel)
+        } else if (stageRef.current === NORMAL_RAID_DEVIL_BONUS_STAGE && stageClearRef.current <= 0) {
+        const idleTarget = devilAssistMoveTargetRef.current ?? { x: devilAssistPlayer.x, y: devilAssistPlayer.y }
+        idleTarget.x += ((devilAssistPlayer.visualShipKey === 'spiegel' ? 62 : 38) - idleTarget.x) * Math.min(1, dt * 1.8)
+        idleTarget.y += (84 - idleTarget.y) * Math.min(1, dt * 1.8)
+        devilAssistMoveTargetRef.current = idleTarget
+        movePlayerWithInput(devilAssistPlayer, dt, idleTarget, DEVIL_ASSIST_KEYS, assistModel)
+        }
+      }
+    }
 
     const isSmallViewport = Boolean(viewportMetricsRef.current && viewportMetricsRef.current.cssWidth < 640)
     if (player.hp > 0 && !playerInGodBarrage) updatePlayerTimers(player, dt, enemiesRef.current, isSmallViewport)
     if (remotePlayer && remotePlayer.hp > 0 && !remotePlayerInGodBarrage) updatePlayerTimers(remotePlayer, dt, enemiesRef.current, isSmallViewport)
+    if (devilAssistPlayer && devilAssistPlayer.hp > 0) updatePlayerTimers(devilAssistPlayer, dt, enemiesRef.current, isSmallViewport)
     if (isGodGundamBarragePilot(player, progressRef.current)) clearPickupLoadout(player)
     if (remotePlayer && isGodGundamBarragePilot(remotePlayer, progressRef.current)) clearPickupLoadout(remotePlayer)
+    if (devilAssistPlayer && isGodGundamBarragePilot(devilAssistPlayer, progressRef.current)) clearPickupLoadout(devilAssistPlayer)
     if (player.hp > 0 && !playerInGodBarrage) firePlayer(player)
     if (remotePlayer && remotePlayer.hp > 0 && !remotePlayerInGodBarrage) firePlayer(remotePlayer)
+    if (devilAssistPlayer && devilAssistPlayer.hp > 0 && devilAssistEntryRef.current <= 0 && (devilAssistPlayer.godMeleeCloak ?? 0) <= 0) firePlayer(devilAssistPlayer)
     const livingPlayersThisTick = remotePlayer
       ? (player.hp > 0 ? (remotePlayer.hp > 0 ? [player, remotePlayer] : [player]) : remotePlayer.hp > 0 ? [remotePlayer] : [])
       : (player.hp > 0 ? [player] : [])
@@ -5384,7 +5573,7 @@ export function GradiusRaid({
           enemy.devilPoseChangedAt = now
         }
       }
-      const scoreValue = enemy.bossKind === 'devil' ? 150000 : enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
+      const scoreValue = getRaidEnemyScoreValue(enemy, waveRef.current)
       player.score += Math.round(scoreValue * scoreMult)
       if (remotePlayerRef.current) {
         remotePlayerRef.current.score += Math.round(scoreValue * scoreMult)
@@ -5400,7 +5589,24 @@ export function GradiusRaid({
         bossDefeatedThisFrame = true
         const clearedStage = stageRef.current
         const nextBossRushStage = raidModeRef.current === 'bossRush' ? getNextBossRushStage(clearedStage) : undefined
-        if (raidModeRef.current === 'bossRush' ? nextBossRushStage === null : raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
+        const startNormalRaidDevilBonus =
+          raidModeRef.current === 'campaign' &&
+          enemy.bossKind === 'final' &&
+          clearedStage >= MAX_RAID_STAGE &&
+          normalRaidDevilBonusEligibleRef.current &&
+          !normalRaidDevilBonusTriggeredRef.current
+        if (startNormalRaidDevilBonus) {
+          normalRaidDevilBonusTriggeredRef.current = true
+          preserveLoadoutForSuperBoss = true
+          pendingNextStageRef.current = NORMAL_RAID_DEVIL_BONUS_STAGE
+          unlockedStageRef.current = MAX_RAID_STAGE
+          if (!coOpRunRef.current) {
+            saveUnlockedStage(MAX_RAID_STAGE)
+            saveCheckpointStage(14)
+          }
+          bossAlertRef.current = 2.4
+          bossMessageRef.current = 'clear'
+        } else if (raidModeRef.current === 'bossRush' ? nextBossRushStage === null : raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
           completedRun = true
           victoryPendingRef.current = true
           if (raidModeRef.current === 'campaign') {
@@ -5477,6 +5683,7 @@ export function GradiusRaid({
       }
 
       const ownerModel = getPlayerCoreLanderCombatModel(owner, progressRef.current) ?? 'godGundam'
+      const ownerDamageScale = owner === devilAssistPlayerRef.current ? DEVIL_ASSIST_DAMAGE_SCALE : 1
       const meleeColor = ownerModel === 'spiegel' ? '#f87171' : '#facc15'
       const meleeRippleColor = ownerModel === 'spiegel' ? '#e2e8f0' : '#fbbf24'
       const range = getGodGundamMeleeRange(owner, ownerModel)
@@ -5630,14 +5837,14 @@ export function GradiusRaid({
         owner.godMeleeVisualTimer = GOD_GUNDAM_MELEE_VISUAL_INTERVAL_SECONDS
       }
 
-      damageMeleeCandidate(candidate)
+      damageMeleeCandidate(candidate, ownerDamageScale)
       if (spiegelClonesActive) {
         const cloneDamageMultiplier = getSpiegelShadowCloneDamageMultiplier(owner, ownerModel)
         const usedCloneKeys = [candidate.key]
         for (const side of [-1, 1] as const) {
           const cloneCandidate = pickSpiegelCloneCandidate(side, usedCloneKeys)
           if (!cloneCandidate) continue
-          damageMeleeCandidate(cloneCandidate, cloneDamageMultiplier)
+          damageMeleeCandidate(cloneCandidate, cloneDamageMultiplier * ownerDamageScale)
           usedCloneKeys.push(cloneCandidate.key)
         }
       }
@@ -5646,6 +5853,8 @@ export function GradiusRaid({
       if (!playerInGodBarrage) updateGodGundamMeleePassive(player)
       const remoteOwner = remotePlayerRef.current
       if (remoteOwner && !remotePlayerInGodBarrage && !bossDefeatedThisFrame) updateGodGundamMeleePassive(remoteOwner)
+      const devilAssistOwner = devilAssistPlayerRef.current
+      if (devilAssistOwner && devilAssistEntryRef.current <= 0 && !bossDefeatedThisFrame) updateGodGundamMeleePassive(devilAssistOwner)
     }
     const godBarrage = godBarrageRef.current
     if (godBarrage && !bossDefeatedThisFrame) {
@@ -5852,7 +6061,7 @@ export function GradiusRaid({
                 enemy.devilPoseChangedAt = now
               }
             }
-            const scoreValue = enemy.bossKind === 'devil' ? 150000 : enemy.isBoss ? 2800 + waveRef.current * 220 : enemy.isMiniBoss ? 260 + waveRef.current * 32 : 95 + waveRef.current * 14
+            const scoreValue = getRaidEnemyScoreValue(enemy, waveRef.current)
             player.score += Math.round(scoreValue * scoreMult)
             if (remotePlayerRef.current) {
               remotePlayerRef.current.score += Math.round(scoreValue * scoreMult)
@@ -5867,7 +6076,24 @@ export function GradiusRaid({
               bossDefeatedThisFrame = true
               const clearedStage = stageRef.current
               const nextBossRushStage = raidModeRef.current === 'bossRush' ? getNextBossRushStage(clearedStage) : undefined
-              if (raidModeRef.current === 'bossRush' ? nextBossRushStage === null : raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
+              const startNormalRaidDevilBonus =
+                raidModeRef.current === 'campaign' &&
+                enemy.bossKind === 'final' &&
+                clearedStage >= MAX_RAID_STAGE &&
+                normalRaidDevilBonusEligibleRef.current &&
+                !normalRaidDevilBonusTriggeredRef.current
+              if (startNormalRaidDevilBonus) {
+                normalRaidDevilBonusTriggeredRef.current = true
+                preserveLoadoutForSuperBoss = true
+                pendingNextStageRef.current = NORMAL_RAID_DEVIL_BONUS_STAGE
+                unlockedStageRef.current = MAX_RAID_STAGE
+                if (!coOpRunRef.current) {
+                  saveUnlockedStage(MAX_RAID_STAGE)
+                  saveCheckpointStage(14)
+                }
+                bossAlertRef.current = 2.4
+                bossMessageRef.current = 'clear'
+              } else if (raidModeRef.current === 'bossRush' ? nextBossRushStage === null : raidModeRef.current !== 'endless' && clearedStage >= MAX_RAID_STAGE) {
                 completedRun = true
                 victoryPendingRef.current = true
                 if (raidModeRef.current === 'campaign') {
@@ -5960,7 +6186,10 @@ export function GradiusRaid({
         spawnSparks(remotePlayerRef.current.x, remotePlayerRef.current.y, '#86efac', 34, 7)
         addRipple(remotePlayerRef.current.x, remotePlayerRef.current.y, '#86efac', 15)
       }
-      bossTimerRef.current = BOSS_RESPAWN_SECONDS
+      bossTimerRef.current =
+        raidModeRef.current === 'bossRush' || pendingNextStageRef.current === NORMAL_RAID_DEVIL_BONUS_STAGE
+          ? BOSS_RUSH_NEXT_BOSS_DELAY_SECONDS
+          : BOSS_RESPAWN_SECONDS
       stageClearRef.current = STAGE_CLEAR_SECONDS
       spawnLockRef.current = STAGE_CLEAR_SECONDS + 1.2
       shotsRef.current = []
@@ -6191,7 +6420,7 @@ export function GradiusRaid({
     if (remotePlayerRef.current && remotePlayerRef.current.score > highScoreRef.current) {
       highScoreRef.current = remotePlayerRef.current.score
     }
-  }, [activateNuke, addRipple, damagePlayer, destroyPlayerByBossCollision, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, reportRaidRunComplete, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore, triggerScreenShake])
+  }, [activateNuke, addRipple, damagePlayer, destroyPlayerByBossCollision, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, reportRaidRunComplete, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnDevilEncounterAssist, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore, triggerScreenShake])
 
   useEffect(() => {
     const tick = (time: number) => {
