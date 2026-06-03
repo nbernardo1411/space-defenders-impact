@@ -55,6 +55,30 @@ const DEVIL_ASSIST_DAMAGE_SCALE = 0.28
 
 const DEVIL_ASSIST_KEYS = new Set<string>()
 
+const GAMEPAD_AXIS_DEADZONE = 0.18
+
+const GAMEPAD_MENU_AXIS_THRESHOLD = 0.55
+
+const GAMEPAD_POINTER_LEAD = 11.5
+
+const GAMEPAD_BUTTON_CONFIRM = 0
+
+const GAMEPAD_BUTTON_CANCEL = 1
+
+const GAMEPAD_BUTTON_SPECIAL = 5
+
+const GAMEPAD_BUTTON_SPECIAL_ALT = 7
+
+const GAMEPAD_BUTTON_START = 9
+
+const GAMEPAD_BUTTON_DPAD_UP = 12
+
+const GAMEPAD_BUTTON_DPAD_DOWN = 13
+
+const GAMEPAD_BUTTON_DPAD_LEFT = 14
+
+const GAMEPAD_BUTTON_DPAD_RIGHT = 15
+
 function getRaidEnemyScoreValue(enemy: Enemy, wave: number) {
   if (enemy.bossKind === 'devil') return 150000
   if (enemy.bossKind === 'final') return 100000
@@ -118,6 +142,10 @@ export function GradiusRaid({
   const pointerTargetRef = useRef<Vec | null>(null)
   const pointerVisualRef = useRef<Vec | null>(null)
   const touchPointerActiveRef = useRef(false)
+  const gamepadButtonsRef = useRef(new Map<number, Set<number>>())
+  const gamepadPointerActiveRef = useRef<{ p1: boolean; p2: boolean }>({ p1: false, p2: false })
+  const gamepadPilotAssignmentsRef = useRef<{ p1: number | null; p2: number | null }>({ p1: null, p2: null })
+  const gamepadNextMenuNavRef = useRef(0)
   const selectedShipRef = useRef<ShipOption>(SHIP_OPTIONS[0])
   const progressRef = useRef(loadProgress())
   const shipCosmeticsCacheRef = useRef(new Map<string, { progress: ReturnType<typeof loadProgress>, cosmetics: Required<ShipCosmeticEquipState> }>())
@@ -6422,10 +6450,191 @@ export function GradiusRaid({
     }
   }, [activateNuke, addRipple, damagePlayer, destroyPlayerByBossCollision, detonateNuke, fireEnemy, firePlayer, getLivingPlayers, getNearestLivingPlayer, reportRaidRunComplete, spawnAsteroidCluster, spawnBoss, spawnEnemyAt, spawnFormation, spawnDevilEncounterAssist, spawnPowerUp, spawnLevelUpPowerUp, spawnSparks, startRaidBgm, startRandomRaidEvent, stopRaidBgm, submitRaidLeaderboardScore, triggerScreenShake])
 
+  const getRaidFocusableControls = useCallback(() => {
+    const root = rootRef.current
+    if (!root) return []
+    return Array.from(root.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex]:not([tabindex="-1"])')).filter((control) => {
+      if (control.tabIndex < 0) return false
+      const rect = control.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(control).visibility !== 'hidden'
+    })
+  }, [])
+
+  const moveRaidMenuFocus = useCallback((direction: 1 | -1) => {
+    const controls = getRaidFocusableControls()
+    if (!controls.length) return
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const currentIndex = active ? controls.indexOf(active) : -1
+    const nextIndex = currentIndex < 0 ? (direction > 0 ? 0 : controls.length - 1) : (currentIndex + direction + controls.length) % controls.length
+    controls[nextIndex]?.focus()
+  }, [getRaidFocusableControls])
+
+  const activateRaidFocusedControl = useCallback(() => {
+    const controls = getRaidFocusableControls()
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (active && controls.includes(active)) {
+      active.click()
+      return
+    }
+    controls[0]?.focus()
+  }, [getRaidFocusableControls])
+
+  const activateRaidBackControl = useCallback(() => {
+    if (phaseRef.current === 'playing') {
+      pauseGame()
+      return
+    }
+    if (phaseRef.current === 'paused') {
+      resumeGame()
+      return
+    }
+    if (phaseRef.current === 'briefing') {
+      phaseRef.current = 'select'
+      syncSnapshot()
+      return
+    }
+    exitRaid()
+  }, [exitRaid, pauseGame, resumeGame, syncSnapshot])
+
+  const pollRaidGamepads = useCallback((time: number) => {
+    const gamepads = typeof navigator.getGamepads === 'function'
+      ? Array.from(navigator.getGamepads()).filter((gamepad): gamepad is Gamepad => Boolean(gamepad?.connected))
+      : []
+    const clearPilotGamepadPointer = (pilot: 'p1' | 'p2') => {
+      const activeRef = gamepadPointerActiveRef.current
+      if (!activeRef[pilot]) return
+      const targetRef = pilot === 'p1' ? pointerTargetRef : remotePointerTargetRef
+      const visualRef = pilot === 'p1' ? pointerVisualRef : remotePointerVisualRef
+      targetRef.current = null
+      visualRef.current = null
+      activeRef[pilot] = false
+    }
+    if (!gamepads.length) {
+      clearPilotGamepadPointer('p1')
+      clearPilotGamepadPointer('p2')
+      gamepadButtonsRef.current = new Map()
+      gamepadPilotAssignmentsRef.current = { p1: null, p2: null }
+      return
+    }
+    const connectedIndexes = new Set(gamepads.map((gamepad) => gamepad.index))
+    const assignments = gamepadPilotAssignmentsRef.current
+    if (assignments.p1 !== null && !connectedIndexes.has(assignments.p1)) {
+      assignments.p1 = null
+      clearPilotGamepadPointer('p1')
+    }
+    if (assignments.p2 !== null && !connectedIndexes.has(assignments.p2)) {
+      assignments.p2 = null
+      clearPilotGamepadPointer('p2')
+    }
+    for (const gamepad of gamepads) {
+      if (assignments.p1 === gamepad.index || assignments.p2 === gamepad.index) continue
+      if (assignments.p1 === null) {
+        assignments.p1 = gamepad.index
+      } else if (sameScreenCoopRef.current && assignments.p2 === null) {
+        assignments.p2 = gamepad.index
+      }
+    }
+    if (!sameScreenCoopRef.current && assignments.p2 !== null) {
+      assignments.p2 = null
+      clearPilotGamepadPointer('p2')
+    }
+    const nextButtons = new Map<number, Set<number>>()
+    const getPressedButtons = (gamepad: Gamepad) => {
+      const pressed = new Set<number>()
+      gamepad.buttons.forEach((button, index) => {
+        if (button.pressed || button.value > 0.55) pressed.add(index)
+      })
+      nextButtons.set(gamepad.index, pressed)
+      return pressed
+    }
+    const getJustPressed = (gamepad: Gamepad, pressed: Set<number>, button: number) => {
+      const previous = gamepadButtonsRef.current.get(gamepad.index)
+      return pressed.has(button) && !previous?.has(button)
+    }
+    const getAxis = (value: number | undefined) => {
+      const axis = value ?? 0
+      return Math.abs(axis) < GAMEPAD_AXIS_DEADZONE ? 0 : clamp(axis, -1, 1)
+    }
+    const applyPilotMovement = (pilot: 'p1' | 'p2', pilotPlayer: Player | null, gamepad: Gamepad | null, pressed: Set<number> | null) => {
+      if (!pilotPlayer || pilotPlayer.hp <= 0 || !gamepad || !pressed) return
+      const dpadX = (pressed.has(GAMEPAD_BUTTON_DPAD_RIGHT) ? 1 : 0) - (pressed.has(GAMEPAD_BUTTON_DPAD_LEFT) ? 1 : 0)
+      const dpadY = (pressed.has(GAMEPAD_BUTTON_DPAD_DOWN) ? 1 : 0) - (pressed.has(GAMEPAD_BUTTON_DPAD_UP) ? 1 : 0)
+      const axisX = dpadX !== 0 ? dpadX : getAxis(gamepad.axes[0])
+      const axisY = dpadY !== 0 ? dpadY : getAxis(gamepad.axes[1])
+      const activeRef = gamepadPointerActiveRef.current
+      const targetRef = pilot === 'p1' ? pointerTargetRef : remotePointerTargetRef
+      const visualRef = pilot === 'p1' ? pointerVisualRef : remotePointerVisualRef
+      if (axisX !== 0 || axisY !== 0) {
+        const magnitude = Math.min(1, Math.hypot(axisX, axisY))
+        const target = {
+          x: clamp(pilotPlayer.x + axisX * GAMEPAD_POINTER_LEAD * magnitude, 4, 96),
+          y: clamp(pilotPlayer.y + axisY * GAMEPAD_POINTER_LEAD * magnitude, 13, 93),
+        }
+        targetRef.current = target
+        visualRef.current = target
+        activeRef[pilot] = true
+      } else if (activeRef[pilot]) {
+        targetRef.current = null
+        visualRef.current = null
+        activeRef[pilot] = false
+      }
+    }
+    const p1Gamepad = assignments.p1 !== null ? gamepads.find((gamepad) => gamepad.index === assignments.p1) ?? null : null
+    const p2Gamepad = sameScreenCoopRef.current && assignments.p2 !== null ? gamepads.find((gamepad) => gamepad.index === assignments.p2) ?? null : null
+    if (!p1Gamepad) clearPilotGamepadPointer('p1')
+    if (!p2Gamepad) clearPilotGamepadPointer('p2')
+    const p1Pressed = p1Gamepad ? getPressedButtons(p1Gamepad) : null
+    const p2Pressed = p2Gamepad ? getPressedButtons(p2Gamepad) : null
+    const remotePlayer = remotePlayerRef.current
+    if (phaseRef.current === 'playing') {
+      applyPilotMovement('p1', playerRef.current, p1Gamepad, p1Pressed)
+      if (sameScreenCoopRef.current) applyPilotMovement('p2', remotePlayer, p2Gamepad, p2Pressed)
+      if (p1Gamepad && p1Pressed) {
+        if (getJustPressed(p1Gamepad, p1Pressed, GAMEPAD_BUTTON_START)) pauseGame()
+        if (
+          getJustPressed(p1Gamepad, p1Pressed, GAMEPAD_BUTTON_SPECIAL) ||
+          getJustPressed(p1Gamepad, p1Pressed, GAMEPAD_BUTTON_SPECIAL_ALT)
+        ) {
+          activateNuke(playerRef.current)
+        }
+      }
+      if (sameScreenCoopRef.current && p2Gamepad && p2Pressed && remotePlayer) {
+        if (
+          getJustPressed(p2Gamepad, p2Pressed, GAMEPAD_BUTTON_SPECIAL) ||
+          getJustPressed(p2Gamepad, p2Pressed, GAMEPAD_BUTTON_SPECIAL_ALT)
+        ) {
+          activateNuke(remotePlayer)
+        }
+      }
+    } else if (p1Gamepad && p1Pressed) {
+      const dpadX = (p1Pressed.has(GAMEPAD_BUTTON_DPAD_RIGHT) ? 1 : 0) - (p1Pressed.has(GAMEPAD_BUTTON_DPAD_LEFT) ? 1 : 0)
+      const dpadY = (p1Pressed.has(GAMEPAD_BUTTON_DPAD_DOWN) ? 1 : 0) - (p1Pressed.has(GAMEPAD_BUTTON_DPAD_UP) ? 1 : 0)
+      const navX = Math.abs(p1Gamepad.axes[0] ?? 0) > GAMEPAD_MENU_AXIS_THRESHOLD ? Math.sign(p1Gamepad.axes[0] ?? 0) : dpadX
+      const navY = Math.abs(p1Gamepad.axes[1] ?? 0) > GAMEPAD_MENU_AXIS_THRESHOLD ? Math.sign(p1Gamepad.axes[1] ?? 0) : dpadY
+      if (time >= gamepadNextMenuNavRef.current && (navX !== 0 || navY !== 0)) {
+        moveRaidMenuFocus(navX > 0 || navY > 0 ? 1 : -1)
+        gamepadNextMenuNavRef.current = time + 180
+      }
+      if (getJustPressed(p1Gamepad, p1Pressed, GAMEPAD_BUTTON_CONFIRM)) {
+        activateRaidFocusedControl()
+      }
+      if (getJustPressed(p1Gamepad, p1Pressed, GAMEPAD_BUTTON_CANCEL)) {
+        activateRaidBackControl()
+      }
+      if (getJustPressed(p1Gamepad, p1Pressed, GAMEPAD_BUTTON_START)) {
+        if (phaseRef.current === 'paused') resumeGame()
+        else if (phaseRef.current === 'briefing') resetGame()
+        else if (phaseRef.current !== 'victory') activateRaidFocusedControl()
+      }
+    }
+    gamepadButtonsRef.current = nextButtons
+  }, [activateNuke, activateRaidBackControl, activateRaidFocusedControl, moveRaidMenuFocus, pauseGame, resetGame, resumeGame])
+
   useEffect(() => {
     const tick = (time: number) => {
       const dt = Math.min(0.033, (time - lastTimeRef.current) / 1000 || 0)
       lastTimeRef.current = time
+      pollRaidGamepads(time)
       const entranceSlamActive = phaseRef.current === 'playing' && bossEntranceSlamRef.current > 0
       if (bossEntranceSlamRef.current > 0) {
         bossEntranceSlamRef.current = Math.max(0, bossEntranceSlamRef.current - dt)
@@ -6479,13 +6688,18 @@ export function GradiusRaid({
       cancelAnimationFrame(rafRef.current)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [advanceGuestVisuals, drawFxCanvas, predictGuestPlayer, sendMultiplayerInput, sendMultiplayerState, syncSnapshot, updateGame, updateMultiplayerConnection])
+  }, [advanceGuestVisuals, drawFxCanvas, pollRaidGamepads, predictGuestPlayer, sendMultiplayerInput, sendMultiplayerState, syncSnapshot, updateGame, updateMultiplayerConnection])
 
   useEffect(() => {
     const p1Keys = new Set(['w', 'a', 's', 'd'])
     const p2Keys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright'])
     const down = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()
+      if (phaseRef.current !== 'playing' && (key === 'arrowright' || key === 'arrowdown' || key === 'arrowleft' || key === 'arrowup')) {
+        event.preventDefault()
+        moveRaidMenuFocus(key === 'arrowright' || key === 'arrowdown' ? 1 : -1)
+        return
+      }
       if (key === 'enter' && phaseRef.current === 'paused') resumeGame()
       else if (key === 'enter' && phaseRef.current === 'briefing') resetGame()
       else if (key === 'enter' && phaseRef.current !== 'playing' && phaseRef.current !== 'victory') resetGame()
@@ -6546,7 +6760,7 @@ export function GradiusRaid({
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [activateNuke, exitRaid, pauseGame, resetGame, resumeGame, syncSnapshot])
+  }, [activateNuke, exitRaid, moveRaidMenuFocus, pauseGame, resetGame, resumeGame, syncSnapshot])
 
   useEffect(() => () => {
     stopBGM()

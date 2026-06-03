@@ -19,7 +19,6 @@ import {
 } from './i18n'
 import { getStoredPlayerName, getStoredRecoveryCode, hasStoredPlayerName, isCreatorPlayerName, registerPlayerName, restorePlayerName, saveStoredPlayerName, uploadPlayerProgress, type PlayerNameRegistrationResult } from './leaderboards'
 import { getCoreLanderModel, getMesiahShipColor, getStoredTowerDefenseEndlessUnlock, isCoreLanderUnlocked, isGradiusRaidEndlessUnlocked, loadProgress, normalizeProgress, recordRunResult, resetProgressForNewAccount, saveProgress, type ProgressState, type ProgressUpdate, type RunResult } from './progression'
-import { isNativeLanRelayAvailable } from './native/lanRelay'
 import { useEffect, useMemo, useState, useRef } from 'react'
 
 // Placeholder coins (not displayed - kept for prop compatibility)
@@ -68,12 +67,6 @@ const RAID_COOP_SHIP_OPTIONS = [
   { key: 'coreLander', name: 'Core Lander' },
 ] as const
 
-function isAndroidDeviceRuntime() {
-  if (isNativeLanRelayAvailable()) return true
-  if (typeof navigator === 'undefined') return false
-  return /android/i.test(navigator.userAgent)
-}
-
 function isMenuBgmScreen(screen: ScreenState) {
   return screen !== 'game'
 }
@@ -112,6 +105,9 @@ function App() {
   const [raidMultiplayerSession, setRaidMultiplayerSession] = useState<RaidMultiplayerSession | null>(null)
   const [raidSameScreenCoop, setRaidSameScreenCoop] = useState(false)
   const [sameScreenGuestShipKey, setSameScreenGuestShipKey] = useState('fast')
+  const menuGamepadButtonsRef = useRef(new Map<number, Set<number>>())
+  const menuGamepadPrimaryRef = useRef<number | null>(null)
+  const menuGamepadNextNavRef = useRef(0)
   const [cutsceneIndex, setCutsceneIndex] = useState(0)
   const [playerName, setPlayerName] = useState(getStoredPlayerName)
   const [playerNameDraft, setPlayerNameDraft] = useState(playerName === 'Pilot' && !hasStoredPlayerName() ? '' : playerName)
@@ -132,7 +128,6 @@ function App() {
   const creatorUnlock = isCreatorPlayerName(playerName)
   const canPlayEndless = endlessUnlocked || creatorUnlock
   const canPlayGradiusEndless = progress.gradiusRaidEndlessUnlocked || creatorUnlock
-  const isAndroidDevice = useMemo(isAndroidDeviceRuntime, [])
   const sameScreenShipOptions = useMemo(() => (
     RAID_COOP_SHIP_OPTIONS.filter((ship) => {
       if (ship.key === 'mesiah') return isGradiusRaidEndlessUnlocked(progress)
@@ -298,6 +293,111 @@ function App() {
       }
     } else {
       bgm.pause()
+    }
+  }, [screen])
+
+  useEffect(() => {
+    if (screen === 'game') return
+    const focusableSelector = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    const isTypingTarget = (target: Element | null) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+    const getFocusableControls = () => Array.from(document.querySelectorAll<HTMLElement>(focusableSelector)).filter((control) => {
+      if (control.tabIndex < 0) return false
+      const rect = control.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(control).visibility !== 'hidden'
+    })
+    const moveFocus = (direction: 1 | -1) => {
+      const controls = getFocusableControls()
+      if (!controls.length) return
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const currentIndex = active ? controls.indexOf(active) : -1
+      const nextIndex = currentIndex < 0 ? (direction > 0 ? 0 : controls.length - 1) : (currentIndex + direction + controls.length) % controls.length
+      controls[nextIndex]?.focus()
+    }
+    const activateFocusedControl = () => {
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (active && !isTypingTarget(active)) {
+        active.click()
+        return
+      }
+      const firstButton = getFocusableControls().find((control) => control instanceof HTMLButtonElement)
+      firstButton?.focus()
+    }
+    const activateBackControl = () => {
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (isTypingTarget(active)) {
+        active.blur()
+        return
+      }
+      const backControl = document.querySelector<HTMLElement>('.mode-screen__back, .leaderboards-screen__back, .progress-panel__back, .cutscene__skip')
+      backControl?.click()
+    }
+    const handleKeydown = (event: KeyboardEvent) => {
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (isTypingTarget(active)) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          active.blur()
+        }
+        return
+      }
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault()
+        moveFocus(1)
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        moveFocus(-1)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        activateBackControl()
+      }
+    }
+    const getPressedButtons = (gamepad: Gamepad) => {
+      const pressed = new Set<number>()
+      gamepad.buttons.forEach((button, index) => {
+        if (button.pressed || button.value > 0.55) pressed.add(index)
+      })
+      return pressed
+    }
+    let raf = 0
+    const tick = (time: number) => {
+      const gamepads = typeof navigator.getGamepads === 'function'
+        ? Array.from(navigator.getGamepads()).filter((pad): pad is Gamepad => Boolean(pad?.connected))
+        : []
+      const connectedIndexes = new Set(gamepads.map((pad) => pad.index))
+      if (menuGamepadPrimaryRef.current !== null && !connectedIndexes.has(menuGamepadPrimaryRef.current)) {
+        menuGamepadPrimaryRef.current = null
+      }
+      if (menuGamepadPrimaryRef.current === null && gamepads[0]) {
+        menuGamepadPrimaryRef.current = gamepads[0].index
+      }
+      const gamepad = menuGamepadPrimaryRef.current !== null
+        ? gamepads.find((pad) => pad.index === menuGamepadPrimaryRef.current) ?? null
+        : null
+      if (gamepad) {
+        const pressed = getPressedButtons(gamepad)
+        const previous = menuGamepadButtonsRef.current.get(gamepad.index) ?? new Set<number>()
+        const justPressed = (button: number) => pressed.has(button) && !previous.has(button)
+        const axisX = gamepad.axes[0] ?? 0
+        const axisY = gamepad.axes[1] ?? 0
+        const dpadX = (pressed.has(15) ? 1 : 0) - (pressed.has(14) ? 1 : 0)
+        const dpadY = (pressed.has(13) ? 1 : 0) - (pressed.has(12) ? 1 : 0)
+        const navX = Math.abs(axisX) > 0.55 ? Math.sign(axisX) : dpadX
+        const navY = Math.abs(axisY) > 0.55 ? Math.sign(axisY) : dpadY
+        if (time >= menuGamepadNextNavRef.current && (navX !== 0 || navY !== 0)) {
+          moveFocus(navX > 0 || navY > 0 ? 1 : -1)
+          menuGamepadNextNavRef.current = time + 180
+        }
+        if (justPressed(0)) activateFocusedControl()
+        if (justPressed(1)) activateBackControl()
+        menuGamepadButtonsRef.current.set(gamepad.index, pressed)
+      }
+      raf = window.requestAnimationFrame(tick)
+    }
+    raf = window.requestAnimationFrame(tick)
+    window.addEventListener('keydown', handleKeydown)
+    return () => {
+      window.cancelAnimationFrame(raf)
+      window.removeEventListener('keydown', handleKeydown)
     }
   }, [screen])
   // =========================
@@ -734,8 +834,8 @@ function App() {
   }
 
   if (screen === 'raidCoopMode') {
-    const canUseLocalCoop = isNativeLanRelayAvailable()
-    const canUseSameScreenCoop = !isAndroidDevice
+    const canUseLocalCoop = true
+    const canUseSameScreenCoop = true
 
     return (
       <div className="mode-screen">

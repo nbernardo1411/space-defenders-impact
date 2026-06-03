@@ -1907,10 +1907,11 @@ body {
 }
 
 .mode-screen__button strong.mode-screen__button-fit-text {
-  white-space: nowrap;
   letter-spacing: 0;
-  font-size: clamp(0.76rem, 8.4cqw, 1.25rem);
-  line-height: 1.2;
+  font-size: clamp(0.8rem, 7.2cqw, 1.25rem);
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .mode-screen__button--local {
@@ -2073,6 +2074,10 @@ body {
   grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.2fr);
   gap: 12px;
   margin-top: 14px;
+}
+
+.raid-lobby__actions--join-only {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .raid-lobby__ships {

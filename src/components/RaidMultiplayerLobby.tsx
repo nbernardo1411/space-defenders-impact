@@ -180,6 +180,7 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
   const isLocalMode = connectionMode === 'local'
+  const canHostLocalRelay = !isLocalMode || isNativeLanRelayAvailable()
 
   const ownPlayer = useMemo(
     () => room?.players.find((player) => player.id === peerId) ?? null,
@@ -457,7 +458,7 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
           </div>
         </div>
 
-        {isLocalMode ? (
+        {isLocalMode && canHostLocalRelay ? (
           <div className="raid-lobby__lan-card">
             <span>{text.localHostAddress}</span>
             <strong>{localHostAddress || text.localHostWaiting}</strong>
@@ -486,10 +487,12 @@ export function RaidMultiplayerLobby({ playerName, language, connectionMode, onB
           })}
         </div>
 
-        <div className="raid-lobby__actions">
-          <button disabled={connecting} onClick={hostRoom}>
-            {isLocalMode ? text.startLanHost : text.hostRoom}
-          </button>
+        <div className={isLocalMode && !canHostLocalRelay ? 'raid-lobby__actions raid-lobby__actions--join-only' : 'raid-lobby__actions'}>
+          {canHostLocalRelay ? (
+            <button disabled={connecting} onClick={hostRoom}>
+              {isLocalMode ? text.startLanHost : text.hostRoom}
+            </button>
+          ) : null}
           <label className={isLocalMode ? 'raid-lobby__join raid-lobby__join--local' : 'raid-lobby__join'}>
             {isLocalMode ? (
               <input
