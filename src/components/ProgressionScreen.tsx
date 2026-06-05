@@ -51,6 +51,7 @@ type ProgressionScreenProps = {
   recoveryCode: string
   onBack: () => void
   onProgressChange: (progress: ProgressState) => void
+  onPlayCutscenes: (mode: UnlockTab) => void
 }
 
 const ALL_COSMETICS_PREVIEW = { trail: true, aura: true, frame: true }
@@ -304,6 +305,7 @@ export function ProgressionScreen({
   recoveryCode,
   onBack,
   onProgressChange,
+  onPlayCutscenes,
 }: ProgressionScreenProps) {
   const text = getReleaseText(language)
   const languageText = getLanguageText(language)
@@ -535,14 +537,24 @@ export function ProgressionScreen({
                 unlockedCount: getUnlockedCount(RAID_CODEX_IDS, progress.codex),
                 total: RAID_CODEX_IDS.length,
                 content: (
-                  <UnlockSection
-                    title={raidModeTitle}
-                    ids={RAID_CODEX_IDS}
-                    unlockedMap={progress.codex}
-                    copyMap={text.codexMap}
-                    unlockedLabel={text.unlocked}
-                    lockedLabel={text.locked}
-                  />
+                  <div className="codex-tab-content">
+                    <CodexCutsceneLauncher
+                      mode="raid"
+                      title={text.cutsceneArchive.raidTitle}
+                      kicker={text.cutsceneArchive.kicker}
+                      copy={text.cutsceneArchive.raidCopy}
+                      text={text}
+                      onPlay={onPlayCutscenes}
+                    />
+                    <UnlockSection
+                      title={raidModeTitle}
+                      ids={RAID_CODEX_IDS}
+                      unlockedMap={progress.codex}
+                      copyMap={text.codexMap}
+                      unlockedLabel={text.unlocked}
+                      lockedLabel={text.locked}
+                    />
+                  </div>
                 ),
               },
               {
@@ -551,14 +563,24 @@ export function ProgressionScreen({
                 unlockedCount: getUnlockedCount(DEFENSE_CODEX_IDS, progress.codex),
                 total: DEFENSE_CODEX_IDS.length,
                 content: (
-                  <UnlockSection
-                    title={defenseModeTitle}
-                    ids={DEFENSE_CODEX_IDS}
-                    unlockedMap={progress.codex}
-                    copyMap={text.codexMap}
-                    unlockedLabel={text.unlocked}
-                    lockedLabel={text.locked}
-                  />
+                  <div className="codex-tab-content">
+                    <CodexCutsceneLauncher
+                      mode="defense"
+                      title={text.cutsceneArchive.defenseTitle}
+                      kicker={text.cutsceneArchive.kicker}
+                      copy={text.cutsceneArchive.defenseCopy}
+                      text={text}
+                      onPlay={onPlayCutscenes}
+                    />
+                    <UnlockSection
+                      title={defenseModeTitle}
+                      ids={DEFENSE_CODEX_IDS}
+                      unlockedMap={progress.codex}
+                      copyMap={text.codexMap}
+                      unlockedLabel={text.unlocked}
+                      lockedLabel={text.locked}
+                    />
+                  </div>
                 ),
               },
             ]}
@@ -690,6 +712,37 @@ function EnemyAlmanac({
           })}
         </div>
       </section>
+    </section>
+  )
+}
+
+function CodexCutsceneLauncher({
+  mode,
+  title,
+  kicker,
+  copy,
+  text,
+  onPlay,
+}: {
+  mode: UnlockTab
+  title: string
+  kicker: string
+  copy: string
+  text: ReturnType<typeof getReleaseText>
+  onPlay: (mode: UnlockTab) => void
+}) {
+  return (
+    <section className="codex-cutscene-launcher" aria-labelledby={`${mode}-cutscene-launcher-title`}>
+      <header className="codex-cutscene-launcher__header">
+        <span>{kicker}</span>
+        <div>
+          <h2 id={`${mode}-cutscene-launcher-title`}>{title}</h2>
+          <p>{copy}</p>
+        </div>
+      </header>
+      <button className="codex-cutscene-launcher__button" type="button" onClick={() => onPlay(mode)}>
+        {text.cutsceneArchive.play}
+      </button>
     </section>
   )
 }

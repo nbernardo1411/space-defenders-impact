@@ -3,8 +3,8 @@ import type { LanguageCode } from '../../../i18n'
 import { isCreatorPlayerName, submitLeaderboardScore } from '../../../leaderboards'
 import { getCoreLanderModel, getEquippedShipCosmetics, hasProgressionUnlockOverride, isCoreLanderUnlocked, loadProgress } from '../../../progression'
 import type { RunResult, RunStatus, ShipCosmeticEquipState } from '../../../progression'
-import { RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, RaidShipSprite } from '../RaidShipSprite'
-import { getGameAudioMixSettings, getGameSoundBgmDuckProfile, getGameSoundEnabled, getGraphicsQuality, playGameSound, registerGameSoundDucker, setGameAudioMixSettings, setGraphicsQuality, stopBGM } from '../sound'
+import { RAID_ALIEN_SPRITE_COUNT, RAID_ELITE_SPRITE_COUNT, getRaidAlienSpriteUrl, getRaidEliteSpriteUrl, RaidShipSprite } from '../RaidShipSprite'
+import { getGameAudioMixSettings, getGameSoundBgmDuckProfile, getGameSoundEnabled, getGraphicsQuality, getPublicAssetUrl, playGameSound, registerGameSoundDucker, setGameAudioMixSettings, setGraphicsQuality, stopBGM } from '../sound'
 import type { AudioMixSettings, GraphicsQuality } from '../sound'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -7310,37 +7310,62 @@ export function GradiusRaid({
 
       {snapshot.phase === 'victory' && (
         <div className="raid__ending" role="dialog" aria-modal="true" aria-labelledby="raid-ending-title">
-          <div className="raid__ending-scene" aria-hidden="true">
-            <div className="raid__ending-stars raid__ending-stars--far" />
-            <div className="raid__ending-stars raid__ending-stars--near" />
-            <div className="raid__ending-sun" />
-            <div className="raid__ending-final-burst">
-              <i />
-              <i />
-              <i />
+            <div className="raid__ending-scene" aria-hidden="true">
+              <div className="raid__ending-stars raid__ending-stars--far" />
+              <div className="raid__ending-stars raid__ending-stars--near" />
+              <img className="raid__ending-galaxy raid__ending-galaxy--left" src={getPublicAssetUrl('assets/others/galaxy.webp')} alt="" draggable={false} />
+              <img className="raid__ending-galaxy raid__ending-galaxy--right" src={getPublicAssetUrl('assets/others/galaxy_2.webp')} alt="" draggable={false} />
+              <img className="raid__ending-sun-asset" src={getPublicAssetUrl('assets/others/sun.webp')} alt="" draggable={false} />
+              <img className="raid__ending-comet" src={getPublicAssetUrl('assets/others/comet.webp')} alt="" draggable={false} />
+              <img className="raid__ending-station" src={getPublicAssetUrl('assets/others/space_station.webp')} alt="" draggable={false} />
+              <img className="raid__ending-asteroid raid__ending-asteroid--one" src={getPublicAssetUrl('assets/others/asteroid.webp')} alt="" draggable={false} />
+              <img className="raid__ending-asteroid raid__ending-asteroid--two" src={getPublicAssetUrl('assets/others/asteroid.webp')} alt="" draggable={false} />
+              <div className="raid__ending-sun" />
+              <div className="raid__ending-final-burst">
+                <i />
+                <i />
+                <i />
+              </div>
+              <img className="raid__ending-fortress" src={getPublicAssetUrl('assets/aliens/final_boss.png')} alt="" draggable={false} />
+              <div className="raid__ending-retreat-wave">
+                {[1, 4, 6].map((variant, index) => (
+                  <img key={`ending-alien-${variant}`} src={getRaidAlienSpriteUrl(variant)} alt="" draggable={false} style={{ '--retreat-index': index } as CSSProperties} />
+                ))}
+                {[0, 3].map((variant, index) => (
+                  <img key={`ending-elite-${variant}`} className="raid__ending-retreat-elite" src={getRaidEliteSpriteUrl(variant)} alt="" draggable={false} style={{ '--retreat-index': index + 3 } as CSSProperties} />
+                ))}
+              </div>
+              <div className="raid__ending-earth" />
+              <div className="raid__ending-city-lights">
+                <i />
+                <i />
+                <i />
+                <i />
+              </div>
+              <div className="raid__ending-home-signal">
+                <span>{menuText.missionDebrief}</span>
+                <b>{menuText.earthLineSecured}</b>
+              </div>
+              <div className="raid__ending-wake raid__ending-wake--host" />
+              <div className="raid__ending-ship raid__ending-ship--host">
+                <RaidShipSprite shipKey={playerVisualShipKey} size={finaleShipSize} />
+              </div>
+              {snapshot.allyPlayer ? (
+                <>
+                  <div className="raid__ending-wake raid__ending-wake--ally" />
+                  <div className="raid__ending-ship raid__ending-ship--ally">
+                    <RaidShipSprite shipKey={allyVisualShipKey} size={finaleAllyShipSize} />
+                  </div>
+                </>
+              ) : null}
+              <div className="raid__ending-fleet">
+                {endingWingmen.map((shipKey, index) => (
+                  <span key={shipKey} style={{ '--fleet-index': index } as CSSProperties}>
+                    <RaidShipSprite shipKey={shipKey} size={44} />
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="raid__ending-orbit-arc" />
-            <div className="raid__ending-earth" />
-            <div className="raid__ending-wake raid__ending-wake--host" />
-            <div className="raid__ending-ship raid__ending-ship--host">
-              <RaidShipSprite shipKey={playerVisualShipKey} size={finaleShipSize} />
-            </div>
-            {snapshot.allyPlayer ? (
-              <>
-                <div className="raid__ending-wake raid__ending-wake--ally" />
-                <div className="raid__ending-ship raid__ending-ship--ally">
-                  <RaidShipSprite shipKey={allyVisualShipKey} size={finaleAllyShipSize} />
-                </div>
-              </>
-            ) : null}
-            <div className="raid__ending-fleet">
-              {endingWingmen.map((shipKey, index) => (
-                <span key={shipKey} style={{ '--fleet-index': index } as CSSProperties}>
-                  <RaidShipSprite shipKey={shipKey} size={44} />
-                </span>
-              ))}
-            </div>
-          </div>
 
           <div className="raid__ending-panel">
             <div className="raid__kicker">{menuText.missionComplete}</div>
@@ -7358,6 +7383,7 @@ export function GradiusRaid({
                 </span>
               ))}
             </div>
+            <p className="raid__ending-epilogue">{menuText.endingEpilogue}</p>
             <div className="raid__ending-stats">
               <span>
                 <small>{hudText.stage}</small>

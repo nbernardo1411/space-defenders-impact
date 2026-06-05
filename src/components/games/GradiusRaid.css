@@ -1987,6 +1987,95 @@
   animation: endingStarsNear 4.6s linear infinite;
 }
 
+.raid__ending-scene img {
+  pointer-events: none;
+  user-select: none;
+}
+
+.raid__ending-galaxy,
+.raid__ending-sun-asset,
+.raid__ending-comet,
+.raid__ending-station,
+.raid__ending-asteroid,
+.raid__ending-fortress,
+.raid__ending-retreat-wave {
+  position: absolute;
+}
+
+.raid__ending-galaxy {
+  width: min(520px, 64vw);
+  opacity: 0.2;
+  filter: saturate(1.24) contrast(1.05);
+  animation: endingGalaxyDrift 11s ease-in-out infinite;
+}
+
+.raid__ending-galaxy--left {
+  left: -9%;
+  top: 11%;
+  transform: rotate(-8deg);
+}
+
+.raid__ending-galaxy--right {
+  right: -7%;
+  top: 4%;
+  width: min(420px, 54vw);
+  opacity: 0.14;
+  transform: rotate(12deg) scaleX(-1);
+  animation-delay: -4s;
+}
+
+.raid__ending-sun-asset {
+  right: 10%;
+  top: 9%;
+  width: clamp(86px, 16vw, 190px);
+  opacity: 0.58;
+  mix-blend-mode: screen;
+  filter: blur(0.2px) saturate(1.18) drop-shadow(0 0 34px rgba(251, 191, 36, 0.26));
+  animation: endingSunAssetPulse 6.4s ease-in-out infinite;
+}
+
+.raid__ending-comet {
+  right: -14%;
+  top: 26%;
+  width: clamp(92px, 16vw, 210px);
+  opacity: 0;
+  transform: rotate(-7deg);
+  filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.28));
+  animation: endingCometFlyby 7.2s ease-in-out 1.1s infinite;
+}
+
+.raid__ending-station {
+  left: 10%;
+  top: 38%;
+  width: clamp(72px, 12vw, 138px);
+  opacity: 0.34;
+  transform: rotate(-16deg);
+  filter: drop-shadow(0 0 22px rgba(125, 211, 252, 0.2));
+  animation: endingStationDrift 8s ease-in-out infinite;
+}
+
+.raid__ending-asteroid {
+  width: clamp(28px, 5vw, 58px);
+  opacity: 0.38;
+  filter: drop-shadow(0 0 10px rgba(148, 163, 184, 0.18));
+  animation: endingAsteroidDrift 9s ease-in-out infinite;
+}
+
+.raid__ending-asteroid--one {
+  right: 21%;
+  top: 41%;
+  transform: rotate(24deg);
+}
+
+.raid__ending-asteroid--two {
+  left: 28%;
+  top: 16%;
+  width: clamp(22px, 4vw, 46px);
+  opacity: 0.26;
+  transform: rotate(-18deg);
+  animation-delay: -3.2s;
+}
+
 .raid__ending-sun {
   position: absolute;
   top: 16%;
@@ -2015,38 +2104,109 @@
   animation: endingFinalBurst 3.8s ease-out 0.18s both;
 }
 
+.raid__ending-fortress {
+  left: 50%;
+  top: 18%;
+  width: min(300px, 36vw);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  filter:
+    saturate(1.2)
+    drop-shadow(0 0 26px rgba(251, 191, 36, 0.36))
+    drop-shadow(0 0 46px rgba(239, 68, 68, 0.2));
+  animation: endingFortressCollapse 4.1s ease-out 0.05s both;
+}
+
+.raid__ending-retreat-wave {
+  inset: 0;
+  opacity: 0;
+  animation: endingRetreatWave 5.6s ease-out 0.9s both;
+}
+
+.raid__ending-retreat-wave img {
+  position: absolute;
+  left: 20%;
+  top: 24%;
+  width: clamp(34px, 6vw, 70px);
+  opacity: 0.52;
+  transform: translate3d(0, 0, 0) rotate(var(--retreat-rotate, -18deg));
+  filter: drop-shadow(0 0 14px rgba(239, 68, 68, 0.24));
+  animation: endingRetreatShip 5.6s ease-out both;
+}
+
+.raid__ending-retreat-wave img:nth-child(1) {
+  left: 18%;
+  top: 32%;
+  --retreat-x: -22vw;
+  --retreat-y: -34vh;
+  --retreat-rotate: -18deg;
+  --retreat-end-rotate: -48deg;
+  animation-delay: 0.08s;
+}
+
+.raid__ending-retreat-wave img:nth-child(2) {
+  left: 34%;
+  top: 22%;
+  --retreat-x: -12vw;
+  --retreat-y: -40vh;
+  --retreat-rotate: -6deg;
+  --retreat-end-rotate: -28deg;
+  animation-delay: 0.18s;
+}
+
+.raid__ending-retreat-wave img:nth-child(3) {
+  left: 62%;
+  top: 28%;
+  --retreat-x: 14vw;
+  --retreat-y: -38vh;
+  --retreat-rotate: 14deg;
+  --retreat-end-rotate: 42deg;
+  animation-delay: 0.28s;
+}
+
+.raid__ending-retreat-wave img:nth-child(4) {
+  left: 46%;
+  top: 40%;
+  --retreat-x: 2vw;
+  --retreat-y: -42vh;
+  --retreat-rotate: 2deg;
+  --retreat-end-rotate: 16deg;
+  animation-delay: 0.38s;
+}
+
+.raid__ending-retreat-wave img:nth-child(5) {
+  left: 76%;
+  top: 35%;
+  --retreat-x: 24vw;
+  --retreat-y: -30vh;
+  --retreat-rotate: 24deg;
+  --retreat-end-rotate: 58deg;
+  animation-delay: 0.48s;
+}
+
+.raid__ending-retreat-wave .raid__ending-retreat-elite {
+  width: clamp(42px, 7vw, 86px);
+  opacity: 0.42;
+}
+
 .raid__ending-final-burst i {
   position: absolute;
   inset: 18%;
   border: 1px solid rgba(251, 191, 36, 0.42);
   border-radius: 50%;
-  animation: endingBurstRing 3.2s ease-out calc(var(--burst-ring, 0) * 0.22s) both;
+  animation: endingBurstRing 3.2s ease-out both;
 }
 
 .raid__ending-final-burst i:nth-child(2) {
-  --burst-ring: 1;
   inset: 9%;
   border-color: rgba(248, 113, 113, 0.34);
+  animation-delay: 0.22s;
 }
 
 .raid__ending-final-burst i:nth-child(3) {
-  --burst-ring: 2;
   inset: 0;
   border-color: rgba(125, 211, 252, 0.28);
-}
-
-.raid__ending-orbit-arc {
-  position: absolute;
-  left: 50%;
-  bottom: max(-90px, -8vw);
-  width: min(980px, 126vw);
-  aspect-ratio: 2.5;
-  transform: translateX(-50%);
-  border-top: 1px solid rgba(125, 211, 252, 0.34);
-  border-radius: 50% 50% 0 0;
-  box-shadow: 0 -18px 42px rgba(56, 189, 248, 0.14);
-  opacity: 0;
-  animation: endingOrbitArc 2.4s ease-out 3.6s both;
+  animation-delay: 0.44s;
 }
 
 .raid__ending-earth {
@@ -2056,11 +2216,84 @@
   width: min(960px, 122vw);
   aspect-ratio: 1.22;
   transform: translateX(-50%);
-  background:
-    radial-gradient(ellipse at 50% 18%, rgba(224, 242, 254, 0.36), transparent 44%),
-    url('/assets/others/planet_1.webp') center / contain no-repeat;
-  filter: drop-shadow(0 -24px 70px rgba(56, 189, 248, 0.38));
+  background: url('/assets/others/planet_1.webp') center / contain no-repeat;
   animation: endingEarthRise 6.8s ease-out both;
+}
+
+.raid__ending-city-lights {
+  position: absolute;
+  display: none;
+  left: 50%;
+  bottom: clamp(18px, 5vw, 72px);
+  width: min(740px, 96vw);
+  height: 90px;
+  transform: translateX(-50%);
+  opacity: 0;
+  animation: endingCityLights 1.5s ease-out 5.4s both;
+}
+
+.raid__ending-city-lights i {
+  position: absolute;
+  bottom: 0;
+  width: clamp(54px, 12vw, 130px);
+  height: clamp(18px, 4vw, 34px);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(254, 240, 138, 0.72), rgba(251, 146, 60, 0.22) 46%, transparent 72%);
+  filter: blur(4px);
+}
+
+.raid__ending-city-lights i:nth-child(1) {
+  left: 4%;
+}
+
+.raid__ending-city-lights i:nth-child(2) {
+  left: 28%;
+  bottom: 18px;
+  transform: scale(0.7);
+}
+
+.raid__ending-city-lights i:nth-child(3) {
+  right: 22%;
+  bottom: 8px;
+  transform: scale(0.82);
+}
+
+.raid__ending-city-lights i:nth-child(4) {
+  right: 5%;
+  bottom: 24px;
+  transform: scale(0.58);
+}
+
+.raid__ending-home-signal {
+  position: absolute;
+  left: 50%;
+  top: 63%;
+  display: grid;
+  gap: 4px;
+  min-width: min(360px, 84vw);
+  transform: translateX(-50%);
+  border: 1px solid rgba(110, 245, 203, 0.28);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #ecfeff;
+  background: rgba(8, 13, 24, 0.58);
+  box-shadow: 0 0 28px rgba(56, 189, 248, 0.14), inset 0 0 18px rgba(110, 245, 203, 0.08);
+  text-align: center;
+  opacity: 0;
+  animation: endingHomeSignal 1.2s ease-out 5.8s both;
+}
+
+.raid__ending-home-signal span {
+  color: #6ef5cb;
+  font-size: 0.62rem;
+  font-weight: 1000;
+  letter-spacing: 0.16rem;
+  text-transform: uppercase;
+}
+
+.raid__ending-home-signal b {
+  color: #fff7ed;
+  font-size: clamp(1rem, 3vw, 1.45rem);
 }
 
 .raid__ending-ship {
@@ -2116,7 +2349,23 @@
   display: grid;
   place-items: center;
   opacity: 0.66;
-  transform: translateY(calc((var(--fleet-index) - 1) * 9px)) scale(0.72);
+  transform: translateY(0) scale(0.72);
+}
+
+.raid__ending-fleet span:nth-child(1) {
+  transform: translateY(-9px) scale(0.74);
+}
+
+.raid__ending-fleet span:nth-child(2) {
+  transform: translateY(8px) scale(0.7);
+}
+
+.raid__ending-fleet span:nth-child(3) {
+  transform: translateY(-2px) scale(0.72);
+}
+
+.raid__ending-fleet span:nth-child(4) {
+  transform: translateY(10px) scale(0.68);
 }
 
 .raid__ending-panel {
@@ -2185,7 +2434,21 @@
   background: rgba(15, 23, 42, 0.72);
   opacity: 0;
   transform: translateY(10px);
-  animation: endingLineReveal 0.68s ease-out calc(4.7s + var(--ending-line) * 0.58s) both;
+  animation: endingLineReveal 0.68s ease-out 4.7s both;
+}
+
+.raid__ending-log span:nth-child(2) {
+  animation-delay: 5.28s;
+}
+
+.raid__ending-log span:nth-child(3) {
+  animation-delay: 5.86s;
+}
+
+.raid__ending-epilogue {
+  color: #fef3c7 !important;
+  opacity: 0;
+  animation: endingLineReveal 0.72s ease-out 6.5s both;
 }
 
 .raid__ending-stats {
@@ -2247,6 +2510,93 @@
 .raid__ending-actions {
   justify-content: center;
   margin-top: 18px;
+}
+
+.raid--ending-archive .raid__ending-home-signal {
+  display: none;
+}
+
+.raid--ending-archive-scene-1 .raid__ending-earth {
+  left: 74%;
+  bottom: max(-180px, -18vw);
+  width: min(560px, 82vw);
+  opacity: 0.22;
+  animation: none;
+}
+
+.raid--ending-archive-scene-1 .raid__ending-station,
+.raid--ending-archive-scene-1 .raid__ending-comet,
+.raid--ending-archive-scene-1 .raid__ending-city-lights,
+.raid--ending-archive-scene-1 .raid__ending-fleet,
+.raid--ending-archive-scene-1 .raid__ending-wake,
+.raid--ending-archive-scene-1 .raid__ending-ship {
+  display: none;
+}
+
+.raid--ending-archive-scene-1 .raid__ending-fortress,
+.raid--ending-archive-scene-1 .raid__ending-retreat-wave,
+.raid--ending-archive-scene-1 .raid__ending-final-burst {
+  display: block;
+}
+
+.raid--ending-archive-scene-2 .raid__ending-earth {
+  left: 82%;
+  bottom: max(-180px, -20vw);
+  width: min(520px, 76vw);
+  opacity: 0.42;
+  animation: endingArchiveEarthDrift 7s ease-in-out infinite;
+}
+
+.raid--ending-archive-scene-2 .raid__ending-final-burst,
+.raid--ending-archive-scene-2 .raid__ending-fortress,
+.raid--ending-archive-scene-2 .raid__ending-retreat-wave,
+.raid--ending-archive-scene-2 .raid__ending-city-lights {
+  display: none;
+}
+
+.raid--ending-archive-scene-2 .raid__ending-station,
+.raid--ending-archive-scene-2 .raid__ending-comet,
+.raid--ending-archive-scene-2 .raid__ending-fleet,
+.raid--ending-archive-scene-2 .raid__ending-wake,
+.raid--ending-archive-scene-2 .raid__ending-ship {
+  display: block;
+}
+
+.raid--ending-archive-scene-2 .raid__ending-ship {
+  left: 36%;
+}
+
+.raid--ending-archive-scene-2 .raid__ending-wake {
+  left: 36%;
+}
+
+.raid--ending-archive-scene-2 .raid__ending-fleet {
+  left: 44%;
+  top: 38%;
+  animation-delay: 0.4s;
+}
+
+.raid--ending-archive-scene-3 .raid__ending-earth {
+  left: 50%;
+  bottom: max(-220px, -21vw);
+  width: min(960px, 122vw);
+  opacity: 0.92;
+  animation: endingEarthRise 6.8s ease-out both;
+}
+
+.raid--ending-archive-scene-3 .raid__ending-final-burst,
+.raid--ending-archive-scene-3 .raid__ending-fortress,
+.raid--ending-archive-scene-3 .raid__ending-retreat-wave,
+.raid--ending-archive-scene-3 .raid__ending-comet,
+.raid--ending-archive-scene-3 .raid__ending-station,
+.raid--ending-archive-scene-3 .raid__ending-city-lights {
+  display: none;
+}
+
+.raid--ending-archive-scene-3 .raid__ending-fleet,
+.raid--ending-archive-scene-3 .raid__ending-wake,
+.raid--ending-archive-scene-3 .raid__ending-ship {
+  display: block;
 }
 
 .raid__panel {
@@ -3052,11 +3402,58 @@
   50% { transform: scale(1.08); opacity: 1; }
 }
 
+@keyframes endingGalaxyDrift {
+  0%, 100% { filter: saturate(1.12) contrast(1.02); opacity: 0.14; }
+  50% { filter: saturate(1.32) contrast(1.08); opacity: 0.24; }
+}
+
+@keyframes endingSunAssetPulse {
+  0%, 100% { opacity: 0.46; transform: scale(1); }
+  50% { opacity: 0.68; transform: scale(1.05); }
+}
+
+@keyframes endingCometFlyby {
+  0% { opacity: 0; transform: translate3d(10vw, -10px, 0) rotate(-7deg) scale(0.82); }
+  14% { opacity: 0.78; }
+  54% { opacity: 0.42; }
+  100% { opacity: 0; transform: translate3d(-124vw, 22vh, 0) rotate(-7deg) scale(1.06); }
+}
+
+@keyframes endingStationDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-16deg); opacity: 0.28; }
+  50% { transform: translate3d(12px, -10px, 0) rotate(-12deg); opacity: 0.42; }
+}
+
+@keyframes endingAsteroidDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(24deg); }
+  50% { transform: translate3d(-18px, 14px, 0) rotate(44deg); }
+}
+
 @keyframes endingFinalBurst {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.26) rotate(0deg); }
   14% { opacity: 0.95; }
   74% { opacity: 0.36; }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.16) rotate(34deg); }
+}
+
+@keyframes endingFortressCollapse {
+  0% { opacity: 0.9; transform: translate(-50%, -50%) scale(0.84) rotate(0deg); filter: brightness(1.08) saturate(1.1) drop-shadow(0 0 24px rgba(251, 191, 36, 0.24)); }
+  24% { opacity: 1; transform: translate(-50%, -50%) scale(0.94) rotate(3deg); filter: brightness(1.28) saturate(1.3) drop-shadow(0 0 36px rgba(251, 191, 36, 0.4)); }
+  58% { opacity: 0.52; transform: translate(-50%, -54%) scale(1.04) rotate(-8deg); filter: brightness(1.5) saturate(1.5) blur(0.3px) drop-shadow(0 0 50px rgba(239, 68, 68, 0.36)); }
+  100% { opacity: 0; transform: translate(-50%, -62%) scale(1.32) rotate(18deg); filter: brightness(1.8) saturate(0.7) blur(2px) drop-shadow(0 0 70px rgba(251, 191, 36, 0.2)); }
+}
+
+@keyframes endingRetreatWave {
+  0% { opacity: 0; }
+  16% { opacity: 1; }
+  76% { opacity: 0.72; }
+  100% { opacity: 0; }
+}
+
+@keyframes endingRetreatShip {
+  0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(var(--retreat-rotate, -18deg)) scale(0.82); }
+  18% { opacity: 0.58; }
+  100% { opacity: 0; transform: translate3d(var(--retreat-x, -18vw), var(--retreat-y, -34vh), 0) rotate(var(--retreat-end-rotate, -42deg)) scale(0.46); }
 }
 
 @keyframes endingBurstRing {
@@ -3065,14 +3462,24 @@
   100% { opacity: 0; transform: scale(1.42); }
 }
 
-@keyframes endingOrbitArc {
-  from { opacity: 0; transform: translateX(-50%) translateY(22px) scaleX(0.86); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0) scaleX(1); }
-}
-
 @keyframes endingEarthRise {
   from { transform: translateX(-50%) translateY(18%) scale(0.92); filter: brightness(0.72); }
   to { transform: translateX(-50%) translateY(0) scale(1); filter: brightness(1); }
+}
+
+@keyframes endingArchiveEarthDrift {
+  0%, 100% { transform: translateX(-50%) translateY(8px) scale(0.92); filter: brightness(0.78); }
+  50% { transform: translateX(-50%) translateY(-8px) scale(0.96); filter: brightness(0.94); }
+}
+
+@keyframes endingCityLights {
+  from { transform: translateX(-50%) translateY(18px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 0.82; }
+}
+
+@keyframes endingHomeSignal {
+  from { transform: translateX(-50%) translateY(14px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
 }
 
 @keyframes endingReturnFlight {
@@ -3502,6 +3909,12 @@
   .raid__ending-fleet {
     top: 53%;
     gap: 18px;
+  }
+
+  .raid__ending-home-signal {
+    top: 58%;
+    min-width: min(300px, 86vw);
+    padding: 8px 10px;
   }
 
   .raid__ending-panel {
